@@ -14400,6 +14400,83 @@ function localHitstop(a, b, dur){
   if(a && !a.dead) a.hitstopT = Math.max(a.hitstopT||0, dur);
   if(b && !b.dead) b.hitstopT = Math.max(b.hitstopT||0, dur);
 }
+
+/* =====================================================================
+   ►HIT · EMBUDO ÚNICO DE GOLPE ENTRE LUCHADORES
+   El daño y, sobre todo, el EMPUJE estaban reescritos a mano en ~30 sitios:
+       kb = (5.5 + vic.damage*0.155) * C_KB[s] * kbMul(att)
+       kb = (11 + vic.damage*0.2) * kbMul(att)
+       kb = (9 + p.damage*.14) * k * kbMul(s.owner) ...
+   Misma fórmula, constantes distintas y ningún sitio donde tocarla entera. Consecuencias reales:
+   no había palanca global para "que el juego expulse un 15% menos", y era fácil olvidarse de una
+   pieza del trío daño/credit/lastHitBy al añadir un ataque nuevo.
+   (Nota: berserker y robo de vida NO estaban dispersos — ya vivían en _dmgBase() y credit().)
+
+   applyHit() centraliza el NÚCLEO NUMÉRICO y devuelve el daño causado; los FX se quedan en cada
+   ataque, que es donde tienen que estar (cada uno tiene su personalidad).
+   Opciones:
+     base        daño antes de multiplicadores
+     spell       true → usa spellMul (hechizos) en vez de dmgMul (físico)
+     mul         multiplicador extra del propio ataque (castigo, carga…)
+     dir         dirección del empuje (Vector3 normalizado); sin ella no se toca la velocidad
+     kbBase/kbScale/kbExtra   empuje = (kbBase + vic.damage*kbScale) * kbExtra * kbMul(att)
+     up/upScale/upMax/upMin   componente vertical, con los mismos topes de siempre
+     addVel      true = SUMA a la velocidad (empujones suaves) · por defecto la SUSTITUYE (lanzamientos)
+     hitstun/hitstunScale     aturdimiento = hitstun + vic.damage*hitstunScale
+     hitstunMin  true = Math.max con el actual en vez de asignar
+     flash, powAtt, powVic, credit, ground, resetCombo
+   ⚠️ ORDEN CRÍTICO: el empuje se calcula DESPUÉS de sumar el daño, porque escala con el daño YA
+   acumulado de la víctima. Invertirlo cambiaría la sensación de todo el juego. */
+const _hitDir = new THREE.Vector3();
+function applyHit(att, vic, o){
+  o = o || {};
+  const dmg = (o.base||0) * (o.spell ? spellMul(att) : dmgMul(att)) * (o.mul!=null?o.mul:1) * defMul(vic);
+  vic.damage += dmg;
+  if(o.credit !== false){ credit(att, dmg); vic.lastHitBy = att; }
+  if(o.powAtt) addPower(att, o.powAtt * dmg);
+  if(o.powAttFlat) addPower(att, o.powAttFlat);
+  if(o.powVic) addPower(vic, o.powVic * dmg);
+  if(o.dir){
+    const kb = ((o.kbBase||0) + vic.damage*(o.kbScale||0)) * (o.kbExtra!=null?o.kbExtra:1) * kbMul(att);
+    let up = (o.up||0) + vic.damage*(o.upScale||0);
+    if(o.upMax != null) up = Math.min(o.upMax, up);
+    if(o.upMin != null) up = Math.max(o.upMin, up);
+    const d = hitDI(vic, o.dir);                  // ►DI: la víctima puede desviar el ángulo con su stick
+    if(o.addVel){ vic.vel.x += d.x*kb; vic.vel.z += d.z*kb; if(up) vic.vel.y = Math.max(vic.vel.y, up); }
+    else vic.vel.set(d.x*kb, up, d.z*kb);
+  }
+  if(o.hitstun != null){
+    const hs = o.hitstun + vic.damage*(o.hitstunScale||0);
+    vic.hitstun = o.hitstunMin ? Math.max(vic.hitstun||0, hs) : hs;
+  }
+  if(o.flash != null) vic.hitFlash = o.flash;
+  if(o.ground !== false){ vic.onGround = false; vic.hang = null; }
+  if(o.resetCombo !== false){ vic.comboWindow = 0; vic.comboStage = 0; }
+  return dmg;
+}
+
+/* ►DI · INFLUENCIA DIRECCIONAL (la deuda más vieja del combate)
+   Hasta ahora, cuando te golpeaban, MIRABAS: el ángulo de salida lo decidía entero el atacante y no
+   había nada que hacer entre el impacto y el borde. En cualquier juego de este género el stick de la
+   víctima desvía ese ángulo unos grados — es lo que convierte "me han matado" en "he fallado la
+   recuperación", y da profundidad a cada intercambio sin añadir contenido.
+   Cómo funciona: se mira la componente PERPENDICULAR del stick respecto al empuje y se gira el
+   vector hasta DI_MAX radianes. Empujar en la misma dirección del golpe no hace nada (no puedes
+   frenarlo ni acelerarlo); solo puedes curvarlo, que es lo correcto.
+   La CPU también la usa (lee su propia intención de movimiento) → no es una ventaja solo humana.
+   DI_ON=false lo apaga por completo y el juego vuelve a comportarse como antes. */
+const DI_ON = true;
+const DI_MAX = 0.30;              // ~17° de desvío máximo
+const _diOut = new THREE.Vector3();
+function hitDI(vic, dir){
+  if(!DI_ON || !vic) return dir;
+  const m = vic._diVec;
+  if(!m || (m.x*m.x + m.z*m.z) < 0.04) return dir;      // sin stick apreciable → ángulo intacto
+  const perp = m.x*dir.z - m.z*dir.x;                    // componente lateral (producto cruzado en Y)
+  const ang = THREE.MathUtils.clamp(perp, -1, 1) * DI_MAX;
+  const c = Math.cos(ang), s = Math.sin(ang);
+  return _diOut.set(dir.x*c + dir.z*s, 0, -dir.x*s + dir.z*c);
+}
 /* impacto brutal estilo Smash: hit-stop, sacudida, zoom, achuchón exagerado y bateo metálico */
 function smashFX(vc, vic){
   shake = Math.max(shake, 1.0);
@@ -14506,16 +14583,11 @@ function resolveHit(att, vic){
       }
       return;
     }
-    const dmg = (10 + 50*e) * dmgMul(att) * defMul(vic);
-    vic.damage += dmg; credit(att, dmg); vic.lastHitBy = att;
-    addPower(att, dmg*1.1); addPower(vic, dmg*.5);
-    const kb = (7 + vic.damage*0.17) * (1.0 + 2.4*e) * kbMul(att);
-    const up = 5 + 9*e;
-    vic.vel.set(dir.x*kb, up, dir.z*kb);             // ¡fuera volando!
-    vic.hitstun = .35 + e*.5 + vic.damage*.002;
-    vic.onGround = false; vic.hang = null;
-    vic.hitFlash = .2 + e*.2;
-    vic.comboWindow = 0; vic.comboStage = 0;
+    const dmg = applyHit(att, vic, {                 // ►HIT · ¡fuera volando!
+      base: 10 + 50*e, dir, powAtt: 1.1, powVic: .5,
+      kbBase: 7, kbScale: 0.17, kbExtra: 1.0 + 2.4*e, up: 5 + 9*e,
+      hitstun: .35 + e*.5, hitstunScale: .002, flash: .2 + e*.2,
+    });
     localHitstop(att, vic, .07 + e*.1);
     shake = Math.min(1.2, .3 + e*.7 + vic.damage*.003);
     fovKick = Math.max(fovKick, .6 + e*.6);
@@ -14537,12 +14609,11 @@ function resolveHit(att, vic){
       vic.vel.x += dir.x*3.5; vic.vel.z += dir.z*3.5; att.vel.x -= dir.x*2; att.vel.z -= dir.z*2;
       vic.shieldFlash = .22; jiggle(vic, 8); localHitstop(att, vic, .03); sfx.chip(); return;
     }
-    const dmg = (9 + Math.random()*3)*dmgMul(att)*defMul(vic);
-    vic.damage += dmg; addPower(att, dmg); credit(att, dmg); vic.lastHitBy = att;
-    const kb = (5 + vic.damage*0.13) * kbMul(att);
-    vic.vel.set(dir.x*kb, 4 + vic.damage*.02, dir.z*kb);
-    vic.hitstun = .25 + vic.damage*.002; vic.onGround = false; vic.hang = null; vic.hitFlash = .16;
-    vic.comboWindow = 0; vic.comboStage = 0;
+    const dmg = applyHit(att, vic, {                 // ►HIT
+      base: 9 + Math.random()*3, dir, powAtt: 1,
+      kbBase: 5, kbScale: 0.13, up: 4, upScale: .02,
+      hitstun: .25, hitstunScale: .002, flash: .16,
+    });
     vic.bleedT = BLEED_DUR; vic.bleedFrom = att;                  // ¡empieza a sangrar!
     localHitstop(att, vic, .05); shake = Math.min(1, .2 + vic.damage*.003);
     burst(vc, 0xff3355, 12, 6, 5, .9); ring(vc, 0xeaf0ff, 14, .4); jiggle(vic, 14);
@@ -14556,12 +14627,11 @@ function resolveHit(att, vic){
       vic.damage += 4*dmgMul(att)*defMul(vic);
       vic.vel.x += dir.x*5; vic.vel.z += dir.z*5; vic.shieldFlash = .24; jiggle(vic, 10); localHitstop(att, vic, .04); sfx.chip(); return;
     }
-    const dmg = (11 + Math.random()*3)*dmgMul(att)*defMul(vic);
-    vic.damage += dmg; addPower(att, dmg); credit(att, dmg); vic.lastHitBy = att;
-    const kb = (11 + vic.damage*0.2) * kbMul(att);               // ¡fuera del ring!
-    vic.vel.set(dir.x*kb, 8 + vic.damage*.04, dir.z*kb);
-    vic.hitstun = .4 + vic.damage*.003; vic.onGround = false; vic.hang = null; vic.hitFlash = .2;
-    vic.comboWindow = 0; vic.comboStage = 0;
+    const dmg = applyHit(att, vic, {                 // ►HIT · ¡fuera del ring!
+      base: 11 + Math.random()*3, dir, powAtt: 1,
+      kbBase: 11, kbScale: 0.2, up: 8, upScale: .04,
+      hitstun: .4, hitstunScale: .003, flash: .2,
+    });
     localHitstop(att, vic, .13); shake = Math.min(1.2, .35 + vic.damage*.004); fovKick = Math.max(fovKick, .8); camKick(dir.x, dir.z, 1.0);
     ring(vc, 0xffffff, 20, .5); burst(vc, 0xc77b3a, 16, 8, 6, 1.1); jiggle(vic, 20);
     sfx.hit(vic.damage+30); smashFX(vc, vic); bigHitFX(vc, vic, dmg, 0xc77b3a); showCombo(att, '¡HOME RUN!');
@@ -14573,13 +14643,12 @@ function resolveHit(att, vic){
     const behind = new THREE.Vector3(-Math.sin(att.yaw), 0, -Math.cos(att.yaw));
     const broke = vic.block;                                   // estaba escudando: lo reventamos
     if(broke){ vic.block = false; vic.blockT = 9; vic.shieldT = 0; vic.shieldCD = SHIELD_CD; }
-    const dmg = (GRAB_DMG + (broke?10:0))*dmgMul(att)*defMul(vic);
-    vic.damage += dmg; credit(att, dmg); vic.lastHitBy = att;
-    addPower(att, broke?24:16); addPower(vic, 10);
-    const kb = (11 + vic.damage*0.2) * kbMul(att);             // empuje tipo bate
-    vic.vel.set(behind.x*kb, GRAB_UP, behind.z*kb);            // ¡arriba y a tu espalda!
-    vic.hitstun = .65; vic.onGround = false; vic.hang = null; vic.hitFlash = .2;
-    vic.comboWindow = 0; vic.comboStage = 0;
+    const dmg = applyHit(att, vic, {                 // ►HIT · ¡arriba y a tu espalda! (empuje tipo bate)
+      base: GRAB_DMG + (broke?10:0), dir: behind, powAttFlat: broke?24:16,
+      kbBase: 11, kbScale: 0.2, up: GRAB_UP,
+      hitstun: .65, flash: .2,
+    });
+    addPower(vic, 10);
     localHitstop(att, vic, .14); shake = Math.min(1.2, .4 + vic.damage*.003); fovKick = Math.max(fovKick, .85); camKick(behind.x, behind.z, 1.1);
     ring(vc, broke?0xffd84f:0xffffff, 20, .5);
     burst(vc, broke?0xffd84f:vic.color, 20, 9, 7, 1.1); jiggle(vic, 22);
@@ -14605,17 +14674,16 @@ function resolveHit(att, vic){
   /* GOLPE DE CASTIGO: contra un rival aturdido por parry pega muchísimo más */
   let mult = 1, punish = false;
   if(vic.stun>0){ mult = 1.7; punish = true; vic.stun = 0; }
-  const dmg = (C_DMG[s] + Math.random()*2)*mult*dmgMul(att)*defMul(vic);
-  vic.damage += dmg; credit(att, dmg); vic.lastHitBy = att;
-  addPower(att, dmg*1.1); addPower(vic, dmg*.55);
-  const kb = (5.5 + vic.damage*0.155) * C_KB[s] * (punish ? 1.4 : 1) * kbMul(att);
-  const up = (s<3 && !punish) ? 3 + vic.damage*0.02 : Math.min(26, 6 + vic.damage*0.09);
-  vic.vel.set(dir.x*kb, up, dir.z*kb);
-  vic.hitstun = .2 + s*.06 + vic.damage*.002;
-  vic.onGround = false;
-  vic.hang = null;
-  vic.hitFlash = .14 + s*.03 + (punish?.12:0);
-  vic.comboWindow = 0; vic.comboStage = 0;
+  /* ►HIT · el LANZADOR del combo (4º golpe) y el castigo suben mucho el componente vertical; los
+     tres primeros mantienen al rival bajo, encadenable. */
+  const _alto = (s>=3 || punish);
+  const dmg = applyHit(att, vic, {
+    base: C_DMG[s] + Math.random()*2, mul: mult, dir, powAtt: 1.1, powVic: .55,
+    kbBase: 5.5, kbScale: 0.155, kbExtra: C_KB[s] * (punish ? 1.4 : 1),
+    up: _alto ? 6 : 3, upScale: _alto ? 0.09 : 0.02, upMax: _alto ? 26 : null,
+    hitstun: .2 + s*.06, hitstunScale: .002,
+    flash: .14 + s*.03 + (punish?.12:0),
+  });
 
   localHitstop(att, vic, .06 + s*.035 + (punish?.08:0) + Math.min(.05, vic.damage*.0003));
   shake = Math.min(1.1, .22 + s*.16 + (punish?.35:0) + vic.damage*.003); camKick(dir.x, dir.z, .5 + s*.3 + (punish?.4:0));
@@ -16304,6 +16372,11 @@ function updateFighter(p, dt){
       p.shieldT = SHIELD_DUR; p.block = true; p.shieldTick = 0; p._shieldPoseT = .45;
     }
   }
+  /* ►DI: foto de la intención de movimiento de ESTE frame. Se guarda aquí, antes de que los estados
+     (giro, escudo, agarre…) pongan `move` a cero: si se leyera después, quien estuviera agarrado o
+     escudándose no podría desviar el golpe justo cuando más lo necesita.
+     Vale igual para humano y para CPU — `move` ya es la dirección que quiere cada uno. */
+  { const dv = p._diVec || (p._diVec = new THREE.Vector3()); dv.copy(move); }
   if(p.spin){ wantJump=wantDash=wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // girando: solo se permite moverse (lento)
   if(p.shieldT>0){ wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // ESCUDO: no atacas (mover lento + saltar sí); dash/ataques ya van bloqueados por !p.block
   if(p.parryT>0 || p.counter){ move.set(0,0,0); wantJump=wantDash=wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // CONTRA: congelado en la pose / ejecutando el combo
