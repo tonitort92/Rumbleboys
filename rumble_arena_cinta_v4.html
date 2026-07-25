@@ -210,6 +210,30 @@ window.addEventListener('load', function(){
   #winLabel.shown { display:block; opacity:1; }
   #winLabel #winName { display:block; font-size:19px; font-weight:900; font-style:italic; letter-spacing:1.5px; color:#ffd84f; text-shadow:0 2px 10px rgba(255,216,79,.4); }
   #winLabel #winPlace { display:block; font-size:14px; font-weight:800; letter-spacing:.5px; color:#9fe8ff; margin-top:2px; }
+  /* ►SAVE: récord personal / desbloqueos. Solo se muestra con .show (si no hay nada que decir, ni hueco). */
+  #winLabel #endRecord { display:none; font-size:15px; font-weight:900; font-style:italic; letter-spacing:1px;
+    color:#ffd84f; margin-top:5px; text-shadow:0 0 14px rgba(255,216,79,.65), 0 2px 0 rgba(0,0,0,.4); }
+  #winLabel #endRecord.show { display:block; animation: recPop .6s ease-out; }
+  @keyframes recPop { 0%{ transform:scale(.7); opacity:0 } 55%{ transform:scale(1.14); opacity:1 } 100%{ transform:scale(1); opacity:1 } }
+  @media (prefers-reduced-motion: reduce){ #winLabel #endRecord.show{ animation:none } }
+  /* ►SAVE · tira de récords de la portada: una fila de píldoras discretas bajo el subtítulo del logo.
+     Oculta por defecto — solo aparece (.show) cuando hay al menos una run jugada. */
+  #homeRecords { display:none; justify-content:center; flex-wrap:wrap; gap:7px; margin:9px auto 2px; }
+  #homeRecords.show { display:flex; }
+  #homeRecords .hrItem { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px;
+    background:rgba(10,14,30,.55); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(4px);
+    box-shadow:0 2px 10px rgba(0,0,0,.35); white-space:nowrap; }
+  #homeRecords .hrItem i { font-style:normal; font-size:13px; line-height:1; }
+  #homeRecords .hrItem b { font-size:10px; font-weight:900; letter-spacing:1.3px; color:#9fe8ff; opacity:.85; }
+  #homeRecords .hrItem u { text-decoration:none; font-size:13px; font-weight:900; font-style:italic; color:#ffd84f; }
+  /* ►DRAFT: botón de re-tirada de la mano de la tienda */
+  #perkReroll { display:block; margin:9px auto 0; padding:7px 18px; border-radius:999px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:900; font-style:italic; letter-spacing:1px; color:#0d1020;
+    background:linear-gradient(180deg,#ffe27c,#ffb43a); border:2px solid rgba(255,255,255,.55);
+    box-shadow:0 3px 14px rgba(255,180,58,.45); transition:transform .1s, filter .15s, opacity .15s; }
+  #perkReroll:hover:not(:disabled) { transform:translateY(-1px) scale(1.03); filter:brightness(1.08); }
+  #perkReroll:active:not(:disabled) { transform:translateY(1px) scale(.98); }
+  #perkReroll:disabled { opacity:.34; cursor:default; filter:grayscale(.7); box-shadow:none; }
   .tHead { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px; }
   .tHead .tLbl { font-size:13px; font-weight:900; letter-spacing:2px; color:#9fe8ff; }
   .tNum { font-size:30px; font-weight:900; font-style:italic; color:#ffd84f; line-height:1; text-shadow:0 2px 10px rgba(255,216,79,.35); }
@@ -383,13 +407,42 @@ window.addEventListener('load', function(){
   .pstocks { margin-top:2px; display:flex; gap:3px; justify-content:center; }
   .stock { width:7px; height:7px; border-radius:50%; background:#fff; box-shadow:0 0 6px rgba(255,255,255,.6); }
   .stock.lost { background:rgba(255,255,255,.13); box-shadow:none; }
+  /* ►JUMPUI: indicador de SALTOS DISPONIBLES del jugador local (bajo su card, bien visible) */
+  .jumpInd { display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:9px;
+    background:rgba(8,11,26,.66); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 3px 12px rgba(0,0,0,.4); pointer-events:none; }
+  .jumpInd .jiIco { font-size:13px; line-height:1; filter:drop-shadow(0 1px 1px rgba(0,0,0,.7)); }
+  .jumpInd .jiNum { font-size:15px; font-weight:900; font-style:italic; color:#9fffd8; min-width:9px;
+    text-align:center; font-variant-numeric:tabular-nums; text-shadow:0 1px 2px rgba(0,0,0,.85); }
+  .jumpInd .jiPips { display:flex; gap:3px; align-items:center; }
+  .jumpInd .jiPips i { width:7px; height:14px; border-radius:3px; background:rgba(255,255,255,.14);
+    transition:background .1s, box-shadow .1s; }
+  .jumpInd .jiPips i.on { background:linear-gradient(180deg,#9fffd8,#33d99a);
+    box-shadow:0 0 7px rgba(90,240,180,.85), 0 0 2px rgba(255,255,255,.7) inset; }
+  .jumpInd.none .jiNum { color:#ff8d8d; }   /* 0 saltos disponibles → número en rojo */
   .pwr { display:flex; gap:4px; margin-top:7px; height:7px; }
   .pwr i { flex:1; border-radius:3px; background:rgba(255,255,255,.08); transition:box-shadow .15s; }
   .pwr i.full { box-shadow:0 0 9px #ffd84f, 0 0 3px #fff inset; }
   .pwr.deny { animation: pwrDeny .45s; }
-  #chaos { position:absolute; top:13px; left:50%; transform:translateX(-50%);
-           font-weight:900; letter-spacing:3px; font-size:22px; color:#ffd84f;
-           text-shadow:0 0 14px rgba(255,150,40,.75), 0 2px 0 rgba(0,0,0,.35); }
+  /* ►CHAOSHUD: nivel de CAOS grande y muy visible + flecha (estilo Crazy Taxi) que apunta a la
+     dirección CORRECTA de avance = CONTRA el sentido de la cinta (proyectada según la cámara). */
+  #chaosHud { position:absolute; top:9px; left:50%; transform:translateX(-50%);
+              display:flex; flex-direction:column; align-items:center; gap:5px;
+              pointer-events:none; z-index:20; }
+  #chaos { font-weight:900; letter-spacing:2px; color:#fff; line-height:1;
+           padding:5px 17px 6px; border-radius:14px; white-space:nowrap;
+           background:linear-gradient(180deg, rgba(255,86,32,.94), rgba(198,30,14,.94));
+           border:2px solid rgba(255,226,124,.95);
+           box-shadow:0 0 24px rgba(255,120,30,.85), 0 3px 11px rgba(0,0,0,.5), inset 0 0 11px rgba(255,222,120,.42);
+           text-shadow:0 0 12px rgba(255,182,64,.9), 0 2px 0 rgba(0,0,0,.55); }
+  #chaos:empty { display:none; }
+  #chaos.bump { animation: chaosBump .5s ease-out; }
+  @keyframes chaosBump { 0%{ transform:scale(1); } 28%{ transform:scale(1.38); } 100%{ transform:scale(1); } }
+  #beltArrow { width:58px; height:58px; pointer-events:none;
+               filter:drop-shadow(0 0 9px rgba(60,255,150,.9)) drop-shadow(0 2px 4px rgba(0,0,0,.5));
+               animation: beltArrowPulse 1.05s ease-in-out infinite; }
+  #beltArrow.hidden { display:none; }
+  @keyframes beltArrowPulse { 0%,100%{ transform:scale(1); opacity:.9; } 50%{ transform:scale(1.14); opacity:1; } }
   /* tira de boosts/objetos: SEPARADA, pegada bajo la caja del jugador (centro), no dentro de la caja */
   .boosts { display:flex; flex-wrap:wrap; gap:3px; justify-content:center; max-width:150px; pointer-events:none; }
   .boosts:empty { display:none; }
@@ -595,6 +648,16 @@ window.addEventListener('load', function(){
     background:rgba(255,255,255,.06); border:1.5px solid rgba(255,255,255,.16); transition:background .15s, border-color .15s, color .15s; }
   .qBtn:hover { background:rgba(255,255,255,.13); }
   .qBtn.on { color:#0a1020; background:#6fa8ff; border-color:#6fa8ff; }
+  /* ►AIDIFF: selector de nivel de la CPU. Misma forma que CALIDAD (misma esquina, misma lectura),
+     en ámbar para distinguir "cómo juega el rival" de "cómo se ve el juego". */
+  #diffRow { display:flex; gap:6px; align-items:center; justify-content:flex-end; flex-wrap:wrap; margin:0; }
+  #diffLbl { font-size:11px; font-weight:900; letter-spacing:1.4px; color:#8ea6cf; margin-right:3px; }
+  .dBtn { font:800 12px/1 inherit; padding:6px 13px; border-radius:999px; cursor:pointer; color:#dbe6ff;
+    background:rgba(255,255,255,.06); border:1.5px solid rgba(255,255,255,.16); transition:background .15s, border-color .15s, color .15s; }
+  .dBtn:hover:not(.locked) { background:rgba(255,255,255,.13); }
+  .dBtn.on { color:#1a1000; background:#ffb43a; border-color:#ffb43a; }
+  .dBtn.locked { opacity:.4; cursor:default; }
+  .dBtn.locked::after { content:' 🔒'; font-size:10px; }
   /* CÓMO JUGAR BIEN: ENLACE, no botón → sin caja ni borde, y el texto pintado con el arcoíris de
      RUMBLEBOYS (mismos 6 colores del logoSub y del borde de .btn). El background-clip:text obliga a
      color:transparent, y eso también deja invisible el subrayado → hay que darle color aparte. */
@@ -686,6 +749,9 @@ window.addEventListener('load', function(){
   #cpRole { font-size:12px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; opacity:.85; margin:0 0 2px; }
   /* el bloque de texto NO llena la columna: se estrecha al ancho del render (lo centra el
      align-items:center de .cpTop) para que rol, nombre, muñeco y pros/contras compartan eje */
+  /* ►SAVE: marca personal con la clase mostrada (solo si ya la has jugado) */
+  #cpMastery { font-size:11px; font-weight:800; letter-spacing:.4px; color:#9fe8ff; opacity:.9; margin-top:1px; }
+  #cpMastery b { color:#ffd84f; font-weight:900; font-style:italic; }
   #cpPC { width:min(100%, 236px); min-width:0; padding:2px 0 4px; box-sizing:border-box; }
   .cpProsCons { min-width:0; display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; line-height:1.35; }
   .cpProsCons .good b { color:#3ad06a; } .cpProsCons .bad b { color:#ff5a4d; }
@@ -899,7 +965,16 @@ window.addEventListener('load', function(){
     <div id="atkBar" class="hidden"><!-- botones: ataques con COOLDOWN (relleno vertical) + UTILIDAD (estáticos); SELECT/TAB la oculta --></div>
     <div id="cards"></div>
   </div>
-  <div id="chaos"></div>
+  <div id="chaosHud">
+    <div id="chaos"></div>
+    <!-- ►BELTARROW: flecha "Crazy Taxi" — apunta a la dirección correcta (contra la cinta). La rota updateBeltArrow(). -->
+    <svg id="beltArrow" class="hidden" viewBox="0 0 100 100" aria-hidden="true">
+      <g id="beltArrowRot">
+        <polygon points="50,8 86,46 66,46 66,92 34,92 34,46 14,46"
+                 fill="#3dff8f" stroke="#053b1e" stroke-width="6" stroke-linejoin="round"/>
+      </g>
+    </svg>
+  </div>
   <div id="xpbar"><i></i><b></b></div>
   <div id="musicBtn" title="música">🔊</div>
   <div id="count321"></div>
@@ -934,6 +1009,14 @@ window.addEventListener('load', function(){
       <button class="qBtn" data-q="medio">Media</button>
       <button class="qBtn" data-q="bajo">Baja</button>
     </div>
+    <!-- ►AIDIFF: nivel de la CPU. No toca su daño ni su vida: cambia cómo de rápido reacciona,
+         cuánto esquiva y cuánto usa sus habilidades. DURO se desbloquea ganando una run. -->
+    <div id="diffRow" title="Cómo de lista juega la CPU (no le regala daño ni vida)">
+      <span id="diffLbl">CPU</span>
+      <button class="dBtn" data-d="facil">Fácil</button>
+      <button class="dBtn on" data-d="normal">Normal</button>
+      <button class="dBtn" data-d="duro">Duro</button>
+    </div>
     <!-- CÓMO JUGAR BIEN + OBJETOS Y MEJORAS -->
     <div id="homeLinks">
       <button type="button" id="howToLink">CÓMO JUGAR BIEN</button>
@@ -944,6 +1027,10 @@ window.addEventListener('load', function(){
        onerror="var w=document.getElementById('logoWrap');if(w)w.style.display='none';var t=document.getElementById('logo');if(t)t.style.display='block';"></div>
   <div id="logo" style="display:none">RUMBLEBOYS</div>
   <div id="logoSub"><span style="color:#ff3b30">ROGUELIKE</span> · <span style="color:#c299ff">OLEADAS</span> · <span style="color:#ffd84f">BRAWL</span> · <span style="color:#3ad06a">PLATAFORMAS</span> · <span style="color:#6fa8ff">HASTA 6 JUGADORES</span></div>
+
+  <!-- ►SAVE: tira de récords personales. La rellena renderHomeRecords() al arrancar; sin partidas
+       jugadas se queda oculta (una fila de ceros es peor que no tener fila). -->
+  <div id="homeRecords" aria-live="polite"></div>
 
   <h1 id="homeHead">Sobrevive y consigue el máximo de puntos. Trolea o colabora. Sé el rey.</h1>
   <div id="homeRule" aria-hidden="true">
@@ -1146,7 +1233,8 @@ window.addEventListener('load', function(){
 <div class="overlay" id="endOverlay">
   <div class="confetti" id="endConfetti" aria-hidden="true"></div>
   <canvas id="winView" width="480" height="600" aria-hidden="true"></canvas>
-  <div id="winLabel" aria-live="polite"><span id="winName"></span><span id="winPlace"></span></div>
+  <!-- ►SAVE: récord personal batido y/o desbloqueos de esta run. Vacío = oculto (no ocupa hueco). -->
+  <div id="winLabel" aria-live="polite"><span id="winName"></span><span id="winPlace"></span><span id="endRecord"></span></div>
   <h2 id="endTitle">¡VICTORIA!</h2>
   <div id="endTally" class="endPanel" aria-live="polite"></div>
   <div id="endBoard" class="endPanel"></div>
@@ -1173,6 +1261,8 @@ window.addEventListener('load', function(){
   <div id="shopTimer">🛒 30s</div>
   <div id="perkWallet">🛒 TIENDA · tu EXP: <b id="perkXP">0</b> <span id="perkCap">COMPRAS 0/2</span></div>
   <div class="perkGrid" id="perkGrid"></div>
+  <!-- ►DRAFT: re-tirada de la mano. Su precio y su estado los pone renderPerks(). -->
+  <button type="button" id="perkReroll">🎲 OTRA MANO</button>
   <div id="perkHint">Tienes 30 s para comprar · las mejoras que no puedes pagar están BLOQUEADAS · al acabar el tiempo se avanza solo</div>
   <button class="btn" id="perkContinue">LISTO ✓</button>
 </div>
@@ -1690,6 +1780,104 @@ function perfTick(ftMs){
    la leía al arrancar → siempre volvía a 'auto'). 'auto' sigue siendo el defecto adaptativo. */
 try{ const _sq = localStorage.getItem('blockout_quality'); if(_sq === 'auto' || TIERS[_sq]){ qMode = _sq; if(qMode==='auto') autoIdx = IS_MOBILE?0:2; } }catch(e){}
 applyTier();   // aplica el tier guardado al cargar
+
+/* =====================================================================
+   ►SAVE · PERSISTENCIA Y META-PROGRESIÓN
+   Hasta ahora el juego solo guardaba calidad gráfica e idioma: cerrabas la pestaña y olvidaba
+   que existías. En un juego de RUNS eso es el pilar que falta — no hay motivo para volver.
+   Aquí vive TODO lo persistente: récords, progreso de campaña, maestría por clase y desbloqueos.
+
+   REGLA DE ORO: nada de esto puede tumbar el juego. Todo va envuelto en try/catch y, si
+   localStorage está bloqueado (incógnito, file:// restringido), se trabaja sobre un objeto en
+   memoria y el juego funciona EXACTAMENTE igual que hoy, solo que sin recordar nada.
+   ===================================================================== */
+const SAVE_KEY = 'rb_save';
+const SAVE_V   = 1;
+function _saveBlank(){
+  return { v:SAVE_V, runs:0, wins:0, bestScore:0, bestGrade:'', bestStage:0,
+           bosses:{}, cls:{}, lastRun:null, unlocks:[] };
+}
+let _SAVE = null;                                  // caché en memoria (única fuente de verdad en caliente)
+function saveGet(){
+  if(_SAVE) return _SAVE;
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    const o = raw ? JSON.parse(raw) : null;
+    /* versión distinta (o basura) → se empieza de cero en vez de arrastrar un formato que no
+       entendemos. Es preferible perder récords a corromper la partida de alguien. */
+    _SAVE = (o && o.v === SAVE_V) ? Object.assign(_saveBlank(), o) : _saveBlank();
+  }catch(e){ console.warn('[save] no se pudo leer', e); _SAVE = _saveBlank(); }
+  return _SAVE;
+}
+function saveCommit(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(saveGet())); }
+  catch(e){ console.warn('[save] no se pudo escribir', e); }   // sin storage: seguimos en memoria
+}
+/* muta el guardado con una función y lo persiste. `fn` recibe el objeto y lo modifica en sitio. */
+function saveBump(fn){ try{ fn(saveGet()); saveCommit(); }catch(e){ console.warn('[save] bump', e); } }
+/* ►SAVE · DESBLOQUEOS. Cada id tiene que corresponder a algo que el jugador NO tuviera antes; si no,
+   anunciarlo es mentirle. Por eso NO está aquí el modo ETERNO: es una bandera de URL (?eterno) para
+   explorar, ya disponible para cualquiera desde el primer minuto.
+   · campeon = título en la portada por completar la campaña (cosmético, se pinta en la tira de récords).
+   · duro    = dificultad DURO en el selector de la home (la sirve ►AIDIFF). */
+const UNLOCK_NAME = { campeon:'TÍTULO “CAMPEÓN”', duro:'DIFICULTAD DURO' };
+function saveUnlocked(id){ return saveGet().unlocks.indexOf(id) >= 0; }
+function saveUnlock(id){
+  if(saveUnlocked(id)) return false;
+  saveBump(s=>s.unlocks.push(id));
+  return true;                                     // true = se acaba de desbloquear (para avisar en pantalla)
+}
+/* ficha de maestría de una clase (se crea al vuelo la primera vez que juegas con ella) */
+function saveCls(s, key){
+  if(!key) return null;
+  if(!s.cls[key]) s.cls[key] = { runs:0, wins:0, kills:0, bestScore:0 };
+  return s.cls[key];
+}
+/* ►SAVE · progreso de campaña: el stage más lejos alcanzado. Se apunta al CERRAR cada stage, no
+   solo al terminar la run → una partida abandonada a mitad también deja poso. Guardamos el ÍNDICE
+   dentro de CAMPAIGN_STAGES (1..8), no el número de stage, porque el orden real salta (1,2,3,4,5,7,8,10). */
+function saveNoteStage(stage){
+  saveBump(s=>{
+    const idx = (typeof CAMPAIGN_STAGES!=='undefined') ? CAMPAIGN_STAGES.indexOf(stage)+1 : 0;
+    if(idx > (s.bestStage||0)) s.bestStage = idx;
+  });
+}
+/* ►SAVE · jefes derrotados. IDEMPOTENTE por run: stageAdvance() se alcanza desde varias ramas del
+   entre-stage (tienda saltada, jugador eliminado, botón CONTINUAR) y aunque hoy son excluyentes, un
+   doble disparo inflaría el contador para siempre. `_bossSeen` se limpia al empezar cada partida. */
+const _bossSeen = new Set();
+function saveNoteBoss(stage){
+  if(_bossSeen.has(stage)) return;
+  _bossSeen.add(stage);
+  saveBump(s=>{ s.bosses[stage] = (s.bosses[stage]||0) + 1; });
+}
+/* ►SAVE · cierre de RUN. Devuelve { record:bool, unlocked:[ids] } para que la pantalla final lo cante. */
+function saveRecordRun(info){
+  const out = { record:false, unlocked:[] };
+  try{
+    const s = saveGet();
+    s.runs++;
+    if(info.won) s.wins++;
+    if(info.score > (s.bestScore||0)){ out.record = true; s.bestScore = info.score; s.bestGrade = info.grade||s.bestGrade; }
+    const c = saveCls(s, info.charKey);
+    if(c){
+      c.runs++;
+      if(info.won) c.wins++;
+      c.kills += (info.kills||0);
+      if(info.score > (c.bestScore||0)) c.bestScore = info.score;
+    }
+    s.lastRun = { date:Date.now(), charKey:info.charKey, score:info.score,
+                  grade:info.grade, stage:info.stage, rank:info.rank };
+    saveCommit();
+    /* DESBLOQUEOS · v1: nada que toque el balance de la partida.
+       · CAMPEÓN = completar la campaña (el jefe del stage 10 cae).
+       · DURO    = ganar una run siendo el rey. */
+    if(info.campaignDone && saveUnlock('campeon')) out.unlocked.push('campeon');
+    if(info.won && saveUnlock('duro')) out.unlocked.push('duro');
+  }catch(e){ console.warn('[save] recordRun', e); }
+  return out;
+}
+saveGet();   // carga temprana: el resto del arranque (home, selector) ya la encuentra lista
 
 let _shadowTick = 0;
 function drawScene(){ tagInteractiveMask();   // marca cada frame los interactivos (saltadores/boosts/objetos/armas/pasivas) en MASK_LAYER → conservan saturación
@@ -3215,7 +3403,7 @@ function makePlayer(color, darker, spawnX, isAI){
     power:0, shardAmmo:10, shardCD:0, shardReload:0, throwT:0,
     mpow:0, ult:null, _ultHeld:false, out:false, label:'', lastHitBy:null, respDrop:false, kbInput:false, padIndex:-1, atkBuf:0,
     sc:{ dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 },   // bonus = ►INTERSTAGE: ×1.3 de superviviente acumulado
-    boost:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0 },              // carril TEMPORAL (cápsulas)
+    boost:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 },              // carril TEMPORAL (cápsulas)
     own:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 },        // ►INTERSTAGE: carril COMPRADO (permanente)
     ownPas:{ spikes:false, elec:false, magnet:false, spring:false, mines:false },
     beam:null, beamGfx:null,
@@ -3836,7 +4024,8 @@ function samuraiToken(p){
   if(p._qPoseT>0)   return 'throwq';                 // Q: Corte viento
   if(p._orbePoseT>0)return 'ballf';                  // F: Orbe de energía
   if(p._healPoseT>0)return 'heal';                   // curar (H)
-  if(p.atk && p.atk.phase!=='none' && p.atk.kind==='sword'){
+  if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de disparo de la arquera
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')){   // ►WPNANIM: espada/bate recogidos → su ataque básico (combo de espada)
     const s = p._swAnim||0; return s>=3?'atk4':s===2?'atk3':s===1?'atk2':'atk1';   // combo visual de 4
   }
   if(!p.onGround) return p._dj ? 'djump' : 'jump';   // 1er salto = jump; 2º salto = voltereta djump
@@ -3858,7 +4047,8 @@ function barbarianToken(p){
   if(p._axePoseT>0)    return 'throwq';              // Q: Hacha
   if(p.spin)           return 'spinf';               // F: Giro 360 (loop mientras dure)
   if(p._healPoseT>0)   return 'heal';                // curar (H)
-  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='hammer' || p.atk.kind==='charge')){
+  if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de disparo de la arquera
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='hammer' || p.atk.kind==='charge' || p.atk.kind==='sword' || p.atk.kind==='bat')){   // ►WPNANIM: espada/bate recogidos → su ataque básico (combo del mazo)
     if(p.atk.kind==='charge') return 'atk4';         // puñetazo brutal = golpe pesado
     const s = p.comboStage||0; return s>=3?'atk4':s===2?'atk3':s===1?'atk2':'atk1';
   }
@@ -3886,7 +4076,8 @@ function knightToken(p){
   if(p._fThrowPoseT>0)  return 'fthrow';              // F: Escudos
   if(p._qPoseT>0)       return 'throwq';              // Q: Jabalina
   if(p._healPoseT>0)    return 'heal';                // curar (H)
-  if(p.atk && p.atk.phase!=='none' && p.atk.kind==='sword'){
+  if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de disparo de la arquera
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')){   // ►WPNANIM: espada/bate recogidos → su ataque básico (combo de espada)
     const s = p._swAnim||0; return s>=3?'atk4':s===2?'atk3':s===1?'atk2':'atk1';   // combo visual de 4
   }
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : (p._dj ? 'djump' : 'jump');   // caída / doble salto (clips inyectados)
@@ -3908,6 +4099,8 @@ function mageToken(p){
   if(p._zonePoseT>0)  return 'ezone';                 // E: Campo arcano
   if(p._chainPoseT>0) return 'fchain';                // F: Cadena
   if(p._healPoseT>0)  return 'heal';                  // curar (H)
+  if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de la arquera (antes de throwT: fireBow también sube throwT)
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'throwq';   // ►WPNANIM: espada/bate recogidos → su ataque básico (lanzamiento)
   if(p.throwT>0)      return 'throwq';                // básico Cristal + Q Orbe (ambos lanzan)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : (p._dj ? 'djump' : 'jump');   // caída/doble salto → clips inyectados
   const sp = Math.hypot(p.vel.x, p.vel.z);
@@ -3928,6 +4121,8 @@ function nunToken(p){
   if(p.block) return 'shield';                        // bloqueo (loop)
   if(p._novaPoseT>0) return 'fnova';                  // F: Nova (destello sagrado)
   if(p._healPoseT>0) return 'heal';                   // E Curación + curar (H)
+  if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de la arquera (antes de throwT: fireBow también sube throwT)
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'throwq';   // ►WPNANIM: espada/bate recogidos → su ataque básico (lanzamiento)
   if(p.throwT>0)     return 'throwq';                 // básico Bolt + Q Castigo (ambos lanzan)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : 'jump';
   const sp = Math.hypot(p.vel.x, p.vel.z);
@@ -3946,6 +4141,7 @@ function archerToken(p){
   if(p.rainT>0) return 'aim';                         // R: Lluvia — misma anim de disparo (+ torso al cielo, aparte)
   if(p._healPoseT>0) return 'heal';                   // curar (H)
   if(p.throwT>0) return 'aim';                        // básico (Arco) + E + F + Q — todas disparan
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'aim';   // ►WPNANIM: espada/bate recogidos → su ataque básico (disparo arquera)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : (p._dj ? 'djump' : 'jump');   // caída / doble salto (clips inyectados)
   const sp = Math.hypot(p.vel.x, p.vel.z);
   if(sp > 5.0) return 'fastrun';                      // sprint → clip inyectado
@@ -4049,7 +4245,7 @@ function updateCharMixers(dt){
              (clips Mixamo 1.4-6.7s vs acciones 0.4-0.9s) → ni se corta ni va lento */
           let win = (tok==='atk1'||tok==='atk2'||tok==='atk3'||tok==='atk4')
             ? ((p.atk && (p.atk.wind+p.atk.hit+p.atk.rec)) || 0.4)   // total VIVO de la espada
-            : ((p._winMap||{})[tok] || 0);
+            : ((p._winMap||{})[tok] || (tok==='aim'?0.25:0));        // ►WPNANIM: 'aim' prestado (arco) sin ventana propia → 0.25s como la arquera
           a.timeScale = win>0 ? THREE.MathUtils.clamp((p._actDur[tok]||win)/win, 0.5, 6.0) : 1;
         } else if((tok==='punch'||tok==='dagger'||tok==='dagger2') && p.atk){
           const total = (p.atk.wind+p.atk.hit+p.atk.rec) || .5;     // sincroniza el swing con el golpe
@@ -4378,9 +4574,12 @@ function buildHUD(){
       `<div class="pname" id="nameP${n}" style="color:${col}">${nm}</div>`+
       `<div class="ppct" id="pctP${n}">0%</div>`+
       `<div class="pstocks" id="stP${n}"></div>`;
-    if(p===P1){                                        // jugador local: card + tira de boosts, en su propia columna
+    if(p===P1){                                        // jugador local: card + indicador de saltos + tira de boosts, en su propia columna
       const pcol = document.createElement('div'); pcol.className = 'pcol';
       pcol.appendChild(card);
+      const ji = document.createElement('div'); ji.className = 'jumpInd'; ji.id = 'jumpsP1';   // ►JUMPUI: saltos disponibles
+      ji.innerHTML = '<span class="jiIco">⏫</span><b class="jiNum">2</b><span class="jiPips"></span>';
+      pcol.appendChild(ji);
       const bs = document.createElement('div'); bs.className = 'boosts'; bs.id = 'boostP'+n; pcol.appendChild(bs);
       c.appendChild(pcol);
     } else {                                           // rivales: misma fila abajo-centro
@@ -4950,6 +5149,7 @@ musicBtn.addEventListener('click', e=>{
   window._qualitySync = sync;   // por si algo cambia qMode desde fuera
 })();
 
+
 /* ---------- ambiente de PÚBLICO: murmullo de estadio en bucle bajo la música + vítores ---------- */
 const crowdBed = new Audio('crowd/stadium-roar.mp3');
 crowdBed.loop = true; crowdBed.volume = 0; crowdBed.preload = 'auto';
@@ -5249,7 +5449,96 @@ function kbMul(p){
   return (.6 + chaosLvl*.05) * (1 + .15*e) * (p.rainbowT>0?10:1) * clsStat(p,'kb');
 }
 function rateMul(p){ return Math.max(.35, Math.pow(.86, bst(p,'rate')) * clsStat(p,'rate') * (p.buffRateT>0?(p.buffRateV||0.75):1)); }   // CADENCIA: menor = más rápido; boost de cadencia temporal (cura)
-function airJumps(p){ return ((typeof STAGE!=='undefined'&&STAGE===10)?4:1) + Math.min(3, chaosLvl>>1) + ((p&&p._pkAir)||0); }   // +1 salto aéreo cada 2 niveles · ►PERK SALTO EXTRA: +saltos aéreos por jugador (p._pkAir) · ►S10ZEROG: base 4 (gravedad cero → muchos saltos)
+const MAX_AIR_JUMPS = 6;   // ►CAP SALTOS: tope absoluto de saltos aéreos en stages normales → 6 aéreos + 1 de suelo = 7 SALTOS MÁX (2 base + 3 cápsula + 2 tienda). El CAOS ya NO da saltos extra (solo altura vía jmpMul).
+const CAP_AIRJ_MAX  = 3;   // ►SALTO EXTRA de cápsula: como mucho +3 saltos, TEMPORAL (p.boost.airj se resetea al cambiar de stage en stageResetPlayers). Sin tienda → máx 5 saltos por stage.
+function airJumps(p){
+  if(typeof STAGE!=='undefined' && STAGE===10) return 4 + Math.min(3, chaosLvl>>1) + ((p&&p._pkAir)||0);   // ►S10ZEROG: gravedad cero → floaty a propósito, sin tope (stage especial)
+  const store   = Math.min(2, (p&&p._pkAir)||0);                          // TIENDA: +2 saltos, PERMANENTE (persiste entre stages; solo se limpia al volver al menú)
+  const capsule = Math.min(CAP_AIRJ_MAX, (p&&p.boost&&p.boost.airj)||0);   // CÁPSULAS ⏫: +2 saltos, TEMPORAL (se resetea por stage)
+  return Math.min(MAX_AIR_JUMPS, 1 + store + capsule);                     // base 1 aéreo (2 en total) → 5 sin tienda, 7 con tienda. SIN bonus de caos.
+}
+
+/* =====================================================================
+   ►AIPROF · CÓMO JUEGA CADA CLASE LA CPU
+   Hasta ahora las 6 clases compartían un único cerebro con distancias fijas (se acercaban a 2.1u y
+   pegaban), y lo único que las diferenciaba era CLASS_STATS — o sea, la arquera era un bárbaro que
+   pega flojo. Aquí cada clase declara CÓMO quiere pelear, y aiThink lo obedece.
+     range     distancia a la que quiere combatir (melee ~2 · tiradoras ~8-11)
+     kite      0 = no retrocede · 1 = se aparta en cuanto le entran dentro del rango
+     qChance / qMin / qMax    ganas y ventana de distancia de su habilidad Q
+     supChance / supMax       ganas y alcance de su súper (E)
+     aggr      empuje general al acercarse (multiplica las ganas de dash de entrada)
+   ►►► AJUSTA ◄◄◄ — es una tabla de sensación de juego, toca sin miedo. */
+const AI_PROF = {
+  voxelhero:{ range:2.0, kite:0,   qChance:.30, qMin:5, qMax:12, supChance:.45, supMax:9,  aggr:1.25 },  // Bárbaro: encima de ti, siempre
+  samurai:  { range:2.2, kite:0,   qChance:.45, qMin:6, qMax:16, supChance:.40, supMax:12, aggr:1.10 },  // Samurái: entra, combea, sale
+  knight:   { range:2.4, kite:0,   qChance:.35, qMin:7, qMax:18, supChance:.30, supMax:10, aggr:0.85 },  // Caballero: avanza lento y aguanta
+  archer:   { range:11,  kite:1,   qChance:.55, qMin:6, qMax:22, supChance:.50, supMax:20, aggr:0.55 },  // Arquera: NUNCA quiere estar cerca
+  link:     { range:9,   kite:.85, qChance:.55, qMin:5, qMax:20, supChance:.45, supMax:16, aggr:0.60 },  // Mago: castiga de lejos, frágil
+  nun:      { range:8,   kite:.6,  qChance:.50, qMin:5, qMax:18, supChance:.40, supMax:14, aggr:0.70 },  // Bruja: media distancia
+};
+const AI_PROF_DEF = { range:2.1, kite:0, qChance:.45, qMin:6, qMax:17, supChance:.40, supMax:13, aggr:1 };
+function aiProf(p){ return (p && p._charKey && AI_PROF[p._charKey]) || AI_PROF_DEF; }
+
+/* ►AIDIFF · NIVEL DE DIFICULTAD DE LA CPU. No toca daño ni vida (eso sería un impuesto, no
+   dificultad): toca lo que hace lista a una IA — cada cuánto decide, cuánto tarda en soltar el
+   siguiente golpe y cuánto acierta al esquivar.
+     react  multiplica los tiempos de pensar/atacar (menor = reacciona antes)
+     acc    multiplica las probabilidades de esquivar y bloquear
+     aggr   multiplica las ganas de usar habilidades y de lanzarse */
+const AI_DIFF = {
+  facil:  { react:1.9, acc:0.55, aggr:0.70, label:'FÁCIL'  },
+  normal: { react:1.0, acc:1.00, aggr:1.00, label:'NORMAL' },
+  duro:   { react:0.6, acc:1.30, aggr:1.30, label:'DURO'   },
+};
+let AI_LEVEL = 'normal';
+function aiDiff(){ return AI_DIFF[AI_LEVEL] || AI_DIFF.normal; }
+/* la dificultad vive en el guardado (junto a récords y desbloqueos), no en una clave suelta.
+   DURO está bloqueado hasta ganar una run: si el guardado dice 'duro' pero aún no está desbloqueado
+   (guardado editado a mano, o borrado de desbloqueos), se cae a normal en vez de fiarse. */
+function setAiLevel(lv, persist){
+  if(!AI_DIFF[lv]) return;
+  if(lv==='duro' && !saveUnlocked('duro')) return;
+  AI_LEVEL = lv;
+  if(persist!==false) saveBump(s=>{ s.aiLevel = lv; });
+  const row = document.getElementById('diffRow');
+  if(row) row.querySelectorAll('.dBtn').forEach(b=> b.classList.toggle('on', b.dataset.d===lv));
+}
+/* ►AIDIFF: selector de NIVEL DE LA CPU de la home. Mismo patrón que el de calidad (botones + guardado).
+   DURO llega bloqueado con candado hasta ganar una run: da una meta a la primera partida y evita que
+   alguien empiece por el nivel más duro sin saber siquiera cómo funciona la cinta.
+   ⚠️ VA AQUÍ, DESPUÉS de AI_DIFF: es un IIFE (se ejecuta al cargar) y arriba, junto al selector de
+   calidad, reventaba con ReferenceError — AI_DIFF es `const` y aún no estaba inicializada. */
+(function difficultyUI(){
+  const row = document.getElementById('diffRow'); if(!row) return;
+  const btns = row.querySelectorAll('.dBtn');
+  const syncLocks = ()=>{
+    const dur = saveUnlocked('duro');
+    btns.forEach(b=>{
+      const lock = (b.dataset.d==='duro' && !dur);
+      b.classList.toggle('locked', lock);
+      b.title = lock ? 'Se desbloquea al ganar una partida' : ('CPU en ' + (AI_DIFF[b.dataset.d]||{}).label);
+    });
+  };
+  btns.forEach(b=>{
+    b.addEventListener('mousedown', e=>e.stopPropagation());   // que no dispare martillazos/clic de juego
+    b.addEventListener('click', e=>{ e.stopPropagation();
+      const lv = b.dataset.d;
+      if(lv==='duro' && !saveUnlocked('duro')){
+        if(typeof showBanner==='function') showBanner('🔒 DURO SE DESBLOQUEA AL GANAR UNA PARTIDA', 1.6);
+        try{ sfx.deny && sfx.deny(); }catch(_e){}
+        return;
+      }
+      setAiLevel(lv);
+      if(typeof showBanner==='function') showBanner('CPU: '+((AI_DIFF[lv]||{}).label||''), 1.1);
+    });
+  });
+  /* restaura lo guardado (setAiLevel ya rechaza 'duro' sin desbloquear y pinta el botón activo) */
+  const sv = saveGet().aiLevel;
+  setAiLevel(AI_DIFF[sv] ? sv : 'normal', false);
+  syncLocks();
+  window._diffSync = syncLocks;   // la pantalla final lo llama tras desbloquear DURO
+})();
 
 /* ---------- cápsulas de mejora que caen del cielo ---------- */
 /* esferas de color vivo (la de SALUD es un corazón rosa que cura daño acumulado) */
@@ -5259,6 +5548,7 @@ const CAP_TYPES = [
   { k:'kb',  col:0xff8800, label:'+EMPUJE',    ic:'➡️' },
   { k:'spd', col:0x1ed94a, label:'+VELOCIDAD', ic:'🏃' },
   { k:'jmp', col:0x00cfff, label:'+SALTO',     ic:'🪽' },
+  { k:'airj',col:0x9b6bff, label:'+SALTO EXTRA', ic:'⏫' },   // ►SALTO EXTRA (cápsula): +1 salto aéreo esta vida, clampado en airJumps a MAX_AIR_JUMPS (4 en total)
   { k:'rate',col:0x16e0c8, label:'+CADENCIA',  ic:'⏩' },
   { k:'hp',  col:0xff3399, label:'+SALUD', heal:true, ic:'❤️' },
 ];
@@ -5856,7 +6146,10 @@ const capsules = [];
 let capT = 0.8;                                 // primeras cápsulas casi al empezar
 /* ►BOSSDROP: dentro de la arena del jefe NO caen boosts/armas/pasivos; solo corazones de salud de vez en cuando */
 function inBossArena(){ return typeof BOSSFIGHT!=='undefined' && (BOSSFIGHT.phase==='cinematic' || BOSSFIGHT.phase==='fight' || BOSSFIGHT.phase==='dying' || BOSSFIGHT.phase==='lost'); }
-function spawnCapsule(){
+/* `at` (opcional) = { x, z, topY }: suelta la cápsula EN UN PUNTO CONCRETO en vez de en una losa al
+   azar. Lo usa ►ELITE (drop garantizado donde muere el mini-jefe). Sin argumento, comportamiento
+   de siempre: losa aleatoria con pity hacia el que va perdiendo. */
+function spawnCapsule(at){
   /* plataforma aleatoria con sitio; pity suave: 45% de las veces, cerca del que pierde */
   const pick = ()=>{
     for(let i=0;i<24;i++){
@@ -5865,28 +6158,34 @@ function spawnCapsule(){
     }
     return null;
   };
-  let pl = pick();
-  if(!pl) return;
-  let loser = null; for(const q of players){ if(!loser || q.stocks < loser.stocks) loser = q; }   // el que va perdiendo (menos vidas)
-  if(loser && Math.random()<.45){
-    let bd = 1e9;
-    for(let i=0;i<10;i++){
-      const c = pick(); if(!c) continue;
-      const d = Math.hypot((c.minX+c.maxX)/2-loser.pos.x, (c.minZ+c.maxZ)/2-loser.pos.z);
-      if(d<bd){ bd = d; pl = c; }
+  let x, z, baseY;
+  if(at){
+    x = at.x; z = at.z; baseY = at.topY;                    // ►ELITE: punto forzado (sin losa ni pity)
+  } else {
+    let pl = pick();
+    if(!pl) return;
+    let loser = null; for(const q of players){ if(!loser || q.stocks < loser.stocks) loser = q; }   // el que va perdiendo (menos vidas)
+    if(loser && Math.random()<.45){
+      let bd = 1e9;
+      for(let i=0;i<10;i++){
+        const c = pick(); if(!c) continue;
+        const d = Math.hypot((c.minX+c.maxX)/2-loser.pos.x, (c.minZ+c.maxZ)/2-loser.pos.z);
+        if(d<bd){ bd = d; pl = c; }
+      }
     }
+    x = THREE.MathUtils.lerp(pl.minX+.9, pl.maxX-.9, Math.random());
+    z = THREE.MathUtils.lerp(pl.minZ+.9, pl.maxZ-.9, Math.random());
+    baseY = pl.topY;
   }
-  const x = THREE.MathUtils.lerp(pl.minX+.9, pl.maxX-.9, Math.random());
-  const z = THREE.MathUtils.lerp(pl.minZ+.9, pl.maxZ-.9, Math.random());
   const ty = inBossArena() ? CAP_TYPES.find(t=>t.heal)      // ►BOSSDROP: en la arena del jefe solo corazón de salud
                            : CAP_TYPES[Math.floor(Math.random()*CAP_TYPES.length)];
   const m = buildBoostModel(ty);   // icono 3D propio de cada boost
   m.castShadow = false;
-  m.position.set(x, pl.topY+16, z);
+  m.position.set(x, baseY+16, z);
   /* CÍRCULO DE COLOR en el suelo: marca dónde va a caer y dónde reposa (►PERF2: pool) */
-  const halo = makeHalo(ty.col, x, pl.topY+.06, z);
+  const halo = makeHalo(ty.col, x, baseY+.06, z);
   scene.add(m, halo);
-  capsules.push({ m, halo, ty, y0:pl.topY, st:'fall', t:0, life:26 });
+  capsules.push({ m, halo, ty, y0:baseY, st:'fall', t:0, life:26 });
   sfx.capIn();
 }
 function killCapsule(i){
@@ -5953,6 +6252,7 @@ function updateCapsules(dt){
         } else {
           p.sc.boosts++;
           p.boost[c.ty.k]++;
+          if(c.ty.k==='airj') p.boost.airj = Math.min(p.boost.airj, CAP_AIRJ_MAX);   // ►SALTO EXTRA: cápsulas dan como mucho +3 (→ máx 5 saltos por stage sin tienda); evita HUD con ×99 inservibles
           showCombo(p, c.ty.label+' x'+p.boost[c.ty.k]);
           sfx.boost();
         }
@@ -6271,7 +6571,7 @@ function spawnItem(){
   if(r<.10){ cat='rainbow'; kind='rainbow'; col=0xff5fd2; model=buildRainbowModel(); }             // rara
   else if(r<.55){ cat='passive'; kind=PASSIVE_KINDS[Math.floor(Math.random()*PASSIVE_KINDS.length)];
          col=PASSIVE_DEFS[kind].col; model=buildPassiveModel(kind); }
-  else { cat='weapon'; kind=['bow','sword','bazooka','bat'][Math.floor(Math.random()*4)];
+  else { cat='weapon'; kind=['bow','sword','bat'][Math.floor(Math.random()*3)];   // ►Toni: bazooka/pistola FUERA de los objetos cogibles (arco/espada/bate a partes iguales)
          col=WEAPON_DEFS[kind].col; model=buildWeaponModel(kind); }
   model.position.set(sp.x, sp.y0+16, sp.z);
   model.traverse(o=>{ if(o.isMesh) o.castShadow = false; });   // pickup flotante: sin sombra
@@ -6396,6 +6696,22 @@ function arrowFalloff(s){
   const tr = Math.hypot(s.m.position.x - s.x0, s.m.position.z - s.z0);
   return THREE.MathUtils.clamp(0.5 + 1.5*(tr/18), 0.5, 2.0);
 }
+/* ►WPNANIM (Toni): reutiliza el clip de disparo de la ARQUERA ('aim') en CUALQUIER personaje con set
+   rico que empuñe un ARCO recogido del suelo. Los esqueletos Mixamo comparten nombres de hueso (igual
+   que los clips ya inyectados desde el samurái: kicked/fastrun/…), y el mixer se enraíza en el modelo
+   PROPIO del jugador → el clip 'aim' se enlaza sin conflicto. Lazy: solo la 1ª vez que hace falta y si
+   la plantilla de la arquera ya cargó (si no, reintenta al siguiente disparo). true = 'aim' disponible. */
+function ensureBowAim(p){
+  if(!p._richAnim || !p._mixer || !p._acts) return false;
+  if(p._acts.aim) return true;                                   // la propia arquera (o ya inyectado antes)
+  const at = (typeof _charTpls!=='undefined') && _charTpls && _charTpls['archer'];
+  const clip = at && at.animations && at.animations.find(a=>a.name==='aim');
+  if(!clip) return false;
+  const a = p._mixer.clipAction(clip);
+  a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; a.enabled = true; a.setEffectiveWeight(0); a.play();
+  p._acts.aim = a; p._actDur.aim = clip.duration;
+  return true;
+}
 function fireBow(p){
   if(p.dead||p.hitstun>0||p.stun>0||p.hang||p.beam||p.atk.phase!=='none') return false;
   if(p.bowCD>0) return false;                        // CADENCIA: una flecha cada BOW_RATE (antes disparaba sin freno → arquera rota)
@@ -6409,6 +6725,7 @@ function fireBow(p){
   scene.add(m);
   wprojs.push({ m, owner:p, kind:'arrow', v:m._v.copy(f).multiplyScalar(30), life:2.3, home:true, foe, homeRate:3.2, x0:p.pos.x, z0:p.pos.z, trail:AR_TRAIL_YEL });   // flecha TELEDIRIGIDA: siempre persigue al objetivo; x0/z0 → daño por distancia · estela amarilla sutil
   p.bowCD = BOW_RATE*rateMul(p); p.throwT = .2; p._animKick=(p._animKick||0)+1; jiggle(p,4); sfx.bow();   // _animKick: redispara la recoil por cada flecha (anim arquera)
+  p._bowPoseT = .22; ensureBowAim(p);   // ►WPNANIM: cualquier personaje que empuñe un ARCO recogido dispara con la anim de la ARQUERA ('aim')
   return true;
 }
 /* proyectil GENÉRICO para las Q por clase: reutiliza el pipeline de FLECHAS (movimiento+colisión+falloff).
@@ -7503,12 +7820,28 @@ function gobUpdate(mn, dt){
 }
 function gobClearAll(){ for(const mn of minions) if(mn._gob) gobRemove(mn); }   // al reiniciar partida → todos al pool
 /* (los bloques duplicados _g2/_g1 se han unificado en el sistema gob* de arriba — pool incluido) */
-/* reparte por ÁREA del bloque activo (no por jugadores): muestrea (x,z) en la zona
-   visible y acepta donde haya plataforma → los minions caen por TODO el mapa, también vacío */
+/* ►SPAWN-NEAR-PLAYERS: MEZCLA — parte de la horda cae alrededor de los luchadores vivos y parte
+   sigue repartida por todo el mapa (como antes). Cierra el exploit de ponerte en primera línea (antes
+   ahí caían menos minions y podías salvarte demasiado) sin convertir el 1-jugador en una pesadilla.
+   · SPAWN_NEAR_CHANCE = fracción que se ancla a un luchador (el resto es mapa-completo).
+   · anillo NEAR_R_MIN..NEAR_R_MAX = NUNCA ultra pegados; siempre con algo de distancia para reaccionar.
+   Fallback a mapa-completo si no hay luchador o el anillo cae al vacío (p.ej. luchador al borde). */
+const SPAWN_NEAR_CHANCE = 0.5;   // 50% cerca de un luchador, 50% repartido por el mapa
+const NEAR_R_MIN = 11, NEAR_R_MAX = 22;   // anillo: mín. 11u de distancia (no ultra cerca) — sube NEAR_R_MIN si aún agobia en solo
 function minionDropSpot(){
+  const live = players.filter(p => p && !p.out);
+  const near = live.length && Math.random() < SPAWN_NEAR_CHANCE;   // se decide UNA vez por spawn
   for(let i=0;i<24;i++){
-    const x = (Math.random()-.5)*56;   // x ∈ [-28,28]
-    const z = -26 + Math.random()*46;  // z ∈ [-26,20]
+    let x, z;
+    if(near && i<16){                                    // …anclado al jugador (con distancia)
+      const a = live[(Math.random()*live.length)|0];
+      const ang = Math.random()*Math.PI*2, r = NEAR_R_MIN + Math.random()*(NEAR_R_MAX-NEAR_R_MIN);
+      x = a.pos.x + Math.cos(ang)*r;
+      z = a.pos.z + Math.sin(ang)*r;
+    } else {                                             // …repartido por todo el mapa (como antes)
+      x = (Math.random()-.5)*56;   // x ∈ [-28,28]
+      z = -26 + Math.random()*46;  // z ∈ [-26,20]
+    }
     if(!overAnyPlatform(x, z)) continue;
     const top = platformTopAt(x, z);
     if(top===null) continue;
@@ -7535,9 +7868,11 @@ function spawnMinionAt(x, z, y0, type, skin){
 function spawnMinion(){
   if(minions.length >= MINION_CAP) return;                  // no exceder el pool instanciado
   // ►RECOLOR38: sin recorte de frecuencia por-stage — 3/4/6/7/9 salen al MISMO ritmo que S1 (S6 va vacío aparte)
-  // MINI-JEFE (brute): SOLO Stage 2 (►RECOLOR38: la horda de 3/4/6/7/9 imita a S1, que no tiene mini-jefe)
+  /* ►ELITE: MINI-JEFE en TODOS los stages a partir de ELITE_MIN_CHAOS (antes solo Stage 2). Sigue
+     siendo raro (~5% por tirada) y sigue habiendo 1 vivo como mucho → es un EVENTO de media partida,
+     no un enemigo más. Su peso por mundo lo pone ELITE_MUL dentro de spawnBrute. */
   const bruteChance = BRUTE_SPAWN_CHANCE;
-  if(STAGE===2 && !demo && _bossTpl && _bruteLive===0 && !bossActive && Math.random()<bruteChance){ spawnBrute(); return; }   // ►RONDA6d: el mini-jefe no aparece en la home/demo
+  if(!demo && _bossTpl && _bruteLive===0 && !bossActive && chaosLvl>=ELITE_MIN_CHAOS && Math.random()<bruteChance){ spawnBrute(); return; }   // ►RONDA6d: el mini-jefe no aparece en la home/demo
   const roll = Math.random();
   let type = roll<.65 ? 'small' : roll<.87 ? 'shooter' : 'large';   // ►WESTERN: let — la rama S8 fuerza 'shooter'
   /* ►SKELMINIONS: S4 (desierto), S5 (pirámide corrupta) y S7 (ártico) comparten la horda entre los
@@ -11408,6 +11743,19 @@ const BRUTE_POW       = 0.35;    // multiplicador de DAÑO de todos sus ataques 
 const BRUTE_SPAWN_CHANCE = 0.05; // ~5% por tirada de spawn (raro), 1 vivo a la vez
 const BRUTE_HIT_SCALE = 1.6;     // mn.scale → alcance con que lo golpean (hitMinions) acorde a su tamaño
 const _brutePool = []; let _bruteLive = 0;
+/* ►ELITE: el MINI-JEFE deja de ser exclusivo del Stage 2 y sale en TODOS los mundos como EVENTO de
+   media partida. Ya estaba construido para ello (bruteTint tiñe por stage y aquí abajo había peso
+   propio de S4/S7 a pelo): solo estaba apagado por un `STAGE===2` en spawnMinion.
+   · ELITE_MIN_CHAOS: no aparece en el primer tramo del stage (el jugador aún se está situando).
+   · ELITE_MUL: peso por mundo — sustituye a los antiguos s3/s4 hardcodeados en spawnBrute.
+   Para APAGARLO entero: ELITE_MIN_CHAOS = 99. */
+const ELITE_MIN_CHAOS = 4;
+const ELITE_MUL = {
+  2: { hp:1.00, pow:1.00 },   // jungla: el original
+  4: { hp:1.25, pow:1.25 },   // desierto: más fuerte (era el antiguo `s3`)
+  7: { hp:0.45, pow:0.55 },   // hielo: mucho más fácil (era el antiguo `s6`, pedido de Toni)
+};
+const ELITE_MUL_DEF = { hp:1.00, pow:1.00 };   // cualquier stage sin ficha propia
 function bruteAttach(mn){
   if(!_bossTpl || mn._binst) return;
   let inst = _brutePool.pop();
@@ -11445,10 +11793,14 @@ function bruteTint(inst){
     for(const m of arr){ if(!m._c0) continue;
       const L = 0.30*m._c0.r + 0.59*m._c0.g + 0.11*m._c0.b;
       let tint, amt=0.92, emi=0x000000;
-      if(st===7){ tint=new THREE.Color().setHSL(0.77, 0.60, cl(L*0.55+0.10, 0.10, 0.48)); emi=0x160630; }        // lila
-      else if(st===6){ tint=new THREE.Color().setHSL(0.56, 0.45, cl(L*0.68+0.30, 0.30, 0.80)); emi=0x0a1a26; }   // azul hielo
-      else if(st===4){ tint=new THREE.Color().setHSL(0.135, 0.88, cl(L*0.55+0.30, 0.30, 0.74)); emi=0x2a1e00; }  // amarillo corrupto
-      else if(st>=3){ tint=new THREE.Color().setHSL(0.78, 0.55, cl(L*0.60+0.05, 0.05, 0.44)); amt=0.95; }        // morado (S4)
+      /* ►ELITE · numeración CORREGIDA: estas ramas se escribieron con el orden VIEJO de stages y como
+         el mini-jefe solo salía en S2 nunca llegaron a ejecutarse (S7 salía lila y el hielo se lo
+         quedaba un S6 que hoy está dormido). Ahora que sale en todos los mundos, van al stage real
+         que dice el comentario de arriba: S8 lila · S7 azul congelado · S5 amarillo · S4 morado. */
+      if(st===8){ tint=new THREE.Color().setHSL(0.77, 0.60, cl(L*0.55+0.10, 0.10, 0.48)); emi=0x160630; }         // lila (forja/western)
+      else if(st===7){ tint=new THREE.Color().setHSL(0.56, 0.45, cl(L*0.68+0.30, 0.30, 0.80)); emi=0x0a1a26; }    // azul congelado (hielo)
+      else if(st===5){ tint=new THREE.Color().setHSL(0.135, 0.88, cl(L*0.55+0.30, 0.30, 0.74)); emi=0x2a1e00; }   // amarillo corrupto (pirámide)
+      else if(st>=3){ tint=new THREE.Color().setHSL(0.78, 0.55, cl(L*0.60+0.05, 0.05, 0.44)); amt=0.95; }         // morado (S3 Japón / S4 desierto)
       else if(st===2){ tint=new THREE.Color().setHSL(0.77, 0.62, cl(L*0.55+0.10, 0.10, 0.48)); emi=0x180628; amt=0.92; }   // ►S2BOSS: MORADO (los mini-jefes son la familia del jefe morado)
       else { tint=new THREE.Color().setHSL(0.068, 0.60, cl(L*0.80+0.05, 0.05, 0.50)); amt=0.90; }                // marrón (S1/otros)
       m.color.copy(m._c0).lerp(tint, amt); if(m.emissive) m.emissive.setHex(emi); m.needsUpdate = true;
@@ -11489,10 +11841,9 @@ function bruteStartJump(mn, tgt){
 function bruteStartCharge(mn, tgt){ mn._cdist=0; mn._cyaw = tgt ? Math.atan2(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) : mn.yaw; mn.yaw=mn._cyaw; }
 function spawnBrute(spot, quiet){   // ►S2BOSS: spot opcional (posición forzada, p.ej. loseta de la arena del jefe) + quiet (FX morados, sin banner por-brute)
   const sp = spot || minionDropSpot() || dropSpot() || { x:(Math.random()-.5)*16, z:(Math.random()-.5)*8, y0:0 };
-  const s3 = (STAGE===4);                                 // ►S3F: en el desierto es MÁS FUERTE que en S2 (+25% vida y daño)
-  const s6 = (STAGE===7);                                 // ►S7: mini-golem congelado MUCHÍSIMO más fácil (pedido)
-  const hpMul  = s6 ? 0.45 : (s3 ? 1.25 : 1);
-  const powMul = s6 ? 0.55 : (s3 ? 1.25 : 1);
+  const em = ELITE_MUL[STAGE] || ELITE_MUL_DEF;           // ►ELITE: peso por mundo (antes s3/s6 a pelo aquí)
+  const hpMul  = em.hp;
+  const powMul = em.pow;
   const mn = { type:'brute', _brute:true, scale:BRUTE_HIT_SCALE,
     pos:new THREE.Vector3(sp.x, sp.y0, sp.z), vel:new THREE.Vector3(), yaw:0, onGround:true,
     damage:0, maxHp:BRUTE_HP*hpMul, hitstun:0, invuln:0.5, hitCD:0, dead:false,
@@ -11519,7 +11870,13 @@ function updateBrute(mn, dt){
   mn._groundY = gy; const groundY = gy;
   const prevX = mn.pos.x, prevZ = mn.pos.z;              // (post-cinta) → el revert anti-vacío conserva el arrastre
   // muerte: barra llena → MINION normal (recompensa + fuera), NO dispara fin de arena
-  if(mn.damage >= mn.maxHp && !mn.dead){ awardMinion(mn); killMinion(mn); return; }
+  if(mn.damage >= mn.maxHp && !mn.dead){
+    /* ►ELITE: suelta una CÁPSULA garantizada donde cae → matarlo es un evento con premio, no un
+       minion gordo. Va antes de killMinion: después, mn.pos sigue siendo válido pero el orden
+       deja el drop atado a la muerte de forma obvia. */
+    try{ spawnCapsule({ x:mn.pos.x, z:mn.pos.z, topY:(mn._groundY!=null?mn._groundY:mn.pos.y) }); }catch(e){ console.warn('[elite drop]', e); }
+    awardMinion(mn); killMinion(mn); return;
+  }
   const tgt = nearestPlayer(mn) || players[0];
   const pow = mn._pow || BRUTE_POW;
   mn.stateT += dt;
@@ -12422,6 +12779,16 @@ const ESC_NEED      = 3.0;    // forcejeo necesario para zafarse (≈1,2 s pele�
 const ESC_STICK     = 0.12;   // por unidad de MOVIMIENTO del stick (agitarlo; mantenerlo fijo no vale)
 const ESC_JUMP      = 0.25;   // por cada pulsación de salto
 const ESC_DECAY     = 1.1;    // /s: si dejas de forcejear se te escapa el progreso
+/* ===== ►LTSHOVE · EMPUJÓN DE AGUANTE (LT en el SUELO) — SUSTITUYE al agarrar-y-pasear =============
+   Pedido de Toni: LT ya NO agarra al rival para pasearlo. Ahora, si tienes la barra de AGUANTE
+   LLENA, sueltas un EMPUJÓN FUERTE a quien tengas delante y a cambio te gastas la barra ENTERA:
+   queda VACÍA y PARPADEANDO ~3 s (STAM_CD) mientras se recarga, sin poder colgarte ni volver a
+   empujar hasta que se llene. En el aire LT sigue siendo el agarre de BORDE. ►►► AJUSTA ◄◄◄ */
+const SHOVE_RANGE = 3.4;      // alcance del empujón (cono delante)
+const SHOVE_ARC   = 0.45;     // cos del semiángulo del cono (~63°); solo empuja hacia donde MIRAS
+const SHOVE_PUSH  = 16;       // fuerza horizontal (fuerte: nivel "fuera de aquí", por encima del bate)
+const SHOVE_UP    = 5;        // pizca vertical (que despeguen, para que el empuje cuente para ring-out)
+const SHOVE_AREA  = 6.0;      // ►Toni: radio del ÁREA del empujón contra la HORDA (más ancho que el cono 1v1); aparta en recta a todos los minions de DELANTE
 /* ===== ESCUDO (toque → burbuja de 5 s): vas lento, no atacas, empuja+daña a los de alrededor para
    apartarlos y pasar. No cancelable. Enfriamiento tras agotarse. ►►► AJUSTA ◄◄◄ */
 const SHIELD_DUR = 5;        // s que dura el escudo
@@ -12804,6 +13171,19 @@ function updateHUD(){
     const card=document.getElementById('cardP'+n);
     if(card){ const _op = p.out ? .42 : 1;
       if(card._op !== _op){ card._op = _op; card.style.opacity = _op; } }   // ►PERF2: solo al cambiar
+    if(p===P1){                                        // ►JUMPUI: indicador de saltos disponibles del jugador local
+      const ji = document.getElementById('jumpsP1');
+      if(ji){
+        const cap = 1 + airJumps(p);                                                   // capacidad total = 1 de suelo + aéreos (base+cápsula+tienda)
+        const rem = (p.onGround || p.coyote>0) ? cap : Math.max(0, Math.min(p.jumps|0, cap-1));   // en suelo: todos; en aire: los aéreos que quedan
+        const pips = ji.lastElementChild, num = ji.querySelector('.jiNum');
+        if(ji._cap !== cap){ ji._cap = cap; ji._rem = -1; let h=''; for(let k=0;k<cap;k++) h+='<i></i>'; pips.innerHTML = h; }   // PERF: solo reconstruye los pips si cambia la capacidad
+        if(ji._rem !== rem){ ji._rem = rem;
+          num.textContent = rem;
+          ji.classList.toggle('none', rem<=0);
+          const kids = pips.children; for(let k=0;k<kids.length;k++) kids[k].className = (k<rem?'on':''); }
+      }
+    }
   }
   /* barra de PUNTOS del humano: se llena por tramos y se intensifica al subir */
   const xb = document.getElementById('xpbar');
@@ -12840,6 +13220,12 @@ function updateAtkBar(p){
   else if(p.qReload>0) set('q', 1-p.qReload/Q_RELOAD, false, '↻');                                            // Q: cargador recargando
   else                 set('q', p.qAmmo/Q_AMMO, p.qAmmo>0, String(p.qAmmo));                                  // Q: munición disponible
   set('f', (p._fMax>0) ? 1-p.spinCD/p._fMax : 1, p.spinCD<=0, p.spinCD>0?Math.ceil(p.spinCD):'');             // F = giro/movilidad por clase
+  if(document.getElementById('atk_heal'))                                                                     // ►HEALCD · Cura (H): sube el relleno con el enfriamiento; listo = lleno
+    set('heal', HEAL_CD>0 ? 1-(p.healCD||0)/HEAL_CD : 1, (p.healCD||0)<=0, (p.healCD||0)>0?Math.ceil(p.healCD):'');
+  if(document.getElementById('atk_shove')){                                                                   // ►LTSHOVE · Empujón (LT): se rellena con la barra de AGUANTE; ↻ mientras se recarga (parpadeando)
+    const sready = !p.stamLock && (p.stam||0) >= STAM_MAX;
+    set('shove', Math.max(0, Math.min(1, (p.stam||0)/STAM_MAX)), sready, p.stamLock ? '↻' : '');
+  }
   /* ►SHIELDCD · Escudo (T/LB): activo = lleno + glow (cuenta atrás de la burbuja); enfriando = sube el relleno; listo = lleno */
   if(document.getElementById('atk_shield')){
     const active = (p.shieldT||0)>0;
@@ -13096,7 +13482,11 @@ function updateStamBar(p){
   const w = STAM_BAR_W - 0.07;
   b.fill.scale.set(Math.max(0.0001, w*k), STAM_BAR_H - 0.06, 1);
   b.fill.position.x = -w*0.5 + w*k*0.5;               // crece desde la IZQUIERDA
-  b.fill.material.color.setHex(p.stamLock ? 0x8a8f9e : classColor(p));   // color de CLASE; gris = agotada, no puedes agarrar
+  b.fill.material.color.setHex(p.stamLock ? 0x8a8f9e : classColor(p));   // color de CLASE; gris = agotada, no puedes empujar/colgar
+  /* ►LTSHOVE: agotada (empujón/aguante gastado) = PARPADEA vacía mientras se recarga (aviso claro de que estás en enfriamiento) */
+  const blink = p.stamLock ? (0.35 + 0.65*Math.abs(Math.sin(t*9))) : 1;
+  b.bg.material.opacity   = 0.7 * blink;
+  b.fill.material.opacity = blink;
 }
 
 /* ►LTGRAB · ¿está en mitad de un ESPECIAL? → NO se le puede agarrar (ni él puede agarrar).
@@ -13168,6 +13558,53 @@ function tryGrabPlayer(p){
   best.yaw = p.yaw + Math.PI;                                     // …y él a ti (ya desde el primer frame)
   p.sc.specials++;
   sfx.grab(); showCombo(p, '¡TE PILLÉ!'); jiggle(best, 12);
+  return true;
+}
+
+/* ►LTSHOVE · EMPUJÓN: gasta TODA la barra de aguante (queda vacía y parpadeando STAM_CD s) y a cambio
+   suelta un empujón FUERTE hacia donde MIRAS. Hace falta la barra LLENA. ►Toni: a un RIVAL (jugador) lo
+   empuja INDIVIDUAL (sin área); a la HORDA le hace efecto de ÁREA hacia delante (aparta a los minions
+   cercanos de delante en línea recta, sin destruirlos, nada detrás). */
+function staminaShove(p){
+  if(p.stamLock || p.stam < STAM_MAX){ sfx.deny(); return false; }   // sin la barra llena, no sale
+  if(p.dead || p.out || p.hang || p.hitstun>0 || p.stun>0 || p.dashT>0 || !p.onGround) return false;
+  if(_grabImmune(p)) return false;                                   // ni en mitad de TU propio especial
+  p.stam = 0; p.stamLock = true;                                     // gasta la barra ENTERA → recarga+parpadeo STAM_CD s
+  p.sc.specials++;
+  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                  // hacia donde MIRAS
+  let any = false;
+  for(const v of players){
+    if(v===p || v.dead || v.out || v.invuln>0) continue;
+    if(Math.abs(v.pos.y - p.pos.y) > 1.8) continue;                 // mismo nivel
+    const dx=v.pos.x-p.pos.x, dz=v.pos.z-p.pos.z, d=Math.hypot(dx,dz);
+    if(d>SHOVE_RANGE || d<0.01) continue;
+    if((dx*fx + dz*fz)/d < SHOVE_ARC) continue;                     // fuera del cono de delante
+    any = true;
+    const nx=dx/d, nz=dz/d, f = SHOVE_PUSH * kbMul(p);
+    v.vel.set(nx*f, SHOVE_UP, nz*f);
+    v.onGround = false; v.hitstun = Math.max(v.hitstun, .35); v.hitFlash = .12;
+    v.comboWindow = 0; v.comboStage = 0; v.hang = null;
+    jiggle(v, 15);
+    burst(v.pos.clone().add(new THREE.Vector3(0,.8,0)), v.color, 12, 6, 4, .7);
+    ring(v.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 12, .35);
+  }
+  /* ►Toni: EMPUJÓN a la HORDA = efecto de ÁREA hacia DELANTE. Aparta (NO destruye) a TODOS los minions
+     cercanos que tengas DELANTE, empujándolos en LÍNEA RECTA hacia donde MIRAS (no radial). El semiplano
+     frontal (dot>0) hace que NADA de detrás del jugador se vea afectado. A un JUGADOR no le hace área:
+     solo se empuja al rival del cono (bucle de arriba). */
+  for(const mn of minions){
+    if(mn.dead || mn.invuln>0) continue;
+    const dx=mn.pos.x-p.pos.x, dz=mn.pos.z-p.pos.z, d=Math.hypot(dx,dz);
+    if(d>SHOVE_AREA + 0.5*mn.scale || d<0.01) continue;             // dentro del ÁREA
+    if((dx*fx + dz*fz) <= 0) continue;                              // SOLO lo que tienes DELANTE (semiplano frontal); nada detrás
+    mn.vel.x += fx*SHOVE_PUSH*0.9; mn.vel.z += fz*SHOVE_PUSH*0.9;   // recta hacia donde miras (todos en la MISMA dirección)
+    mn.vel.y = Math.max(mn.vel.y, 5);
+    mn.hitstun = Math.max(mn.hitstun, .2); mn.onGround = false;
+    burst(mn.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 4, 3, 2, .4);
+  }
+  addPower(p, any ? 6 : 0);                                          // acertar da algo de barra (poco: no es pegar)
+  sfx.swing(); showCombo(p, '¡EMPUJÓN!'); camKick(fx, fz, .5); shake = Math.max(shake, .25);
+  burst(p.pos.clone().add(new THREE.Vector3(fx*1.2, .8, fz*1.2)), p.color, 8, 5, 3, .6);
   return true;
 }
 
@@ -14239,7 +14676,7 @@ function respawn(p){
   p.invuln = 2.2;
   p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // pierdes arma/arcoíris al morir
   p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false; p.magnetT = 0;   // ►INTERSTAGE: ...y los pasivos RECOGIDOS
-  p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0 };       // ...y los boosts de CÁPSULA. Lo COMPRADO en la tienda (p.own/p.ownPas) NO se toca: sobrevive a la muerte
+  p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };       // ...y los boosts de CÁPSULA. Lo COMPRADO en la tienda (p.own/p.ownPas) NO se toca: sobrevive a la muerte
   p.gfx.root.visible = true;
 }
 /* ===== fin de partida: nota D-/S+, recuento de EXP animado y leaderboard rebrandeado ===== */
@@ -14345,11 +14782,11 @@ const RUN_PERKS = [
     desc:'+12% de daño en tus golpes',   lvl:p=>p.own.dmg,            apply:p=>p.own.dmg++ },
   { k:'def',    ic:'🛡', name:'DEFENSA',   col:'#c299ff', cost:950,  max:5,
     desc:'−10% del daño que recibes',    lvl:p=>p.own.def,            apply:p=>p.own.def++ },
-  { k:'air',    ic:'🕊', name:'SALTO EXTRA', col:'#bff0ff', cost:1100, max:2,
+  { k:'air',    ic:'🕊', name:'SALTO EXTRA', col:'#bff0ff', cost:2100, max:2, costMul:p=>Math.pow(1.6,p._pkAir||0),
     desc:'+1 salto aéreo (acumula ×2)',  lvl:p=>p._pkAir||0,          apply:p=>{ p._pkAir=(p._pkAir||0)+1; } },
   { k:'magnet', ic:'🧲', name:'IMÁN',      col:'#ffb14e', cost:450,  max:1, once:true,
     desc:'recoge objetos y mejoras de lejos', lvl:p=>p.ownPas.magnet?1:0, apply:p=>{ p.ownPas.magnet=true; } },
-  { k:'steal',  ic:'🩸', name:'ROBO DE VIDA', col:'#ff6a8a', cost:1700, max:1, once:true,
+  { k:'steal',  ic:'🩸', name:'ROBO DE VIDA', col:'#ff6a8a', cost:2600, max:1, once:true,
     desc:'recuperas 15% del daño que causas', lvl:p=>p._pkLifesteal?1:0, apply:p=>{ p._pkLifesteal=true; } },
   { k:'spikes', ic:'✸',  name:'PINCHOS',   col:'#ff6a6a', cost:1500, max:1, once:true,
     desc:'ATAQUE PASIVO: hiere a quien te toca', lvl:p=>p.ownPas.spikes?1:0, apply:p=>{ p.ownPas.spikes=true; } },
@@ -14365,42 +14802,42 @@ const RUN_PERKS = [
     desc:'tu DEFINITIVA se llena un 50% más rápido', lvl:p=>p._pkUltCharge?1:0, apply:p=>{ p._pkUltCharge=true; } },
   { k:'regen',  ic:'♻',  name:'REGENERACIÓN', col:'#7affc8', cost:1400, max:1, once:true,
     desc:'recuperas daño poco a poco, sin parar', lvl:p=>p._pkRegen?1:0, apply:p=>{ p._pkRegen=true; } },
-  { k:'berserk',ic:'🔥', name:'BERSERKER',  col:'#ff5a3c', cost:2200, max:1, once:true,
+  { k:'berserk',ic:'🔥', name:'BERSERKER',  col:'#ff5a3c', cost:3000, max:1, once:true,
     desc:'cuanto más herido, más daño (hasta +60%)', lvl:p=>p._pkBerserk?1:0, apply:p=>{ p._pkBerserk=true; } },
-  { k:'phoenix',ic:'🐦', name:'RENACER',    col:'#ffb347', cost:2600, max:1, once:true,
+  { k:'phoenix',ic:'🐦', name:'RENACER',    col:'#ffb347', cost:3400, max:1, once:true,
     desc:'tu 1ª muerte de cada stage NO cuesta vida', lvl:p=>p._pkPhoenix?1:0, apply:p=>{ p._pkPhoenix=true; p._phoenixCharge=true; } },
   /* ►INTERSTAGE: las vidas se resetean en CADA stage (stageResetPlayers) → esta carta debe dejar
      poso permanente (own.lives), o se evaporaría al cruzar el portal. +2 ahora Y +2 de base siempre.
-     ►BALANCE: era LA compra rota (permanente, apilable, barata). Base 2200 + costMul ×1.7 por cada
-     par ya comprado (2200 → 3740 → 6358 …) ADEMÁS de la inflación global del run. */
-  { k:'lives',  ic:'❤',  name:'+2 VIDAS',  col:'#ff5d7a', cost:2200, max:99, costMul:p=>Math.pow(1.7, p.own.lives||0),
+     ►BALANCE: era LA compra rota (permanente, apilable, barata). Base 3600 + costMul ×1.85 por cada
+     par ya comprado (3600 → 6660 → 12321 …) ADEMÁS de la inflación global del run — CARÍSIMA a propósito. */
+  { k:'lives',  ic:'❤',  name:'+2 VIDAS',  col:'#ff5d7a', cost:3600, max:99, costMul:p=>Math.pow(1.85, p.own.lives||0),
     desc:'dos vidas extra, en éste y en TODOS los stages', lvl:()=>0,  apply:p=>{ p.own.lives++; p.stocks+=2; } },
   /* --- ÚNICAS POR CLASE (solo aparecen para SU personaje) ---
-     ►BALANCE: AHORA HAY 2 CARTAS POR CLASE. La 1ª (mejora tu Q/F/cura de siempre) sube a ~1500-1600;
-     la 2ª es un ATAQUE nuevo que toca OTRA de tus habilidades (súper/F/Q) y es más cara (~1700-1800). */
-  { k:'twinaxe', cls:'voxelhero', ic:'🪓', name:'HACHAS GEMELAS', col:'#f0a24a', cost:1500, max:1, once:true,
+     ►BALANCE: AHORA HAY 2 CARTAS POR CLASE. Son BASTANTE CARAS a propósito: la 1ª (mejora tu Q/F/cura
+     de siempre) a 2200; la 2ª es un ATAQUE nuevo que toca OTRA habilidad (súper/F/Q) y va a 2600. */
+  { k:'twinaxe', cls:'voxelhero', ic:'🪓', name:'HACHAS GEMELAS', col:'#f0a24a', cost:2200, max:1, once:true,
     desc:'BÁRBARO · tu Q lanza un hacha extra en abanico', lvl:p=>p._pkTwinAxe?1:0, apply:p=>{ p._pkTwinAxe=true; } },
-  { k:'quake', cls:'voxelhero', ic:'🌋', name:'PISOTÓN SÍSMICO', col:'#ffb04a', cost:1800, max:1, once:true,
+  { k:'quake', cls:'voxelhero', ic:'🌋', name:'PISOTÓN SÍSMICO', col:'#ffb04a', cost:2600, max:1, once:true,
     desc:'BÁRBARO · tu SÚPER (pisotón) abre una onda mucho mayor y más brutal', lvl:p=>p._pkQuake?1:0, apply:p=>{ p._pkQuake=true; } },
-  { k:'trishuri', cls:'samurai', ic:'❄', name:'TRIPLE FILO', col:'#cfe8ff', cost:1500, max:1, once:true,
+  { k:'trishuri', cls:'samurai', ic:'❄', name:'TRIPLE FILO', col:'#cfe8ff', cost:2200, max:1, once:true,
     desc:'SAMURÁI · tu Q dispara 3 shuriken en abanico', lvl:p=>p._pkTriShuriken?1:0, apply:p=>{ p._pkTriShuriken=true; } },
-  { k:'twinslash', cls:'samurai', ic:'⚔', name:'DOBLE IAIDO', col:'#b0e0ff', cost:1800, max:1, once:true,
+  { k:'twinslash', cls:'samurai', ic:'⚔', name:'DOBLE IAIDO', col:'#b0e0ff', cost:2600, max:1, once:true,
     desc:'SAMURÁI · tu SÚPER (Iaido) traza 3 líneas de corte en abanico', lvl:p=>p._pkTwinSlash?1:0, apply:p=>{ p._pkTwinSlash=true; } },
-  { k:'arrowrain', cls:'archer', ic:'🏹', name:'LLUVIA DE FLECHAS', col:'#ffe24a', cost:1600, max:1, once:true,
+  { k:'arrowrain', cls:'archer', ic:'🏹', name:'LLUVIA DE FLECHAS', col:'#ffe24a', cost:2200, max:1, once:true,
     desc:'ARQUERA · tu F (ráfaga 360°) lanza 28 flechas', lvl:p=>p._pkArrowRain?1:0, apply:p=>{ p._pkArrowRain=true; } },
-  { k:'fanwide', cls:'archer', ic:'🎯', name:'MULTIDISPARO DENSO', col:'#ffd24a', cost:1800, max:1, once:true,
+  { k:'fanwide', cls:'archer', ic:'🎯', name:'MULTIDISPARO DENSO', col:'#ffd24a', cost:2600, max:1, once:true,
     desc:'ARQUERA · tu SÚPER (multidisparo) abre un abanico de 9 flechas', lvl:p=>p._pkFanWide?1:0, apply:p=>{ p._pkFanWide=true; } },
-  { k:'skystorm', cls:'link', ic:'🌩', name:'TORMENTA CELESTIAL', col:'#39ff5a', cost:1600, max:1, once:true,
+  { k:'skystorm', cls:'link', ic:'🌩', name:'TORMENTA CELESTIAL', col:'#39ff5a', cost:2200, max:1, once:true,
     desc:'MAGO · tu F cae como 3 rayos sobre 3 enemigos', lvl:p=>p._pkSkyStorm?1:0, apply:p=>{ p._pkSkyStorm=true; } },
-  { k:'twinorb', cls:'link', ic:'🔮', name:'ORBES GEMELOS', col:'#c07aff', cost:1700, max:1, once:true,
+  { k:'twinorb', cls:'link', ic:'🔮', name:'ORBES GEMELOS', col:'#c07aff', cost:2600, max:1, once:true,
     desc:'MAGO · tu Q dispara un orbe arcano extra en abanico', lvl:p=>p._pkTwinOrb?1:0, apply:p=>{ p._pkTwinOrb=true; } },
-  { k:'shieldwall', cls:'knight', ic:'🛡', name:'MURO DE ESCUDOS', col:'#7fb4ff', cost:1500, max:1, once:true,
+  { k:'shieldwall', cls:'knight', ic:'🛡', name:'MURO DE ESCUDOS', col:'#7fb4ff', cost:2200, max:1, once:true,
     desc:'CABALLERO · tu F lanza 5 escudos en vez de 3', lvl:p=>p._pkShieldWall?1:0, apply:p=>{ p._pkShieldWall=true; } },
-  { k:'twinjavelin', cls:'knight', ic:'🗡', name:'JABALINAS EN ABANICO', col:'#a9c0e0', cost:1700, max:1, once:true,
+  { k:'twinjavelin', cls:'knight', ic:'🗡', name:'JABALINAS EN ABANICO', col:'#a9c0e0', cost:2600, max:1, once:true,
     desc:'CABALLERO · tu Q lanza 3 jabalinas en abanico', lvl:p=>p._pkTwinJavelin?1:0, apply:p=>{ p._pkTwinJavelin=true; } },
-  { k:'sanctuary', cls:'nun', ic:'✨', name:'GRAN SANTUARIO', col:'#8fd0ff', cost:1600, max:1, once:true,
+  { k:'sanctuary', cls:'nun', ic:'✨', name:'GRAN SANTUARIO', col:'#8fd0ff', cost:2200, max:1, once:true,
     desc:'BRUJA · tu cura sana el DOBLE y el disco es mayor', lvl:p=>p._pkSanctuary?1:0, apply:p=>{ p._pkSanctuary=true; } },
-  { k:'bignova', cls:'nun', ic:'💥', name:'DESTELLO EXPANDIDO', col:'#a9d8ff', cost:1700, max:1, once:true,
+  { k:'bignova', cls:'nun', ic:'💥', name:'DESTELLO EXPANDIDO', col:'#a9d8ff', cost:2600, max:1, once:true,
     desc:'BRUJA · tu F (destello sagrado) golpea en un radio mucho mayor y te cura más', lvl:p=>p._pkBigNova?1:0, apply:p=>{ p._pkBigNova=true; } },
 ];
 
@@ -14434,10 +14871,12 @@ function closeStageScores(){
   }
   for(const p of players) p._scSnap = Object.assign({}, p.sc);
   STAGE_LOG.push({ stage:STAGE, rows, best:rows[0], p1t });
+  saveNoteStage(STAGE);   // ►SAVE: progreso de campaña — se apunta al CERRAR el stage, así una run abandonada a mitad también cuenta
 }
 
 /* dispatch de stage extraído de la fase 'won' del jefe (mismo orden de campaña) */
 function stageAdvance(){
+  saveNoteBoss(STAGE);   // ►SAVE: sólo se llega aquí tras VENCER al jefe del stage → contador de jefes derrotados
   if(STAGE===1) goToStage2();
   else if(STAGE===2) goToStage3();
   else if(STAGE===3) goToStage4();
@@ -14451,6 +14890,42 @@ function stageAdvance(){
 
 function _perkOwned(perk, who){ const lvl=perk.lvl(who); return (perk.once && lvl>=1) || (!perk.once && perk.k!=='lives' && lvl>=perk.max); }
 
+/* =====================================================================
+   ►DRAFT · LA TIENDA REPARTE UNA MANO, NO EL CATÁLOGO
+   Antes se veían las ~19 cartas siempre: cero decisión (compras la mejor y ya) y cero variedad
+   entre runs (todas acababan igual). Ahora se reparten DRAFT_SIZE cartas y hay que elegir con lo
+   que te toca — que es de donde sale la rejugabilidad en este género.
+   Garantías para que ninguna mano sea basura:
+     · 1 carta ÚNICA DE TU CLASE (si te queda alguna sin comprar)
+     · 1 carta de POTENCIA (fuerza/defensa/cadencia/empuje)
+     · el resto, generales al azar
+   DRAFT_ON=false → vuelve al catálogo completo de siempre. */
+const DRAFT_ON = true;
+const DRAFT_SIZE = 6;
+const DRAFT_POWER = ['dmg','def','rate','kb'];        // el "por lo menos algo útil" de cada mano
+const REROLL_BASE = 250;                              // coste de la 1ª re-tirada del stage (sube por tirada)
+function rerollCost(who){ return Math.round(REROLL_BASE * ((who && who._rerolls||0) + 1)); }
+function _shuffled(arr){                              // Fisher-Yates sobre una copia
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=a[i]; a[i]=a[j]; a[j]=t; }
+  return a;
+}
+function rollOffer(me){
+  if(!DRAFT_ON) return RUN_PERKS.filter(p=>!p.cls || p.cls===me._charKey);   // catálogo completo (modo antiguo)
+  const libre = p => !_perkOwned(p, me);              // lo ya comprado/al tope no vuelve a salir
+  const out = [];
+  const take = list => { for(const p of list){ if(out.indexOf(p)<0){ out.push(p); return true; } } return false; };
+  take(_shuffled(RUN_PERKS.filter(p=>p.cls===me._charKey && libre(p))));       // 1 · única de tu clase
+  take(_shuffled(RUN_PERKS.filter(p=>!p.cls && libre(p) && DRAFT_POWER.indexOf(p.k)>=0)));   // 2 · potencia
+  for(const p of _shuffled(RUN_PERKS.filter(p=>!p.cls && libre(p)))){          // 3 · relleno general
+    if(out.length >= DRAFT_SIZE) break;
+    if(out.indexOf(p)<0) out.push(p);
+  }
+  /* si te queda MENOS de lo que cabe en la mano (run muy avanzada, casi todo comprado) se reparte lo
+     que haya: mejor una mano corta que rellenarla con cartas que no puedes comprar. */
+  return out.slice(0, DRAFT_SIZE);
+}
+
 function renderPerks(){
   const grid=document.getElementById('perkGrid'); if(!grid) return;
   const me = shopPlayer(); if(!me) return;
@@ -14461,14 +14936,31 @@ function renderPerks(){
   const hint=document.getElementById('perkHint');
   if(hint) hint.textContent = capped
     ? 'TOPE DE '+BUYS_PER_STAGE+' COMPRAS POR STAGE ALCANZADO · el resto llega tras el próximo jefe'
-    : 'Tienes '+SHOP_TIME+' s · cada compra encarece las siguientes (+35%) · máx. '+BUYS_PER_STAGE+' por stage';
+    : (DRAFT_ON
+        ? 'Tienes '+SHOP_TIME+' s · MANO DE '+DRAFT_SIZE+' CARTAS · cada compra encarece las siguientes (+35%) · máx. '+BUYS_PER_STAGE+' por stage'
+        : 'Tienes '+SHOP_TIME+' s · cada compra encarece las siguientes (+35%) · máx. '+BUYS_PER_STAGE+' por stage');
+  /* ►DRAFT: botón de RE-TIRADA. Se refresca aquí porque su precio sube con cada uso del stage y
+     depende de la cartera (se bloquea si no llega). */
+  { const rb=document.getElementById('perkReroll');
+    if(rb){
+      if(!DRAFT_ON) rb.style.display='none';
+      else{
+        const rc = rerollCost(me);
+        rb.style.display='';
+        rb.textContent = '🎲 OTRA MANO · ★ '+rc;
+        rb.disabled = (me.runXP||0) < rc || capped;
+        rb.title = capped ? 'Ya has agotado tus compras de este stage' : 'Reparte 6 cartas nuevas';
+      }
+    } }
   grid.innerHTML='';
-  const myCls = me._charKey;
   let hdGen=false, hdCls=false;
   const _head=txt=>{ const h=document.createElement('div'); h.className='perkHead'; h.textContent=txt; grid.appendChild(h); };
-  /* ►INTERSTAGE: la ÚNICA DE TU CLASE va PRIMERO. Iba al final y con 19 cartas caía bajo el pliegue:
-     con 30 s de reloj, la carta más característica de tu personaje podías no llegar a verla. */
-  const _orden = RUN_PERKS.filter(p=>p.cls===myCls).concat(RUN_PERKS.filter(p=>!p.cls));
+  /* ►DRAFT: se pinta la MANO repartida (me._offer), no el catálogo. La mano se sortea al ABRIR la
+     tienda y en cada re-tirada — nunca aquí: renderPerks() se vuelve a llamar tras CADA compra y
+     re-sortear en este punto cambiaría las cartas bajo los dedos del jugador.
+     ►INTERSTAGE: la ÚNICA DE TU CLASE sigue yendo primero (es la más característica de tu personaje). */
+  if(!me._offer) me._offer = rollOffer(me);   // red de seguridad: si alguien llegó aquí sin pasar por la tienda
+  const _orden = me._offer.filter(p=>p.cls).concat(me._offer.filter(p=>!p.cls));
   _orden.forEach(perk=>{
     if(perk.cls && !hdCls){ hdCls=true; _head('★ ÚNICA DE TU CLASE'); }
     if(!perk.cls && !hdGen){ hdGen=true; _head('MEJORAS GENERALES'); }
@@ -14501,6 +14993,22 @@ function buyPerk(perk, card){
   if(card){ card.classList.add('bought'); }
   renderPerks();   // refresca cartera + tope + qué cartas quedan pagables / bloqueadas / obtenidas
 }
+
+/* ►DRAFT: paga y reparte una mano nueva. El coste sube con cada re-tirada del MISMO stage (250, 500,
+   750…) para que sea una decisión —gastar en cartas o en re-tirar—, no un botón gratis de girar hasta
+   que salga lo que quieres. El contador se reinicia en cada tienda. */
+function rerollOffer(){
+  const me = shopPlayer(); if(!me || !DRAFT_ON) return;
+  if((me._buysThisStage||0) >= BUYS_PER_STAGE) return;      // sin compras disponibles, re-tirar no sirve de nada
+  const cost = rerollCost(me);
+  if((me.runXP||0) < cost) return;
+  me.runXP -= cost;
+  me._rerolls = (me._rerolls||0) + 1;
+  me._offer = rollOffer(me);
+  try{ sfx.boost && sfx.boost(); }catch(e){}
+  renderPerks();
+}
+{ const _rb=document.getElementById('perkReroll'); if(_rb) _rb.onclick = rerollOffer; }
 
 /* ►SHOP: comprar es SIEMPRE decisión HUMANA (es la gracia). Las IA NO compran perks — se quedan
    en baseline. La cartera por jugador se mantiene por si en online hay otros humanos. */
@@ -14656,6 +15164,9 @@ function goToShopScreen(){
     if(!ov || !me || me.out){ interlude=false; stageAdvance(); fadeIn(); return; }
     const t=document.getElementById('perkTitle'); if(t) t.textContent='🛒 TIENDA · antes del STAGE '+_nextStage();
     for(const p of players) p._buysThisStage = 0;   // ►INTERSTAGE: el tope de 2 es POR STAGE
+    /* ►DRAFT: se reparte la mano AQUÍ, una sola vez por tienda. El contador de re-tiradas vuelve a
+       cero en cada stage (si no, la 2ª tienda ya empezaría cobrando el precio inflado de la 1ª). */
+    for(const p of players){ p._rerolls = 0; p._offer = rollOffer(p); }
     renderPerks();
     shopOpen=true; shopT=SHOP_TIME; ISTAGE.ph='shop'; ISTAGE.lastS=99;
     const tm=document.getElementById('shopTimer'); if(tm){ tm.textContent='🛒 '+SHOP_TIME+'s'; tm.classList.remove('urgent','panic'); }
@@ -14873,6 +15384,17 @@ function endGame(){
     const snap = Object.assign({}, P1.sc);    // foto de TUS stats antes de que startDemo los reinicie
     const et = document.getElementById('endTitle');
     const _coron = (STAGE===10);   // ►INTERSTAGE: fin de CAMPAÑA → coronación (no un "fin de partida" cualquiera)
+    /* ►SAVE: cierre de la run. Es el ÚNICO punto por el que pasa toda partida terminada, y aquí ya
+       están calculados puesto, victoria y nota. `campaignDone` mira si el jefe del stage 10 llegó a
+       caer — no basta con STAGE===10, porque también se acaba aquí si os matan a todos allí. */
+    const _rec = saveRecordRun({
+      charKey: P1._charKey, score: scoreTotal(P1), grade: grade && grade.label,
+      stage: STAGE, rank: humanRank, won, kills: snap.kills||0,
+      campaignDone: _bossSeen.has(10),
+    });
+    /* la portada sigue montada detrás: refrescamos ya sus récords y el candado de DURO para que al
+       volver al menú esté todo al día sin recargar la página. */
+    try{ renderHomeRecords(); if(window._diffSync) _diffSync(); }catch(e){ console.warn('[save ui]', e); }
     et.textContent = won ? (_coron ? '👑 ¡ERES EL REY! 👑' : '¡VICTORIA!') : (humanRank+'º DE '+players.length);
     et.style.color = (won && _coron) ? '#ffd84f' : (won ? '#7affc8' : '#ffd84f');   // coronación = ORO; victoria normal = mint
     et.classList.toggle('coron', _coron && won);
@@ -14889,6 +15411,17 @@ function endGame(){
       if(placeEl) placeEl.textContent = _coron
         ? ('El que más brilla es EL REY · has quedado en '+ord+' lugar')   // la visión del juego, dicha donde SÍ se lee
         : ('Has quedado en '+ord+' lugar');
+      /* ►SAVE: el gancho emocional del bucle — batir TU marca se dice aquí, grande y en dorado.
+         Los desbloqueos van detrás, en la misma línea, porque son la otra razón para repetir. */
+      const rl = document.getElementById('endRecord');
+      if(rl){
+        const bits = [];
+        if(_rec.record) bits.push('🏆 ¡NUEVO RÉCORD! · ' + Math.round(scoreTotal(P1)).toLocaleString('es-ES') + ' puntos');
+        for(const u of _rec.unlocked) bits.push(UNLOCK_NAME[u] ? ('🔓 DESBLOQUEADO: ' + UNLOCK_NAME[u]) : '');
+        const txt = bits.filter(Boolean).join('   ');
+        rl.textContent = txt;
+        rl.classList.toggle('show', !!txt);
+      }
     }catch(e){ console.warn('[winLabel]', e); }
     /* el GANADOR suelta su "hehe" (directo: ignora los frenos de charVoice porque ya estamos en pantalla final/demo) */
     if(musicOn){ const _wv=CHAR_VOX[ranked[0] && ranked[0]._charKey]; const _wu=_wv && (_wv.hehe || (_wv.weird && _wv.weird[(Math.random()*_wv.weird.length)|0]));
@@ -14911,6 +15444,8 @@ function aiThink(p, dt){
      relojes congelados; el control humano vuelve en _stageIntroEnd. */
   const me = p, e = nearestPlayer(p) || P1;
   const ai = p.ai;
+  const prof = aiProf(p);   // ►AIPROF: cómo quiere pelear ESTA clase (distancia, kiting, ganas de Q/súper)
+  const D = aiDiff();       // ►AIDIFF: nivel elegido — afecta a reacción, acierto al esquivar y agresividad
   ai.think -= dt;
   if(me.stun>0){ ai.blockWant = false; return ai.dir.set(0,0,0); }
 
@@ -14979,7 +15514,7 @@ function aiThink(p, dt){
     if(ph==='fight' && B && !B.dead){
       const bdx = B.pos.x-me.pos.x, bdz = B.pos.z-me.pos.z, bd = Math.hypot(bdx,bdz);
       /* ESQUIVA: saltos/giro son AoE groundOnly → SALTAR los evita por completo; la embestida se esquiva de lado */
-      if((B.state==='jumps' || B.state==='spin') && bd < 7 && me.onGround && Math.random()<0.5) aiJump(me);
+      if((B.state==='jumps' || B.state==='spin') && bd < 7 && me.onGround && Math.random()<0.5*D.acc) aiJump(me);   // ►AIDIFF: en FÁCIL falla la esquiva a menudo; en DURO casi nunca
       else if(B.state==='charge'){
         const f = new THREE.Vector3(Math.sin(B.yaw), 0, Math.cos(B.yaw));
         const rel = me.pos.clone().sub(B.pos); rel.y = 0;
@@ -14993,19 +15528,35 @@ function aiThink(p, dt){
         }
       }
       if(ai.think<=0){
-        ai.think = .12 + Math.random()*.15;
+        ai.think = (.12 + Math.random()*.15) * D.react;   // ►AIDIFF: cada cuánto vuelve a decidir (menor = reacciona antes)
         /* ►SURVIVE: muy dañada y lejos del jefe → cúrate (matar al jefe SIN que te maten: baja el % primero) */
         if(bd>7 && me.damage>55 && me.healCD<=0 && B.state!=='charge' && B.state!=='beam' && aiTryHeal(me)){ ai.dir.set(0,0,0); return ai.dir; }
         const to = new THREE.Vector3(bdx,0,bdz); if(bd>.001) to.multiplyScalar(1/bd);
-        if(bd > 4.2){
-          /* acercarse castigando a distancia (mismas probabilidades que contra jugadores) */
-          if(bd>6 && bd<17 && me.qCD<=0 && Math.random()<.45) classQ(me);
-          if(me.superCD<=0 && me.onGround && bd<13 && Math.random()<.3){
+        /* ►AIPROF: la distancia a la que se pelea al JEFE también es la de cada clase. Un gólem tiene
+           el alcance que tiene: la arquera pegándose a él era muerte segura y, sobre todo, hacía que
+           las 6 clases jugaran la pelea de jefe exactamente igual. Suelo de 4.2u para los cuerpo a
+           cuerpo (el jefe es enorme; más cerca te comes el AoE sin poder reaccionar). */
+        const bRange = Math.max(4.2, prof.range);
+        if(prof.kite>0 && bd < bRange*0.75){
+          /* KITING contra el jefe: retrocede encarándolo y sigue castigando con la Q */
+          me.yaw = Math.atan2(bdx, bdz);
+          const s = Math.sin(t*1.9)*0.4;
+          ai.dir.set(-to.x + to.z*s, 0, -to.z - to.x*s).normalize();
+          if(me.qCD<=0 && Math.random()<prof.qChance*D.aggr) classQ(me);
+          if(me.dashCD<=0 && bd < bRange*0.45 && Math.random()<0.5*D.acc) aiDash(me, ai.dir);
+          const kx = me.pos.x+ai.dir.x*2.6, kz = me.pos.z+ai.dir.z*2.6;
+          if(me.onGround && !overAnyPlatform(kx,kz)) ai.dir.copy(to);   // sin sitio para retroceder: aguanta
+        } else if(bd > bRange){
+          /* acercarse castigando a distancia, con la ventana y las ganas de SU clase */
+          if(bd>prof.qMin && bd<prof.qMax && me.qCD<=0 && Math.random()<prof.qChance*D.aggr) classQ(me);
+          if(me.superCD<=0 && me.onGround && bd<prof.supMax && Math.random()<prof.supChance*0.75*D.aggr){
             me.yaw = Math.atan2(bdx, bdz); classSuper(me); ai.dir.set(0,0,0); return ai.dir;
           }
+          /* ya está en su ventana de tiro: se queda trabajando de lejos en vez de correr hacia el jefe */
+          if(prof.kite>0 && bd < prof.qMax){ ai.dir.set(0,0,0); me.yaw = Math.atan2(bdx, bdz); return ai.dir; }
           const s = Math.sin(t*1.7)*.3;                               // strafe leve al aproximar
           ai.dir.set(to.x - to.z*s, 0, to.z + to.x*s).normalize();
-          if(me.dashCD<=0 && bd>8 && Math.random()<.35) aiDash(me, ai.dir);
+          if(me.dashCD<=0 && bd>8 && Math.random()<.35*prof.aggr*D.aggr) aiDash(me, ai.dir);
           const nx = me.pos.x+ai.dir.x*2.6, nz = me.pos.z+ai.dir.z*2.6;
           if(me.onGround && !overAnyPlatform(nx,nz)) aiJump(me);
         } else {
@@ -15013,7 +15564,7 @@ function aiThink(p, dt){
           ai.dir.set(0,0,0);
           ai.atkDelay -= .15;
           if(me.comboWindow>0 && me.atk.phase==='none' && Math.random()<.8){ me.yaw = Math.atan2(bdx, bdz); aiMelee(me); }
-          else if(ai.atkDelay<=0 && me.atk.phase==='none'){ ai.atkDelay = .3 + Math.random()*.5; me.yaw = Math.atan2(bdx, bdz); aiMelee(me); }
+          else if(ai.atkDelay<=0 && me.atk.phase==='none'){ ai.atkDelay = (.3 + Math.random()*.5) * D.react; me.yaw = Math.atan2(bdx, bdz); aiMelee(me); }
         }
       }
       return ai.dir;
@@ -15052,12 +15603,12 @@ function aiThink(p, dt){
   }
   const pd = me.pos.distanceTo(e.pos);
   if(!ai.blockWant && ai.blockDelay<0 && e.atk.phase==='wind' && pd<3.2
-     && me.atk.phase==='none' && Math.random()<.05){
-    ai.blockDelay = Math.random()*.22;   // a veces llega al parry, a veces tarde
+     && me.atk.phase==='none' && Math.random()<.05*D.acc){
+    ai.blockDelay = Math.random()*.22*D.react;   // a veces llega al parry, a veces tarde (►AIDIFF: en DURO llega más)
   }
 
   if(ai.think<=0){
-    ai.think = .12 + Math.random()*.15;
+    ai.think = (.12 + Math.random()*.15) * D.react;   // ►AIDIFF: cada cuánto vuelve a decidir (menor = reacciona antes)
 
     /* ►SURVIVE · CURA: muy dañada + cura lista + sin golpe inminente del rival → cúrate.
        Bajar el % acumulado = no te sacan del mapa de un solo golpe → sobrevives hasta el jefe. */
@@ -15118,9 +15669,24 @@ function aiThink(p, dt){
 
     if(ai.blockWant){
       ai.dir.set(0,0,0);                 // aguanta el bloqueo quieta
-    } else if(dist > 2.1){
+    } else if(prof.kite>0 && dist < prof.range*0.7 && !tgtMin){
+      /* ►AIPROF · KITING: le han entrado dentro de su distancia de trabajo. Una tiradora NO debe
+         quedarse a intercambiar golpes — retrocede ENCARANDO al rival (para seguir disparando) y usa
+         el dash como salida. Sin esto, la arquera y el mago acababan siempre en cuerpo a cuerpo, que
+         es justo donde peor están: por eso las 6 clases se sentían iguales.
+         Solo contra JUGADORES (tgtMin=false): huir de cada minion las dejaría sin puntuar. */
+      me.yaw = tyaw;                                     // sigue encarando: dispara mientras retrocede
+      const away = new THREE.Vector3(-to.x, 0, -to.z);
+      const s = Math.sin(t*1.9)*0.45;                    // no en línea recta: se sale de lado
+      ai.dir.set(away.x - away.z*s, 0, away.z + away.x*s).normalize();
+      if(me.dashCD<=0 && dist < prof.range*0.4 && Math.random()<0.5*prof.kite*D.acc) aiDash(me, ai.dir);
+      if(me.qCD<=0 && Math.random()<prof.qChance*D.aggr) classQ(me);     // castiga mientras se aparta
+      const kx = me.pos.x+ai.dir.x*2.6, kz = me.pos.z+ai.dir.z*2.6;
+      if(me.onGround && !overAnyPlatform(kx, kz)) ai.dir.copy(to);       // detrás hay vacío: mejor pelear que caerse
+      return ai.dir;
+    } else if(dist > prof.range){
       /* ¿saca el SÚPER de SU clase? (E por enfriamiento) — NO el rayo genérico viejo */
-      if(me.superCD<=0 && me.onGround && dist<13 && Math.random()<(tgtMin?.28:.4)){
+      if(me.superCD<=0 && me.onGround && dist<prof.supMax && Math.random()<(tgtMin?prof.supChance*0.7:prof.supChance)*D.aggr){
         me.yaw = tyaw;
         classSuper(me);
         ai.dir.set(0,0,0);
@@ -15132,15 +15698,18 @@ function aiThink(p, dt){
         const ok = me.weapon.kind==='bow' ? fireBow(me) : fireBazooka(me);
         if(ok){ me.wpnCD = (me.weapon.kind==='bow'?.5:1.0)*rateMul(me); me.weapon.ammo--; if(me.weapon.ammo<=0) me.weapon=null; }
       }
-      /* ¿HABILIDAD Q de su clase? a media distancia (hacha/corte viento/perforante/orbe/jabalina/castigo) */
-      if(dist>6 && dist<17 && me.qCD<=0 && Math.random()<.45){
+      /* ►AIPROF · HABILIDAD Q en SU ventana de distancia (antes 6-17 fija para todas) */
+      if(dist>prof.qMin && dist<prof.qMax && me.qCD<=0 && Math.random()<prof.qChance*D.aggr){
         me.yaw = tyaw; classQ(me);
       }
+      /* ►AIPROF: las de rango NO cierran distancia si ya están dentro de su ventana de tiro — se
+         quedan trabajando desde lejos en vez de correr hacia el enemigo como hacían todas. */
+      if(prof.kite>0 && dist < prof.qMax && me.qCD>0 && Math.random()<0.5){ ai.dir.set(0,0,0); return ai.dir; }
       // strafe ligero (más recto cuando estás dañada → no te expongas de lado cerca de los bordes)
       const s = Math.sin(t*1.7)*(me.damage>55?.15:.35);
       ai.dir.set(to.x - to.z*s, 0, to.z + to.x*s).normalize();
       if(!tgtMin && e.stun>0 && me.dashCD<=0 && dist>3.5) aiDash(me, ai.dir);   // ¡a por el aturdido!
-      else if(me.dashCD<=0 && dist>7 && me.damage<60 && Math.random()<.35) aiDash(me, ai.dir);   // no te lances de cabeza si vas muy dañada
+      else if(me.dashCD<=0 && dist>7 && me.damage<60 && Math.random()<.35*prof.aggr*D.aggr) aiDash(me, ai.dir);   // no te lances de cabeza si vas muy dañada
       if(tgt.pos.y > me.pos.y+2 && me.onGround && Math.random()<.4) aiJump(me);
     } else {
       ai.dir.set(0,0,0);
@@ -15151,7 +15720,7 @@ function aiThink(p, dt){
       } else if(me.comboWindow>0 && me.atk.phase==='none' && Math.random()<.8){
         aiMelee(me);                     // continúa (con arma si la tiene)
       } else if(ai.atkDelay<=0 && me.atk.phase==='none'){
-        ai.atkDelay = .3 + Math.random()*.5;
+        ai.atkDelay = (.3 + Math.random()*.5) * D.react;   // ►AIDIFF: ritmo de golpeo (menor = encadena antes)
         aiMelee(me);
       }
     }
@@ -15241,7 +15810,7 @@ const MS_COMMON = [   // utilidad compartida por todas las clases (botón mando 
   { pad:'A',  key:'Esp', name:'Saltar', desc:'Salta; en el aire, doble salto.',                 dmg:0 },
   { pad:'RT', key:'May', name:'Dash',   desc:'Impulso rápido para esquivar o entrar.',           dmg:0 },
   { pad:'LB', key:'T',   name:'Escudo', desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.', dmg:0 },
-  { pad:'LT', key:'L / clic dcho.', name:'Agarre', desc:'Suelo: agarras y paseas al rival (forcejea para zafarse). Aire: te agarras a un borde. Gasta AGUANTE (3 s).', dmg:0 },   // ►LTGRAB: dmg 1→0 (ya NO hace daño: es empujar y molestar)
+  { pad:'LT', key:'L / clic dcho.', name:'Empujón', desc:'Suelo: gastas TODA la barra de aguante y sueltas un EMPUJÓN fuerte a quien tengas delante (queda vacía y parpadeando ~3 s). Aire: te agarras a un borde.', dmg:0 },   // ►LTSHOVE: LT ya no agarra-pasea; empujón que cuesta la barra entera
   { pad:'↑',  key:'H',   name:'Cura',   desc:'Recuperas vida (con enfriamiento).',               dmg:0 },
 ];
 const MS_ROLE = { voxelhero:'Bruto cuerpo a cuerpo', samurai:'Espadachín ágil', archer:'Tiradora veloz',
@@ -15308,9 +15877,11 @@ function renderCtrlBar(){
    · ATAQUES con COOLDOWN (E·Q·F·R): botón relleno con carga vertical (updateAtkBar por frame).
    · UTILIDAD (MS_COMMON): botones fijos, sin relleno. El básico (J) ya no se muestra (no tiene cooldown). */
 const ATK_SLOTS = [   // botones CON relleno de enfriamiento · slot + botón de mando + tecla
+  { slot:'shove', pad:'LT', key:'L', name:'Empujón' },   // ►LTSHOVE: LT en el suelo — se rellena con la barra de AGUANTE (STAM_CD)
   { slot:'e', pad:'B',  key:'E' }, { slot:'q', pad:'RB', key:'Q' },
   { slot:'f', pad:'L3', key:'F' }, { slot:'r', pad:'Y',  key:'R' },
   { slot:'shield', pad:'LB', key:'T', name:'Escudo' },   // ►SHIELDCD: el escudo también se rellena con su enfriamiento
+  { slot:'heal', pad:'↑', key:'H', name:'Cura' },        // ►HEALCD: la cura (H) — se rellena con HEAL_CD (pedido de Toni: es un move importante con cooldown)
 ];
 /* color del glifo de mando (relleno): frontales A/B/X/Y con su color; gatillos/bumpers/sticks/cruceta, tinte propio */
 const PAD_COL = { A:'#3ad06a', B:'#ff5e5e', X:'#5ec8ff', Y:'#ffd84f',
@@ -15337,7 +15908,7 @@ function renderAtkBar(){
     '</div>';
   let atk='', util='';
   for(const s of ATK_SLOTS) atk  += cd(s);
-  for(const u of MS_COMMON){ if(u.key==='T') continue; util += ut(u); }   // ►SHIELDCD: el Escudo (T) ya vive en el grupo con relleno; no repetir como utilidad
+  for(const u of MS_COMMON){ if(u.pad==='LB' || u.pad==='LT' || u.pad==='↑') continue; util += ut(u); }   // Escudo(T)/Empujón(LT)/Cura(H) ya viven en el grupo CON relleno; aquí solo quedan Saltar/Dash
   el.innerHTML = '<div class="atkGroup">'+atk+'</div><div class="atkSep"></div><div class="atkGroup util">'+util+'</div>';
 }
 let _ctrlBarOn = true, _ctrlBarKey = null, _selPrev = false;
@@ -15474,6 +16045,7 @@ function updateFighter(p, dt){
   p.superBuf = Math.max(0, (p.superBuf||0)-dt);
   p.spinBuf  = Math.max(0, (p.spinBuf||0)-dt);   // buffer de la F (giro): no se pierde la pulsación
   p._iaidoT  = Math.max(0, (p._iaidoT||0)-dt);   // pose de corte del IAIDO (samurái)
+  p._bowPoseT = Math.max(0, (p._bowPoseT||0)-dt);   // ►WPNANIM: pose de disparo con ARCO recogido (clip 'aim' de la arquera)
   p._qPoseT = Math.max(0, (p._qPoseT||0)-dt); p._orbePoseT = Math.max(0, (p._orbePoseT||0)-dt);   // poses Q/F (anim samurái)
   p._healPoseT = Math.max(0, (p._healPoseT||0)-dt); p._swComboT = Math.max(0, (p._swComboT||0)-dt); // pose cura + ventana del combo visual
   p._shieldPoseT = Math.max(0, (p._shieldPoseT||0)-dt);   // ventana de la anim de alzar escudo (samurái)
@@ -15664,7 +16236,7 @@ function updateFighter(p, dt){
   /* --- ►LTSTAM · COLGADO DEL BORDE ---
      LT SOSTENIDO te mantiene; el aguante es el reloj. Reglas pedidas por Toni:
      · soltar LT = te descuelgas · aguante a 0 = te suelta y caes sin reenganche
-     · SALTO colgado = TREPAS al borde (no saltas) · apuntar FUERA + salto = te sueltas SALTANDO
+     · SALTO colgado = TREPAS al borde SIEMPRE (no saltas), da igual hacia dónde apuntes el stick
      · colgarse NO recarga saltos ni dash (eso solo lo hace el suelo). */
   if(p.hang){
     if(BELT.on) p.hang.x += BELT.vel*dt;
@@ -15672,14 +16244,9 @@ function updateFighter(p, dt){
     p.hangT += dt;
     p.onGround = false;
     if(!p.isAI){
-      const away = (move.x*p.hang.nx + move.z*p.hang.nz) > 0.35;   // joystick apuntando AFUERA del borde
-      if(wantJump && away){                                        // FUERA + salto = salida voluntaria SALTANDO
-        p.hang=null; p.hangCD=.5; p.vel.y = JUMP*jmpMul(p);
-        p.vel.x = move.x*RUN*0.55; p.vel.z = move.z*RUN*0.55;
-        sfx.jump(); jiggle(p, 5);
-        wantJump = false;                                          // CONSUMIDO: si no, el salto de más abajo gastaría además un salto aéreo
-      }
-      else if(wantJump){ ledgeClimb(p); wantJump = false; }        // salto a secas = TREPAR (sin saltar; consumido → no re-salta al pisar)
+      /* ►CLIMB (Toni): saltar colgado = TREPAR SIEMPRE, apuntes donde apuntes el stick.
+         Ya no hay salida voluntaria saltando hacia atrás: para bajarte, sueltas LT y caes. */
+      if(wantJump){ ledgeClimb(p); wantJump = false; }             // salto a secas = TREPAR (sin saltar; consumido → no re-salta al pisar)
       else if(!grabHeld && p.hangT>.12){ p.hang=null; p.hangCD=.45; p.vel.y=-2; }   // soltar LT = caer
     }
     else if(p.hangT>.4) ledgeClimb(p);                             // la CPU trepa y sigue (no se queda colgada)
@@ -15802,12 +16369,12 @@ function updateFighter(p, dt){
        `else if` y el buffer del martillo (siempre vivo en combate) se tragaba el turno → LT "no iba".
        Y va por SOSTENIDO: mientras lo mantengas te enganchas EN CUANTO entras en la banda del borde
        (antes era un flanco de 1 frame = lotería).
-       Reparto sin ambigüedad: EN EL AIRE = agarre de BORDE · EN EL SUELO = agarrar a un RIVAL.
-       El BORDE va por SOSTENIDO (caes con LT apretado y te enganchas solo); el RIVAL exige PULSAR
-       de nuevo: con el sostenido, en cuanto se zafara lo volverías a agarrar en el mismo frame. */
+       Reparto sin ambigüedad: EN EL AIRE = agarre de BORDE · EN EL SUELO = ►LTSHOVE EMPUJÓN.
+       El BORDE va por SOSTENIDO (caes con LT apretado y te enganchas solo); el EMPUJÓN va por
+       PULSAR (flanco): gasta la barra ENTERA y suelta un buen empujón hacia delante. */
     if(!p.isAI && !p.hang && !p.holding && !p.heldBy && !p.block){
       if(!p.onGround){ if(grabHeld) tryLedgeGrab(p); }
-      else if(wantGrab) tryGrabPlayer(p);
+      else if(wantGrab) staminaShove(p);
     }
   }
 
@@ -16559,6 +17126,17 @@ function _occSetOpacity(root, op){                  // funde/restaura TODAS las 
     for(const m of ms){ m.transparent = op<1; m.opacity = op; m.depthWrite = op>=1; }
   }
 }
+/* ►FIX arrastre-cinta v4: opacidad de un árbol de la cinta (S2) para el fundido de muro. Usa las
+   mallas ya clonadas por el registro de oclusión (_occMeshes) si existen; si no, recorre el objeto.
+   La oclusión y este fundido no chocan: la oclusión solo funde lo que tapa al jugador (centro), nunca
+   los árboles de la banda de muro; y su restauración a opacidad 1 respeta _wallFade (guard abajo). */
+function _s2TreeSetOpacity(root, op){
+  const meshes = root.userData._occMeshes;
+  if(meshes){ for(const o of meshes){ const ms = Array.isArray(o.material)?o.material:[o.material];
+      for(const m of ms){ m.transparent = op<1; m.opacity = op; m.depthWrite = op>=1; } } return; }
+  root.traverse(o=>{ if(o.isMesh && o.material){ const ms = Array.isArray(o.material)?o.material:[o.material];
+    for(const m of ms){ m.transparent = op<1; m.opacity = op; m.depthWrite = op>=1; } } });
+}
 /* SILUETA RAYOS-X: cuando algo tapa al jugador, se dibuja su contorno POR ENCIMA de
    la geometría (depthTest:false) para que siempre se le pueda seguir, hasta en vista lejana */
 let _xraySil = null;
@@ -16619,7 +17197,7 @@ function updateOcclusion(){
     if(_lowest) now.delete(_gp._group);   // suelo real (nivel más bajo) → permanece SÓLIDO
   }
   for(const r of now)       if(!_occFaded.has(r)) _occSetOpacity(r, 0.16);
-  for(const r of _occFaded) if(!now.has(r))       _occSetOpacity(r, 1);
+  for(const r of _occFaded) if(!now.has(r))       _occSetOpacity(r, r.userData._wallFade!=null ? Math.min(1, r.userData._wallFade) : 1);   // ►FIX arrastre-cinta v4: al des-ocluir un árbol de la cinta, no lo devuelvas a opaco si está en la banda de fundido de muro
   _occNow = _occFaded; _occFaded = now;   // ►PERF: swap de referencias (el antiguo _occFaded se reutiliza el próximo tick)
   /* silueta rayos-X: visible solo cuando algo se interpone entre cámara y jugador */
   const sil = getXraySil();
@@ -17082,6 +17660,28 @@ function updateCamera(dt){
   if(roll) camera.rotateZ(roll);
   if(bokehPass) bokehPass.uniforms['focus'].value = camPos.distanceTo(camTarget);   // DoF: enfoca el punto que mira la cámara (la acción)
   updateOcclusion();   // funde lo que tape al jugador
+  updateBeltArrow();   // ►BELTARROW: orienta la flecha "hacia dónde ir" según la cámara actual
+}
+
+/* ►BELTARROW (estilo Crazy Taxi): flecha bajo el nivel de CAOS que apunta a la dirección CORRECTA
+   de avance. La cinta ARRASTRA al jugador en +X (world) → hay que ir hacia -X. Proyectamos ese vector
+   world a la pantalla usando los ejes de la cámara (que orbita), así la flecha rota con la cámara y
+   nunca desorienta. Se oculta cuando la cinta está parada (S6 pozo vertical) o fuera de partida. */
+const _baR = new THREE.Vector3(), _baU = new THREE.Vector3();
+let _beltArrowEl, _beltArrowRot, _beltArrowInit = false;
+function updateBeltArrow(){
+  if(!_beltArrowInit){ _beltArrowEl = document.getElementById('beltArrow'); _beltArrowRot = document.getElementById('beltArrowRot'); _beltArrowInit = true; }
+  if(!_beltArrowEl) return;
+  const active = BELT.on && Math.abs(BELT.vel) > 0.02 && !gameOver && !demo && stageIntroT<=0 && players.length>0;
+  if(!active){ if(!_beltArrowEl.classList.contains('hidden')) _beltArrowEl.classList.add('hidden'); return; }
+  if(_beltArrowEl.classList.contains('hidden')) _beltArrowEl.classList.remove('hidden');
+  const dirSign = (BELT.vel >= 0) ? -1 : 1;                 // dirección correcta = CONTRA la marcha (por si un stage invirtiera la cinta)
+  _baR.set(1,0,0).applyQuaternion(camera.quaternion);       // eje X de pantalla, en world
+  _baU.set(0,1,0).applyQuaternion(camera.quaternion);       // eje Y de pantalla (arriba), en world
+  const sx = dirSign * _baR.x;                              // componente pantalla-derecha del vector destino
+  const sy = dirSign * _baU.x;                              // componente pantalla-arriba
+  const deg = Math.atan2(sx, sy) * 180 / Math.PI;          // 0 = arriba, 90 = derecha (la flecha por defecto apunta arriba)
+  if(_beltArrowRot) _beltArrowRot.setAttribute('transform', 'rotate(' + deg.toFixed(1) + ' 50 50)');
 }
 
 /* =====================================================================
@@ -17113,6 +17713,7 @@ BELT._span = BELT.stride * BELT.count;
 BELT.startX = -BELT.stride;          // copia central en x=0 (spawn limpio)
 
 const WALL_X = 42;                    // paredes-limite izquierda/derecha (►FIX arrastre-cinta v2: los árboles de la cinta se apagan POR CHUNK al cruzar ±WALL_X — ver updateBelt)
+const S2_TREE_FADE = 9;               // ►FIX arrastre-cinta v4: banda (u.) antes de cada muro en la que los árboles de la cinta se DISUELVEN (opacidad 1→0) hasta llegar invisibles al muro — mata la "empalizada" pegada a la pared (ver updateBelt / _s2TreeSetOpacity)
 const WALL_PUSH = 16;                 // fuerza del rebote hacia el centro
 const BLAST_Z_FAR  = 54;             // muerte hacia el horizonte (-Z, mas lejos: mapa profundo)
 const BLAST_Z_NEAR = 44;             // muerte hacia la camara (+Z)
@@ -17377,15 +17978,17 @@ function updateBelt(dt){
     const dx = Math.max(0, Math.abs(cx - s.x) - HALF);
     let vis = Math.hypot(dx, cz) <= fogFar;
     s.group.visible = vis;
-    /* ►FIX arrastre-cinta (v3): el árbol se apaga EN CUANTO asoma por una pared-límite (±WALL_X), NO
-       cuando ya la ha rebasado entero. La v2 (cull "chunk entero fuera") dejaba VISIBLE el chunk
-       mientras CRUZABA el muro → sus árboles del borde flotaban en x>42 (zona muerta, sin suelo) =
-       "árboles pegados al muro". Con el caos la cinta acelera → el artefacto pasaba de esporádico a
-       constante/parpadeante ("tras un buen rato"). Ahora se apaga si CUALQUIER extremo de su AABB
-       (local de segmento) + s.x rebasa una pared → nunca hay copas tras el muro; el pop queda a ~½
-       chunk del muro (tapado por el force-field). Cubre CHUNKS del scatter y árboles sueltos de
-       escena (addStage2Tree): ambos llevan _lmn/_lmx en local de segmento (chunk: bbox horneado con
-       position=0; árbol suelto: Box3 precalculado en su creación, que incluye su x local). */
+    /* ►FIX arrastre-cinta (v4): FUNDIDO de muro en vez de corte duro. La v3 apagaba el árbol EN SECO
+       justo cuando su AABB tocaba ±WALL_X (la CARA del muro). Como la cinta repone árboles sin parar,
+       en la cara del muro quedaba SIEMPRE una "empalizada" de copas sólidas pegadas a la pared (y
+       cualquier copa que asomara un pelín se veía ahí) = lo que el usuario reporta como "árboles
+       pegados a los muros". Ahora cada árbol se DISUELVE (opacidad 1→0) en los últimos S2_TREE_FADE u.
+       antes del muro y llega INVISIBLE a la pared → nunca hay copas sólidas contra el muro ni tras él
+       (f=0 ⇒ visible=false en/pasado el muro, así que sigue siendo a prueba de fugas como la v3).
+       El fundido lo posee updateBelt; la oclusión (que solo funde lo que tapa al jugador, cerca del
+       centro) nunca toca los árboles de la banda de muro → sin conflicto (guard en _occSetOpacity).
+       Cubre CHUNKS del scatter y árboles sueltos de escena (addStage2Tree): ambos llevan _lmn/_lmx en
+       local de segmento (chunk: bbox horneado con position=0; árbol suelto: Box3 en su creación). */
     if(STAGE===2 && s.treeMeshes){
       for(const tm of s.treeMeshes){
         let lmn=tm.userData._lmn, lmx=tm.userData._lmx;
@@ -17394,8 +17997,13 @@ function updateBelt(dt){
           lmn = tm.userData._lmn = tm.geometry.boundingBox.min.x;
           lmx = tm.userData._lmx = tm.geometry.boundingBox.max.x;
         }
-        const outside = (lmx + s.x > WALL_X) || (lmn + s.x < -WALL_X);  // asoma por la pared derecha o izquierda → ocúltalo
-        tm.visible = vis && !outside;
+        const wR = lmx + s.x, wL = lmn + s.x;                           // bordes del árbol en X de MUNDO
+        const past = Math.max(wR - (WALL_X - S2_TREE_FADE), (-WALL_X + S2_TREE_FADE) - wL);   // cuánto entra en la banda de fundido de cualquiera de los 2 muros
+        const f = past <= 0 ? 1 : Math.max(0, 1 - past / S2_TREE_FADE); // 1 en zona libre → 0 justo en el muro
+        const prevF = tm.userData._wallFade;
+        tm.userData._wallFade = f;
+        if(f < 1 || prevF !== 1) _s2TreeSetOpacity(tm, f);              // solo tocamos material en la banda (o al salir de ella); el resto lo gobierna la oclusión
+        tm.visible = vis && f > 0.004;
       }
     }
   }
@@ -26628,7 +27236,7 @@ function stageResetPlayers(){
     p.block = false; p.shieldT = 0; p.comboStage = 0; p.comboWindow = 0; p.hitFlash = 0;
     p.weapon = null; p.rainbowT = 0; p._rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // el arma/arcoíris no cruzan el portal (como al morir)
     /* carril TEMPORAL a cero: las cápsulas y los pasivos del suelo YA NO cruzan (antes SÍ lo hacían) */
-    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0 };
+    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false;
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;
     p.mpow = 0; p.invuln = 1.5; endUlt(p); endBeam(p); clearFX(p);
@@ -26664,7 +27272,7 @@ function goToStage2(){
   /* 3) re-rampa del caos: Stage 2 arranca fuerte y vuelve a subir hasta el jefe 2 */
   chaosLvl = S2_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   /* 4) TODOS entran cayendo a la jungla; solo cruza lo COMPRADO */
   stageResetPlayers();
   /* 5) fanfarria */
@@ -26702,7 +27310,7 @@ function goToStage3(){
   /* 3) re-rampa del caos */
   chaosLvl = S3_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   /* 4) los vivos entran cayendo al jardín CON su progreso */
   stageResetPlayers();
   /* 5) fanfarria */
@@ -26740,7 +27348,7 @@ function goToStage4(){
   /* 3) re-rampa del caos: Stage 4 arranca aún más fuerte (6→10 → jefe 3) */
   chaosLvl = S4_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   /* 4) los vivos entran cayendo al desierto CON su progreso */
   stageResetPlayers();
   /* 5) fanfarria */
@@ -26774,7 +27382,7 @@ function goToStage5(){
   enableWeather(true);                                         // S5 = interior (kind 'none' → sin lluvia/arena)
   chaosLvl = S5_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 5: PIRÁMIDE!', 2.6); sfx.chaos();
@@ -26806,7 +27414,7 @@ function goToStage6(){
   enableWeather(true);                                         // S6 = interior (kind 'none')
   chaosLvl = S6_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 6: EL POZO!', 2.6); sfx.chaos();
@@ -26836,7 +27444,7 @@ function goToStage7(){
   enableWeather(true);                                         // ►P6: S7 = NIEVE (kind 'snow' + ventisca GUST)
   chaosLvl = S7_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 7: CUMBRES NEVADAS!', 2.6); sfx.chaos();
@@ -26866,7 +27474,7 @@ function goToStage8(){
   enableWeather(true);                                         // ►P7: S8 = interior de palacio (kind 'none', SIN viento)
   chaosLvl = S8_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 8: LA FÁBRICA!', 2.6); sfx.chaos();
@@ -26896,7 +27504,7 @@ function goToStage9(){
   enableWeather(true);                                         // ►P8: cielo abierto sereno (kind 'none')
   chaosLvl = S9_CHAOS_START; chaosT = 0;
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 9: CIELO ROTO!', 2.6); sfx.chaos();
@@ -26928,7 +27536,7 @@ function goToStage10(){
   if(S10WAVE.phase!=='none') _s10EndWave(false);   // ►S10WAVE: por si quedaba una oleada activa (reinicio)
   S10WAVE._cleared = {};                            // ►S10WAVE: nueva partida en la Vía → las oleadas 2/4/6/8 vuelven a poder dispararse
   const ch = document.getElementById('chaos');
-  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (15 + chaosLvl*1.6)+'px'; }
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
   showBanner('¡STAGE 10: VÍA ARCOÍRIS!', 2.6); sfx.chaos();
@@ -27028,15 +27636,17 @@ function frame(now){
       updateStorm(pl, dt); updateBastion(pl, dt); updateZone(pl, dt); updateFireShield(pl, dt); updateHealDisc(pl, dt); updateRain(pl, dt);   // firmas B2
       if(!pl.dead && !pl.out) pl.sc.surv += dt;   // puntúa el tiempo aguantado
     }
-    updateShardsFly(dt);
-    updateCapsules(dt);
-    updateItems(dt);
-    updateWprojs(dt);
-    updateMines(dt);
-    updateEnergyOrbs(dt);
-    updateFireLines(dt);
-    updateMinions(dt);
-    updateBouncers(dt);
+    if(stageIntroT<=0){   // ►INTERSTAGE FIX: estos actores aplican BELT.vel por su cuenta → sin gatear derivaban hacia atrás con la cinta congelada (minions/objetos "arrastrados" mientras el mapa no se mueve). Ahora quietos como la cinta y los luchadores, igual que en Stage 1.
+      updateShardsFly(dt);
+      updateCapsules(dt);
+      updateItems(dt);
+      updateWprojs(dt);
+      updateMines(dt);
+      updateEnergyOrbs(dt);
+      updateFireLines(dt);
+      updateMinions(dt);
+      updateBouncers(dt);
+    }
     /* el reloj del CAOS */
     if(stageIntroT<=0 && !demo && !TRAIN.on) matchT += dt;   // reloj de la partida real (alimenta la nota proporcional a la duración) · ►INTERSTAGE VIVO: parado durante la presentación
     if(stageIntroT<=0 && !(S10WAVE.phase==='fight')) chaosT += dt;   // ►INTERSTAGE VIVO: el caos no avanza durante la cuenta 3·2·1 · ►S10WAVE: ni durante una oleada de jefes
@@ -27045,7 +27655,8 @@ function frame(now){
       showBanner('¡CAOS NIVEL '+chaosLvl+'!', 1.5);
       const ch = document.getElementById('chaos');
       ch.textContent = 'CAOS '+chaosLvl;
-      ch.style.fontSize = (15 + chaosLvl*1.6)+'px';
+      ch.style.fontSize = (25 + chaosLvl*2.0)+'px';
+      ch.classList.remove('bump'); void ch.offsetWidth; ch.classList.add('bump');   // ►CHAOSHUD: pop de "sube de nivel"
       flashT = Math.max(flashT, .22);
       shake = Math.max(shake, .55);
       fovKick = Math.max(fovKick, .9);
@@ -27178,7 +27789,7 @@ function startDemo(){
     p.isAI = true; p.dead = false; p.out = false; p.stocks = 9; p.invuln = 0; p._rainbowT = 0;
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
     p.pasSpikes=p.pasElec=p.pasMagnet=p.pasSpring=p.pasMines=false;
-    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0 };
+    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: el attract no arrastra compras
     p.ownPas = { spikes:false, elec:false, magnet:false, spring:false, mines:false };
     p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 }; p.mpow = 0; p.lastHitBy = null; p._scSnap = null;   // ►LBREDO: foto del stage fuera también en el attract
@@ -27220,6 +27831,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   chaosLvl = 0; chaosT = 0; capT = 8; matchT = 0; outCount = 0;
   interlude = false; shopOpen = false; shopT = 0;   // ►SHOP: tienda cerrada al (re)empezar
   ISTAGE.ph = 'none'; ISTAGE.t = 0; STAGE_LOG.length = 0; stageIntroT = 0; fadeClear();   // ►INTERSTAGE: entre-stage, roadmap y presentación a cero
+  _bossSeen.clear();   // ►SAVE: los jefes de la run anterior ya se contaron; esta partida empieza a contar de nuevo
   { const _po=document.getElementById('perkOverlay'); if(_po) _po.style.display='none'; }
   { const _lo=document.getElementById('lbOverlay'); if(_lo) _lo.style.display='none'; }   // ►LBREDO: la clasificación tampoco sobrevive a un (re)inicio (winCelebrate se auto-apaga al verla oculta)
   if(STAGE!==MENU_STAGE){ STAGE = MENU_STAGE; _stagePreview = MENU_STAGE; applyStageTheme(MENU_STAGE); rebuildBelt(); enableWeather(MENU_STAGE>=2); }   // ►RONDA2: la partida empieza en el stage ELEGIDO en el menú (F9); la campaña anterior pudo dejar STAGE=2/3
@@ -27237,7 +27849,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.invuln = 1.5; p.gfx.root.visible = true;
     p.power = 0; p.shardAmmo = SHARD_AMMO; p.shardCD = 0; p.shardReload = 0; p.qAmmo = Q_AMMO; p.qReload = 0; p.qCD = 0; p._qMax = 0; p.healCD = 0; p.buffSpdT = 0; p.buffRateT = 0; p.buffDmgT = 0; p.buffDefT = 0;
     p.throwT = 0; endBeam(p);
-    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0 };
+    p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: carril COMPRADO a cero (es por RUN)
     p.ownPas = { spikes:false, elec:false, magnet:false, spring:false, mines:false };
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
@@ -27245,6 +27857,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;   // ►INTERSTAGE: timers de pasivo (antes se quedaban colgados)
     p.runXP = 0; p._runXPseen = 0;   // ►SHOP: cartera de EXP por jugador a cero (XP por RUN)
     p._buys = 0; p._buysThisStage = 0;   // ►INTERSTAGE: compras del run (inflan el precio) y del stage (tope)
+    p._offer = null; p._rerolls = 0;     // ►DRAFT: la mano y las re-tiradas son de la run anterior
     p._pkLifesteal = false; p._pkAir = 0;   // ►PERKS: limpia perks generales de flag
     p._pkRegen = p._pkBerserk = p._pkUltCharge = p._pkPhoenix = p._phoenixCharge = false;
     p._pkTwinAxe = p._pkTriShuriken = p._pkArrowRain = p._pkSkyStorm = p._pkShieldWall = p._pkSanctuary = false;   // ►PERKS: y los únicos por clase
@@ -27482,7 +28095,7 @@ function refreshSetup(){
        Maqueta de Toni: el mando en el centro, etiquetas a los lados con línea guía, y SIEMPRE el
        marcador de botón DELANTE en negrita ("LT Agarre", "RT Dash", "Y <definitiva>"…).
        Lo ÚNICO que cambia por clase son las 5 habilidades: X=básico · B=E · Y=R · Click(L3)=F · RB=Q.
-       Fijos para todos: A=Saltar · LT=Agarre · LB=Escudo · RT=Dash · Mover · cruceta · stick dcho.
+       Fijos para todos: A=Saltar · LT=Empujón · LB=Escudo · RT=Dash · Mover · cruceta · stick dcho.
        Todo contrastado contra readInput() — que es la única verdad (el diagrama viejo MENTÍA).
 
        ESCALA: la columna mide ~460 px y el viewBox 760 → 0.605. Por eso las fuentes se DECLARAN
@@ -27549,7 +28162,7 @@ function refreshSetup(){
       '<g class="ctl" id="pad-A"><circle class="hit" cx="'+px(420)+'" cy="'+py(150)+'" r="18"/></g>'+
       '<g class="ctl" id="pad-X"><circle class="hit" cx="'+px(383)+'" cy="'+py(113)+'" r="18"/></g>'+
       /* --- rótulos: marcador SIEMPRE delante --- */
-      tag(LX,  42, 'LT', 'Agarre',  null,      'end')+
+      tag(LX,  42, 'LT', 'Empujón', null,      'end')+
       tag(LX,  68, 'LB', 'Escudo',  null,      'end')+
       tag(LX, 152, 'Mover', 'Moverse', null,   'end')+
       tag(LX, 178, 'Click', f,      col,       'end')+
@@ -27599,8 +28212,8 @@ function refreshSetup(){
       '</style></defs>'+
       /* habilidades: 2 filas de 4, paso 96 → hasta 11 caracteres por línea de rótulo */
       key(30,36,40,'Q',q,col)+ key(126,36,40,'E',e,col)+ key(222,36,40,'R',r,col)+
-      /* la J (básico) y la L (agarre) se retiran del diagrama: ambas son alias del RATÓN, que ya se
-         dibuja con sus dos rótulos ("CLIC IZQ · <básico>" y "CLIC DCHO · AGARRE"). Siguen funcionando
+      /* la J (básico) y la L (empujón) se retiran del diagrama: ambas son alias del RATÓN, que ya se
+         dibuja con sus dos rótulos ("CLIC IZQ · <básico>" y "CLIC DCHO · EMPUJÓN"). Siguen funcionando
          en readInput(); solo dejan de enseñarse. */
       key(30,118,40,'F',f,col)+ key(126,118,40,'H','CURAR',col)+ key(222,118,40,'T','ESCUDO',null)+
       key(30,200,92,'SHIFT','DASH',null,'SHIFT')+ key(142,200,176,'ESPACIO','SALTAR',null,'ESPACIO')+
@@ -27616,7 +28229,7 @@ function refreshSetup(){
       '<text class="cap" x="490" y="146" text-anchor="middle">MOVER</text>'+
       '<text class="capS" x="490" y="162" text-anchor="middle" style="opacity:.75">o las flechas</text>'+
       '<text class="capS" x="490" y="276" text-anchor="middle" style="fill:'+col+'">CLIC IZQ · '+b+'</text>'+
-      '<text class="capS" x="490" y="290" text-anchor="middle">CLIC DCHO · AGARRE</text>'+
+      '<text class="capS" x="490" y="290" text-anchor="middle">CLIC DCHO · EMPUJÓN</text>'+
       '</svg>';
     /* dos PESTAÑAS (mando / teclado): solo una visible a la vez → no estrecha el slide */
     const tab   = (id,lbl)=> '<button class="cpTab'+(diagTab===id?' on':'')+'" data-tab="'+id+'">'+lbl+'</button>';
@@ -27645,8 +28258,8 @@ function refreshSetup(){
       desc:'Impulso rápido para esquivar o entrar.' },
     { slot:'escudo', pad:'LB', kbdId:'T',       kbd:'T',       nm:'Escudo', vid:'escudo',
       desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.' },
-    { slot:'agarre', pad:'LT', kbdId:'MOUSER',  kbd:'Clic dcho.',     nm:'Agarre', vid:null,
-      desc:'Suelo: agarras y paseas al rival. Aire: te agarras a un borde. Gasta aguante.' },
+    { slot:'agarre', pad:'LT', kbdId:'MOUSER',  kbd:'Clic dcho.',     nm:'Empujón', vid:null,
+      desc:'Suelo: gastas TODA la barra de aguante y sueltas un empujón fuerte a quien tengas delante. Aire: te agarras a un borde.' },
     { slot:'curar',  pad:'DPAD', kbdId:'H',     kbd:'H',       nm:'Curar',  vid:'curar',
       desc:'Recuperas vida (con enfriamiento). Cada clase se cura a su manera.' },
     /* --- sin vídeo por naturaleza: se enseña la ficha sin clip --- */
@@ -27839,7 +28452,7 @@ function refreshSetup(){
     salto:'Saltas; y en el aire puedes saltar una segunda vez para llegar más lejos o corregir la caída. Es lo que te devuelve al mapa cuando te han mandado fuera.',
     dash:'Un impulso rápido en la dirección que lleves. Vale igual para esquivar un ataque que ves venir que para plantarte de golpe en la cara del rival.',
     escudo:'Levantas una burbuja de 5 segundos que te protege y aparta a los que tengas alrededor. Úsala cuando te rodeen o para cortar el combo del enemigo.',
-    agarre:'En el suelo agarras al rival y lo paseas donde quieras, mientras él forcejea por zafarse; en el aire te agarras a un borde para no caer. Gasta AGUANTE, así que no lo mantengas eternamente.',
+    agarre:'En el suelo, con la barra de AGUANTE llena, sueltas un EMPUJÓN fuerte a quien tengas delante: te gasta la barra ENTERA, que queda vacía y parpadeando unos 3 s antes de recargarse. En el aire te agarras a un borde para no caer.',
     curar:'Recuperas vida, con un enfriamiento entre usos. No lo malgastes: es para cuando sales de una pelea, no para en medio de ella. Cada clase se cura a su manera.',
   };
   /* la descripción larga MANDA; si algún día falta una, cae a la breve de MS_MOVES (nunca vacío) */
@@ -27996,9 +28609,21 @@ function refreshSetup(){
     warmClips(k);   //          el cambio de clase, _cpSync y _cpOnModelLoaded (los 3 pasan por aquí)
     const t = CP_TEXT[k] || {};
     const label = (CLASS_PICK.find(c=>c[0]===k) || ['',''])[1];
+    /* ►SAVE · MAESTRÍA: tu marca personal CON ESTA CLASE. Solo aparece si ya la has jugado — así
+       el selector premia probar las 6 en vez de quedarte siempre con la misma. */
+    let mast = '';
+    try{
+      const c = saveGet().cls[k];
+      if(c && c.runs){
+        const bits = ['<b>'+Math.round(c.bestScore).toLocaleString('es-ES')+'</b> mejor',
+                      c.runs+(c.runs===1?' run':' runs')];
+        if(c.wins) bits.push('👑 '+c.wins);
+        mast = '<div id="cpMastery">'+bits.join(' · ')+'</div>';
+      }
+    }catch(e){}
     info.innerHTML =
       '<div id="cpRole">'+(t.role||'')+'</div>'+
-      '<h3 id="cpName" style="color:'+uiLite(k)+'">'+label+'</h3>';
+      '<h3 id="cpName" style="color:'+uiLite(k)+'">'+label+'</h3>'+ mast;
     if(pc){ pc.innerHTML = pcHTML(k); fitPC(); }
     atkClose();     // ►ATKSHOW: cambió la clase → los ataques abiertos ya no son los suyos
     { const b = document.getElementById('cpAtkBtn'); if(b) b.style.setProperty('--hc', uiLite(k)); }
@@ -28162,7 +28787,8 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
     def:'−10% del daño que recibes (se acumula)',
     kb:'+empuje: mandas a los rivales más lejos del borde',
     spd:'+8% de velocidad de carrera (se acumula)',
-    jmp:'+7% de impulso de salto (se acumula)',
+    jmp:'+7% de impulso de salto: saltas más ALTO (se acumula, con tope)',
+    airj:'+1 salto aéreo extra este stage (hasta +3 · máx 5 saltos; 7 si compras SALTO EXTRA en la tienda)',
     rate:'−14% de enfriamiento al atacar: pegas más seguido',
     hp:'corazón: cura '+CAP_HEAL+' de daño acumulado',
   };
@@ -28192,7 +28818,8 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
     h += '<div class="gSecTitle">Cápsulas de mejora</div>';
     for(const t of CAP_TYPES) h += row(t.ic, t.col, t.label, CAP_DESC[t.k]||'');
     h += '<div class="gSecTitle">Armas</div>';
-    for(const k in WEAPON_DEFS){ const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||''); }
+    for(const k in WEAPON_DEFS){ if(k==='bazooka') continue;   // ►Toni: bazooka ya no es cogible → fuera de la guía
+      const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||''); }
     h += '<div class="gSecTitle">Poderes pasivos</div>';
     for(const k in PASSIVE_DEFS){ const d=PASSIVE_DEFS[k]; h += row(d.label, d.col, d.name, PAS_DESC[k]||''); }
     h += '<div class="gSecTitle">Objeto especial</div>';
@@ -28437,6 +29064,30 @@ function toggleVisualGUI(){
 }
 addEventListener('keydown', e=>{ if(e.code==='F2' || e.key==='F2'){ toggleVisualGUI(); e.preventDefault(); } });
 try { applyPreset(_presetState.preset); } catch(_e){ try { applyVisual(); } catch(_e2){} }   // aplica el preset por defecto al cargar (sin él, sincroniza a secas)
+
+/* ►SAVE · TIRA DE RÉCORDS DE LA PORTADA.
+   Se pinta AQUÍ, al final del bloque, porque lee CAMPAIGN_STAGES / STAGE_TAG — que son `const`
+   declaradas más abajo que el módulo de guardado: llamarla antes daría error de zona muerta.
+   Si nunca has jugado (runs=0) no se pinta nada: una home vacía de ceros es peor que sin tira. */
+function renderHomeRecords(){
+  try{
+    const el = document.getElementById('homeRecords'); if(!el) return;
+    const s = saveGet();
+    if(!s.runs){ el.classList.remove('show'); el.innerHTML=''; return; }
+    const bits = [];
+    if(saveUnlocked('campeon')) bits.push(['🎖','TÍTULO','CAMPEÓN']);   // ►SAVE: campaña completada al menos una vez
+    if(s.bestScore) bits.push(['🏆','MEJOR', Math.round(s.bestScore).toLocaleString('es-ES') + (s.bestGrade ? (' · '+s.bestGrade) : '')]);
+    if(s.wins)      bits.push(['👑','REYES', s.wins]);
+    bits.push(['🎮','RUNS', s.runs]);
+    if(s.bestStage){
+      const st = CAMPAIGN_STAGES[s.bestStage-1];
+      bits.push(['🗺','MÁS LEJOS', (STAGE_TAG[st]||('STAGE '+st)) + ' (' + s.bestStage + '/' + CAMPAIGN_STAGES.length + ')']);
+    }
+    el.innerHTML = bits.map(b=>'<span class="hrItem"><i>'+b[0]+'</i><b>'+b[1]+'</b><u>'+b[2]+'</u></span>').join('');
+    el.classList.add('show');
+  }catch(e){ console.warn('[homeRecords]', e); }
+}
+renderHomeRecords();
 </script>
 
 <!-- =================== ONLINE (beta) — multijugador P2P host-autoritativo vía Trystero ===================
@@ -28750,10 +29401,10 @@ window.__I18N_DYN=[{"es":"LEGIBILIDAD: {0}","t":["READABILITY: {0}","LEGGIBILIT�
   /* --- anillo de foco visible (los juegos suelen quitar el outline por defecto) --- */
   var st = document.createElement('style');
   st.textContent =
-    '.uinav-focus{ outline:3px solid #ffd84f !important; outline-offset:3px !important;'+
-    ' box-shadow:0 0 0 3px rgba(255,216,79,.30), 0 0 16px 5px rgba(255,216,79,.55) !important;'+
-    ' position:relative; z-index:1; }'+
-    '#cpDots .uinav-focus, #atkDots .uinav-focus, #htDots .uinav-focus{ outline-offset:4px !important; }';
+    '.uinav-focus{ outline:none !important;'+
+    ' transform:scale(1.12) !important; transform-origin:center center;'+
+    ' transition:transform .12s ease !important;'+
+    ' position:relative; z-index:2; }';
   (document.head||document.documentElement).appendChild(st);
 
   /* Contenedores navegables, de MENOR a MAYOR prioridad: si varios están visibles a la vez
