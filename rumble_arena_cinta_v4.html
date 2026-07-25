@@ -8315,6 +8315,22 @@ const BOSS_MPOW_K = 0.8;            // mpow (definitiva) ganado por punto de da�
    así SIEMPRE hacen falta varios impactos por brutal que sea el jugador. ►►► AJUSTA ◄◄◄ */
 const BOSS_POWER_SCALE  = 1.0;      // 0 = ignora la fuerza del jugador · 1 = vida ~lineal con el daño del más fuerte
 const BOSS_HIT_CAP_FRAC = 0.14;     // máx. % de la vida del jefe que puede recibir en UN frame (0.14 ≈ mín. 7 golpes)
+/* =====================================================================
+   ►BREAK · RUPTURA DE GUARDIA DEL JEFE
+   El problema que resuelve: los jefes eran vida + coreografía de ataques. Sin ventana de castigo,
+   pegar no producía NINGUNA reacción visible, así que la pelea se sentía como golpear una esponja
+   y el tope de daño por frame (arriba) solo la hacía más larga.
+   Ahora cada jefe tiene GUARDIA (poise): los golpes la bajan, y al vaciarla se DERRUMBA unos
+   segundos — no ataca y recibe mucho más daño. La pelea pasa a tener ritmo: esquivas para abrir la
+   ventana, y entonces castigas. Es UN sistema del que heredan los cinco jefes.
+   La guardia se regenera si dejas de pegarle → premia la agresividad sostenida, no el picoteo.
+   ►►► AJUSTA ◄◄◄ */
+const BOSS_POISE_FRAC   = 0.18;   // guardia = 18% de su vida en daño acumulado para romperla
+const BOSS_BREAK_DUR    = 3.2;    // segundos derrumbado
+const BOSS_BREAK_DMG    = 2.4;    // multiplicador de daño recibido mientras está roto
+const BOSS_POISE_GRACE  = 1.2;    // s sin recibir daño antes de empezar a recomponerse
+const BOSS_POISE_REGEN  = 0.22;   // fracción de la guardia recuperada por segundo (≈4.5s para llenarla)
+const BOSS_BREAK_CD     = 7.0;    // s mínimos entre una ruptura y la siguiente (no encadenables)
 const BOSS_ARENA_Y = 120;           // ►PORTAL-BOSS: la arena del jefe FLOTA en el cielo (mismo X/Z, solo Y) — se llega cayendo por el portal
 const BOSS_PORTAL_TIME = 30;        // ►PORTAL-BOSS: segundos del portal de ENTRADA (se encoge; al agotarse: -1 vida y absorción)
 const ARENA_C = new THREE.Vector3(0, 0, 0);   // centro de la arena
@@ -10792,9 +10808,16 @@ function buildBossBar(){
   wrap.style.cssText='position:fixed;left:50%;top:54px;transform:translateX(-50%);width:min(620px,76vw);z-index:40;display:none;pointer-events:none;font-family:inherit;text-align:center';
   wrap.innerHTML='<div style="color:#ff5e6e;font-weight:900;letter-spacing:2px;font-size:15px;text-shadow:0 2px 6px #000">JEFE FINAL <span id="bossTimer" style="margin-left:10px;font-variant-numeric:tabular-nums">2:30</span></div>'+
     '<div style="height:14px;margin-top:4px;background:rgba(0,0,0,.55);border:2px solid #ff3046;border-radius:8px;overflow:hidden;box-shadow:0 0 14px #ff204688">'+
-    '<i id="bossHpFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff2a3a,#ff6a3a,#ffd84f);transition:width .12s linear"></i></div>';
+    '<i id="bossHpFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff2a3a,#ff6a3a,#ffd84f);transition:width .12s linear"></i></div>'+
+    /* ►BREAK: barra de GUARDIA, más fina y bajo la de vida. Es la que le dice al jugador que pegar
+       SIRVE aunque la vida baje despacio: se vacía visiblemente y, al llegar a cero, se abre la
+       ventana de castigo. Sin este indicador el sistema entero sería invisible. */
+    '<div style="height:7px;margin-top:3px;background:rgba(0,0,0,.5);border:1.5px solid #ffd84f;border-radius:5px;overflow:hidden;box-shadow:0 0 9px #ffd84f55">'+
+    '<i id="bossPoiseFill" style="display:block;height:100%;width:100%;background:linear-gradient(90deg,#ffd84f,#fff2b0);transition:width .1s linear"></i></div>'+
+    '<div id="bossBreakTag" style="display:none;margin-top:3px;color:#ffd84f;font-weight:900;font-style:italic;letter-spacing:2px;font-size:13px;text-shadow:0 0 12px rgba(255,216,79,.9),0 2px 5px #000">¡GUARDIA ROTA!</div>';
   document.body.appendChild(wrap);
-  BOSSFIGHT.bar = { wrap, fill:wrap.querySelector('#bossHpFill') };
+  BOSSFIGHT.bar = { wrap, fill:wrap.querySelector('#bossHpFill'),
+                    poise:wrap.querySelector('#bossPoiseFill'), breakTag:wrap.querySelector('#bossBreakTag') };
   BOSSFIGHT.timer = wrap.querySelector('#bossTimer');
 }
 /* ►ICEADD: 2 barras de vida AZUL-HIELO para los COLOSOS AÑADIDOS (stage 7). Se crean al caer los 2 colosos
@@ -11116,7 +11139,80 @@ function _bossWhirlEnd(mn){ if(mn._whirl && mn._whirl.dome){ scene.remove(mn._wh
    (no rompe la horda ni los stages de cinta). Devuelve el daño EFECTIVO (para credit()/awardMinion). */
 function hurtEnemy(mn, dmg, isSpell){
   const m = isSpell ? (mn._magTake!=null?mn._magTake:1) : (mn._physTake!=null?mn._physTake:1);
-  const eff = dmg*m; mn.damage += eff; return eff;
+  /* ►BREAK: con la guardia rota el jefe encaja MUCHÍSIMO más. Se aplica aquí porque hurtEnemy es el
+     embudo único de daño a enemigos; el tope por frame de updateBoss sigue actuando después, así que
+     ni siquiera una ventana de castigo puede matarlo de un golpe. */
+  const brk = (mn._brokenT>0) ? BOSS_BREAK_DMG : 1;
+  const eff = dmg*m*brk; mn.damage += eff; return eff;
+}
+
+/* ►BREAK · reloj de la GUARDIA de un jefe. Lo llama updateBoss una vez por frame con el daño REAL
+   recibido en ese frame. Devuelve true si la guardia se acaba de romper en este frame. */
+function bossPoiseTick(mn, dd, dt){
+  if(mn.dead || mn.state==='dead') return false;
+  if(mn._poiseMax == null){ mn._poiseMax = Math.max(1, mn.maxHp * BOSS_POISE_FRAC); mn._poise = mn._poiseMax; }
+  mn._breakCD = Math.max(0, (mn._breakCD||0) - dt);
+  /* DERRUMBADO: corre el reloj y, al acabar, se recompone con la guardia llena y un enfriamiento
+     (si no, un jugador fuerte encadenaría rupturas y el jefe no llegaría a atacar nunca). */
+  if(mn._brokenT > 0){
+    mn._brokenT -= dt;
+    if(mn._brokenT <= 0){
+      mn._brokenT = 0;
+      mn._poise = mn._poiseMax;
+      mn._breakCD = BOSS_BREAK_CD;
+      /* ⚠️ hay que DEVOLVER el timeScale del idle a 1: el estado 'broken' lo pone a 0.25 para vender
+         el aturdimiento, y bossAnim() sale antes si el clip pedido ya es el activo — sin esto, el
+         jefe se quedaría moviéndose a cámara lenta el resto de la pelea. */
+      const _i = mn._binst || (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.inst);
+      if(_i && _i.acts){ const _n = (mn._spec && mn._spec.idleClip) || 'idle'; if(_i.acts[_n]) _i.acts[_n].timeScale = 1; }
+      if(mn.state === 'broken'){ mn.state='wait'; mn.stateT=0; mn.cd=0.45; }   // se levanta y vuelve a su ciclo
+      showBanner('EL JEFE SE REHACE', 1.0);
+      ring(mn.pos.clone().add(new THREE.Vector3(0, 1.2*(mn.scale||1), 0)), 0xffd84f, 22*(mn.scale||1), .45);
+    }
+    return false;
+  }
+  if(dd > 0){
+    mn._poise = Math.max(0, mn._poise - dd);
+    mn._poiseIdle = 0;
+  } else {
+    /* se recompone sola si dejas de castigar → la ventana se la gana quien mantiene la presión */
+    mn._poiseIdle = (mn._poiseIdle||0) + dt;
+    if(mn._poiseIdle > BOSS_POISE_GRACE && mn._poise < mn._poiseMax)
+      mn._poise = Math.min(mn._poiseMax, mn._poise + mn._poiseMax*BOSS_POISE_REGEN*dt);
+  }
+  /* SOLO se puede romper durante el COMBATE. Si un AoE perdido le entrase mientras duerme o se está
+     levantando (fase 'portal'), bossBreak() le pondría state='broken' y le comería su secuencia de
+     entrada — el jefe se quedaría sin arrancar. Los jefes de oleada de la Vía Arcoíris pelean fuera
+     de la arena del cielo, así que llevan su propia condición. */
+  const enCombate = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase==='fight') || !!mn._s10wave;
+  if(!enCombate) return false;
+  if(mn._poise <= 0 && mn._breakCD <= 0){ bossBreak(mn); return true; }
+  return false;
+}
+
+/* ►BREAK · derrumbe. Corta el ataque en curso LIMPIAMENTE: los especiales persistentes (rayo del
+   gólem brujo, torbellino) tienen que cerrarse o dejarían mallas y daño huérfanos en la arena —
+   son los mismos cierres que usa la rutina de muerte. */
+function bossBreak(mn){
+  if(mn._brokenT > 0 || mn.dead) return;
+  if(mn._beam && typeof _bossBeamEnd==='function') _bossBeamEnd(mn);
+  if(mn._whirl && typeof _bossWhirlEnd==='function') _bossWhirlEnd(mn);
+  if(mn._robotOrb){ scene.remove(mn._robotOrb); mn._robotOrb = null; }   // ►ROBOTBOSS: orbe de sobrecarga a medias
+  mn._brokenT = BOSS_BREAK_DUR;
+  mn._poise = 0;
+  mn.state = 'broken'; mn.stateT = 0; mn._sub = 0; mn._hitSet = new Set();
+  mn.vel && mn.vel.set && mn.vel.set(0,0,0);
+  /* venta del momento: se para el mundo un instante, la cámara tiembla y se oye. Sin esto, la
+     ventana de castigo pasaría desapercibida justo cuando más importa que se note. */
+  const c = mn.pos.clone().add(new THREE.Vector3(0, 1.4*(mn.scale||1), 0));
+  showBanner('¡GUARDIA ROTA! ¡A POR ÉL!', 1.6);
+  burst(c, 0xffd84f, 26, 8, 6, 1.2); burst(c, 0xffffff, 14, 6, 5, .9);
+  ring(mn.pos.clone(), 0xffd84f, 26*(mn.scale||1), .6);
+  hitstopGlobal = Math.max(hitstopGlobal, .12);
+  shake = Math.max(shake, .9); flashT = Math.max(flashT, .18);
+  try{ sfx.crack && sfx.crack(); }catch(e){}
+  try{ bossGrunt && bossGrunt(); }catch(e){}
+  if(typeof crowdCheer==='function' && !demo) crowdCheer(.8, true);
 }
 
 /* ►DGOLEM-FIX: altura de SUELO bajo el jefe en su arena. Las mesetas del desierto están a DISTINTAS
@@ -11174,6 +11270,9 @@ function updateBoss(mn, dt){
   const dd = mn.damage - (mn._lastDmg||0);
   if(dd>0 && mn.lastHitBy && !mn.lastHitBy.out && !(typeof ultActive==='function' && ultActive(mn.lastHitBy))) addMpow(mn.lastHitBy, dd*BOSS_MPOW_K);
   mn._lastDmg = mn.damage;
+  /* ►BREAK · GUARDIA. Va justo aquí porque `dd` ya es el daño REAL de este frame (después del tope) y
+     es el único sitio por el que pasa todo el daño al jefe, venga de donde venga. */
+  bossPoiseTick(mn, dd, dt);
   // ►G3R: RABIA del bárbaro (daño ×2 temporal) — decae y suelta aura ámbar; al agotarse restaura el daño
   if(mn._rageT>0){ mn._rageT-=dt;
     if(Math.random()<.5){ const a=Math.random()*6.283, rr=2+Math.random()*3; burst(mn.pos.clone().add(new THREE.Vector3(Math.cos(a)*rr, 1+Math.random()*2.5, Math.sin(a)*rr)), _BOSS_DES_A, 2, 4, 3, .7); }
@@ -11230,11 +11329,33 @@ function updateBoss(mn, dt){
   const sm = (mn._spec && mn._spec.speedMul) || 1;  // ►S2BOSS: jefe más RÁPIDO (embestida/carrera)
   mn.stateT += dt;
   // mira al objetivo salvo durante embestida/saltos/leap (que fijan dirección)
-  if(tgt && mn.state!=='charge' && mn.state!=='jumps' && mn.state!=='leap' && mn.state!=='hurricane' && mn.state!=='hop' && mn.state!=='leapplat' && mn.state!=='leapdown' && mn.state!=='beam' && mn.state!=='knightr' && mn.state!=='chargelaser'){   // ►S3HK/►S4HOP/►S3AIR/►G3R/►ROBOTBOSS: huracán/saltos/rayo/torbellino/sobrecarga conducen su propio giro
+  if(tgt && mn.state!=='charge' && mn.state!=='jumps' && mn.state!=='leap' && mn.state!=='hurricane' && mn.state!=='hop' && mn.state!=='leapplat' && mn.state!=='leapdown' && mn.state!=='beam' && mn.state!=='knightr' && mn.state!=='chargelaser' && mn.state!=='broken'){   // ►S3HK/►S4HOP/►S3AIR/►G3R/►ROBOTBOSS: huracán/saltos/rayo/torbellino/sobrecarga conducen su propio giro · ►BREAK: derrumbado ni te sigue con la mirada
     const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z;
     if(dx*dx+dz*dz>0.01) mn.yaw += (Math.atan2(dx,dz)-mn.yaw)*Math.min(1,4*dt);
   }
   switch(mn.state){
+    /* ►BREAK · DERRUMBADO: no ataca, no persigue, no gira. Solo encaja.
+       No se usa un clip de "aturdido" porque no todos los jefes tienen uno (el gólem, el samurái, el
+       robot y el coloso traen sets distintos); se vende con el idle MUY ralentizado — que ya lee como
+       "está grogui" — más chispas continuas y un pulso de anillos. Funciona igual en los cinco.
+       El reloj lo lleva bossPoiseTick(), que al agotarlo devuelve el jefe a 'wait'. */
+    case 'broken': {
+      const _idleB = (mn._spec && mn._spec.idleClip) || 'idle';
+      const _act = inst.acts[_idleB] ? bossAnim(_idleB, true) : null;
+      if(_act) _act.timeScale = 0.25;                       // grogui: el idle casi congelado
+      mn.vel.x = 0; mn.vel.z = 0;
+      mn.pos.y = groundY;                                    // clavado en el suelo mientras dura
+      const s = mn.scale||1;
+      if(Math.random() < dt*22){                             // chispas de "algo se ha roto dentro"
+        const a = Math.random()*6.283, rr = (1.2+Math.random()*2.2)*s;
+        burst(mn.pos.clone().add(new THREE.Vector3(Math.cos(a)*rr, (0.6+Math.random()*2.4)*s, Math.sin(a)*rr)), Math.random()<.5?0xffd84f:0xffffff, 2, 4, 3, .6);
+      }
+      if(Math.random() < dt*3.2) ring(mn.pos.clone().add(new THREE.Vector3(0,.12,0)), 0xffd84f, 15*s, .4);
+      /* ⚠️ `break`, NO `return`: al final de updateBoss están bossPlaceInst() y, para los COLOSOS
+         AÑADIDOS del stage 7, `inst.mixer.update(dt)` — que llevan su propia malla. Con un `return`
+         aquí se quedarían congelados como estatuas durante todo el derrumbe en vez de aturdidos. */
+      break;
+    }
     case 'wait': {
       const _idle = (mn._spec && mn._spec.idleClip) || 'idle';                      // ►SAMBOSS: idle propio (samurái = 'stand')
       if(inst.acts[_idle]) bossAnim(_idle, true);                                   // idle en bucle al esperar
@@ -12332,6 +12453,17 @@ function updateBossArena(rawDt){
   if(BOSSFIGHT.bar){ const b=BOSSFIGHT.boss; const show=(!gameOver && (BOSSFIGHT.phase==='fight'||BOSSFIGHT.phase==='dying'));   // !gameOver: si te eliminan en plena pelea, no re-muestres la barra en el mismo frame tras endGame()
     BOSSFIGHT.bar.wrap.style.display = show?'block':'none';
     if(b) BOSSFIGHT.bar.fill.style.width = (100*Math.max(0,1-b.damage/b.maxHp)).toFixed(1)+'%';
+    /* ►BREAK: guardia + cartel de ventana abierta. Mientras está roto la barra se queda vacía y
+       parpadea el rótulo — el jugador tiene que ver SIN dudar que es el momento de entrar. */
+    if(b && BOSSFIGHT.bar.poise){
+      const pmax = b._poiseMax || 1, brk = (b._brokenT||0) > 0;
+      BOSSFIGHT.bar.poise.style.width = (100*Math.max(0, Math.min(1, (b._poise!=null?b._poise:pmax)/pmax))).toFixed(1)+'%';
+      BOSSFIGHT.bar.poise.style.opacity = brk ? '0.25' : '1';
+      if(BOSSFIGHT.bar.breakTag){
+        BOSSFIGHT.bar.breakTag.style.display = brk ? 'block' : 'none';
+        if(brk) BOSSFIGHT.bar.breakTag.style.opacity = (0.55 + 0.45*Math.abs(Math.sin(t*9))).toFixed(2);
+      }
+    }
     if(BOSSFIGHT.timer && BOSSFIGHT.phase==='fight'){ const rem=Math.max(0, BOSS_TIME_LIMIT-BOSSFIGHT.fightT), mm=Math.floor(rem/60), ss=Math.floor(rem%60);
       BOSSFIGHT.timer.textContent = mm+':'+(ss<10?'0':'')+ss; BOSSFIGHT.timer.style.color = rem<30?'#ff3030':'#ffd84f'; } }
   // ►ICEADD: barras de los 2 colosos añadidos — visibles SOLO mientras cada uno viva y no sea ya el jefe de la barra roja (evita duplicar)
@@ -15537,6 +15669,24 @@ function aiThink(p, dt){
            las 6 clases jugaran la pelea de jefe exactamente igual. Suelo de 4.2u para los cuerpo a
            cuerpo (el jefe es enorme; más cerca te comes el AoE sin poder reaccionar). */
         const bRange = Math.max(4.2, prof.range);
+        /* ►BREAK: guardia rota = ventana de castigo. TODAS las clases entran, también las de rango:
+           no aprovecharla sería justo lo que un jugador humano nunca dejaría pasar, y dejaría a los
+           bots peleando peor que tú en el momento más importante de la pelea. */
+        if(B._brokenT > 0){
+          me.yaw = Math.atan2(bdx, bdz);
+          if(bd > 3.4){
+            ai.dir.copy(to);
+            if(me.dashCD<=0 && bd > 6) aiDash(me, ai.dir);          // acorta ya: la ventana dura poco
+            if(me.qCD<=0 && Math.random()<prof.qChance*1.5*D.aggr) classQ(me);
+          } else {
+            ai.dir.set(0,0,0);
+            ai.atkDelay -= .25;                                      // castiga más seguido de lo normal
+            if(me.superCD<=0 && me.onGround && Math.random()<0.35*D.aggr){ classSuper(me); return ai.dir; }
+            if(me.atk.phase==='none' && ai.atkDelay<=0){ ai.atkDelay = (.18 + Math.random()*.25)*D.react; aiMelee(me); }
+            else if(me.comboWindow>0 && me.atk.phase==='none') aiMelee(me);
+          }
+          return ai.dir;
+        }
         if(prof.kite>0 && bd < bRange*0.75){
           /* KITING contra el jefe: retrocede encarándolo y sigue castigando con la Q */
           me.yaw = Math.atan2(bdx, bdz);
