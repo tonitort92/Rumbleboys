@@ -4171,7 +4171,7 @@ function charToken(p){
   }
   if(p._oneShotT>0 && p._oneShot==='pickup') return 'pickup';
   if(p.spin || p.beam || p.ult || p.block) return 'stance';
-  if(p.dashT>0) return 'roll';
+  if(p.dashT>0 || p.rollT>0) return 'roll';              // ►ROLL: la rodada reusa el clip de voltereta del dash
   if(!p.onGround) return (p.flip>0) ? 'roll' : 'walk';   // 1er salto/caída = piernas (walk); doble salto = voltereta
   return 'loco';
 }
@@ -4188,7 +4188,8 @@ function poseStaticChar(p, dt){
     pitch = -1.45*k; y = p._charBaseY - 0.35*k;
   } else {
     p._deadT = 0;
-    if(p.hitstun>0 || p.stun>0){ lunge = -0.28; pitch = -0.32; }                 // RETROCESO al recibir/parry
+    if(p.rollT>0){ pitch = (1 - p.rollT/ROLL_T)*Math.PI*2; }                     // ►ROLL: voltereta de recuperación (antes que el retroceso: la rodada CANCELA el aturdimiento)
+    else if(p.hitstun>0 || p.stun>0){ lunge = -0.28; pitch = -0.32; }            // RETROCESO al recibir/parry
     else if(p.dashT>0){ pitch = (T*16) % (Math.PI*2); }                          // DASH: voltereta rápida
     else if(!p.onGround){ pitch = (p.flip>0) ? ((T*11)%(Math.PI*2)) : 0.22; y = p._charBaseY + 0.04; }  // doble salto = voltereta; salto = inclina
     else if(p.atk && p.atk.phase!=='none'){                                       // GOLPE: carga atrás → impacto al frente → recupera
@@ -13400,6 +13401,19 @@ const GRAV = -36;                              // gravedad más fuerte: salto SI
 const FALL_MULT = 1.5;                         // ►gravedad ASIMÉTRICA: multiplica la gravedad al CAER (vel.y<0) → aterrizajes con peso y pico con leve "hang". 1.0 = simétrico; ↑ = cae más seco (pero menos alcance horizontal en el aire)
 const RUN = 10.2, AIRCTL = 7.5;
 const JUMP = 19, DJUMP = 17.8;                 // saltos altos pero sin flotar (compensan la gravedad mayor)
+/* ►ROLL · RODADA DE RECUPERACIÓN (la otra mitad de la ►DI)
+   Antes, al caer tras un golpe te quedabas tirado el resto del aturdimiento: el rival ya sabía dónde
+   ibas a estar y te volvía a enganchar. Con la DI eliges POR DÓNDE sales; con la rodada eliges CÓMO
+   vuelves al suelo. Las dos juntas son lo que convierte "me han matado" en "he fallado la recuperación".
+   Se pulsa el botón de DASH justo al aterrizar viniendo de un golpe. Recompensa el timing (ventana
+   corta) y da invulnerabilidad breve, pero te compromete: durante la rodada no puedes atacar.
+   ROLL_ON=false lo apaga entero. ►►► AJUSTA ◄◄◄ */
+const ROLL_ON     = true;
+const ROLL_WINDOW = 0.22;   // s de margen tras tocar suelo para pulsar
+const ROLL_T      = 0.34;   // s que dura la rodada
+const ROLL_SPEED  = 15;     // u/s de desplazamiento
+const ROLL_INV    = 0.26;   // s de invulnerabilidad (menos que la rodada: el final ya es vulnerable)
+const ROLL_CD     = 0.55;   // s hasta poder volver a rodar (no es un dash gratis infinito)
 const WJ_PUSH = 7, WJ_CD = 0.18;               // SALTO DE PARED: empuje lateral (lejos del muro) + recarga corta
 /* DESLIZAMIENTO POR PARED: al chocar en el aire con un muro, te pegas un poco y resbalas despacio (da tiempo a salvarse) */
 const WALL_SLIDE_DUR  = 1.0;   // duración total del agarre/deslizamiento (s)
@@ -14870,6 +14884,7 @@ function respawn(p){
   safeSpawn(p);
   p.vel.set(0,0,0);
   p.jumps = 2; p._dj = false; p.hitstun = 0; p.hang = null; clearGrabs(p);   // ►LTGRAB: morir rompe el agarre (por los dos lados)
+  p.rollT = 0; p._rollWin = 0; p.rollCD = 0;   // ►ROLL: no reapareces rodando ni con la ventana abierta
   p.wallSliding = false; p.wallSlideT = 0; p._wallSlideLock = false;   // limpia el deslizamiento por pared al reaparecer
   p.atk.phase = 'none';
   p.block = false; p.comboStage = 0; p.comboWindow = 0; p.stun = 0; p.hitFlash = 0;
@@ -16514,10 +16529,49 @@ function updateFighter(p, dt){
     }
   }
 
+  /* --- ►ROLL · RODADA DE RECUPERACIÓN ---
+     Va AQUÍ, ANTES del bloque de control, a propósito: ese bloque está cerrado mientras `hitstun>0`
+     y la rodada es precisamente lo que se hace DURANTE el aturdimiento. Dentro nunca se dispararía. */
+  p._rollWin = Math.max(0, (p._rollWin||0) - dt);
+  p.rollCD   = Math.max(0, (p.rollCD||0) - dt);
+  if(p.rollT > 0){
+    p.rollT -= dt;
+    p.vel.x = p._rollDir.x * ROLL_SPEED;                  // rueda a ras de suelo, comprometido
+    p.vel.z = p._rollDir.z * ROLL_SPEED;
+    p.yaw = Math.atan2(p._rollDir.x, p._rollDir.z);
+    if(Math.random() < dt*30) burst(_fxV.set(p.pos.x, p.pos.y+.25, p.pos.z), 0xd9c9a8, 1, 2, 1.4, .35);   // polvo de la voltereta
+    if(p.rollT <= 0){ p.rollT = 0; p.rollCD = ROLL_CD; }
+  } else if(ROLL_ON && p._rollWin > 0 && p.rollCD <= 0 && p.onGround && !p.dead && !p.hang && !p.heldBy && !p.holding && !p.spin && !p.beam && !p.ult){
+    /* ¿pide rodar? El humano con el botón de DASH; la CPU en cuanto puede (es lo que haría un
+       jugador decente, y si no lo hiciera se comería castigos que el humano esquiva). */
+    const quiere = p.isAI ? true : wantDash;
+    if(quiere){
+      const d = p._rollDir || (p._rollDir = new THREE.Vector3());
+      if(move.lengthSq() > 0.01) d.copy(move).normalize();
+      else {
+        /* Sin stick, rueda CONTRA el empuje que te traía: frena el lanzamiento y te devuelve hacia
+           dentro del escenario. "Hacia donde mires" sería impredecible y podría tirarte por el borde
+           justo cuando la rodada debería salvarte. */
+        const sp = Math.hypot(p.vel.x, p.vel.z);
+        if(sp > 0.5) d.set(-p.vel.x/sp, 0, -p.vel.z/sp);
+        else d.set(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
+      }
+      p.rollT = ROLL_T; p._rollWin = 0;
+      p.hitstun = 0; p.stun = 0;                            // la gracia: CORTA el aturdimiento
+      p.invuln = Math.max(p.invuln, ROLL_INV);
+      p.vel.y = 0;
+      wantDash = false;                                     // el dash se consume rodando
+      sfx.dash(); jiggle(p, 9);
+      ring(p.pos.clone().add(new THREE.Vector3(0,.12,0)), 0xffffff, 11, .3);
+      if(!p.isAI) showCombo(p, '¡RODADA!');                 // confirma que el timing ha entrado
+    }
+  }
+
   /* ⚠️ este bloque NO lleva `!p.heldBy` a propósito: DENTRO viven los ATAQUES y el despacho de LT, y
      el agarrado TIENE que poder dar básicos (es su única salida ofensiva). Que no se mueva se
      consigue anulando move/wantJump/wantDash en el bloque de ►LTGRAB, no cerrándole el bloque. */
-  if(!p.hang && !(p.climbT>0) && !p.beam && !p.charge && p.hitstun<=0 && p.stun<=0 && p.atk.phase!=='wind' && p.atk.phase!=='hit'){   // ►CLIMB: trepando = sin control (movimiento/salto/dash/ataques bloqueados)
+  if(p.rollT > 0){ /* rodando: comprometido, sin control ni ataques (el movimiento lo lleva la rodada) */ }
+  else if(!p.hang && !(p.climbT>0) && !p.beam && !p.charge && p.hitstun<=0 && p.stun<=0 && p.atk.phase!=='wind' && p.atk.phase!=='hit'){   // ►CLIMB: trepando = sin control (movimiento/salto/dash/ataques bloqueados)
     /* aceleración al arrancar, frenada con derrape al soltar */
     const _sm = (p._sandPl && p._sandPl.sandMul) || 1;   // ►DGOLEM: la arena de la ARENA del jefe frena MÁS (slowMul del spec)
     const sink3 = (S4_SAND_ON && p.onGround && p._sandPl) ? (1 - Math.min(0.85, S4.sinkSlow*_sm*(p.sandSink||0))) : 1;   // ►S4: enterrado en arena = más lento (saltar lo resetea); clamp evita frenado total
@@ -16758,6 +16812,11 @@ function updateFighter(p, dt){
           4+Math.round(impact*10), 2.5+impact*4, 1.5+impact*2, .55+impact*.5);
         jiggle(p, 4 + impact*12);
         if(impact>.35) sfx.land(impact);
+        /* ►ROLL: si aterrizas MIENTRAS te están zarandeando (venías lanzado), se abre una ventana
+           corta para rodar. Es la otra mitad de la ►DI: la DI te deja elegir POR DÓNDE sales, y la
+           rodada te deja RECUPERARTE al caer en vez de quedarte tirado esperando el siguiente golpe.
+           Solo se abre viniendo de un golpe: caer de un salto normal no da nada. */
+        if(p.hitstun > 0.02) p._rollWin = ROLL_WINDOW;
       }
       p.pos.y = gy; p.vel.y = 0;
       p.onGround = true; p.jumps = airJumps()+1; p.coyote = .12; p.flip = 0; p._dj = false; p.respDrop = false;
@@ -16938,7 +16997,15 @@ function updateFighter(p, dt){
 
   const S = p.spr;
 
-  if(p.flip>0){
+  if(p.rollT>0){
+    /* ►ROLL: voltereta hacia delante completa en lo que dura la rodada. Se pinta ANTES que p.flip
+       porque la rodada manda: es una acción con invulnerabilidad y tiene que leerse sin ambigüedad. */
+    const u = 1 - (p.rollT/ROLL_T);            // 0 → 1 a lo largo de la rodada
+    g.model.rotation.x = u*Math.PI*2;
+    g.model.rotation.z *= .8;
+    g.hip.rotation.x *= .88; g.hip.rotation.y *= .88;
+    S.bX.x = 0; S.bX.v = 0; S.bZ.x = g.model.rotation.z; S.bZ.v = 0;
+  } else if(p.flip>0){
     p.flip = Math.max(0, p.flip - dt*1.4);   // ~0.7s: ventana de la voltereta (humanoide y cajas)
     g.model.rotation.x = (1-p.flip)*Math.PI*2;
     g.model.rotation.z *= .8;
@@ -28066,6 +28133,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.stocks = 4; p.damage = 0; p.dead = false;
     safeSpawn(p); p.vel.set(0,0,0);
     p.hang = null; p.hitstun = 0; p.atk.phase='none'; p.sandSink = 0;
+    p.rollT = 0; p._rollWin = 0; p.rollCD = 0;   // ►ROLL: sin rodada a medias de la partida anterior
     p.hangCD = 0; p.hangT = 0; p.stam = STAM_MAX; p.stamLock = false; if(p._stamBar) p._stamBar.g.visible = false;   // ►LTSTAM: aguante lleno al (re)empezar
     clearGrabs(p);   // ►LTGRAB: sin agarres colgando de la partida anterior
     p.block = false; p.comboStage = 0; p.comboWindow = 0; p.stun = 0; p.hitFlash = 0;
@@ -28956,9 +29024,13 @@ const HT_SLIDES = [
   { ic:'⭐', t:'Consigue puntos',      d:'Destruir monstruos, hacer daño, usar ataques especiales, recoger objetos y sobrevivir hasta el final: todo te suma puntos.' },
   { ic:'🛒', t:'Compra habilidades',   d:'Al terminar cada stage tienes la opción de gastar tus puntos en habilidades que te hacen más fuerte.' },
   { ic:'🔄', t:'Nuevo stage',          d:'En cada stage nuevo tus stats se reinician… menos las habilidades que hayas comprado: esas te las quedas.' },
+  /* ►DI/►ROLL: sin esta diapositiva nadie descubriría las dos defensas nuevas — no hay ningún otro
+     sitio del juego que las explique, y una mecánica que no se descubre es como si no existiera. */
+  { ic:'🤸', t:'No estás indefenso',   d:'Cuando te golpean, mueve el stick hacia un lado para desviar por dónde sales volando. Y al tocar el suelo, pulsa ESQUIVAR (Shift / RT) justo a tiempo para hacer una RODADA que te levanta al instante y te da un respiro.' },
 ];
-/* color por paso: los 6 tonos de héroe del roadmap, y vuelta a empezar (son 8 slides) → los mismos
-   círculos de colores atan visualmente el tutorial con la línea de "cómo jugar" de la home */
+/* color por paso: los 6 tonos de héroe del roadmap, y vuelta a empezar (hoy son 9 slides; el índice
+   va en módulo, así que añadir diapositivas no rompe nada) → los mismos círculos de colores atan
+   visualmente el tutorial con la línea de "cómo jugar" de la home */
 const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6fa8ff','#3ad06a'];
 (function setupHowTo(){
   const btn=document.getElementById('howToLink'), modal=document.getElementById('howToModal'), x=document.getElementById('howToClose');
