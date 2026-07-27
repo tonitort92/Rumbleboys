@@ -1393,8 +1393,6 @@ const VISUAL = {
   contact: { on:true, opacity:0.34, size:1.25, fade:7 },   // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
   // ►IMPACT: refuerzo DIRECCIONAL del golpe (lo ya existente es omnidireccional). Se suma a bigHitFX.
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
-  // ►SURFACE: relieve + rugosidad + grano por superficie. Lo que separa "plástico liso" de "material".
-  surface: { on:true, bump:0.7, rough:0.35, tint:0.12, scale:0.35 },   // [bump −2..2, negativo = relieve invertido] · [rough 0–0.8] · [tint 0–0.4] grano · [scale 0.1–1.2] tamaño del grano
 };
 
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
@@ -1845,9 +1843,9 @@ function attachComposerDepth(){
    Cada tier controla DOF, bloom, grano/viñeta, sombra y el tope del DRS. qMode 'auto'
    empieza en 'alto' y baja/sube de tier solo según FPS sostenidos. */
 const TIERS = {
-  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, surf:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP/►SURFACE: sin IBL ni relieve en equipos justos (ambos cuestan por píxel)
-  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  surf:true,  drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
-  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  surf:true,  drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
+  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel)
+  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
+  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
 };
 const TIER_ORDER = ['bajo','medio','alto'];
 /* detección de móvil/táctil: arranca conservador para que un móvil malo NO empiece ahogado.
@@ -1892,7 +1890,6 @@ function applyTier(){
   if(gradePass){ gradePass.uniforms.grain.value = t.grain; gradePass.uniforms.vignette.value = t.vignette; }
   setShadow(t.shadow);
   applyEnvironment();                                                       // ►ENVMAP: el tier decide si hay IBL (bajo = no)
-  applySurfaceDetail();                                                     // ►SURFACE: el tier decide si hay relieve (bajo = no)
   applyRenderScale(Math.min(t.drsMax, Math.max(PIXEL_FLOOR, curRatio)));   // reclampa el ratio al rango del tier
 }
 function setQuality(mode){
@@ -2086,156 +2083,6 @@ function mat(color, opts={}){
     color, flatShading:true, roughness:.85, metalness:.05
   }, opts));
 }
-
-/* =====================================================================
-   ►SURFACE — DETALLE DE SUPERFICIE (relieve + rugosidad + grano)
-   El problema que resuelve: mat() daba a TODAS las superficies del juego un
-   color plano con la MISMA rugosidad y ningún mapa. Césped, tierra, roca y
-   madera solo se diferenciaban en el tono → todo leía como el mismo plástico
-   pintado de distintos colores, y el entorno reflejado (►ENVMAP) no se notaba
-   porque no había variación de rugosidad que lo hiciera visible.
-
-   Qué añade, en el shader y sin tocar ni una malla:
-     · RELIEVE  — perturba la normal con el gradiente de una altura de ruido.
-                  Engaña a la luz: la superficie plana se comporta como si
-                  tuviera grano y bultos. Es el 70% del efecto.
-     · RUGOSIDAD variable — unas zonas brillan y otras no (aquí SÍ se ve el IBL).
-     · GRANO de color — rompe el "color liso de ordenador".
-
-   Dos decisiones importantes:
-   1) Va por POSICIÓN DEL MUNDO (triplanar), NO por UV. Las losas se generan
-      con organicSlabGeo y compañía, y no puedo fiarme de que todas traigan un
-      UV usable. Así funciona en cualquier geometría, sin tocarlas.
-   2) Es UNA textura de ruido de 256x256 compartida por todo (0.26 MB), no un
-      set de mapas por material. Peso de descarga: cero, se genera al arrancar.
-   ===================================================================== */
-const _surfNoiseTex = (function(){
-  /* ruido de valor TILEABLE: rejilla de 32 con envoltura + 3 octavas.
-     R = altura fina (relieve) · G = manchas gruesas (color/rugosidad) */
-  const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N);
-  function grid(g){ const a = new Float32Array(g*g); for(let i=0;i<a.length;i++) a[i] = Math.random(); return a; }
-  function samp(a, g, x, y){                     // bilineal con envoltura → la textura repite sin costura
-    const xi = Math.floor(x), yi = Math.floor(y), fx = x-xi, fy = y-yi;
-    const sx = fx*fx*(3-2*fx), sy = fy*fy*(3-2*fy);
-    const i0 = ((xi%g)+g)%g, i1 = (i0+1)%g, j0 = ((yi%g)+g)%g, j1 = (j0+1)%g;
-    const a00=a[j0*g+i0], a10=a[j0*g+i1], a01=a[j1*g+i0], a11=a[j1*g+i1];
-    return (a00+(a10-a00)*sx) + ((a01+(a11-a01)*sx) - (a00+(a10-a00)*sx))*sy;
-  }
-  const g1 = grid(64), g2 = grid(16), g3 = grid(8);
-  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
-    const u = x/N, v = y/N;
-    const fine = samp(g1,64,u*64,v*64)*0.55 + samp(g2,16,u*16,v*16)*0.30 + samp(g3,8,u*8,v*8)*0.15;
-    const blot = samp(g3,8,u*8,v*8)*0.65 + samp(g2,16,u*16,v*16)*0.35;
-    const o = (y*N+x)*4;
-    img.data[o]   = Math.round(fine*255);
-    img.data[o+1] = Math.round(blot*255);
-    img.data[o+2] = 0; img.data[o+3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(cv);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
-  return t;
-})();
-
-const _surfShaders = [];        // uniforms vivos de cada material con detalle (para los sliders de F2)
-const SURF_KEY = 'surfdetail';  // customProgramCacheKey: que three NO comparta programa con materiales sin detalle
-/* Marca un material para que lleve detalle de superficie. Idempotente. */
-function addSurfaceDetail(m, opt){
-  if(!m || m.userData._surf) return m;
-  const o = opt || {};
-  m.userData._surf = { bump:o.bump!=null?o.bump:1, rough:o.rough!=null?o.rough:1, tint:o.tint!=null?o.tint:1, scale:o.scale!=null?o.scale:1 };
-  m.onBeforeCompile = (sh)=>{
-    const S = VISUAL.surface, k = m.userData._surf;
-    sh.uniforms.uSurfNoise = { value:_surfNoiseTex };
-    sh.uniforms.uSurfBump  = { value:S.bump  * k.bump  };
-    sh.uniforms.uSurfRough = { value:S.rough * k.rough };
-    sh.uniforms.uSurfTint  = { value:S.tint  * k.tint  };
-    sh.uniforms.uSurfScale = { value:S.scale * k.scale };
-    /* Dos varyings propias en vez de fiarse de las de three:
-       vSurfW = posición de MUNDO → la textura queda clavada al objeto, no a la cámara.
-       vSurfV = posición de VISTA → la base para el relieve, que DEBE ir en el mismo
-                espacio que `normal` (en three el fragment `normal` está en VISTA;
-                mezclarlo con derivadas de mundo hace que el relieve gire con la cámara). */
-    /* Anclado tras <project_vertex>, NO tras <begin_vertex>: skinning_vertex y
-       morphtarget_vertex van en medio y modifican `transformed`. Ahí ya está la
-       posición final y además mvPosition da la de vista hecha. */
-    const _vAnchor = '#include <project_vertex>';
-    sh.vertexShader = 'varying vec3 vSurfW;\nvarying vec3 vSurfV;\n' + sh.vertexShader.replace(
-      _vAnchor,
-      _vAnchor + '\n  vSurfW = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vSurfV = mvPosition.xyz;'
-    );
-    if(sh.vertexShader.indexOf('vSurfW =') < 0) console.warn('►SURFACE: no se encontró', _vAnchor, '— el detalle NO se aplicará');
-    sh.fragmentShader = [
-      'varying vec3 vSurfW;',
-      'varying vec3 vSurfV;',
-      'uniform sampler2D uSurfNoise; uniform float uSurfBump; uniform float uSurfRough; uniform float uSurfTint; uniform float uSurfScale;',
-      /* TRIPLANAR: mezcla las 3 proyecciones según la normal de MUNDO → sirve igual para
-         un suelo horizontal que para la cara vertical de un muro, sin depender de UV. */
-      'vec2 _surfSample(vec3 wp, vec3 wn){',
-      '  vec3 b = abs(wn); b = b / max(1e-4, (b.x + b.y + b.z));',
-      '  vec2 tx = texture2D(uSurfNoise, wp.zy * uSurfScale).rg;',
-      '  vec2 ty = texture2D(uSurfNoise, wp.xz * uSurfScale).rg;',
-      '  vec2 tz = texture2D(uSurfNoise, wp.xy * uSurfScale).rg;',
-      '  return tx*b.x + ty*b.y + tz*b.z;',
-      '}'
-    ].join('\n') + '\n' + sh.fragmentShader.replace(
-      '#include <normal_fragment_maps>',
-      [
-        '#include <normal_fragment_maps>',
-        '{',
-        /* normal GEOMÉTRICA en mundo, sacada de las derivadas de la posición de mundo.
-           Solo se usa para los pesos de mezcla (via abs), así que da igual el signo. */
-        '  vec3 _wdx = dFdx(vSurfW), _wdy = dFdy(vSurfW);',
-        '  vec3 _wn = normalize(cross(_wdx, _wdy));',
-        '  vec2 sN = _surfSample(vSurfW, _wn);',
-        '  float hgt = sN.x, blot = sN.y;',
-        /* RELIEVE: gradiente de superficie por derivadas de pantalla — el mismo método que
-           el bumpMap de three, pero contra la posición de VISTA, así que no necesita UV
-           ni tangentes y queda en el espacio correcto para la iluminación. */
-        '  if(uSurfBump > 0.001){',
-        '    vec3 dpx = dFdx(vSurfV), dpy = dFdy(vSurfV);',
-        '    float dhx = dFdx(hgt), dhy = dFdy(hgt);',
-        '    vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx);',
-        '    float det = dot(dpx, r1);',
-        '    if(abs(det) > 1e-8){',
-        '      vec3 grad = (r1*dhx + r2*dhy) / det;',
-        '      normal = normalize(normal - uSurfBump * grad);',
-        '    }',
-        '  }',
-        /* RUGOSIDAD: unas zonas mates y otras satinadas → el IBL por fin se lee */
-        '  roughnessFactor = clamp(roughnessFactor + (blot - 0.5) * uSurfRough, 0.05, 1.0);',
-        /* GRANO de color: multiplicativo, así respeta el AO horneado en vertex-color */
-        '  diffuseColor.rgb *= 1.0 + (hgt - 0.5) * uSurfTint;',
-        '}'
-      ].join('\n')
-    );
-    if(sh.fragmentShader.indexOf('_surfSample(vSurfW') < 0) console.warn('►SURFACE: no se encontró #include <normal_fragment_maps> — el detalle NO se aplicará');
-    _surfShaders.push({ m, u:sh.uniforms, k });
-  };
-  m.extensions = m.extensions || {};
-  m.extensions.derivatives = true;             // dFdx/dFdy: en WebGL1 hay que pedir la extensión explícitamente
-  m.customProgramCacheKey = ()=>SURF_KEY;      // sin esto three puede reusar el programa de un material SIN detalle
-  m.needsUpdate = true;
-  return m;
-}
-/* vuelca VISUAL.surface sobre los shaders ya compilados (sliders de F2 en vivo) */
-function applySurfaceDetail(){
-  const S = VISUAL.surface;
-  /* tier 'bajo': sin relieve (el triplanar son 3 muestras + derivadas por píxel).
-     TIERS/effName se declaran antes en el archivo; guarda por si se llama muy pronto. */
-  if(typeof TIERS !== 'undefined' && typeof effName !== 'undefined' && TIERS[effName] && TIERS[effName].surf === false){
-    for(const e of _surfShaders){ if(e.u.uSurfBump){ e.u.uSurfBump.value = 0; e.u.uSurfRough.value = 0; e.u.uSurfTint.value = 0; } }
-    return;
-  }
-  for(const e of _surfShaders){
-    if(!e.u.uSurfBump) continue;
-    e.u.uSurfBump.value  = S.on ? S.bump  * e.k.bump  : 0;
-    e.u.uSurfRough.value = S.on ? S.rough * e.k.rough : 0;
-    e.u.uSurfTint.value  = S.on ? S.tint  * e.k.tint  : 0;
-    e.u.uSurfScale.value = S.scale * e.k.scale;
-  }
-}
 const M = {
   grass : mat(0x6fcf6a),
   grassD: mat(0x55ab52),
@@ -2252,19 +2099,6 @@ const M = {
   gold  : mat(0xf0c75e, { metalness:.45, roughness:.4 }),
   steel : mat(0x9aa6b5, { metalness:.3, roughness:.55 }),
 };
-/* ►SURFACE: qué superficies llevan detalle y cuánto (multiplicador sobre los sliders
-   globales de F2). `scale` alto = grano más fino. Las que NO aparecen se quedan lisas
-   a propósito: nube y pads emisivos no son materia, y oro/acero ya tienen su acabado. */
-addSurfaceDetail(M.grass,  { bump:0.85, rough:0.9, tint:1.0, scale:1.5 });   // césped: grano fino y denso
-addSurfaceDetail(M.grassD, { bump:0.85, rough:0.9, tint:1.0, scale:1.5 });
-addSurfaceDetail(M.dirt,   { bump:1.0,  rough:1.0, tint:1.0, scale:0.9 });   // tierra: terrones medios
-addSurfaceDetail(M.rock,   { bump:1.3,  rough:1.2, tint:0.8, scale:0.5 });   // roca: relieve grueso y marcado
-addSurfaceDetail(M.wood,   { bump:0.7,  rough:0.8, tint:0.9, scale:1.1 });
-addSurfaceDetail(M.woodD,  { bump:0.7,  rough:0.8, tint:0.9, scale:1.1 });
-addSurfaceDetail(M.trunk,  { bump:1.1,  rough:0.9, tint:0.9, scale:1.3 });   // corteza: vetas verticales
-addSurfaceDetail(M.leaf,   { bump:0.5,  rough:0.6, tint:1.3, scale:2.0 });   // hoja: sobre todo variación de color
-addSurfaceDetail(M.leafD,  { bump:0.5,  rough:0.6, tint:1.3, scale:2.0 });
-addSurfaceDetail(M.steel,  { bump:0.35, rough:1.1, tint:0.4, scale:1.2 });   // metal: casi todo rugosidad → es lo que hace visible el ►ENVMAP
 /* CAMPO MULTI-TONO: textura de rejilla randomizada (varios tonos de una paleta) tipo
    campo irregular. Se aplica a un material compartido -> toda la superficie con detalle
    y SIN coste extra (1 sola textura compartida). */
@@ -2442,16 +2276,7 @@ const _aoGeos = [];                 // {geo, h:Float32Array(0..1 normalizado), j
 const _aoMatCache = new Map();      // material base -> variante vertexColors (clon)
 function aoVariant(mat){
   let v = _aoMatCache.get(mat);
-  if(!v){
-    v = mat.clone(); v.vertexColors = true;
-    /* ►SURFACE: Material.copy() de three NO copia onBeforeCompile → el clon perdería
-       el detalle justo en las LOSAS GRANDES, que son las que más se ven. Se le vuelve
-       a aplicar con los parámetros del material base. Hay que limpiar userData._surf
-       antes porque clone() SÍ copia userData (por JSON) y addSurfaceDetail es idempotente. */
-    const s = mat.userData && mat.userData._surf;
-    if(s){ v.userData._surf = null; addSurfaceDetail(v, s); }
-    v.needsUpdate = true; _aoMatCache.set(mat, v);
-  }
+  if(!v){ v = mat.clone(); v.vertexColors = true; v.needsUpdate = true; _aoMatCache.set(mat, v); }
   return v;
 }
 function _writeAO(geo, h, jit){
@@ -29804,15 +29629,6 @@ function setupVisualGUI(){
   fI.add(VISUAL.impact, 'disc', 0, 2, 0.05).name('disco de choque');
   fI.add(VISUAL.impact, 'spray', 0, 2, 0.05).name('chispas en cono');
   fI.add(VISUAL.impact, 'streaks', 0, 2, 0.05).name('líneas de velocidad');
-  /* ►SURFACE: relieve/rugosidad/grano. ABIERTA por defecto: es la carpeta que más cambia la imagen. */
-  const upS = ()=>applySurfaceDetail();
-  const fS = gui.addFolder('Superficie (relieve y grano)');
-  fS.add(VISUAL.surface, 'on').name('activado').onChange(upS);
-  fS.add(VISUAL.surface, 'bump', -2, 2,   0.02).name('relieve').onChange(upS);   // NEGATIVO invierte el relieve (por si los bultos salen como hoyos)
-  fS.add(VISUAL.surface, 'rough', 0, 0.8, 0.01).name('variación de brillo').onChange(upS);
-  fS.add(VISUAL.surface, 'tint',  0, 0.4, 0.01).name('grano de color').onChange(upS);
-  fS.add(VISUAL.surface, 'scale', 0.1, 1.2, 0.01).name('tamaño del grano').onChange(upS);
-  fS.open();
   const fK = gui.addFolder('Sol (key, cálido + sombra)');
   fK.addColor(VISUAL.key, 'color').name('color').onChange(upd);
   fK.add(VISUAL.key, 'intensity', 0, 2.5, 0.01).name('intensidad').onChange(upd);
