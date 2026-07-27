@@ -1385,6 +1385,9 @@ const VISUAL = {
   ao:   { strength:0.50, curve:1.6, floor:0.34 },   // [strength 0–0.8] oscurece bases/contacto · curve = concentración hacia abajo · floor = mínimo
   // VARIACIÓN sutil de brillo por vértice en superficies grandes (rompe lo uniforme)
   grassVar: { amount:0.06 },   // [0–0.15]
+  // ►ENVMAP (IBL): entorno reflejado, generado del CIELO DE CADA STAGE (ver módulo ►ENVMAP más abajo).
+  // Sin él, TODO material con metalness>0 sale apagado/negro (por eso había metales forzados a 0 a mano).
+  env:  { on:true, intensity:0.55, sun:0.85 },   // [intensity 0–1] cuánto entorno entra · [sun 0–2] fuerza del reflejo del sol
 };
 
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
@@ -1445,6 +1448,157 @@ const skyMat = new THREE.ShaderMaterial({
 });
 const skyDome = new THREE.Mesh(new THREE.SphereGeometry(290, 24, 16), skyMat);
 scene.add(skyDome);
+
+/* =====================================================================
+   ►ENVMAP (IBL) — el ENTORNO que reflejan los materiales.
+   Hasta ahora NO había scene.environment. Consecuencia: cualquier
+   MeshStandardMaterial con metalness>0 salía apagado/negro (el metal toma
+   su color casi entero del entorno reflejado), y por eso hay metales
+   bajados a metalness:0 a mano por el código.
+
+   Qué hace: pinta un equirect 256×128 en canvas con EL MISMO degradado que
+   la cúpula (skyMat) + un blob de sol, lo pasa por PMREM y lo cuelga de
+   scene.environment. Como se genera DEL CIELO, cada stage recibe su entorno
+   correcto solo: desierto cálido, hielo azul, espacio casi negro. No hay
+   que tocar nada al añadir stages nuevos.
+
+   Coste: 0 por frame. Solo se regenera cuando cambia la firma (cielo, sol o
+   los knobs de VISUAL.env) → en la práctica, al cambiar de stage.
+   ===================================================================== */
+let _pmrem = null, _envRT = null;
+/* smoothstep de GLSL (soporta e0>e1, que es como lo usa el shader de la cúpula abajo) */
+function _envStep(e0, e1, x){ const t = Math.min(1, Math.max(0, (x-e0)/(e1-e0))); return t*t*(3-2*t); }
+/* dibuja el equirect fuente. OJO con las convenciones, están verificadas:
+   - CanvasTexture va con flipY=true y el shader equirect de three usa
+     v = asin(dir.y)/PI + 0.5 → la FILA 0 del canvas (arriba) es el CÉNIT. Natural.
+   - u = atan2(dir.z, dir.x)/2PI + 0.5 → u=0 en el borde izquierdo, sin espejar.
+   - NO le ponemos sRGBEncoding: los hex del cielo se usan como LINEALES en el
+     shader de la cúpula (toneMapped:false), así que el entorno debe leerlos
+     igual o saldría mucho más oscuro que el cielo que imita. */
+function buildEnvSource(){
+  const W = 256, H = 128;
+  const k = Math.min(1, Math.max(0, VISUAL.env.intensity));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const top = skyMat.uniforms.top.value, hor = skyMat.uniforms.hor.value, bot = skyMat.uniforms.bot.value;
+  for(let y=0; y<H; y++){
+    const h = Math.cos(Math.PI * (y+0.5)/H);                     // +1 cénit → -1 nadir
+    const a = _envStep(-0.05, 0.5, h), b = _envStep(-0.04, -0.5, h);   // mismas rampas que el fragment de skyMat
+    const r = ((hor.r + (top.r-hor.r)*a) * (1-b) + bot.r*b) * k;
+    const g = ((hor.g + (top.g-hor.g)*a) * (1-b) + bot.g*b) * k;
+    const bl= ((hor.b + (top.b-hor.b)*a) * (1-b) + bot.b*b) * k;
+    ctx.fillStyle = 'rgb('+Math.round(Math.min(255,r*255))+','+Math.round(Math.min(255,g*255))+','+Math.round(Math.min(255,bl*255))+')';
+    ctx.fillRect(0, y, W, 1);
+  }
+  /* SOL: blob radial aditivo en la dirección real de la key → los metales
+     ganan un reflejo especular con posición coherente con la sombra. */
+  const s = VISUAL.env.sun;
+  if(s > 0.001){
+    const d = new THREE.Vector3().copy(sun.position).sub(sun.target.position).normalize();
+    const u = (Math.atan2(d.z, d.x) / (Math.PI*2) + 0.5) * W;
+    const v = (0.5 - Math.asin(Math.max(-1, Math.min(1, d.y))) / Math.PI) * H;
+    const rad = W * 0.055;
+    const c = sun.color, amp = Math.min(1, s * sun.intensity * 0.6) * k;
+    const gr = ctx.createRadialGradient(u, v, 0, u, v, rad);
+    gr.addColorStop(0,   'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+','+amp+')');
+    gr.addColorStop(0.35,'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+','+(amp*0.35)+')');
+    gr.addColorStop(1,   'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+',0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = gr; ctx.fillRect(u-rad, v-rad, rad*2, rad*2);
+    /* el equirect es cíclico en u: si el blob toca un borde, se repinta en el otro */
+    if(u-rad < 0 || u+rad > W){
+      const u2 = (u-rad < 0) ? u + W : u - W;
+      const gr2 = ctx.createRadialGradient(u2, v, 0, u2, v, rad);
+      gr2.addColorStop(0,   'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+','+amp+')');
+      gr2.addColorStop(0.35,'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+','+(amp*0.35)+')');
+      gr2.addColorStop(1,   'rgba('+Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255)+',0)');
+      ctx.fillStyle = gr2; ctx.fillRect(u2-rad, v-rad, rad*2, rad*2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return cv;
+}
+/* FIRMA del entorno: si no cambia, no se regenera nada.
+   ►PERF: esto se evalúa CADA FRAME, así que va SIN ASIGNACIONES — campos
+   numéricos sobre dos objetos reutilizados y un Vector3 de scratch (nada de
+   strings ni `new` por frame). La dirección del sol se cuantiza a 1/100 para
+   que un micro-movimiento no dispare regeneraciones. */
+const _envScratch = new THREE.Vector3();
+const _envNow = { on:false, top:0, hor:0, bot:0, k:0, s:0, sc:0, si:0, dx:0, dy:0, dz:0 };
+const _envApplied = { on:null, top:0, hor:0, bot:0, k:0, s:0, sc:0, si:0, dx:0, dy:0, dz:0 };
+function _envSample(){
+  const o = _envNow;
+  /* tier 'bajo' (móvil/equipo justo): sin IBL. TIERS/effName se declaran más abajo → guarda anti-TDZ. */
+  o.on = !!VISUAL.env.on && VISUAL.env.intensity > 0.02 &&      // intensidad ~0 = APAGADO de verdad (si no, el entorno sería negro y los metales volverían a negro)
+         !(typeof TIERS !== 'undefined' && typeof effName !== 'undefined' && TIERS[effName] && TIERS[effName].env === false);
+  if(!o.on) return o;
+  o.top = skyMat.uniforms.top.value.getHex();
+  o.hor = skyMat.uniforms.hor.value.getHex();
+  o.bot = skyMat.uniforms.bot.value.getHex();
+  o.k   = Math.round(VISUAL.env.intensity * 1000);
+  o.s   = Math.round(VISUAL.env.sun * 1000);
+  o.sc  = sun.color.getHex();
+  o.si  = Math.round(sun.intensity * 100);
+  const d = _envScratch.copy(sun.position).sub(sun.target.position).normalize();
+  o.dx = Math.round(d.x*100); o.dy = Math.round(d.y*100); o.dz = Math.round(d.z*100);
+  return o;
+}
+function _envUnchanged(a, b){
+  if(a.on !== b.on) return false;
+  if(!a.on) return true;                     // ambos apagados: nada que comparar
+  return a.top===b.top && a.hor===b.hor && a.bot===b.bot && a.k===b.k && a.s===b.s &&
+         a.sc===b.sc && a.si===b.si && a.dx===b.dx && a.dy===b.dy && a.dz===b.dz;
+}
+/* ►ENVMAP · METALES CONDICIONALES.
+   El metal solo funciona si HAY entorno; con el IBL apagado (tier bajo) un
+   metalness>0 sale negro. Registra el material aquí y su metalness se pone
+   solo según haya entorno o no:  envMetal(mat, 0.35)
+   Es el sustituto limpio de bajar el metalness a mano en el código. */
+const _envMetalMats = [];
+function envMetal(mat, m){
+  if(!mat) return mat;
+  mat.userData._envMetal = m;
+  if(_envMetalMats.indexOf(mat) < 0) _envMetalMats.push(mat);
+  mat.metalness = scene.environment ? m : 0;
+  return mat;
+}
+function _refreshEnvMetals(){
+  const on = !!scene.environment;
+  for(const m of _envMetalMats){
+    const want = on ? (m.userData._envMetal || 0) : 0;
+    if(m.metalness !== want){ m.metalness = want; m.needsUpdate = true; }
+  }
+}
+/* Regenera el entorno SI cambió. Lo llama drawScene cada frame (comparar la
+   firma es gratis) → captura los stages que tocan skyMat.uniforms sin pasar
+   por applyVisual, sin tener que instrumentar los ~10 sitios donde ocurre. */
+function applyEnvironment(){
+  const now = _envSample();
+  if(_envUnchanged(now, _envApplied)) return;
+  Object.assign(_envApplied, now);
+  if(!now.on){
+    scene.environment = null;
+    if(_envRT){ _envRT.dispose(); _envRT = null; }
+    _refreshEnvMetals();
+    return;
+  }
+  try{
+    if(!_pmrem){ _pmrem = new THREE.PMREMGenerator(renderer); _pmrem.compileEquirectangularShader(); }
+    const src = new THREE.CanvasTexture(buildEnvSource());
+    src.mapping = THREE.EquirectangularReflectionMapping;
+    const prev = _envRT;
+    _envRT = _pmrem.fromEquirectangular(src);
+    scene.environment = _envRT.texture;      // ya intercambiado: el RT viejo se puede tirar
+    src.dispose();
+    if(prev) prev.dispose();
+    _refreshEnvMetals();
+  }catch(e){
+    console.warn('►ENVMAP desactivado:', e);
+    VISUAL.env.on = false; scene.environment = null;
+    _envApplied.on = false;   // queda fijado en OFF: _envSample() ya devolverá on:false y no reintenta en bucle
+    _refreshEnvMetals();
+  }
+}
 
 const camera = new THREE.PerspectiveCamera(50, 2, 0.1, 300);   // far 420→300: cúpula de cielo (r=290) y sol siguen visibles; culling auto de lo demás
 
@@ -1679,9 +1833,9 @@ function attachComposerDepth(){
    Cada tier controla DOF, bloom, grano/viñeta, sombra y el tope del DRS. qMode 'auto'
    empieza en 'alto' y baja/sube de tier solo según FPS sostenidos. */
 const TIERS = {
-  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, drsMax: Math.min(PIXEL_CAP, 1.2) },
-  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
-  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
+  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel)
+  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
+  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
 };
 const TIER_ORDER = ['bajo','medio','alto'];
 /* detección de móvil/táctil: arranca conservador para que un móvil malo NO empiece ahogado.
@@ -1725,6 +1879,7 @@ function applyTier(){
   if(bloomPass) bloomPass.enabled = t.bloom;
   if(gradePass){ gradePass.uniforms.grain.value = t.grain; gradePass.uniforms.vignette.value = t.vignette; }
   setShadow(t.shadow);
+  applyEnvironment();                                                       // ►ENVMAP: el tier decide si hay IBL (bajo = no)
   applyRenderScale(Math.min(t.drsMax, Math.max(PIXEL_FLOOR, curRatio)));   // reclampa el ratio al rango del tier
 }
 function setQuality(mode){
@@ -1886,6 +2041,7 @@ function drawScene(){ tagInteractiveMask();   // marca cada frame los interactiv
     gradePass.uniforms.tProtect.value   = maskRT ? maskRT.depthTexture : null; }            // máscara personajes+interactivos → no se les baja la saturación
   if(_decoTimeUniform) _decoTimeUniform.value = t;                         // mar + banderas animados en GPU (vertex shader)
   skyDome.position.copy(camera.position);                                  // cielo = skybox (centrado en la cámara) → no parallaxea
+  applyEnvironment();                                                      // ►ENVMAP: comparar la firma es gratis; solo regenera si cambió el cielo/sol (= cambio de stage)
   renderer.shadowMap.needsUpdate = ((_shadowTick++ & 1) === 0);            // throttle: re-renderiza el shadow map 1 de cada 2 frames (~30Hz)
   if(composer) composer.render(); else renderer.render(scene, camera); }   // bloom si cargó; si no, render normal
 /* ►BOTHUD: escala del HUD de abajo coherente con el tamaño de pantalla.
@@ -18965,7 +19121,7 @@ function scatterModelDecorStage2(startIdx){
   /* ►RONDA6c · CHARCOS (pedido): 2-4 por segmento, discos orgánicos casi a ras que "reflejan" el
      cielo gris (material claro semitransparente); UNA malla propia por segmento, noOcc */
   {
-    if(!_s2PuddleMat) _s2PuddleMat = new THREE.MeshStandardMaterial({ color:0xb2ccd8, roughness:0.26, metalness:0.0, transparent:true, opacity:0.66, depthWrite:false, emissive:0x223541, emissiveIntensity:0.45 });   // ►RONDA6f: metalness 0.35→0 (sin envMap el metal salía NEGRO/invisible), +opacidad, +emissive tenue → se lee como charco que refleja el cielo gris en la penumbra
+    if(!_s2PuddleMat) _s2PuddleMat = envMetal(new THREE.MeshStandardMaterial({ color:0xb2ccd8, roughness:0.26, metalness:0.0, transparent:true, opacity:0.66, depthWrite:false, emissive:0x223541, emissiveIntensity:0.45 }), 0.35);   // ►ENVMAP: recuperado el metalness 0.35 original vía envMetal() — ya hay entorno que reflejar, y con el IBL apagado (tier bajo) vuelve solo a 0 en vez de salir negro
     const geos = [];
     const nP = 4 + ((Math.random()*3)|0);           // ►RONDA6f: 3-4 → 4-6 por segmento
     for(let i=0;i<nP*5 && geos.length<nP;i++){   // ►RONDA6c: reintentos (con la deco densa el primer tiro casi siempre choca)
@@ -29267,6 +29423,7 @@ function applyVisual(){
     if(u){ if(u.aperture) u.aperture.value = VISUAL.dof.aperture; if(u.maxblur) u.maxblur.value = VISUAL.dof.maxblur; }
   }
   if(renderer.shadowMap) renderer.shadowMap.needsUpdate = true;   // re-genera el shadow map con el nuevo ángulo del sol
+  applyEnvironment();                                             // ►ENVMAP: el entorno reflejado sigue al sol/cielo nuevos
 }
 
 /* =====================================================================
@@ -29305,6 +29462,11 @@ function setupVisualGUI(){
   gui.add(_presetState, 'preset', Object.keys(PRESETS)).name('◆ PRESET').onChange(applyPreset);   // A/B instantáneo de looks
   const fT = gui.addFolder('Tone');
   fT.add(VISUAL, 'exposure', 0.35, 1.2, 0.01).name('exposición').onChange(upd);
+  /* ►ENVMAP: entorno reflejado (IBL). Es lo que hace que el metal parezca metal. */
+  const fE = gui.addFolder('Entorno reflejado (IBL)');
+  fE.add(VISUAL.env, 'on').name('activado').onChange(upd);
+  fE.add(VISUAL.env, 'intensity', 0, 1, 0.01).name('intensidad').onChange(upd);
+  fE.add(VISUAL.env, 'sun', 0, 2, 0.01).name('reflejo del sol').onChange(upd);
   const fK = gui.addFolder('Sol (key, cálido + sombra)');
   fK.addColor(VISUAL.key, 'color').name('color').onChange(upd);
   fK.add(VISUAL.key, 'intensity', 0, 2.5, 0.01).name('intensidad').onChange(upd);
