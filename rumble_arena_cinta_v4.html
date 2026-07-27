@@ -1393,6 +1393,8 @@ const VISUAL = {
   contact: { on:true, opacity:0.34, size:1.25, fade:7 },   // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
   // ►IMPACT: refuerzo DIRECCIONAL del golpe (lo ya existente es omnidireccional). Se suma a bigHitFX.
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
+  // ►WATER: espuma en crestas + valles hundidos + rugosidad por ola (lo que hace visible el reflejo).
+  water: { on:true, foam:0.75, deep:0.35, shine:0.30 },   // [foam 0–1] espuma · [deep 0–0.7] volumen del oleaje · [shine 0–0.45] reflejo del agua lisa
 };
 
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
@@ -2983,15 +2985,76 @@ function _attachFlagWave(material, ph){   // ondulación de la tela de bandera e
       'transformed.z = sin(u_time*5.2 + position.x*2.2 + u_ph)*0.15*position.x;');
   };
 }
+/* =====================================================================
+   ►WATER — look del agua.
+   El oleaje en vertex shader estaba DUPLICADO LITERAL en 3 sitios (mar de la
+   cinta + mares de las arenas de jefe S1 y S2). Aquí queda en un solo sitio,
+   así que lo que se mejore llega a los tres.
+
+   Qué añade sobre el oleaje que ya había (que solo movía los vértices, dejando
+   el agua de un azul PLANO):
+     · ESPUMA en las crestas, rota por un patrón que se desplaza → deja de ser
+       una lámina lisa y se lee como agua en movimiento.
+     · VALLES más oscuros → el oleaje gana volumen en vez de ser facetas planas.
+     · RUGOSIDAD por ola: el agua lisa refleja y la espuma es mate. Esto es lo
+       que hace que ►ENVMAP por fin se VEA — el reflejo del cielo y del sol
+       aparece sobre la superficie lisa entre cresta y cresta.
+
+   Sin destellos analíticos a propósito: a esta distancia de cámara un patrón
+   de alta frecuencia sobre 560 unidades sin mipmaps produce moiré. El brillo
+   lo pone el reflejo real del entorno, que es más barato y no aliasa.
+   ===================================================================== */
+const _waterShaders = [];    // uniforms vivos (sliders de F2)
+function applyWaterLook(m){
+  m.onBeforeCompile = (sh)=>{
+    const W = VISUAL.water;
+    sh.uniforms.u_time  = _decoTimeUniform;
+    sh.uniforms.uWFoam  = { value: W.on ? W.foam  : 0 };
+    sh.uniforms.uWDeep  = { value: W.on ? W.deep  : 0 };
+    sh.uniforms.uWShine = { value: W.on ? W.shine : 0 };
+    /* VERTEX: el MISMO oleaje de siempre (no se toca la silueta del mar), pero
+       guardando la altura de la ola y el XZ local para que el fragment los use. */
+    sh.vertexShader = 'uniform float u_time;\nvarying float vWH;\nvarying vec2 vWXZ;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>',
+      'vec3 transformed = vec3( position );\n'+
+      'float wH = sin(u_time*1.1 + position.x*0.14 + position.y*0.19)*0.9 + sin(u_time*1.9 + position.y*0.3)*0.35;\n'+
+      'transformed.z = wH;\n'+
+      'vWH = wH;\n'+
+      'vWXZ = position.xy;');
+    sh.fragmentShader = 'uniform float u_time;\nuniform float uWFoam;\nuniform float uWDeep;\nuniform float uWShine;\nvarying float vWH;\nvarying vec2 vWXZ;\n' +
+      sh.fragmentShader.replace('#include <normal_fragment_maps>', [
+        '#include <normal_fragment_maps>',
+        '{',
+        '  float crest  = smoothstep(0.30, 1.05, vWH);',        // 1 = cresta
+        '  float trough = smoothstep(0.10, -1.10, vWH);',       // 1 = fondo del valle
+        '  diffuseColor.rgb *= 1.0 - trough * uWDeep;',         // VOLUMEN: hunde los valles
+        /* ESPUMA: solo donde hay cresta Y el patrón que se desplaza está alto →
+           parches que aparecen y se deshacen, no una banda continua. */
+        '  float br = sin(vWXZ.x*0.19 + u_time*0.8) * sin(vWXZ.y*0.16 - u_time*0.6);',
+        '  float foam = crest * smoothstep(-0.10, 0.80, br);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.96, 1.0), foam * uWFoam);',
+        /* agua lisa = espejo (recoge el cielo del envMap) · espuma = mate */
+        '  roughnessFactor = clamp(roughnessFactor - (1.0 - crest) * uWShine + foam * 0.5, 0.04, 1.0);',
+        '}'
+      ].join('\n'));
+    if(sh.fragmentShader.indexOf('float crest') < 0) console.warn('►WATER: no se encontró #include <normal_fragment_maps> — el agua queda como antes');
+    _waterShaders.push(sh.uniforms);
+  };
+  return m;
+}
+/* vuelca VISUAL.water sobre los shaders ya compilados (sliders de F2 en vivo) */
+function applyWaterLive(){
+  const W = VISUAL.water;
+  for(const u of _waterShaders){
+    if(!u.uWFoam) continue;
+    u.uWFoam.value  = W.on ? W.foam  : 0;
+    u.uWDeep.value  = W.on ? W.deep  : 0;
+    u.uWShine.value = W.on ? W.shine : 0;
+  }
+}
+
 const seaGeo = new THREE.PlaneGeometry(560, 560, 48, 48);   // mar grande: su borde queda más allá de la niebla → horizonte limpio
-const seaMat = mat(0x25608a, { roughness:.5, metalness:.15, depthWrite:false });   // depthWrite:false → el agua no genera líneas de contorno (ni horizonte)
-seaMat.onBeforeCompile = (sh)=>{
-  sh.uniforms.u_time = _decoTimeUniform;
-  sh.vertexShader = 'uniform float u_time;\n' + sh.vertexShader.replace(
-    '#include <begin_vertex>',
-    'vec3 transformed = vec3( position );\n'+
-    'transformed.z = sin(u_time*1.1 + position.x*0.14 + position.y*0.19)*0.9 + sin(u_time*1.9 + position.y*0.3)*0.35;');
-};
+const seaMat = applyWaterLook(mat(0x25608a, { roughness:.5, metalness:.15, depthWrite:false }));   // depthWrite:false → el agua no genera líneas de contorno (ni horizonte)
 const sea = new THREE.Mesh(seaGeo, seaMat);
 sea.rotation.x = -Math.PI/2;
 sea.position.y = -19;
@@ -9869,13 +9932,7 @@ function buildBossBackdrop(gArena){
     // 1) MAR AZUL animado bajo la arena — mismo agua/oleaje en GPU que el mar de la cinta (seaMat 0x25608a, comparte _decoTimeUniform)
     {
       const geo=new THREE.PlaneGeometry(560,560,48,48);
-      const m=mat(0x25608a, { roughness:.5, metalness:.15, depthWrite:false });   // MISMO azul que el mar del stage 1 (seaMat)
-      m.onBeforeCompile=(sh)=>{
-        sh.uniforms.u_time=_decoTimeUniform;
-        sh.vertexShader='uniform float u_time;\n'+sh.vertexShader.replace('#include <begin_vertex>',
-          'vec3 transformed = vec3( position );\n'+
-          'transformed.z = sin(u_time*1.1 + position.x*0.14 + position.y*0.19)*0.9 + sin(u_time*1.9 + position.y*0.3)*0.35;');
-      };
+      const m=applyWaterLook(mat(0x25608a, { roughness:.5, metalness:.15, depthWrite:false }));   // ►WATER: MISMO azul y MISMO look que el mar del stage 1 (seaMat)
       const sea1=new THREE.Mesh(geo, m); sea1.rotation.x=-Math.PI/2; sea1.position.y=-34; g.add(sea1);
     }
     // 2) NUBES REALES (cloud1/2/3) fusionadas en 1 malla — DOS bandas: a la altura de la plataforma (arriba, rodeando la arena) y POR DEBAJO (entre el mar y la arena), como el cielo del stage 1
@@ -9920,13 +9977,7 @@ function buildForestBossHorizon(g){
   // 1) MAR animado bajo la arena — mismo oleaje en VERTEX SHADER que el mar de la cinta (comparte _decoTimeUniform)
   {
     const geo=new THREE.PlaneGeometry(560,560,48,48);
-    const m=mat(0x2d4a33, { roughness:.5, metalness:.15, depthWrite:false });   // ►S2BOSS: agua VERDOSA oscura = MISMO color que el mar del stage 2 (seaMat 0x2d4a33), no el azul de la cinta
-    m.onBeforeCompile=(sh)=>{
-      sh.uniforms.u_time=_decoTimeUniform;
-      sh.vertexShader='uniform float u_time;\n'+sh.vertexShader.replace('#include <begin_vertex>',
-        'vec3 transformed = vec3( position );\n'+
-        'transformed.z = sin(u_time*1.1 + position.x*0.14 + position.y*0.19)*0.9 + sin(u_time*1.9 + position.y*0.3)*0.35;');
-    };
+    const m=applyWaterLook(mat(0x2d4a33, { roughness:.5, metalness:.15, depthWrite:false }));   // ►S2BOSS: agua VERDOSA oscura = MISMO color que el mar del stage 2 (seaMat 0x2d4a33), no el azul de la cinta
     const sea2=new THREE.Mesh(geo, m); sea2.rotation.x=-Math.PI/2; sea2.position.y=-30; g.add(sea2);
   }
   // 2) MAR DE NUBES lila SOBRE el agua (mismas nubes cloud1/2/3 fusionadas en 1 malla, como buildS2Scenery)
@@ -10104,13 +10155,7 @@ function buildIceBossHorizon(g){
   // 1) MAR ÁRTICO translúcido con OLEAJE en GPU (mismo shader que el mar de la cinta / buildForestBossHorizon)
   {
     const geo=new THREE.PlaneGeometry(620,620,48,48);
-    const m=mat(0x3a78a8, { roughness:.5, metalness:.2, transparent:true, opacity:.7, depthWrite:false });
-    m.onBeforeCompile=(sh)=>{
-      sh.uniforms.u_time=_decoTimeUniform;
-      sh.vertexShader='uniform float u_time;\n'+sh.vertexShader.replace('#include <begin_vertex>',
-        'vec3 transformed = vec3( position );\n'+
-        'transformed.z = sin(u_time*1.1 + position.x*0.14 + position.y*0.19)*0.9 + sin(u_time*1.9 + position.y*0.3)*0.35;');
-    };
+    const m=applyWaterLook(mat(0x3a78a8, { roughness:.5, metalness:.2, transparent:true, opacity:.7, depthWrite:false }));   // ►WATER
     const sea=new THREE.Mesh(geo, m); sea.rotation.x=-Math.PI/2; sea.position.y=WL; g.add(sea);
   }
   // 2) TÉMPANOS de hielo medio sumergidos asomando sobre el agua (misma banquisa fusionada + flatShading que buildS7Scenery)
@@ -29629,6 +29674,14 @@ function setupVisualGUI(){
   fI.add(VISUAL.impact, 'disc', 0, 2, 0.05).name('disco de choque');
   fI.add(VISUAL.impact, 'spray', 0, 2, 0.05).name('chispas en cono');
   fI.add(VISUAL.impact, 'streaks', 0, 2, 0.05).name('líneas de velocidad');
+  /* ►WATER: look del mar. ABIERTA por defecto — es la carpeta a mirar ahora mismo. */
+  const upW = ()=>applyWaterLive();
+  const fW = gui.addFolder('Agua');
+  fW.add(VISUAL.water, 'on').name('activada').onChange(upW);
+  fW.add(VISUAL.water, 'foam',  0, 1,    0.01).name('espuma').onChange(upW);
+  fW.add(VISUAL.water, 'deep',  0, 0.7,  0.01).name('volumen del oleaje').onChange(upW);
+  fW.add(VISUAL.water, 'shine', 0, 0.45, 0.01).name('reflejo del agua lisa').onChange(upW);
+  fW.open();
   const fK = gui.addFolder('Sol (key, cálido + sombra)');
   fK.addColor(VISUAL.key, 'color').name('color').onChange(upd);
   fK.add(VISUAL.key, 'intensity', 0, 2.5, 0.01).name('intensidad').onChange(upd);
