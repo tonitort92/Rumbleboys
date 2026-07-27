@@ -1388,6 +1388,9 @@ const VISUAL = {
   // ►ENVMAP (IBL): entorno reflejado, generado del CIELO DE CADA STAGE (ver módulo ►ENVMAP más abajo).
   // Sin él, TODO material con metalness>0 sale apagado/negro (por eso había metales forzados a 0 a mano).
   env:  { on:true, intensity:0.55, sun:0.85 },   // [intensity 0–1] cuánto entorno entra · [sun 0–2] fuerza del reflejo del sol
+  // ►CONTACT: sombra de contacto bajo los pies (ancla al personaje al suelo; el shadow map solo
+  // no da resolución para el contacto). Se suma a la sombra real, no la sustituye.
+  contact: { on:true, opacity:0.34, size:1.25, fade:7 },   // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
 };
 
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
@@ -1614,7 +1617,12 @@ sun.shadow.mapSize.set(2048, 2048);   // ►PERF: 4096→2048 (¼ del coste del 
 sun.shadow.camera.left = -42; sun.shadow.camera.right = 42;
 sun.shadow.camera.top = 42;   sun.shadow.camera.bottom = -42;
 sun.shadow.camera.far = 130;  sun.shadow.normalBias = 0.02;
-sun.shadow.radius = 4; sun.shadow.bias = -0.0004;   // ►FIX S1: bordes de sombra BLANDOS (PCFSoft) + bias anti acne → sombras menos duras
+sun.shadow.radius = 4; sun.shadow.bias = -0.0004;   // ►FIX S1: bias anti acne
+/* ►OJO (verificado en el shader de r128): `shadow.radius` es INERTE mientras shadowMap.type sea
+   PCFSoftShadowMap — esa rama muestrea solo con texelSize, sin multiplicar por shadowRadius (solo
+   la rama PCF "a secas" lo usa). Vale para TODOS los shadow.radius del archivo (arenas de jefe
+   incluidas): no ablandan nada. Para que el radio cuente habría que pasar a THREE.PCFShadowMap,
+   lo que cambia el look de TODAS las sombras → decisión de diseño, no un cambio gratis. */
 scene.add(sun);
 /* RIM / contraluz frío (se llama topLight para no romper setShadow): SIN sombra → coste mínimo. */
 const topLight = new THREE.DirectionalLight(LIGHT_RIG.rim.color, LIGHT_RIG.rim.intensity);
@@ -4705,11 +4713,27 @@ function scoreTotal(p){ const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.item
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.rainT>0 || p._rainbowT>0); }
 function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; } }   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
+/* ►CONTACT: textura de la sombra de contacto. NO reusa _hazeTex a propósito: la bruma tiene una
+   caída lineal muy suave y una sombra necesita NÚCLEO (si no, lee como un glow gris, no como
+   contacto). Núcleo casi opaco hasta el 30% del radio y desvanecido cuadrático a partir de ahí. */
+const _contactTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+  const gr=x.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(0.30,'rgba(0,0,0,0.92)');
+  gr.addColorStop(0.62,'rgba(0,0,0,0.42)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
+const _contactGeo = new THREE.PlaneGeometry(1,1);   // compartida por todos (solo el material es por jugador, por la opacidad)
+
 /* círculo del color de cada jugador, pegado al suelo: ves dónde caes y dónde estás */
 for(const _p of allPlayers){
   _p.groundRing = new THREE.Mesh(new THREE.RingGeometry(.55,.82,30),
     new THREE.MeshBasicMaterial({ color:_p.color, transparent:true, opacity:.6, side:THREE.DoubleSide, depthWrite:false }));
   _p.groundRing.rotation.x = -Math.PI/2; _p.groundRing.visible = false; scene.add(_p.groundRing);
+  /* ►CONTACT: va POR DEBAJO del groundRing (renderOrder −1) para que el círculo de color del
+     jugador siga leyéndose encima. fog:false → no se aclara con la niebla y deja de anclar. */
+  _p.contactShadow = new THREE.Mesh(_contactGeo,
+    new THREE.MeshBasicMaterial({ map:_contactTex, transparent:true, opacity:VISUAL.contact.opacity, depthWrite:false, fog:false }));
+  _p.contactShadow.rotation.x = -Math.PI/2; _p.contactShadow.renderOrder = -1;
+  _p.contactShadow.visible = false; scene.add(_p.contactShadow);
   _p.locator = new THREE.Mesh(new THREE.ConeGeometry(.34,.6,4), new THREE.MeshBasicMaterial({ color:_p.color }));   // flecha locator (solo humanos)
   _p.locator.rotation.x = Math.PI; _p.locator.visible = false; scene.add(_p.locator);
   _p.gfx.root.visible = false;
@@ -4755,6 +4779,7 @@ function setRoster(humans, cpus){
     const p = allPlayers[i], active = i < total, human = active && i < humans;
     p.gfx.root.visible = active;
     p.groundRing.visible = false; p.locator.visible = false;   // se reactivan por frame en updateFighter
+    if(p.contactShadow) p.contactShadow.visible = false;       // ►CONTACT: mismo ciclo de vida que el groundRing
     if(active){
       p.isAI = !human;
       p.kbInput  = human && (humans===1 || i===0);                          // teclado: humano único (solo) o P1 (multi)
@@ -5463,6 +5488,7 @@ function narrateStageStart(){
     if(p.groundRing) p.groundRing.visible = false;
     if(p.locator)    p.locator.visible    = false;
     if(p._stamBar)   p._stamBar.g.visible = false;
+    if(p.contactShadow) p.contactShadow.visible = false;   // ►CONTACT
   }
   clearCues();                   // por si quedaban timers de la cuenta del intro de partida
   if(!musicOn || demo) return;   // mismos frenos que narrate()
@@ -17492,6 +17518,24 @@ function updateFighter(p, dt){
     const gy = p.dead ? null : groundAt(p.pos.x, p.pos.z, p.pos.y+0.2, -200);
     if(gy!==null){ p.groundRing.visible = true; p.groundRing.position.set(p.pos.x, gy+0.06, p.pos.z); }
     else p.groundRing.visible = false;
+    /* ►CONTACT: sombra bajo los pies. Cuanto más alto está, más GRANDE y más DÉBIL (penumbra).
+       Reusa el gy de arriba → no cuesta ninguna consulta de suelo extra. */
+    if(p.contactShadow){
+      const C = VISUAL.contact;
+      if(gy===null || !C.on){ p.contactShadow.visible = false; }
+      else{
+        const h = Math.max(0, p.pos.y - gy);
+        const k = Math.min(1, h / Math.max(0.001, C.fade));            // 0 = pegado al suelo · 1 = ya no se ve
+        const f = (1-k)*(1-k);                                          // caída cuadrática: se desvanece rápido al despegar
+        p.contactShadow.visible = f > 0.01;
+        if(p.contactShadow.visible){
+          const s = C.size * (1 + k*0.9);                               // al subir, la sombra se abre
+          p.contactShadow.scale.set(s, s, 1);
+          p.contactShadow.position.set(p.pos.x, gy+0.03, p.pos.z);      // por debajo del groundRing (gy+0.06)
+          p.contactShadow.material.opacity = C.opacity * f;
+        }
+      }
+    }
     if(p===_camMe()){                            // GLOW suave SOLO bajo el personaje que llevas (le acompaña incluso saltando: cae al suelo de debajo)
       if(gy!==null){ meGlow.visible = true; meGlow.position.set(p.pos.x, gy+0.04, p.pos.z); meGlow.material.opacity = 0.55 + 0.1*Math.sin(t*2.2); }   // luz MÁS fuerte (antes 0.28)
       else meGlow.visible = false;
@@ -29467,6 +29511,12 @@ function setupVisualGUI(){
   fE.add(VISUAL.env, 'on').name('activado').onChange(upd);
   fE.add(VISUAL.env, 'intensity', 0, 1, 0.01).name('intensidad').onChange(upd);
   fE.add(VISUAL.env, 'sun', 0, 2, 0.01).name('reflejo del sol').onChange(upd);
+  /* ►CONTACT: sombra bajo los pies. Se aplica sola en updateFighter (no necesita onChange). */
+  const fC = gui.addFolder('Sombra de contacto');
+  fC.add(VISUAL.contact, 'on').name('activada');
+  fC.add(VISUAL.contact, 'opacity', 0, 0.7, 0.01).name('fuerza');
+  fC.add(VISUAL.contact, 'size', 0.6, 2, 0.01).name('tamaño');
+  fC.add(VISUAL.contact, 'fade', 3, 14, 0.5).name('altura de fundido');
   const fK = gui.addFolder('Sol (key, cálido + sombra)');
   fK.addColor(VISUAL.key, 'color').name('color').onChange(upd);
   fK.add(VISUAL.key, 'intensity', 0, 2.5, 0.01).name('intensidad').onChange(upd);
