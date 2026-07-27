@@ -1397,17 +1397,6 @@ const VISUAL = {
   surface: { on:true, bump:0.7, rough:0.35, tint:0.12, scale:0.35 },   // [bump −2..2, negativo = relieve invertido] · [rough 0–0.8] · [tint 0–0.4] grano · [scale 0.1–1.2] tamaño del grano
 };
 
-/* ►SURFACE · estado. Vive AQUÍ ARRIBA y no junto a su módulo (que está mucho más
-   abajo, con mat()/M) por una razón concreta: applyTier() se ejecuta a nivel
-   superior al cargar y llama a applySurfaceDetail(), que recorre _surfShaders. Si
-   el const se declarara junto al módulo quedaría en ZONA MUERTA TEMPORAL en ese
-   momento y el ReferenceError abortaría el script entero → el juego se queda en el
-   splash. Y OJO: `typeof x === 'undefined'` NO protege de esto en const/let (a
-   diferencia de una variable no declarada, sigue lanzando). La única defensa es el
-   orden de declaración. */
-const _surfShaders = [];        // uniforms vivos de cada material con detalle (para los sliders de F2)
-const SURF_KEY = 'surfdetail';  // customProgramCacheKey: que three NO comparta programa con materiales sin detalle
-
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
    lo leen funciones de decoración (addTree/addRock/addCenterProps/scatterModelDecor…) que se
    ejecutan ya en la construcción inicial de la cinta. El módulo Stage 2 (más abajo) lo conmuta. */
@@ -2149,8 +2138,9 @@ const _surfNoiseTex = (function(){
   return t;
 })();
 
-/* Marca un material para que lleve detalle de superficie. Idempotente.
-   (_surfShaders y SURF_KEY viven ARRIBA, junto a VISUAL — ver el porqué allí.) */
+const _surfShaders = [];        // uniforms vivos de cada material con detalle (para los sliders de F2)
+const SURF_KEY = 'surfdetail';  // customProgramCacheKey: que three NO comparta programa con materiales sin detalle
+/* Marca un material para que lleve detalle de superficie. Idempotente. */
 function addSurfaceDetail(m, opt){
   if(!m || m.userData._surf) return m;
   const o = opt || {};
