@@ -2062,6 +2062,71 @@ function applyTier(){
   _lawnTierFade = t.lawn; applyLawnLive();                                  // ►LAWN: el tier NO quita el césped, solo acerca el horizonte al que se ve (lo que de verdad cuesta)
   applyRenderScale(Math.min(t.drsMax, Math.max(PIXEL_FLOOR, curRatio)));   // reclampa el ratio al rango del tier
 }
+/* =====================================================================
+   ►WARMUP — COMPILAR LOS SHADERS ANTES, NO EN MEDIO DE LA PARTIDA.
+
+   Medido en ejecución (sonda de frames + renderer.info.programs): los tirones
+   que se notan NO son carga de CPU ni de dibujo — son COMPILACIONES DE SHADER.
+   Cada material nuevo que aparece en pantalla obliga a WebGL a compilar y
+   enlazar su programa, y eso CONGELA el hilo. En la medición:
+     · home ................................  53 programas
+     · al arrancar la partida ..............  +42 EN UN SOLO FRAME (personajes)
+     · durante los primeros segundos .......  +30 más (efectos, props nuevos)
+   Los tres frames más lentos de toda la grabación fueron exactamente los tres
+   en los que se compilaron programas; el resto del trabajo (montar el roster,
+   resetear la partida, construir el mundo) no llega ni a 3 ms.
+
+   Esto explica los cuatro sitios donde Toni nota los tirones: al salir la
+   home, al aparecer los personajes, cuando mueren varios a la vez (efectos
+   que no se habían visto todavía) y al asomar plataformas nuevas por el
+   horizonte (materiales de ese tramo que se dibujan por primera vez).
+
+   renderer.compile() recorre TODA la escena — también lo invisible — y deja
+   los programas hechos. Lo llamamos donde una espera no molesta: al cargar,
+   al empezar partida y al reconstruir la cinta (cambio de stage). Repetirlo
+   es barato: si el programa ya existe, no hace nada.
+
+   IMPORTANTE: la clave de programa incluye el skinning, así que los
+   personajes hay que compilarlos CON sus mallas presentes; por eso el warmup
+   los hace visibles un instante (sin renderizar) y los deja como estaban.
+   ===================================================================== */
+let _warmRT = null;                    // destino diminuto para el frame de calentamiento (ver abajo)
+function warmupShaders(motivo){
+  if(!renderer || !scene || !camera) return 0;
+  const antes = renderer.info.programs ? renderer.info.programs.length : 0;
+  const ocultos = [];
+  try{
+    if(typeof allPlayers !== 'undefined') for(const p of allPlayers){
+      const r = p && p.gfx && p.gfx.root;
+      if(r && !r.visible){ ocultos.push(r); r.visible = true; }
+    }
+    renderer.compile(scene, camera);
+    /* renderer.compile() NO compila los programas del PASE DE SOMBRA (usa materiales de profundidad
+       aparte, y con skinning son variantes distintas). Medido: sin esto seguían compilándose ~47
+       programas justo al montarse el roster. Un frame completo a un destino de 8×8 los deja hechos:
+       la geometría pasa igual (que es lo que dispara la compilación) pero no cuesta relleno. */
+    if(renderer.shadowMap && renderer.shadowMap.enabled){
+      if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
+      const rtPrev = renderer.getRenderTarget();
+      const suPrev = renderer.shadowMap.needsUpdate;
+      renderer.shadowMap.needsUpdate = true;
+      renderer.setRenderTarget(_warmRT);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(rtPrev);
+      renderer.shadowMap.needsUpdate = suPrev;
+    }
+  } catch(e){ console.warn('►WARMUP:', e); }
+  finally { for(const r of ocultos) r.visible = false; }
+  const n = (renderer.info.programs ? renderer.info.programs.length : 0) - antes;
+  if(n > 0) console.log('[warmup] '+motivo+': '+n+' programas compilados por adelantado (total '+(antes+n)+')');
+  return n;
+}
+/* agrupa varias peticiones seguidas en una sola pasada (los 6 personajes llegan casi a la vez) */
+let _warmT = 0;
+function scheduleWarmup(motivo){
+  clearTimeout(_warmT);
+  _warmT = setTimeout(()=>warmupShaders(motivo), 400);
+}
 function setQuality(mode){
   qMode = mode;
   try{ localStorage.setItem('blockout_quality', mode); }catch(e){}
@@ -4300,6 +4365,10 @@ function applyCharModel(p){
   if(rc && rc.offhand==='bow') attachBow(p);        // arquera: cuelga el arco en la mano izquierda
   p._heldKind = undefined; syncHeld(p);        // pone el arma recogida en la mano (o deja ver la katana de clase)
   if(p===P1) console.log('[char]', isStatic?'(estático)':'(rig)', p._charKey||'humanoide', '· mano:', !!p._charHand, '· clips:', (tpl.animations||[]).length);
+  /* ►WARMUP: acaba de entrar un personaje NUEVO en la escena (su GLB llegó ahora). Sus materiales
+     traen skinning y son los que más programas compilan; si no se hace aquí, el parón cae justo
+     cuando aparecen luchando. Se agrupa con un temporizador para no repetirlo por cada uno de los 6. */
+  if(typeof scheduleWarmup === 'function') scheduleWarmup('personaje ' + (p._charKey || 'humanoide'));
 }
 /* dirección OBJETIVO del largo del arma (+Y de la malla) en el espacio del MODELO: forward (+Z, donde mira
    el personaje) con una leve caída. Afinable: y más negativo = más caída; (0,0,1) = horizontal al frente. */
@@ -21109,6 +21178,7 @@ function rebuildBelt(){
   if(S2_SCENERY.group) S2_SCENERY.group.visible = S2_SCENERY.on && S2_DECOR_ON;   // respeta deco OFF tras un rebuild
   updateBelt(0);                     // ►R6b: pasada de wrap+visibilidad YA (sin esto, 1 frame mostraba los segmentos lejanos antes del primer tick → pop)
   if(renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
+  warmupShaders('cinta reconstruida');   // ►WARMUP: materiales del stage nuevo, compilados AQUÍ y no cuando la plataforma asoma por el horizonte
 }
 
 /* ---- CLIMA: tormenta + lluvia ligera (solo STAGE 2) ---- */
@@ -28937,6 +29007,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   if(typeof resetBossFight==='function') resetBossFight();  // desmonta arena/aro/jefe y restaura BELT/bossActive
 }
 function launchMatch(){
+  warmupShaders('inicio de partida');   // ►WARMUP: aquí ya están cargados los personajes elegidos. El parón cae en la transición de menú, no cuando aparecen luchando.
   document.getElementById('startOverlay').style.display = 'none';   // oculta menús ya (el demo/cinemática se ve detrás de "¿PREPARADOS?")
   document.getElementById('endOverlay').style.display = 'none';
   document.getElementById('endNowBtn').style.display = 'none';
@@ -30000,6 +30071,20 @@ updateHUD();
   fill(document.getElementById('endConfetti'), 34);
 })();
 startDemo();   // arranca el fondo "attract" del menú al cargar
+/* ►WARMUP en reposo: mientras el jugador lee el menú, se va compilando todo por adelantado. No basta
+   con una pasada al cargar — los personajes y los jefes llegan por GLB ASÍNCRONO, así que sus
+   materiales aparecen SEGUNDOS DESPUÉS (medido: con una sola pasada al arranque, seguían compilándose
+   42 programas de golpe al entrar en partida). Se repite cada 2 s y se apaga solo en cuanto tres
+   pasadas seguidas no encuentran nada nuevo; una pasada en vacío es solo un recorrido de escena. */
+(function warmupIdle(){
+  let vacias = 0, veces = 0;
+  const tick = ()=>{
+    const n = warmupShaders('reposo');
+    vacias = (n > 0) ? 0 : vacias + 1;
+    if(vacias < 3 && ++veces < 25) setTimeout(tick, 2000);
+  };
+  requestAnimationFrame(()=>setTimeout(tick, 300));
+})();
 
 /* =====================================================================
    APLICAR CONFIG VISUAL EN VIVO — vuelca VISUAL sobre luces/fog/renderer
