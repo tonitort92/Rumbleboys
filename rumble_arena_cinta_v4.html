@@ -1302,6 +1302,7 @@ window.addEventListener('load', function(){
 <script src="stage7_models.js?v=1"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
 <script src="stage2_ruins_models.js?v=1"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
 <script src="stage_japan_models.js?v=1"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
+<script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260711a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar -->
@@ -5822,6 +5823,8 @@ const STAGE_PLAYLISTS = {
   7: ['music/stage6/frostbit-bitcrush.mp3','music/stage6/frostbyte-garland.mp3','music/stage6/frost-track-3.mp3'],  // HIELO / ÁRTICO
   8: ['music/stage7/arcade-forge.mp3','music/stage7/pixel-forge.mp3','music/stage7/forge-track-3.mp3'],             // LANZADERAS / COHETES
   10: ['music/stage9/rainbow-stage.mp3','music/stage9/starfield-stage.mp3'],                                        // ESPACIO / VÍA ARCOÍRIS
+  /* ►WEST (11): sin carpeta propia todavía → cae a MUSIC_FILES por defecto. Cuando haya pistas
+     western, crear music/stage-western/ y añadir la entrada 11 aquí. */
 };
 let PLAYLIST = MUSIC_FILES;                             // lista ACTIVA (la que recorre en bucle)
 let _mi = 0;
@@ -6111,6 +6114,7 @@ let stageIntroT = 0, _stageIntroDur = STAGE_INTRO_T, _siLastCount = -1, _siCamA0
 const STAGE_CAUTION = {
   2:'¡CUIDADO: RAYOS!',
   3:'¡CUIDADO: NUEVOS MINIONS!',
+  11:'¡CUIDADO: MESETAS PARTIDAS SOBRE EL VACÍO!',   // ►WEST (cambiar a los trenes cuando entren en la Fase 2)
   4:'¡CUIDADO: RÁFAGAS DE VIENTO Y ARENA QUE TE FRENA!',
   5:'¡CUIDADO: MUCHAS TRAMPAS!',
   7:'¡CUIDADO: SUELO RESBALADIZO!',
@@ -6806,7 +6810,8 @@ function scatterModelDecor(startIdx){
   if(!_modelAvailable()) return;
   if(STAGE===2){ scatterModelDecorStage2(startIdx); return; }   // bosque: setas/helechos/hierba/barriles/batalla/muros aéreos
   if(STAGE===3){ if(typeof scatterModelDecorSJ==='function') scatterModelDecorSJ(startIdx); return; }   // ►JAPAN: flores/dientes de león/hierba/linternas/farolillos
-  if(STAGE===4){ scatterModelDecorStage3(startIdx); return; }   // desierto: aloe/agave/cactus/rocas/alfombras
+  if(STAGE===11){ if(typeof scatterModelDecorW==='function') scatterModelDecorW(startIdx); return; }   // ►WEST: props del cañón (sin esto caería al scatter de PRADO: flores y tienda de campaña en el desierto rojo)
+  if(STAGE===4){ scatterModelDecorStage3(startIdx); return; }// desierto: aloe/agave/cactus/rocas/alfombras
   if(STAGE===5 || STAGE===6){ if(typeof scatterModelDecorStage4==='function') scatterModelDecorStage4(startIdx); return; }   // pirámide/pozo: SOLO escombros de arenisca + antorchas (sin plantas/árboles de prado)
   if(STAGE===7){ scatterModelDecorStage6(startIdx); return; }   // ►S6D: pinos/árboles secos/cristales/iglú/muñeco/trineo (stage6_models.js)
   if(STAGE===8) return;   // ►P7: palacio LIMPIO (decora el propio builder: cristal, alfombras, trono)
@@ -8648,6 +8653,7 @@ function gobAttach(mn){
         emi = iceEmiHex;
       }
       else if(STAGE===5){ c = m._s4bcol||m._s3col||m._s1col; emi = 0x0a0602; }   // ►SKELMINIONS: MARRÓN DESIERTO OSCURO/CORRUPTO (más grimoso que la arena de S4), leve brillo cálido
+      else if(STAGE===11){ c = m._s3col||m._s1col; }                           // ►WEST: los goblins de RELLENO (cuando los 3 pools de vaqueros están al tope) van en tono ARENA, no en verde prado
       else if(STAGE===4){ c = m._s3col||m._s1col; }                            // ►RECOLOR38: arena uniforme (sin elite morado)
       else if(STAGE===3){ c = m._sjcol||m._s1col; emi = 0x14040a; }            // ►JAPAN: oni carmesí-sakura con leve brillo rosado
       else if(STAGE===2){ c = m._s2col||m._s1col||m.color; }
@@ -8780,7 +8786,10 @@ function spawnMinion(){
   /* ►WESTERN: S8 mezcla ~50/50 goblins lila + pistoleros vaqueros. FUERZAN type 'shooter' (escala 1.0,
      HP 30, IA a distancia) sea cual sea el roll — los 3 son idénticos en tamaño y todos disparan.
      Si sus pools están al tope, cae al goblin lila (igual que la salvaguarda de los esqueletos). */
-  if(STAGE===8 && Math.random() < 0.5){
+  /* ►WEST (STAGE 11): aquí los pistoleros NO son una mezcla, son LA horda — es su stage. Sin tirada
+     de probabilidad: si queda hueco en sus pools, sale vaquero. No hay que quitarles ningún tinte:
+     su ficha lleva noTint:true, así que gobAttach ni les toca el material (el lila es cosa del S8). */
+  if(STAGE===11 || (STAGE===8 && Math.random() < 0.5)){
     const ks = ['westbad','westgun','westcow'].filter(k => _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max);
     if(ks.length){ skin = ks[(Math.random()*ks.length)|0]; type = 'shooter'; }
   }
@@ -9223,6 +9232,8 @@ const STAGE_TRANS_DELAY = 1.4;      // ►CAMPAÑA: s entre cruzar el portal (de
 const S2_BELT_MUL = 1.15;           // ►RONDA2: la cinta corre un 15% más rápido en Stage 2 (todo el mapa scrollea más deprisa = más difícil)
 const S3_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 6)
 const S3_BELT_MUL = 1.22;           // ►JAPAN: la cinta en Japón, entre la jungla (1.15) y el desierto (1.28)
+const SW_CHAOS_START = 0;           // ►WEST: re-empieza en 0 como todos
+const SW_BELT_MUL = 1.25;           // ►WEST: el western va entre Japón (1.22) y el desierto (1.28) — es el puente entre los dos biomas
 const S4_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 6)
 const S4_BELT_MUL = 1.28;           // la cinta corre un 28% más rápido en Stage 4 (escalada sobre el S2)
 const S5_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 7)
@@ -9976,6 +9987,7 @@ function portalPalette(){
     1:  [0x0d4a1e, 0x35ff6a, 0x1fd04a, 0x8dffb0],   // prado: VERDE
     2:  [0x052008, 0x0f6b22, 0x0a5218, 0x2a8a42],   // bosque: VERDE OSCURO (►S2PORTAL: bajado de tono → verde bosque profundo, no verde estándar como S1)
     3:  [0x3a0620, 0xff2bd0, 0xff1f9a, 0xff8ad6],   // japón: MAGENTA/ROSA
+    11: [0x5a1a08, 0xff6a2a, 0xe04a18, 0xffb07a],   // ►WEST western: ROJO ATARDECER (terracota del cañón)
     4:  [0x5a3a12, 0xffb040, 0xe0982e, 0xffd98a],   // desierto: ARENA MARRÓN
     5:  [0x3e2708, 0xc47a1e, 0x9c6218, 0xe0aa55],   // pirámide: MARRÓN DESIERTO OSCURO
     7:  [0x123a5a, 0x40b0ff, 0x2b8ae0, 0xa8e4ff],   // hielo: AZUL
@@ -16122,6 +16134,15 @@ function updateShopTimer(dt){ updateInterstage(dt); }   // alias: lo llama _veri
    1..9 correlativos con el western en 4ª posición. */
 const CAMPAIGN_STAGES = [1,2,3,11,4,5,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance)
 const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS' };
+/* ►WEST · el número que VE el jugador es la POSICIÓN en la ruta, no el ID interno. Con el western
+   metido en medio, el desierto (ID 4) es el 5º stage de la campaña. buildRoadmap ya pintaba por
+   posición; esta función es para todo lo demás que imprime "STAGE N" en pantalla. Los stages
+   dormidos (6, 9) no están en la ruta → devuelve su ID crudo, que es lo correcto para F9. */
+function stageNum(st){
+  const s = (st===undefined) ? STAGE : st;
+  const i = CAMPAIGN_STAGES.indexOf(s);
+  return i>=0 ? (i+1) : s;
+}
 function buildRoadmap(elId){
   const el=document.getElementById(elId); if(!el) return;
   /* el nodo 'now' es el PRÓXIMO sin jugar (hacia dónde vas), no `STAGE`: para cuando se dibuja el
@@ -16145,6 +16166,8 @@ function buildRoadmap(elId){
 }
 /* espejo del dispatch de stageAdvance(), solo para el título de la tienda */
 function _nextStage(){
+  if(STAGE===3) return 11;   // ►WEST
+  if(STAGE===11) return 4;   // ►WEST
   if(STAGE===5) return 7;
   if(STAGE===8) return 10;
   return STAGE+1;
@@ -16173,7 +16196,7 @@ let _lbSeqTimers = [];
 function _lbSeqClear(){ for(const t of _lbSeqTimers) clearTimeout(t); _lbSeqTimers=[]; }
 function showBoardScreen(){
   const ov=document.getElementById('lbOverlay'); if(!ov) return;
-  const t=document.getElementById('lbTitle'); if(t) t.textContent='STAGE '+STAGE+' · ¡COMPLETADO!';
+  const t=document.getElementById('lbTitle'); if(t) t.textContent='STAGE '+stageNum()+' · ¡COMPLETADO!';   // ►WEST: posición en la ruta, no ID interno
   const entry = STAGE_LOG.find(x=>x.stage===STAGE) || STAGE_LOG[STAGE_LOG.length-1];
   const best = entry && entry.best;
   /* el ganador DE ESTA RONDA vacila arriba del todo desde el primer segundo */
@@ -16193,7 +16216,7 @@ function showBoardScreen(){
   ISTAGE.ph='boardAnim'; ISTAGE.t=LB_TIME;                 // el reloj espera al final de la secuencia
   const tm=document.getElementById('lbTimer'); if(tm) tm.textContent='▶';
   try{ crowdCheer && crowdCheer(.5, true); }catch(e){}
-  runEndTally((entry && entry.p1t) || {}, null, _lbRoadSeq, 'lbTally', 'PUNTOS DEL STAGE '+STAGE);   // recuento del STAGE, sin nota (montaje síncrono; anima solo)
+  runEndTally((entry && entry.p1t) || {}, null, _lbRoadSeq, 'lbTally', 'PUNTOS DEL STAGE '+stageNum());   // recuento del STAGE, sin nota (montaje síncrono; anima solo)
   requestAnimationFrame(()=>{   // .shown en el frame siguiente → la transición de opacidad se dispara
     const ta=document.getElementById('lbTally'); if(ta) ta.classList.add('shown');
   });
@@ -16243,7 +16266,7 @@ function goToShopScreen(){
       try{ winCelebrate.hide(); }catch(e){} }
     const ov=document.getElementById('perkOverlay'), me=shopPlayer();
     if(!ov || !me || me.out){ interlude=false; stageAdvance(); fadeIn(); return; }
-    const t=document.getElementById('perkTitle'); if(t) t.textContent='🛒 TIENDA · antes del STAGE '+_nextStage();
+    const t=document.getElementById('perkTitle'); if(t) t.textContent='🛒 TIENDA · antes del STAGE '+stageNum(_nextStage());
     for(const p of players) p._buysThisStage = 0;   // ►INTERSTAGE: el tope de 2 es POR STAGE
     /* ►DRAFT: se reparte la mano AQUÍ, una sola vez por tienda. El contador de re-tiradas vuelve a
        cero en cada stage (si no, la 2ª tienda ya empezaría cobrando el precio inflado de la 1ª). */
@@ -18503,7 +18526,7 @@ function _planoType(pl){
   return 'solid';
 }
 function _planoBuilderName(idx){
-  const tbl = (STAGE===10)?S10_SEG_BUILDERS:(STAGE===9)?S9_SEG_BUILDERS:(STAGE===8)?S8_SEG_BUILDERS:(STAGE===7)?S7_SEG_BUILDERS:(STAGE===6)?S6_SEG_BUILDERS:(STAGE===5)?S5_SEG_BUILDERS:(STAGE===4)?S4_SEG_BUILDERS:(STAGE===3)?S3_SEG_BUILDERS:(STAGE===2)?S2_SEG_BUILDERS:_SEG_BUILDERS;
+  const tbl = (STAGE===11)?SW_SEG_BUILDERS:(STAGE===10)?S10_SEG_BUILDERS:(STAGE===9)?S9_SEG_BUILDERS:(STAGE===8)?S8_SEG_BUILDERS:(STAGE===7)?S7_SEG_BUILDERS:(STAGE===6)?S6_SEG_BUILDERS:(STAGE===5)?S5_SEG_BUILDERS:(STAGE===4)?S4_SEG_BUILDERS:(STAGE===3)?S3_SEG_BUILDERS:(STAGE===2)?S2_SEG_BUILDERS:_SEG_BUILDERS;
   const f = tbl[((idx%tbl.length)+tbl.length)%tbl.length];
   return (f && f.name) || ('builder'+idx);
 }
@@ -19068,12 +19091,14 @@ function buildSegment(idx){
   const origAdd = scene.add;
   _CAP = true;
   scene.add = function(){ for(let i=0;i<arguments.length;i++) seg.group.add(arguments[i]); return scene; };
-  const _tbl = (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
+  const _tbl = (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
   const buildVariant = _tbl[((idx % _tbl.length) + _tbl.length) % _tbl.length];
   if(STAGE===3) _sjSegProps.length = 0;   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento
+  if(STAGE===11 && typeof _wSegProps!=='undefined') _wSegProps.length = 0;   // ►WEST: ídem para el western
   try { buildVariant(); flushGrass(); scatterModelDecor(p0); scatterGrassPatches(p0); }   // césped DESPUÉS de los muros; parches de hierba al final (esquivan caminos/props ya colocados)
   finally { scene.add = origAdd; flushGrass(); _CAP = false; _segP0 = 0; }   // por si algo quedó pendiente
   if(STAGE===3 && typeof _sjResolvePropClashes==='function') _sjResolvePropClashes(p0);   // ►S3CLEAR: retira props que un puente/plataforma de este segmento atraviese (ya existen todas)
+  if(STAGE===11 && typeof _wResolvePropClashes==='function') _wResolvePropClashes(p0);    // ►WEST: ídem
   /* ►C2 (#7): S5 — recorta el recorrido vertical de ascensores/alfombras sube-baja para que no
      atraviesen otra losa de su columna. Se hace AQUÍ (todo el segmento ya construido, aún en X local
      coherente) y SOLO contra las losas de ESTE segmento. */
@@ -19120,7 +19145,7 @@ function _applySegX(seg){
 function updateBelt(dt){
   updateLawn(dt);   // ►LAWN: ANTES del early-return (el césped se mueve aunque la cinta esté parada)
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -19169,13 +19194,17 @@ function updateBelt(dt){
     }
   }
   if((STAGE===4 || STAGE===5 || STAGE===6 || STAGE===7) && typeof updateCarpets==='function') updateCarpets(dt);   // ►S4/S5/S6: bob de alfombras · ►S6M: blobs móviles (bob/patrulla/órbita/giro) — física (topY) y malla juntas, ANTES de updateFighter
-  if((STAGE>=5 || STAGE===3) && typeof updateStage4==='function') updateStage4(dt);       // ►S5/S6/S7: losas-trampa (S7: hielo 2-strikes), péndulos, circuitos… · ►JAPAN: rejillas TATAMI (mismas losas-trampa; sus otros arrays van vacíos en el 3)
+  /* ►WEST: el `STAGE>=5` de aquí abajo también captura al 11 (western), que no tiene ninguna losa
+     trampa ni péndulo. Hoy no rompería porque rebuildBelt vacía los arrays, pero es coste gratuito
+     por frame y una mina para el día que el western sí tenga sus propios arrays. Exclusión explícita. */
+  if(((STAGE>=5 && STAGE!==11) || STAGE===3) && typeof updateStage4==='function') updateStage4(dt);       // ►S5/S6/S7: losas-trampa (S7: hielo 2-strikes), péndulos, circuitos… · ►JAPAN: rejillas TATAMI (mismas losas-trampa; sus otros arrays van vacíos en el 3)
   if(STAGE===3 && typeof updateStageJapan==='function') updateStageJapan(dt);             // ►JAPAN: koi + chōchin + taiko + bonshō + daruma + lanzaderas
   if(STAGE===6 && typeof updateStage5==='function') updateStage5(dt);                     // ►P5: hundimiento de pisos + lava ascendente + géiseres (dibujo=colisión)
   if(STAGE===7 && typeof updateStage6==='function') updateStage6(dt);                     // ►P10a: la BOLA DE NIEVE GIGANTE
   if(STAGE===8 && typeof updateStage7==='function') updateStage7(dt);                     // ►P7: CARÁMBANOS que caen (destello 1s → clavada)
   if(STAGE===9 && typeof updateStage8==='function') updateStage8(dt);                     // ►P8: corrientes ascendentes + auroras ondulando
   if(STAGE===10 && typeof updateStage9==='function') updateStage9(dt);                     // ►P9: COMETAS que cruzan la carretera + dioramas
+  if(STAGE===11 && typeof updateStageW==='function') updateStageW(dt);                     // ►WEST: reservado (trenes, torres de agua, barriles, animales)
 }
 
 /* tierra firme mas cercana para la IA (X esta amurallado: sin sesgo) */
@@ -19391,6 +19420,8 @@ function applyStageTheme(stage){
     _buildS2Critters(); setCritterStage(2);                                          // ►ESCULPIR: luciérnagas + cuervos (fuera pájaros/mariposas/motas de prado)
   } else if(stage===3){
     _applySJTheme();                                                                 // ►JAPAN · STAGE 3 · JAPÓN (definido junto al bloque SJ)
+  } else if(stage===11){
+    _applySWTheme();                                                                 // ►WEST STAGE 11 · WESTERN, MESETAS DEL CAÑÓN (definido junto al bloque S4)
   } else if(stage===4){
     _applyS4Theme();                                                                 // STAGE 4 · GRAN DESIERTO (definido justo debajo)
   } else if(stage===5){
@@ -19426,6 +19457,7 @@ function _restoreS1Theme(){
   if(typeof enableS8Scenery==='function') enableS8Scenery(false);   // ►P7: murales/trono del palacio tampoco
   if(typeof enableS9Scenery==='function') enableS9Scenery(false);   // ►P8: auroras/estrellas tampoco
   if(typeof enableS10Scenery==='function') enableS10Scenery(false);   // ►P9: galaxia/dioramas tampoco
+  if(typeof enableSWScenery==='function') enableSWScenery(false);     // ►WEST: el Gran Cañón no se cuela en los demás stages
   if(typeof SANDFALL!=='undefined' && SANDFALL.lines) SANDFALL.lines.visible = false;
   M.grass.map = _S1SNAP.grassMap;   M.grass.color.copy(_S1SNAP.grassCol);   M.grass.needsUpdate = true;
   M.grassD.map = _S1SNAP.grassDMap; M.grassD.color.copy(_S1SNAP.grassDCol); M.grassD.needsUpdate = true;
@@ -19470,6 +19502,150 @@ function _applyS4Theme(){
   _buildS3Mats();                                                                  // materiales de suelo por escena (duna/oasis/rosa)
   enableS4Scenery(true);                                                           // dunas + mesetas + calima envolventes
   _buildS3Critters(); setCritterStage(3);                                          // ►S3P: BUITRES planeando (los critters de prado/jungla fuera)
+}
+
+/* ==================== ►WEST · STAGE 11 · WESTERN (MESETAS DEL CAÑÓN) — TEMA ====================
+   Hermano del desierto pero al ATARDECER y en clave ROJA: el desierto es arena dorada a mediodía,
+   el western es roca roja con el sol rozando el horizonte. Mismo mecanismo de multitono sRGB que
+   S2/S4 (makeFieldTexture con paleta de rango estrecho — lección S2: nada de damero), y REUTILIZA
+   _buildS3Mats() porque S3MATS ya trae 'rose' (arena rosada) y 'redrock' (acantilado rojo), que es
+   exactamente el material de meseta que pide este stage. */
+const SW_SANDS  = ['#d99a63','#d08f58','#e0a870','#c8834e','#d69a62','#cf9159','#dda36b'];   // top: arena ROJIZA al sol bajo
+const SW_SANDSD = ['#a86b41','#9e6139','#b1744a','#945833','#a56840'];                        // lip: arena en sombra larga
+const SW_STONE  = ['#a35a3e','#954e34','#ae6547','#8a4630','#9c5539'];                        // arenisca ROJA (bases/muros)
+function _applySWTheme(){
+  /* materiales pisables → arena rojiza multitono */
+  M.grass.map  = makeFieldTexture(SW_SANDS);        M.grass.map.encoding  = THREE.sRGBEncoding; M.grass.color.setRGB(1,1,1);  M.grass.needsUpdate = true;
+  M.grassD.map = makeFieldTexture(SW_SANDSD, 1/16); M.grassD.map.encoding = THREE.sRGBEncoding; M.grassD.color.setRGB(1,1,1); M.grassD.needsUpdate = true;
+  M.dirt.map   = makeFieldTexture(SW_STONE, 1/12);  M.dirt.color.setRGB(1,1,1);  M.dirt.needsUpdate = true;
+  M.brick.map  = makeFieldTexture(SW_STONE, 1/6);   M.brick.color.setRGB(1,1,1); M.brick.needsUpdate = true;   // muros = arenisca roja gratis
+  M.rock.color.setRGB(0.50, 0.30, 0.21); M.rock.needsUpdate = true;
+  for(let i=0;i<_GREENS.length;i++) _GREENS[i].set(SW_SANDS[i % SW_SANDS.length]).convertSRGBToLinear();
+  /* CIELO DE ATARDECER: violeta-azul en el cenit → naranja incandescente en el horizonte. El
+     gradiente vertical es lo que vende la hora del día; el fondo va a media altura del degradado
+     para que la niebla y el cielo se fundan sin costura. */
+  /* El degradado del domo es compartido: mix(hor→top) con smoothstep(-0.05, 0.5) sobre la altura,
+     o sea que `top` solo manda por encima de ~30°, y la cámara de juego casi nunca mira tan arriba.
+     Por eso la banda que VE el jugador se juega entre `hor` y `bot`: ahí va el fuego del atardecer
+     (oro en el horizonte → rojo profundo debajo), y el violeta se reserva al cenit — donde además
+     alimenta al ENVMAP y tiñe de frío los reflejos de todo el stage. */
+  scene.background.setHex(0xdd8a52);
+  skyMat.uniforms.top.value.setHex(0x4a3f8c); skyMat.uniforms.hor.value.setHex(0xffb35c); skyMat.uniforms.bot.value.setHex(0xb8462c);
+  /* Luz de sol BAJO: key cálida y muy rasante (sombras largas de western) + rim FRÍO para que las
+     siluetas no se fundan con el naranja del fondo. */
+  VISUAL.exposure = 0.70;
+  /* ►WEST-SOMBRA: el sol va LATERAL (x alto, sol poniente) pero NO rasante. Se probó a y≈15 buscando
+     sombras largas de atardecer y se descartó por prudencia: el mapa de sombras del sol es una caja
+     ortográfica FIJA de ±42 con far:130 (línea ~1802) COMPARTIDA por todos los stages, y cuanto más
+     horizontal es la luz peor encaja el escenario en esa caja. Los demás stages viven entre y=36 y
+     y=42; y=34 es lo más bajo que se puede pedir sin salirse de terreno probado. El atardecer lo
+     cuentan el color, la niebla y el cielo — no la longitud de la sombra. */
+  VISUAL.key.color = 0xffc078; VISUAL.key.intensity = 1.30; VISUAL.key.pos = [58, 34, 24];   // lateral (sol poniente) pero a la altura segura del resto de stages
+  VISUAL.hemi.sky = 0xffb488; VISUAL.hemi.ground = 0x6b3f2c; VISUAL.hemi.intensity = 0.34;
+  VISUAL.rim.color = 0x9fc4ff; VISUAL.rim.intensity = 0.38;                          // contraluz FRÍO: separa al luchador del cielo naranja
+  VISUAL.side.color = 0xffc999; VISUAL.side.intensity = 0.28;
+  VISUAL.fog.color = 0xd9834e; VISUAL.fog.near = 44; VISUAL.fog.far = 122;           // calima rojiza; ≥ fondo en luz → halo, no negro (lección S2)
+  for(const c of cloudOccluders) c.visible = false;                                  // sin nubes de prado
+  if(typeof sea!=='undefined') sea.visible = false;                                  // debajo hay CAÑÓN, no mar
+  for(const c of _WOODCOL) c.set('#b0805a');                                         // madera reseca de tablón (ABSOLUTO, nada de multiplicadores acumulables)
+  if(M.woodD){ M.woodD.color.set('#8a5f42'); M.woodD.needsUpdate = true; }
+  _buildS3Mats();                                                                    // reutiliza 'rose' + 'redrock' (mesas de roca roja) — ya multitono
+  enableSWScenery(true);                                                             // Gran Cañón envolvente
+  _buildS3Critters(); setCritterStage(3);                                            // BUITRES planeando sobre el cañón
+}
+
+/* ---- ►WEST · horizonte del GRAN CAÑÓN ----------------------------------------------------------
+   Tres anillos de mesetas a profundidades distintas + el fondo del cañón muy abajo + calima. Cada
+   anillo se tinta hacia el color de niebla según su distancia (perspectiva aérea: lo lejano pierde
+   contraste y se va al color del aire), que es lo que da sensación de kilómetros.
+   Las mesetas llevan ESTRATOS horizontales por vertex-color — es el rasgo que hace leer una roca
+   como cañón y no como un cilindro marrón. */
+const SW_SCENERY = { group:null, on:false };
+function _swButteGeo(rTop, rBot, h, seg, cA, cB){
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg, 6);
+  const pa = g.attributes.position, col = new Float32Array(pa.count*3), cc = new THREE.Color();
+  for(let i=0;i<pa.count;i++){
+    const y01 = (pa.getY(i) + h/2) / h;                       // 0 = base · 1 = mesa
+    const band = Math.floor(y01 * 7);                          // 7 estratos de sedimento
+    const t = THREE.MathUtils.clamp((band % 2 ? 0.66 : 0.28) + ((band * 0.11) % 0.20), 0, 1);
+    cc.lerpColors(cA, cB, t);
+    col[i*3] = cc.r; col[i*3+1] = cc.g; col[i*3+2] = cc.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+function buildSWScenery(){
+  if(SW_SCENERY.group) return;
+  const G = new THREE.Group(); G.userData.noOcc = true;
+  const rng = (a,b)=> a + Math.random()*(b-a);
+  /* Contra el cielo del atardecer la roca va A CONTRALUZ: las mesetas lejanas se ven MÁS OSCURAS y
+     más frías que el aire, no más claras. Tintar hacia el color de niebla (que es lo intuitivo)
+     las borraba: quedaban del mismo tono que el fondo. Aquí el tinte de distancia va hacia un
+     violeta de anochecer, que es lo que separa un anillo del siguiente. */
+  const DUSK  = new THREE.Color(0x6a4a6e).convertSRGBToLinear();    // violeta de la hora azul
+  const cDark = new THREE.Color('#5e2f22').convertSRGBToLinear();   // estrato en sombra
+  const cLite = new THREE.Color('#a86a46').convertSRGBToLinear();   // estrato con el último sol
+  /* 1) FONDO DEL CAÑÓN, muy abajo: plano desplazado en CPU una vez (estático = barato). El término
+        de valle en V hace la garganta central por la que se intuye el río. */
+  {
+    const geo = new THREE.PlaneGeometry(620, 620, 80, 80);
+    const pa = geo.attributes.position;
+    const c1 = new THREE.Color('#7d4530').convertSRGBToLinear();
+    const c2 = new THREE.Color('#c08a5e').convertSRGBToLinear();
+    const cc = new THREE.Color(), col = new Float32Array(pa.count*3);
+    for(let i=0;i<pa.count;i++){
+      const x = pa.getX(i), z = pa.getY(i);
+      const valle = -6.5 * Math.exp(-(x*x) / 2600);                                   // garganta central
+      const h = valle + 2.2*Math.sin(x*0.035 + z*0.022) + 1.4*Math.sin(x*0.09 - z*0.05 + 1.1);
+      pa.setZ(i, h);
+      const t = THREE.MathUtils.clamp((h + 7) / 12 + (Math.random()-.5)*0.05, 0, 1);
+      cc.lerpColors(c1, c2, t);
+      col[i*3]=cc.r; col[i*3+1]=cc.g; col[i*3+2]=cc.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+    geo.computeVertexNormals();
+    const floor = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0, flatShading:true }));
+    floor.rotation.x = -Math.PI/2; floor.position.y = -24;   // a -46 quedaba MUY por debajo de fog.far → el mundo se acababa en naranja; a -24 cierra el encuadre como el mar de dunas del S4 (-19)
+    G.add(floor);
+  }
+  /* 2) TRES ANILLOS de mesetas. Un material por anillo (no por meseta) → 3 programas, no 20. */
+  {
+    /* Los radios van TODOS dentro de fog.far (122) — es la lección que ya estaba escrita en el
+       horizonte del desierto: lo que cae detrás del muro de niebla no es una silueta lejana, es
+       un fantasma del color de la niebla. Y la perspectiva aérea la pone la NIEBLA; el `mix` solo
+       la remata un poco, porque si además tintas fuerte hacia el fog el resultado es doble y las
+       mesetas se borran (que es justo lo que pasaba con 0.18/0.45/0.70). */
+    const RINGS = [
+      /* Radio mínimo 66: los muros laterales del campo están en WALL_X=42, así que una meseta a 48
+         quedaba PEGADA a la zona jugable — leía como una pared, e interfería con el mapa de sombras
+         del sol (las plataformas salían negras). A partir de 66 el horizonte es horizonte. */
+      { rad:[66, 80],  h:[16, 26], r:[8, 14],  n:7, mix:0.10, y:-20 },   // cercano: contraste casi pleno
+      { rad:[86,102],  h:[22, 34], r:[11, 19], n:6, mix:0.28, y:-22 },   // medio
+      { rad:[106,120], h:[28, 42], r:[15, 25], n:5, mix:0.48, y:-24 },   // lejano: justo delante del muro de niebla (122)
+    ];
+    for(const R of RINGS){
+      const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0, flatShading:true });
+      mat.color.copy(new THREE.Color(1,1,1).lerp(DUSK, R.mix));          // perspectiva aérea: el vertex-color se apaga hacia el violeta de anochecer
+      for(let i=0;i<R.n;i++){
+        const a = (i / R.n) * Math.PI * 2 + rng(-0.22, 0.22);            // repartidas en todo el círculo, con desorden
+        const rad = rng(R.rad[0], R.rad[1]), h = rng(R.h[0], R.h[1]), rb = rng(R.r[0], R.r[1]);
+        const m = new THREE.Mesh(_swButteGeo(rb * rng(0.62, 0.86), rb, h, (Math.random()<0.5 ? 6 : 7), cDark, cLite), mat);
+        m.position.set(Math.cos(a)*rad, R.y + h*0.5, Math.sin(a)*rad - 6);
+        m.rotation.y = rng(0, Math.PI);
+        m.castShadow = false; m.receiveShadow = false;
+        G.add(m);
+      }
+    }
+  }
+  /* Sin planos de calima: se probaron dos (MeshBasic con fog:false) y se veían como RECTÁNGULOS
+     translúcidos con el borde recortado cruzando el cielo. La niebla del stage ya funde el pie de
+     las mesetas; añadir un plano encima solo mete un canto duro que no existe en la naturaleza. */
+  scene.add(G);
+  SW_SCENERY.group = G; SW_SCENERY.on = true;
+}
+function enableSWScenery(on){
+  if(on && !SW_SCENERY.group) buildSWScenery();
+  if(SW_SCENERY.group){ SW_SCENERY.group.visible = !!on; SW_SCENERY.on = !!on; }
 }
 
 /* ---- decorado de bosque (sustituye scatterModelDecor cuando STAGE===2) ---- */
@@ -20487,7 +20663,7 @@ function s2Floor(cx, cz, sx, sz, topY=0, kind='moss'){
     st.position.set((Math.random()-.5)*sx*0.55, topY - 1.4 - Math.random()*0.8, (Math.random()-.5)*sz*0.55);
     st.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3); st.castShadow = true; g.add(st);
   }
-  if(STAGE===4) dressTopSand(g, sx, sz, topY, cx, cz, null, kind);   // ►R2-C: las losas de arena también ondulan (hoisting: se define más abajo, se llama en beltReset)
+  if(STAGE===4 || STAGE===11) dressTopSand(g, sx, sz, topY, cx, cz, null, kind);   // ►R2-C: las losas de arena también ondulan (hoisting: se define más abajo, se llama en beltReset) · ►WEST: el western también, o las mesetas grandes salen PELADAS (s3Blob/s3DuneHill sí se visten, s2Floor no)
   else if(STAGE===3) dressTopSakura(g, sx, sz, topY, cx, cz, kind);  // ►JAPAN: pétalos caídos + briznas horneados
   else if(STAGE===2) dressTopJungle(g, sx, sz, topY, cx, cz, kind);  // ►COVER: sotobosque (clumps del S1 recoloreados a verdes de bosque) — malla fusionada, 0 draw calls
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: suelo pisable = oclusor (se funde si tapa), respetado por el guard cuando es el nivel más bajo
@@ -20511,7 +20687,7 @@ function s2Hill(cx, cz, sx, sz, topY, kind='rock'){
   lip.position.y = topY - 0.95; lip.castShadow = true; g.add(lip);
   const top = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), M2.top);
   top.position.y = topY - 0.7; top.castShadow = top.receiveShadow = true; g.add(top);
-  if(STAGE===4) dressTopSand(g, sx, sz, topY, cx, cz, null, kind);   // ►COVER: las mesetas/colinas también se visten (antes iban peladas)
+  if(STAGE===4 || STAGE===11) dressTopSand(g, sx, sz, topY, cx, cz, null, kind);   // ►COVER: las mesetas/colinas también se visten (antes iban peladas) · ►WEST
   else if(STAGE===3) dressTopSakura(g, sx, sz, topY, cx, cz, kind);  // ►JAPAN
   else if(STAGE===2) dressTopJungle(g, sx, sz, topY, cx, cz, kind);
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: colina/meseta pisable = oclusor; el guard la respeta si es el suelo más bajo bajo los pies
@@ -21379,7 +21555,7 @@ function _updateSandWeather(dt){
 }
 function enableWeather(on){
   WEATHER.on = on;
-  WEATHER.kind = (STAGE===3) ? 'petals' : (STAGE===4) ? 'sand' : (STAGE>=5 && STAGE!==7) ? 'none' : (STAGE===7) ? 'snow' : 'rain';   // ►JAPAN: PÉTALOS de sakura a la deriva · ►P7/P8/P9: interiores/cielo/espacio SIN clima · S7 nieve · S4 arena · resto = lluvia
+  WEATHER.kind = (STAGE===3) ? 'petals' : (STAGE===11) ? 'sand' : (STAGE===4) ? 'sand' : (STAGE>=5 && STAGE!==7) ? 'none' : (STAGE===7) ? 'snow' : 'rain';   // ►JAPAN: PÉTALOS de sakura a la deriva · ►P7/P8/P9: interiores/cielo/espacio SIN clima · S7 nieve · S4 arena · resto = lluvia
   if(on && WEATHER.kind==='rain' && !WEATHER.lines) _buildRain();
   if(on && WEATHER.kind==='sand' && typeof _buildSand==='function' && !WEATHER.sandLines) _buildSand();
   if(on && WEATHER.kind==='snow' && typeof _buildSnow==='function' && !WEATHER.snowLines) _buildSnow();
@@ -23773,6 +23949,428 @@ function buildS3Mesa(){
   }
 }
 const S4_SEG_BUILDERS = [ buildS3Dunas, buildS3Oasis, buildS3Bazar, buildS3Ruinas, buildS3Cactal, buildS3Mesa ];   // idx1 = escena de spawn (x=0), como en S2
+
+/* =====================================================================
+   ============  ►WEST · STAGE 11 · WESTERN (MESETAS DEL CAÑÓN)  ============
+   La idea de diseño, en una frase: MESETAS ENORMES separadas por VACÍO.
+   Frente a los otros stages, aquí la sala no es un recorrido de plataformas
+   pequeñas sino 1-2 mesas gigantescas "mordidas" (grietas, bocados en el
+   borde) con mini-mesetas laterales y superiores en un 2º y 3er nivel.
+   Debajo NO hay nada: el fondo del cañón mata (blastDownY() = -13).
+
+   Reutiliza toda la maquinaria del desierto — s3Slab/s3Blob/s3DuneHill con
+   los materiales 'rose' (arena rosada sobre acantilado de roca ROJA), que
+   son literalmente el material de meseta que pide el stage.
+
+   RESERVADO PARA LA FASE 2: el perímetro de cada mesa grande se deja
+   despejado a propósito — por ahí pasará el circuito del tren.
+   ===================================================================== */
+
+/* ---- ►WEST · PROPS: tabla, colocador y edificios PISABLES -------------------------------------
+   Prefijo `w_` OBLIGATORIO en todas las claves: getModel cachea como 'drop:'+key para TODAS las
+   tablas de decor salvo HELD_DEFS, así que una clave repetida entre stages devolvería el modelo
+   equivocado con la escala equivocada.
+   `size` = dimensión MÁXIMA del modelo en unidades de mundo (referencia: un luchador mide ~1.8,
+   una palmera del desierto 6.5). */
+let W_DECOR_ON = true;   // kill-switch del decorado western (como S4_DECOR_ON / SJ_DECOR_ON)
+const DECOR_DEFSW = {
+  /* edificios */
+  w_saloon:    { key:'w_saloon',    size:11.0 },
+  w_barn:      { key:'w_barn',      size:12.0 },
+  w_warehouse: { key:'w_warehouse', size:13.0 },
+  w_silo:      { key:'w_silo',      size:9.0 },
+  w_cabin:     { key:'w_cabin',     size:6.5 },
+  w_logcabin:  { key:'w_logcabin',  size:6.5 },
+  w_cottage:   { key:'w_cottage',   size:6.0 },
+  w_shed:      { key:'w_shed',      size:4.5 },
+  /* mobiliario del pueblo y el rancho */
+  w_fence:     { key:'w_fence',     size:2.6 },
+  w_hitch:     { key:'w_hitch',     size:3.4 },
+  w_wagon:     { key:'w_wagon',     size:3.4 },
+  w_cart:      { key:'w_cart',      size:3.0 },
+  w_cart2:     { key:'w_cart2',     size:3.0 },
+  w_barrow:    { key:'w_barrow',    size:1.5 },
+  w_haystack:  { key:'w_haystack',  size:2.6 },
+  w_wheat:     { key:'w_wheat',     size:3.0 },
+  w_corn:      { key:'w_corn',      size:3.2 },
+  w_cow:       { key:'w_cow',       size:2.2 },
+  w_hat:       { key:'w_hat',       size:0.7 },
+  w_boots:     { key:'w_boots',     size:0.7 },
+  /* vía y tren — decorativos aquí; el circuito de verdad llega en la Fase 2 */
+  w_rail:      { key:'w_rail',      size:4.0 },
+  w_railcurve: { key:'w_railcurve', size:4.0 },
+  w_railslope: { key:'w_railslope', size:4.0 },
+  w_loco:      { key:'w_loco',      size:7.5 },
+  w_coalcar:   { key:'w_coalcar',   size:5.5 },
+  w_barrel:    { key:'w_barrel',    size:1.3 },
+};
+const _wSegProps = [];
+/* colocador canónico — copia de addPropSJ con sus dos lecciones: sentar el prop sobre el suelo
+   REALMENTE medido (no sobre el topY pedido, o las patas se hunden) y una huella de despeje
+   proporcional al tamaño (si no, el decor disperso aparece DENTRO del granero). */
+function addPropW(key, x, z, topY, sc, yaw){
+  if(!W_DECOR_ON) return null;
+  if(typeof _inWall==='function' && _inWall(x, z, topY)) return null;
+  const gy = platformTopAt(x, z, -0.2);
+  if(gy===null || Math.abs(gy-topY) > 0.65) return null;
+  const m = getModel(key, DECOR_DEFSW); if(!m) return null;
+  sc = sc||1;
+  m.scale.setScalar(sc);
+  m.position.set(x, gy + (m.userData.halfH||0)*sc - 0.05, z);
+  m.rotation.y = yaw||0;
+  /* _normalize fuerza DoubleSide (6533) para no perder caras de modelos abiertos; en un EDIFICIO
+     eso deja pasar la luz por dentro y produce z-fight en las paredes → los sólidos vuelven a
+     FrontSide. Los props pequeños/vegetales se quedan a doble cara. */
+  const _sz = (DECOR_DEFSW[key] && DECOR_DEFSW[key].size) || 1;
+  const _solido = (_sz >= 4);
+  m.traverse(o=>{ if(o.isMesh){ o.castShadow = true; if(_solido && o.material) o.material.side = THREE.FrontSide; } });
+  scene.add(m);
+  const _fp = Math.max(1.1, _sz*0.42) * sc;
+  if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:_fp });
+  if(_sz >= 2.5 && _sz < 20){
+    const yTop = gy + (m.userData.halfH||0)*2*sc;
+    _wSegProps.push({ mesh:m, x, z, r:_fp, yBase:gy, yTop });
+  }
+  return m;
+}
+/* la decoración CEDE ante el gameplay: retira los props altos que un puente o una plataforma
+   flotante atraviese (copia de _sjResolvePropClashes). */
+function _wResolvePropClashes(fromIdx){
+  if(!_wSegProps.length) return;
+  const MX=1.0, MY=0.8;
+  for(const pr of _wSegProps){
+    if(!pr.mesh) continue;
+    for(let i=fromIdx;i<platforms.length;i++){ const pl=platforms[i];
+      if(!(pl.solid||pl.float)) continue;
+      if(pl._wRoof) continue;                       // ►WEST: los tejados SON el edificio, no un obstáculo que lo cruce
+      if(pl.topY <= pr.yBase + 0.8) continue;
+      if(pl.baseY > pr.yTop + MY) continue;
+      if(pr.x + pr.r + MX < pl.minX || pr.x - pr.r - MX > pl.maxX) continue;
+      if(pr.z + pr.r + MX < pl.minZ || pr.z - pr.r - MX > pl.maxZ) continue;
+      const par = pr.mesh.parent || scene; par.remove(pr.mesh); pr.mesh=null; break;
+    }
+  }
+  _wSegProps.length = 0;
+}
+/* EDIFICIO PISABLE (patrón sjPagoda): coloca el modelo y le añade el TEJADO como plataforma.
+   A diferencia de la pagoda, aquí el rectángulo se mide del bounding box REAL del modelo ya
+   colocado y escalado — así vale para el saloon, el granero o el almacén sin una tabla por asset.
+   Es lo que convierte una calle de casas enfrentadas en un 2º nivel de verdad. */
+const _wBB = new THREE.Box3(), _wSZ = new THREE.Vector3();
+function wBuilding(key, cx, cz, topY, size, yaw, opt){
+  const def = DECOR_DEFSW[key]; if(!def) return null;
+  const m = addPropW(key, cx, cz, topY, size/(def.size||1), yaw||0);
+  if(!m) return null;
+  opt = opt || {};
+  /* ►WEST-EDIFICIOS: un edificio se coloca A MANO, no lo esparce nadie → NO entra en el barrido de
+     solapes. Si entra, se borra A SÍ MISMO: el barrido busca plataformas que atraviesen el prop, y
+     el tejado que este mismo añade abajo es, por definición, una plataforma dentro del edificio.
+     Síntoma: los edificios simplemente no aparecían. */
+  for(let i=_wSegProps.length-1;i>=0;i--) if(_wSegProps[i].mesh===m){ _wSegProps.splice(i,1); break; }
+  if(opt.roof === false) return m;
+  _wBB.setFromObject(m); _wBB.getSize(_wSZ);
+  const inset = (opt.inset!=null) ? opt.inset : 0.60;          // el tejado pisable es menor que el bbox (aleros)
+  const hw = Math.max(0.9, (_wSZ.x/2)*inset), hz = Math.max(0.9, (_wSZ.z/2)*inset);
+  const ry = topY + _wSZ.y * ((opt.roofFrac!=null) ? opt.roofFrac : 0.60);   // ►AJUSTAR EN JUEGO: altura del alero por asset
+  platforms.push({ minX:cx-hw, maxX:cx+hw, minZ:cz-hz, maxZ:cz+hz, topY:ry, baseY:ry-0.9, solid:true, _wRoof:true });
+  return m;
+}
+/* CALLE del pueblo: dos hileras de casas ENFRENTADAS mirándose, con el paso libre en medio y el
+   saloon cerrando el fondo. Los tejados son pisables → la calle tiene planta baja y azoteas. */
+function wStreet(cx, cz, opt){
+  opt = opt||{};
+  /* Las hileras van en Z (±sep) y las casas se reparten en X, que es la dirección en la que corre
+     la cinta: así el jugador RECORRE la calle en vez de mirarla de lado, y la cámara (que mira
+     hacia -z) ve las dos fachadas enfrentadas. El pasillo central queda libre a propósito. */
+  const n = opt.n||3, sep = opt.sep||7.8, paso = opt.paso||10, topY = opt.topY||0;
+  const casas = ['w_cabin','w_logcabin','w_cottage','w_shed'];
+  for(let i=0;i<n;i++){
+    const x = cx + (i - (n-1)/2)*paso;
+    const a = casas[(i*2) % casas.length], b = casas[(i*2+1) % casas.length];
+    wBuilding(a, x, cz - sep, topY, 6.2, 0,         { roofFrac:0.62 });   // acera sur, mirando al norte
+    wBuilding(b, x, cz + sep, topY, 6.0, Math.PI,   { roofFrac:0.62 });   // acera norte, mirando al sur
+    addPropW('w_hitch',  x + paso*0.42, cz - sep + 2.8, topY, 0.9, 0);
+    addPropW('w_barrel', x - paso*0.42, cz + sep - 2.6, topY, 1.0, Math.random()*6.283);
+  }
+}
+/* campo en FILAS ordenadas (copia literal de sjWheatField): trigo o maíz según la clave */
+function wField(cx, cz, topY, sx, sz, key){
+  key = key||'w_wheat';
+  const nx = Math.max(2, Math.round(sx/2.4)), nz = Math.max(2, Math.round(sz/2.2));
+  for(let ix=0;ix<nx;ix++) for(let iz=0;iz<nz;iz++){
+    const x = cx + (ix - (nx-1)/2)*2.35 + (Math.random()-.5)*0.4;
+    const z = cz + (iz - (nz-1)/2)*2.15 + (Math.random()-.5)*0.4;
+    if(platformTopAt(x, z, -0.2)===null) continue;                 // no siembres sobre el vacío
+    const m = getModel(key, DECOR_DEFSW); if(!m) return;
+    const k = 0.85 + Math.random()*0.3;
+    m.scale.setScalar(k);
+    m.position.set(x, topY + (m.userData.halfH||0)*k - 0.15, z);
+    m.rotation.y = (Math.random()-.5)*0.3;
+    m.traverse(o=>{ if(o.isMesh) o.castShadow = false; });          // campo denso: sin sombras (perf)
+    scene.add(m);
+    if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:1.2 });
+  }
+}
+/* tramo de VÍA suelta (decorativa): repetición sobre un eje, patrón sjPath */
+function wRailLine(cx, cz, along, n, topY, yaw){
+  const dx = (along==='x') ? 3.6 : 0, dz = (along==='x') ? 0 : 3.6;
+  for(let i=0;i<n;i++){
+    addPropW('w_rail', cx + (i-(n-1)/2)*dx, cz + (i-(n-1)/2)*dz, topY, 1.0, (yaw!=null?yaw:(along==='x'?0:Math.PI/2)));
+  }
+}
+/* siembra dispersa del stage (equivalente a scatterModelDecorSJ): cachivaches del oeste sobre las
+   tapas grandes, respetando huellas de props y caminos. */
+function scatterModelDecorW(startIdx){
+  if(!W_DECOR_ON) return;
+  const plats = platforms.slice(startIdx).filter(pl =>
+    pl.solid && (pl.maxX-pl.minX) >= 5 && (pl.maxZ-pl.minZ) >= 5);
+  if(!plats.length) return;
+  const drop = (key, count, scMin, scMax)=>{
+    for(let i=0;i<count;i++){
+      const pl = plats[(Math.random()*plats.length)|0];
+      const x = pl.minX + 1.6 + Math.random()*Math.max(0.1, (pl.maxX-pl.minX-3.2));
+      const z = pl.minZ + 1.6 + Math.random()*Math.max(0.1, (pl.maxZ-pl.minZ-3.2));
+      if(typeof _nearProp==='function' && _nearProp(x, z, 1.4)) continue;
+      if(typeof _nearPath==='function' && _nearPath(x, z)) continue;
+      addPropW(key, x, z, pl.topY, (scMin + Math.random()*(scMax-scMin)), Math.random()*6.283);
+    }
+  };
+  drop('w_haystack', 3, 0.85, 1.15);
+  drop('w_barrel',   3, 0.9,  1.1);
+  drop('w_cart',     1, 0.9,  1.1);
+  drop('w_barrow',   1, 0.9,  1.1);
+  drop('w_hat',      1, 0.9,  1.2);      // sombrero tirado en el suelo
+  drop('w_boots',    1, 0.9,  1.2);      // botas tiradas
+  if(typeof addCactus==='function'){      // los cactus SÍ son del desierto: reutilizados a propósito
+    for(let i=0;i<3;i++){
+      const pl = plats[(Math.random()*plats.length)|0];
+      const x = pl.minX + 1.8 + Math.random()*Math.max(0.1, (pl.maxX-pl.minX-3.6));
+      const z = pl.minZ + 1.8 + Math.random()*Math.max(0.1, (pl.maxZ-pl.minZ-3.6));
+      if(typeof _nearProp==='function' && _nearProp(x, z, 1.4)) continue;
+      addCactus(Math.random()<0.5 ? 's3_cactus' : 's3_cactus3', x, z, pl.topY, 0.9 + Math.random()*0.3);
+    }
+  }
+}
+
+/* === idx 0 · BORDE DEL CAÑÓN: dos mesas partidas por una grieta, unidas por pasarela === */
+function buildWCanyonRim(){
+  s3Slab(-17, 0, 26, 24, 0, 'rose');                                  // mesa OESTE
+  s3Slab(17, 1, 24, 22, 0, 'rose');                                   // mesa ESTE (la grieta cae entre x -4 y 5)
+  addRopeBridge(-4.2, 4, 5.2, 4, 0.45, { width:2.6, sag:0.5 });       // única costura a nivel de suelo
+  /* 2º nivel */
+  modUpperDeck(-19, -5, { sx:13, sz:8, topY:6, kind:'rose' });
+  modStairs(-11.5, 1.5, { steps:3, dir:{x:-1,z:0}, rise:2.0, run:2.8, y0:0.4 });
+  modUpperDeck(21, 8, { sx:11, sz:7, topY:5.5, kind:'rose' });
+  modStairs(13, 6.5, { steps:3, dir:{x:1,z:0}, rise:1.85, run:2.8, y0:0.4 });
+  modWallGate(6, -8, { along:'z', h:6.0, span:7, kind:'rose', gap:4.2 });   // cara wall-jumpeable sobre la grieta
+  /* mini-mesetas laterales */
+  s3DuneHill(-26, 16, 4.4, 3.4, 3.2, 'rose');
+  s3DuneHill(24, -13, 4.0, 3.2, 2.8, 'rose');
+  s3Blob(-30, -9, 2.6, 2.1, 1.4, 'rose');
+  /* 3er nivel: solo alcanzable desde el deck oeste */
+  s3Blob(-20, -12, 3.2, 2.6, 11.5, 'rose');
+  addFloating(-13, 8.8, -10, 4.2, 3.0);                               // tablones (en el 11 addFloating da madera, no alfombra)
+  addFloating(-5, 10.8, -12, 3.4, 2.8);
+  addFloating(9, 9.2, 13, 3.8, 2.8);
+  s3Fence(-17, 11.4, 'x', 10, 0, 1.1); s3Fence(17, -9.4, 'x', 9, 0, 1.1);
+  addPad(-17, 0); addPad(17, 1);
+  s2JumpWalls(0);
+  if(W_DECOR_ON){
+    addPropW('w_cottage', -22, 6, 0, 1.0, 0.5);
+    addPropW('w_shed', 21, -4, 0, 1.0, -0.8);
+    addPropW('w_cart2', -13, -7, 0, 1.0, 0.9);
+    addPropW('w_barrow', 11, 8, 0, 1.0, 0.3);
+    addPropW('w_haystack', -25, -3, 0, 1.05, 0);
+    wRailLine(14, 9, 'x', 3, 0, 0);
+    addPropW('w_hitch', -20, -2, 0, 0.95, 1.57);
+  }
+}
+
+/* === idx 1 · EL PUEBLO (SPAWN): mesa ancha con la calle principal al saloon ===
+   idx 1 cae en x=0 → es la sala de aparición. Va LIMPIA de peligros y respeta
+   el invariante de respawn (losa rectangular sólida cubriendo x∈[-16,16] z∈[-8,8] a topY 0).
+   Las dos hileras de casas enfrentadas irán a z≈±7.5 en la fase de props: la calle
+   queda deliberadamente vacía entre ellas. */
+function buildWPuebloSpawn(){
+  s3Slab(0, 0, 34, 20, 0, 'rose');                                    // LA CALLE (mesa central, respawn)
+  s3Slab(-25, 6, 14, 16, 0, 'rose');                                  // ensanche oeste (corral / abrevadero)
+  s3Slab(25, -4, 14, 16, 0, 'rose');                                  // ensanche este (estación de diligencias)
+  /* el saloon cierra la calle por el norte: su piso alto es el 2º nivel del pueblo */
+  modUpperDeck(0, 17, { sx:15, sz:8, topY:5.5, kind:'rose' });
+  modStairs(-6, 10.5, { steps:3, dir:{x:0,z:1}, rise:1.85, run:2.6, y0:0.3 });
+  modStairs(6.5, 10.5, { steps:3, dir:{x:0,z:1}, rise:1.85, run:2.6, y0:0.3 });
+  /* 3er nivel: el depósito de agua domina el pueblo (aquí irá la torre en la Fase 3) */
+  s3Blob(0, 21, 3.0, 2.4, 11, 'rose');
+  addFloating(-4, 8.6, 15, 3.6, 2.6); addFloating(4.5, 9.8, 18, 3.2, 2.4);
+  s3DuneHill(-29, -12, 4.2, 3.2, 3.0, 'rose');
+  s3DuneHill(30, 12, 4.0, 3.0, 2.6, 'rose');
+  s3Fence(-25, 13.4, 'x', 11, 0, 1.1); s3Fence(25, -11.4, 'x', 10, 0, 1.1);
+  addPad(0, 0); addPad(0, 14);
+  s2JumpWalls(1);
+  if(W_DECOR_ON){
+    /* LA CALLE: dos hileras enfrentadas con el paso libre en medio, y el SALOON cerrando el oeste.
+       Los tejados son plataformas → la calle tiene planta baja y azoteas. */
+    wStreet(0, 0, { n:3, sep:7.8, paso:10.5, topY:0 });
+    wBuilding('w_saloon', -14.5, 0, 0, 11, Math.PI/2, { roofFrac:0.58 });
+    addPropW('w_wagon', -8, -4.5, 0, 1.0, 0.5);
+    addPropW('w_cart',   9, 4.2, 0, 1.0, -0.7);
+    addPropW('w_hat',    2.5, -1.2, 0, 1.1, 0.4);      // sombrero en mitad de la calle
+    addPropW('w_boots', -3.5, 1.4, 0, 1.1, -0.9);
+    addPropW('w_cow', -24, 8, 0, 1.0, 1.2); addPropW('w_cow', -27, 3.5, 0, 0.95, -0.4);
+    addPropW('w_haystack', -22, 2, 0, 1.0, 0);
+    addPropW('w_shed', 26, -6, 0, 1.0, -0.5);
+    wRailLine(26, 2, 'x', 3, 0, 0);                    // apartadero muerto junto al ensanche este
+    addPropW('w_coalcar', 26, 2, 0, 1.0, 0);           // vagón de carbón parado en la vía
+  }
+}
+
+/* === idx 2 · EL RANCHO: mesa baja y muy ancha, corral vallado y pajar en alto === */
+function buildWRancho(){
+  s3Slab(-8, 2, 30, 26, 0, 'rose');                                   // gran explanada del rancho
+  s3Slab(23, -8, 18, 14, 0, 'dune');                                  // era de trilla (arena más clara: contraste)
+  /* mordida: entre las dos hay un hueco en z>6 que hay que rodear o saltar */
+  addRopeBridge(7.5, 14, 17, 14, 0.4, { width:2.4, sag:0.45 });
+  /* pajar / granero: 2º nivel grande y pisable */
+  modUpperDeck(-14, 16, { sx:16, sz:9, topY:6.5, kind:'rose' });
+  modStairs(-4, 12, { steps:4, dir:{x:-1,z:0.5}, rise:1.7, run:2.6, y0:0.4 });
+  modWallGate(-24, 4, { along:'z', h:6.4, span:8, kind:'rose', gap:4.4 });
+  /* 3er nivel: la veleta del granero */
+  s3Blob(-16, 19, 3.0, 2.4, 12, 'rose');
+  addFloating(-9, 9.4, 18, 3.6, 2.6);
+  /* mini-mesetas satélite */
+  s3DuneHill(26, 14, 4.2, 3.4, 3.4, 'rose');
+  s3DuneHill(-30, -12, 4.0, 3.0, 2.4, 'rose');
+  s3Blob(12, -16, 3.0, 2.4, 1.6, 'rose'); s3Blob(-2, -18, 2.8, 2.2, 2.2, 'rose');
+  /* el corral: vallas de verdad (aquí irán los caballos en la Fase 5) */
+  s3Fence(-8, -10.5, 'x', 16, 0, 1.15); s3Fence(-16.5, -4, 'z', 13, 0, 1.15);
+  s3Fence(0.5, -4, 'z', 13, 0, 1.15);
+  s3Watchtower(-20, 14, 6.5);                                         // emboscada desde el pajar
+  addPad(-8, 2); addPad(23, -8);
+  s2JumpWalls(2);
+  if(W_DECOR_ON){
+    wBuilding('w_barn', -13, 8, 0, 12, 0, { roofFrac:0.55 });          // el granero, pisable
+    addPropW('w_silo', -3, 12, 0, 1.0, 0);
+    wField(20, -6, 0, 12, 9, 'w_wheat');                               // la era: trigo en filas
+    wField(-6, -4, 0, 9, 7, 'w_corn');                                 // maizal junto al corral
+    addPropW('w_cow', -6, -8, 0, 1.05, 0.6); addPropW('w_cow', -10, -6.5, 0, 1.0, -1.1);
+    addPropW('w_cow', -13, -8.5, 0, 0.95, 2.2);                        // el corral vallado, con vacas
+    addPropW('w_haystack', -18, 3, 0, 1.1, 0); addPropW('w_haystack', 16, 5, 0, 1.0, 0.8);
+    addPropW('w_wagon', 6, 10, 0, 1.0, -0.4);
+    addPropW('w_barrow', -2, 0, 0, 1.0, 1.2);
+    addPropW('w_hitch', -16, -3, 0, 1.0, 0);
+  }
+}
+
+/* === idx 3 · LA ESTACIÓN: mesa larga con andén elevado; perímetro LIBRE para el tren === */
+function buildWEstacion(){
+  s3Slab(0, -2, 32, 18, 0, 'rose');                                   // playa de vías (el circuito rodeará esta mesa)
+  /* andén: una franja elevada a lo largo de la mesa, no un bloque en medio */
+  modUpperDeck(-10, 12, { sx:18, sz:7, topY:5, kind:'rose' });
+  modUpperDeck(12, 12, { sx:12, sz:7, topY:5, kind:'rose' });
+  addRopeBridge(0, 12, 5.5, 12, 5.2, { width:2.2, sag:0.25 });        // pasarela entre los dos andenes
+  modStairs(-2, 6, { steps:3, dir:{x:0,z:1}, rise:1.7, run:2.5, y0:0.3 });
+  modStairs(18, 7, { steps:3, dir:{x:0,z:1}, rise:1.7, run:2.5, y0:0.3 });
+  /* torre de agua de la estación: 3er nivel */
+  s3Blob(-18, 15, 2.8, 2.2, 10.5, 'rose');
+  addFloating(-14, 7.8, 8, 3.4, 2.6); addFloating(-17, 9.6, 12, 3.0, 2.4);
+  /* mordidas laterales: dos satélites separados por vacío */
+  s3DuneHill(-28, -12, 4.4, 3.4, 3.2, 'rose');
+  s3DuneHill(28, -13, 4.2, 3.2, 3.6, 'rose');
+  s3Blob(0, -17, 4.0, 2.6, 1.8, 'rose');                              // peldaño sur suelto
+  s3Blob(22, 3, 3.0, 2.4, 2.4, 'rose');
+  s3Fence(-10, 8.4, 'x', 14, 5, 1.0); s3Fence(12, 8.4, 'x', 10, 5, 1.0);   // barandilla del andén
+  s2GapWall(0, -11, 'x', 6, 3.0, 0.9);
+  addPad(0, -2); addPad(-10, 12);
+  s2JumpWalls(3);
+  if(W_DECOR_ON){
+    wBuilding('w_warehouse', 11, -4, 0, 13, Math.PI/2, { roofFrac:0.55 });   // almacén de mercancías, pisable (bien dentro de la losa: en el borde, el test de suelo de addPropW lo rechaza)
+    /* la playa de vías: dos tiradas paralelas con la locomotora detenida. El circuito de verdad
+       (Fase 2) irá por el PERÍMETRO de la meseta, que está despejado a propósito. */
+    wRailLine(-6, -8, 'x', 7, 0, 0);
+    wRailLine(-6, -12.5, 'x', 6, 0, 0);
+    addPropW('w_loco', -14, -8, 0, 1.0, 0);
+    addPropW('w_coalcar', -8.5, -8, 0, 1.0, 0);
+    addPropW('w_coalcar', 5, -12.5, 0, 1.0, 0.06);
+    addPropW('w_railcurve', 8.5, -8, 0, 1.0, 0);
+    addPropW('w_cart', 3, -2, 0, 1.0, 0.7);
+    addPropW('w_barrow', -2, 1.5, 0, 0.95, -0.5);
+    addPropW('w_hitch', 10, 2, 0, 1.0, 0);
+    addPropW('w_shed', -24, -4, 0, 1.0, 0.4);
+  }
+}
+
+/* === idx 4 · LAS MINAS: la sala VERTICAL — poca planta, mucho andamio === */
+function buildWMinas(){
+  s3Slab(-14, -2, 22, 18, 0, 'rose');                                 // boca de mina (nivel 0)
+  s3Slab(18, 4, 20, 16, 0, 'rose');                                   // muelle de carga
+  /* la mordida grande: todo el corredor central z<-8 es vacío */
+  addRopeBridge(-4.5, 8, 8.5, 8, 0.5, { width:2.4, sag:0.55 });
+  /* andamiaje: 2º y 3er nivel encadenados con tablones */
+  modUpperDeck(-16, 14, { sx:14, sz:8, topY:6, kind:'rose' });
+  modStairs(-8, 9, { steps:3, dir:{x:-1,z:0.4}, rise:2.0, run:2.7, y0:0.4 });
+  addFloating(-6, 8.4, 14, 3.6, 2.6);
+  addFloating(1, 10.2, 12, 3.2, 2.4);
+  addFloating(8, 12.0, 10, 3.0, 2.2);
+  s3Blob(15, 14, 3.2, 2.6, 13, 'rose');                               // 3er nivel: castillete del pozo
+  modUpperDeck(20, -8, { sx:11, sz:7, topY:5.5, kind:'rose' });
+  modStairs(13, -6, { steps:3, dir:{x:1,z:0}, rise:1.85, run:2.6, y0:0.3 });
+  modWallGate(4, -2, { along:'z', h:6.6, span:7, kind:'rose', gap:4.4 });
+  s3DuneHill(-28, 12, 3.8, 3.0, 4.0, 'rose');
+  s3Blob(29, 14, 2.6, 2.1, 2.0, 'rose');
+  s3Fence(-14, 6.4, 'x', 12, 0, 1.1);
+  s3Watchtower(-16, 15, 6);
+  addPad(-14, -2); addPad(18, 4);
+  s2JumpWalls(4);
+  if(W_DECOR_ON){
+    addPropW('w_shed', -20, -6, 0, 1.1, 0.3);
+    addPropW('w_cottage', 22, 8, 0, 1.0, -0.6);
+    wRailLine(-12, 2, 'x', 4, 0, 0);
+    addPropW('w_railslope', -4, 2, 0, 1.0, 0);
+    addPropW('w_coalcar', -14, 2, 0, 1.0, 0.04);
+    addPropW('w_cart2', 16, 0, 0, 1.0, 1.1);
+    addPropW('w_barrel', -8, -5, 0, 1.0, 0.5); addPropW('w_barrel', -6.6, -5.8, 0, 1.05, -0.9);
+    addPropW('w_barrel', 20, 6, 0, 1.0, 1.7);   // ►Fase 2: estos barriles pasarán a ser pólvora activa
+    addPropW('w_barrow', -17, 0, 0, 0.95, 0.2);
+    addPropW('w_haystack', 24, 2, 0, 1.0, 0);
+  }
+}
+
+/* === idx 5 · LA GRAN MESA: una sola meseta descomunal, mordida por tres sitios === */
+function buildWGranMesa(){
+  s3Slab(0, 4, 44, 26, 0, 'rose');                                    // LA mesa: casi toda la sala
+  /* los tres bocados: satélites separados por vacío, no losas pegadas */
+  s3DuneHill(-29, -13, 4.6, 3.6, 2.6, 'rose');
+  s3DuneHill(29, -14, 4.4, 3.4, 3.0, 'rose');
+  s3Blob(0, -16, 5.0, 2.8, 1.6, 'rose');
+  /* 2º nivel: una cornisa larga en el borde norte */
+  modUpperDeck(-8, 20, { sx:20, sz:8, topY:6.5, kind:'rose' });
+  modUpperDeck(14, 19, { sx:12, sz:7, topY:9.5, kind:'rose' });       // escalón al 3er nivel
+  modStairs(-18, 14, { steps:4, dir:{x:0,z:1}, rise:1.75, run:2.6, y0:0.4 });
+  addRopeBridge(2.5, 20, 8.5, 19.5, 6.8, { width:2.3, sag:0.35 });
+  /* 3er nivel: la aguja, dominando toda la mesa */
+  s3Blob(16, 22, 3.0, 2.4, 15, 'rose');
+  addFloating(6, 11.6, 22, 3.4, 2.6); addFloating(11, 13.4, 21, 3.0, 2.4);
+  addFloating(-20, 8.8, 8, 4.0, 3.0);
+  modWallGate(-12, 8, { along:'x', h:6.8, span:8, kind:'rose', gap:4.6 });
+  s3Fence(0, 16.4, 'x', 18, 0, 1.1); s3Fence(-8, 24.4, 'x', 14, 6.5, 1.0);
+  s3Watchtower(10, 21, 9.5);
+  addPad(0, 4); addPad(-8, 20);
+  s2JumpWalls(5);
+  if(W_DECOR_ON){
+    wBuilding('w_logcabin', -14, -2, 0, 6.6, 0.6, { roofFrac:0.62 });
+    wBuilding('w_cabin', 15, 8, 0, 6.4, -0.5, { roofFrac:0.62 });
+    wField(4, -2, 0, 14, 8, 'w_wheat');                     // el trigal que da nombre a la mesa
+    wField(-8, 12, 0, 8, 6, 'w_corn');
+    addPropW('w_cow', 12, 3, 0, 1.0, 0.9); addPropW('w_cow', 15, -1, 0, 0.95, -1.4);
+    addPropW('w_haystack', -4, 9, 0, 1.1, 0);
+    addPropW('w_wagon', 22, 2, 0, 1.0, 0.8);
+    addPropW('w_cart', -22, 10, 0, 1.0, -0.3);
+    addPropW('w_hitch', -12, -6, 0, 1.0, 0);
+    addPropW('w_hat', 6, 6, 0, 1.1, 0.7);
+  }
+}
+
+const SW_SEG_BUILDERS = [ buildWCanyonRim, buildWPuebloSpawn, buildWRancho, buildWEstacion, buildWMinas, buildWGranMesa ];   // idx1 = escena de spawn (x=0), como en S2/S3/S4
 
 /* =====================================================================
    ================  STAGE 5 · INTERIOR DE LA PIRÁMIDE  ================
@@ -28488,6 +29086,44 @@ function goToStage3(){
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
 }
 
+/* ===== ►WEST · CAMPAÑA: transición REAL al WESTERN (mesetas del cañón) al cruzar el portal del
+   jefe de Japón. Calcada de goToStage4. Ojo: el ID interno es 11 pero el jugador lo ve como el
+   stage 4 de la ruta (stageNum() lo traduce por posición en CAMPAIGN_STAGES). ===== */
+function goToStage11(){
+  if(STAGE===11 || gameOver) return;
+  /* 1) limpieza de transitorios (que no viaje nada de Japón al cañón) */
+  for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
+  for(let i=items.length-1;i>=0;i--) killItem(i);
+  for(let i=shardsFly.length-1;i>=0;i--) killShard(i, null);
+  for(let i=wprojs.length-1;i>=0;i--) killWproj(i, null);
+  for(let i=mines.length-1;i>=0;i--) killMine(i);
+  for(let i=orbs.length-1;i>=0;i--) killOrb(i);
+  for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
+  for(const mn of minions) killMinion(mn);
+  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
+  for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
+  for(const q of allPlayers) clearFX(q);
+  /* 2) cambio de mundo (mismo orden probado) */
+  STAGE = 11; _stagePreview = 11;
+  resetBossFight();
+  applyStageTheme(11);
+  rebuildBelt();
+  enableWeather(true);                                         // ►WEST: polvo del cañón (kind 'sand', sin las ráfagas del S4)
+  /* 3) re-rampa del caos */
+  chaosLvl = SW_CHAOS_START; chaosT = 0;
+  const ch = document.getElementById('chaos');
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
+  /* 4) los vivos entran cayendo a la meseta CON su progreso */
+  stageResetPlayers();
+  /* 5) fanfarria */
+  shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
+  showBanner('¡STAGE '+stageNum(11)+': WESTERN!', 2.6); sfx.chaos();
+  applyStageMusic(11);                                         // sin playlist propia todavía → cae a la principal
+  crowdCheer(.6, true);
+  narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
+}
+
 /* ===== CAMPAÑA: transición REAL al Stage 4 (GRAN DESIERTO) al cruzar el portal del jefe 2 =====
    Calcada de goToStage2: limpieza de transitorios + cambio de mundo + re-rampa de caos + respawn
    de los vivos conservando su progreso. */
@@ -28520,7 +29156,7 @@ function goToStage4(){
   stageResetPlayers();
   /* 5) fanfarria */
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
-  showBanner('¡STAGE 4: GRAN DESIERTO!', 2.6); sfx.chaos();
+  showBanner('¡STAGE '+stageNum(4)+': GRAN DESIERTO!', 2.6); sfx.chaos();   // ►WEST: el desierto pasa a ser el 5º de la ruta
   applyStageMusic(4);                                          // ►fade-out → playlist DESIERTO → fade-in
   crowdCheer(.6, true);
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
@@ -28552,7 +29188,7 @@ function goToStage5(){
   if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
-  showBanner('¡STAGE 5: PIRÁMIDE!', 2.6); sfx.chaos();
+  showBanner('¡STAGE '+stageNum(5)+': PIRÁMIDE!', 2.6); sfx.chaos();
   applyStageMusic(5);                                          // ►fade-out → playlist PIRÁMIDE → fade-in
   crowdCheer(.6, true);
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
@@ -28614,7 +29250,7 @@ function goToStage7(){
   if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
-  showBanner('¡STAGE 7: CUMBRES NEVADAS!', 2.6); sfx.chaos();
+  showBanner('¡STAGE '+stageNum(7)+': CUMBRES NEVADAS!', 2.6); sfx.chaos();
   applyStageMusic(7);                                          // ►fade-out → playlist HIELO → fade-in
   crowdCheer(.6, true);
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
@@ -28644,7 +29280,7 @@ function goToStage8(){
   if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
-  showBanner('¡STAGE 8: LA FÁBRICA!', 2.6); sfx.chaos();
+  showBanner('¡STAGE '+stageNum(8)+': LA FÁBRICA!', 2.6); sfx.chaos();
   applyStageMusic(8);                                          // ►fade-out → playlist LANZADERAS → fade-in
   crowdCheer(.6, true);
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
@@ -28706,12 +29342,15 @@ function goToStage10(){
   if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
   stageResetPlayers();
   shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
-  showBanner('¡STAGE 10: VÍA ARCOÍRIS!', 2.6); sfx.chaos();
+  showBanner('¡STAGE '+stageNum(10)+': VÍA ARCOÍRIS!', 2.6); sfx.chaos();
   applyStageMusic(10);                                          // ►fade-out → playlist ESPACIO/ARCOÍRIS → fade-in
   crowdCheer(.6, true);
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
 }
 
+/* ►WEST: nombres largos para el banner de F9, por ID interno (incluye los stages dormidos 6 y 9,
+   que siguen siendo alcanzables con la herramienta aunque no estén en la ruta de campaña). */
+const _F9_STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
 let _stagePreview = 1;
 let MENU_STAGE = 1;    // ►RONDA2: stage ELEGIDO con F9 fuera de partida → la próxima partida EMPIEZA ahí (goToStage2 de la campaña NO lo toca)
 const DEV_F9 = true;   // ►true = F9 alterna stage TAMBIÉN en partida real (herramienta de playtest) · false = "release": F9 solo en menú/demo/entrenamiento (evita el respawn gratis)
@@ -28719,7 +29358,7 @@ function toggleStagePreview(){
   if(!DEV_F9 && running && !demo && !TRAIN.on){ if(typeof showBanner==='function') showBanner('F9 bloqueado en partida', 1.2); return; }
   if(!BELT.on){ if(typeof showBanner==='function') showBanner('Cambio de stage solo en modo cinta', 1.4); return; }
   if(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none'){ if(typeof showBanner==='function') showBanner('No durante el jefe', 1.4); return; }
-  _stagePreview = (_stagePreview===5) ? 7 : (_stagePreview===8) ? 10 : (_stagePreview===10) ? 1 : _stagePreview + 1;   // ►REMOVE-S6/JAPAN: ciclo 1→…→5→7→8→10→1 (el 6 POZO y el 9 Cielo Roto, retirados de la rotación)
+  _stagePreview = (_stagePreview===3) ? 11 : (_stagePreview===11) ? 4 : (_stagePreview===5) ? 7 : (_stagePreview===8) ? 10 : (_stagePreview===10) ? 1 : _stagePreview + 1;   // ►REMOVE-S6/JAPAN/►WEST: ciclo 1→2→3→11(western)→4→5→7→8→10→1 (el 6 POZO y el 9 Cielo Roto, retirados de la rotación)
   STAGE = _stagePreview;
   const inMenu = !running || demo;
   if(inMenu) MENU_STAGE = STAGE;   // ►RONDA2: F9 en el MENÚ fija dónde empieza la próxima partida (en plena partida es solo herramienta DEV)
@@ -28728,7 +29367,10 @@ function toggleStagePreview(){
   enableWeather(STAGE>=2);
   if(typeof applyStageMusic==='function') applyStageMusic(STAGE);   // ►F9 también cambia de playlist (JUNGLA/DESIERTO/PIRÁMIDE ↔ principal)
   if(typeof players !== 'undefined') for(const p of players){ if(typeof safeSpawn==='function') safeSpawn(p); }
-  if(typeof showBanner==='function') showBanner(['','STAGE 1 · PRADO','STAGE 2 · JUNGLA TORMENTA','STAGE 3 · JAPÓN','STAGE 4 · GRAN DESIERTO','STAGE 5 · PIRÁMIDE','STAGE 6 · EL POZO','STAGE 7 · CUMBRES NEVADAS','STAGE 8 · LA FÁBRICA','STAGE 9 · CIELO ROTO','STAGE 10 · VÍA ARCOÍRIS'][STAGE] + (inMenu ? ' · LA PARTIDA EMPEZARÁ AQUÍ' : ''), 1.8);
+  /* ►WEST: era un array LITERAL indexado por STAGE — con el western en el ID 11 se salía de rango
+     y el banner mostraba "undefined". Ahora es un diccionario por ID, y el número que se pinta es
+     la POSICIÓN en la ruta (stageNum), no el ID interno. */
+  if(typeof showBanner==='function') showBanner('STAGE '+stageNum(STAGE)+' · '+(_F9_STAGE_NAMES[STAGE] || ('S'+STAGE)) + (inMenu ? ' · LA PARTIDA EMPEZARÁ AQUÍ' : ''), 1.8);
 }
 addEventListener('keydown', e=>{ if(e.code==='F9' || e.key==='F9'){ toggleStagePreview(); e.preventDefault(); } });
 
@@ -29000,7 +29642,10 @@ function warmupGPU(){
 }
 warmupGPU();
 _mark("shaders");
-requestAnimationFrame(function(){ _mark("1er frame"); _loadReport(); frame(); });
+/* OJO: hay que PASARLE el timestamp. requestAnimationFrame se lo da a su callback y frame(now) lo usa
+   para el delta; llamando a frame() sin argumento, dt sale NaN y el reloj del juego se queda
+   envenenado para siempre (pasó: la home se quedó en negro). */
+requestAnimationFrame(function(ts){ _mark("1er frame"); _loadReport(); frame(ts); });
 
 /* ---------- start / restart ---------- */
 function resetMatch(){          // deja el mundo listo para una partida real (sale del modo demo)
