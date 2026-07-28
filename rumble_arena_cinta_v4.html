@@ -1446,10 +1446,12 @@ function applyLawnLive(){
    Coste: cuatro llamadas a performance.now(). ►Si molesta, borra este bloque y sus 4 _mark().
    ===================================================================== */
 const _LT0 = performance.now(), _LT = [];
+let _lawnMs = 0;                       // cuánto de "mundo" se lo lleva generar el césped (ver buildSegment)
 function _mark(n){ _LT.push([n, performance.now()]); }
 function _loadReport(){
   let prev = _LT0, s = '';
   for(const [n, t] of _LT){ s += n + ' ' + Math.round(t - prev) + ' ms · '; prev = t; }
+  if(_lawnMs > 0) s += '[de "mundo", césped ' + Math.round(_lawnMs) + ' ms] · ';
   console.log('%c[carga] ' + s + 'TOTAL ' + Math.round(prev - _LT0) + ' ms', 'background:#123;color:#8f8;padding:2px 6px');
 }
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
@@ -19122,7 +19124,7 @@ function buildSegment(idx){
   /* ►CONTACT2: junta de contacto bajo los props de este segmento (muros, rocas, árboles, cajas…).
      AQUÍ y no antes: el segmento ya está entero y las losas siguen en coordenadas locales. Va DESPUÉS
      del registro de oclusores a propósito → la malla de manchas no se registra como oclusor. */
-  buildLawn(seg, p0);   // ►LAWN: tapiza las tapas de suelo de este segmento (usa _propSpots/_pathSpots, que ya existen aquí)
+  { const _lt = performance.now(); buildLawn(seg, p0); _lawnMs += performance.now() - _lt; }   // ►LAWN: tapiza las tapas de suelo de este segmento (usa _propSpots/_pathSpots, que ya existen aquí). Cronometrado para saber su parte del arranque.
   seg.treeMeshes = seg.group.children.filter(c => c.userData._s2TreeMerge);
   for(let i=p0;i<platforms.length;i++){
     const pl = platforms[i];
@@ -29854,8 +29856,12 @@ function warmupGPU(){
     for(const r of ocultos) r.visible = false;
   } catch(e){ console.warn('[warmupGPU] omitido', e); }
 }
-warmupGPU();
-_mark("shaders");
+/* ►LOADTIME: el pre-calentado YA NO va aquí. Medido en la máquina de Toni: bloqueaba 2.611 ms de los
+   6.137 ms de arranque, o sea que el menú tardaba 2,6 s de más en aparecer para compilar unos shaders
+   que perfectamente pueden hacerse DESPUÉS, mientras él lee el menú. Ahora lo dispara el bucle de
+   reposo (warmupIdle, junto a startDemo), 300 ms tras el primer frame. El resultado es el mismo —
+   todo compilado antes de jugar— pero la espera desaparece de la carga. */
+_mark("shaders (diferido)");
 /* OJO: hay que PASARLE el timestamp. requestAnimationFrame se lo da a su callback y frame(now) lo usa
    para el delta; llamando a frame() sin argumento, dt sale NaN y el reloj del juego se queda
    envenenado para siempre (pasó: la home se quedó en negro). */
