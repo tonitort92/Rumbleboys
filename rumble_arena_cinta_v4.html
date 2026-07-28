@@ -1403,7 +1403,7 @@ const VISUAL = {
   water: { on:true, foam:0.75, deep:0.35, shine:0.30 },   // [foam 0–1] espuma · [deep 0–0.7] volumen del oleaje · [shine 0–0.45] reflejo del agua lisa
   // ►LAWN: césped corto que CUBRE el suelo (antes solo había matas sueltas sobre verde plano).
   // Se mueve con el viento y se aplasta al pisarlo. Todo en el vertex shader → 0 coste de CPU.
-  lawn: { on:true, density:14, height:0.30, wind:0.10, speed:1.5, trample:0.30, fade:1.0 },   // [density briznas/m²] y [height] piden reconstruir · el resto es en vivo · [fade] multiplica la distancia del tier
+  lawn: { on:true, density:20, height:0.40, wind:0.10, speed:1.5, trample:0.30, fade:1.0 },   // [density MATAS/m², cada mata son 4 briznas] y [height] piden reconstruir · el resto es en vivo · [fade] multiplica la distancia del tier
 };
 
 /* ►LAWN · uniforms y su aplicación. DECLARADOS AQUÍ ARRIBA, junto a VISUAL, y NO junto a su módulo:
@@ -1412,10 +1412,18 @@ const VISUAL = {
    para siempre. Ya pasó con ►SURFACE. `typeof x==='undefined'` NO protege de esto en const/let. */
 const _lawnU = {
   uTime:    { value: 0 },
+  /* uEye = CENTRO del disco de césped. NO es la cámara: la cámara va ~14u por DETRÁS del jugador, así
+     que midiendo desde ella el césped se quedaba en la losa donde estás (reporte de Toni: "solo veo la
+     hierba en la primera plataforma"). Se mide desde un punto entre la cámara y lo que mira. */
+  uEye:     { value: new THREE.Vector3(0,0,0) },
   uFade:    { value: new THREE.Vector2(17, 30) },   // (empieza a encogerse, desaparecida del todo)
   uWind:    { value: new THREE.Vector4(0.10, 1.5, 0.55, 0.42) },   // fuerza, velocidad, frecuencia x, frecuencia z
   uTrample: { value: 0.30 },
-  uFeet:    { value: Array.from({length:8}, ()=>new THREE.Vector4(0,0,0,0)) },   // xyz = pie en mundo · w = radio (0 = hueco libre)
+  /* 4 pies, no 8: el bucle corre POR VÉRTICE (≈1 millón por frame con el césped denso), así que cada
+     hueco se paga caro. Se quedan los 4 luchadores más cercanos a la acción — los de más allá no
+     pisan nada que se vea. uFeetN corta el bucle: con nadie cerca (menú, jefe lejos) no se ejecuta. */
+  uFeet:    { value: Array.from({length:4}, ()=>new THREE.Vector4(0,0,0,0)) },   // (x, z, y, radio)
+  uFeetN:   { value: 0 },
 };
 let _lawnTierFade = 30;                              // distancia de fundido que impone el tier de calidad
 function applyLawnLive(){
@@ -1949,9 +1957,9 @@ function attachComposerDepth(){
    Cada tier controla DOF, bloom, grano/viñeta, sombra y el tope del DRS. qMode 'auto'
    empieza en 'alto' y baja/sube de tier solo según FPS sostenidos. */
 const TIERS = {
-  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, lawn:15, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel) · ►LAWN: césped solo en el corro cercano
-  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  lawn:24, drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
-  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  lawn:32, drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
+  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, lawn:26, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel) · ►LAWN: radio del césped (medido desde LA ACCIÓN, no desde la cámara)
+  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  lawn:38, drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
+  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  lawn:50, drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar) · ►LAWN: 50 cubre el ancho jugable entero (los muros están a ±42)
 };
 const TIER_ORDER = ['bajo','medio','alto'];
 /* detección de móvil/táctil: arranca conservador para que un móvil malo NO empiece ahogado.
@@ -5065,7 +5073,7 @@ const LAWN_STAGES = {
   1: { h:0.30, dens:1.00, bot:0x2b5a23, top:0x59a03e, vary:0.13 },   // prado
 };
 function lawnCoversStage(){ return !!(VISUAL.lawn.on && LAWN_STAGES[STAGE]); }
-const LAWN_CHUNK = 10;     // lado del chunk (u.): más pequeño = mejor culling pero más draw calls. Medido: a 7 se encendían ~106 chunks (=106 draw calls) en una vista de partida; a 10 bajan a la mitad y el desperdicio de briznas fuera de radio lo absorbe el fundido (salen con altura cero)
+const LAWN_CHUNK = 12;     // lado del chunk (u.): más pequeño = mejor culling pero más draw calls. Medido: a 7 se encendían ~106 chunks (=106 draw calls) en una vista de partida; subiéndolo bajan mucho y el desperdicio de briznas fuera de radio lo absorbe el fundido (salen con altura cero)
 /* MATA de 3 briznas, no una suelta: una brizna por instancia leía como PINCHOS sueltos clavados en el
    suelo, no como césped. Metiendo 3 en la misma instancia se triplica la densidad visual sin tocar ni
    el número de instancias (que es lo que cuesta RAM y tiempo de generación) ni los draw calls.
@@ -5079,6 +5087,7 @@ const _lawnGeo = (function(){
     { x: 0.00, z: 0.00, yaw: 0.0,  h:1.00, w:0.075, lean:0.10, ph:0.0 },
     { x: 0.22, z: 0.14, yaw: 1.2,  h:0.78, w:0.065, lean:0.26, ph:2.2 },
     { x:-0.19, z: 0.17, yaw:-1.0,  h:0.62, w:0.060, lean:0.20, ph:4.3 },
+    { x: 0.04, z:-0.21, yaw: 2.5,  h:0.86, w:0.068, lean:0.23, ph:1.3 },   // 4ª: densidad visual GRATIS (misma instancia, mismo draw call)
   ];
   for(const b of BLADES){
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw), base = P.length/3;
@@ -5109,7 +5118,7 @@ _lawnMat.onBeforeCompile = (sh)=>{
   Object.assign(sh.uniforms, _lawnU);
   sh.vertexShader = [
     'attribute float aH; attribute float aP;',
-    'uniform float uTime; uniform vec2 uFade; uniform vec4 uWind; uniform float uTrample; uniform vec4 uFeet[8];'
+    'uniform float uTime; uniform vec2 uFade; uniform vec3 uEye; uniform vec4 uWind; uniform float uTrample; uniform vec4 uFeet[4]; uniform int uFeetN;'
   ].join('\n') + '\n' + sh.vertexShader;
   /* CARA TRASERA: con DoubleSide, Lambert ilumina la trasera con la normal INVERTIDA (vLightBack usa
      -dotNL). Como nuestras normales miran ARRIBA, la trasera se ilumina desde abajo → briznas NEGRAS
@@ -5127,12 +5136,13 @@ _lawnMat.onBeforeCompile = (sh)=>{
     'vec4 lwW = modelMatrix * lwL;',
     'vec3 lwRoot = (modelMatrix * lwR).xyz;',                      // raíz de ESTA brizna, en mundo
     'float lwUp = lwW.y - lwRoot.y;',
-    'float lwFar = distance(cameraPosition.xz, lwRoot.xz);',
+    'float lwFar = distance(uEye.xz, lwRoot.xz);',
     'float lwK = 1.0 - smoothstep(uFade.x, uFade.y, lwFar);',      // 1 cerca → 0 lejos
     'float lwPh = lwRoot.x*uWind.z + lwRoot.z*uWind.w + uTime*uWind.y + aP;',
     'float lwGust = 0.62 + 0.38*sin(lwRoot.x*0.05 + lwRoot.z*0.043 + uTime*0.5);',   // ráfagas lentas que recorren el prado
     'vec2 lwB = vec2(sin(lwPh), cos(lwPh*0.73)) * uWind.x * lwGust * aH * aH;',      // dobla ∝ altura² (la base no se mueve)
-    'for(int i=0;i<8;i++){',
+    'for(int i=0;i<4;i++){',
+    '  if(i >= uFeetN) break;',                                    // corte por uniform: misma rama para todos los vértices, así que es barato
     '  vec4 ft = uFeet[i];',
     '  vec2 d = lwRoot.xz - ft.xy;',                               // ft = (x, z, y, radio) — empaquetado así para leer el plano de un vec2
     '  float rr = max(ft.w, 0.0001);',
@@ -5218,25 +5228,33 @@ const _lawnFeetTmp = [];
 function updateLawn(dt){
   const on = lawnCoversStage();
   _lawnU.uTime.value += dt;
-  /* PIES: los 8 luchadores más cercanos a la cámara (jugadores + jefe). Es lo ÚNICO que sube por
+  /* CENTRO del disco: entre la cámara y lo que mira, tirando hacia lo que mira. Así el césped rodea
+     LA ACCIÓN (que es lo que se ve), no la lente. Midiendo desde la cámara, con ella 14u por detrás
+     del jugador, el césped se acababa justo delante de tus pies. */
+  const eye = _lawnU.uEye.value;
+  if(typeof camTarget !== 'undefined') eye.set(camera.position.x*0.35 + camTarget.x*0.65, camTarget.y, camera.position.z*0.35 + camTarget.z*0.65);
+  else eye.copy(camera.position);
+  /* PIES: los 4 luchadores más cercanos a la acción (jugadores + jefe). Es lo ÚNICO que sube por
      frame; el aplastado en sí lo calcula el shader brizna a brizna. */
   const F = _lawnU.uFeet.value;
   let k = 0;
   if(on && typeof players !== 'undefined'){
     _lawnFeetTmp.length = 0;
-    for(const p of players){ if(p && !p.dead && p.pos) _lawnFeetTmp.push(p); }
-    if(typeof BOSSFIGHT !== 'undefined' && BOSSFIGHT.boss && BOSSFIGHT.boss.pos) _lawnFeetTmp.push(BOSSFIGHT.boss);
+    for(const p of players) if(p && !p.dead && p.pos) _lawnFeetTmp.push(p);
+    if(typeof BOSSFIGHT !== 'undefined' && BOSSFIGHT && BOSSFIGHT.boss && BOSSFIGHT.boss.pos) _lawnFeetTmp.push(BOSSFIGHT.boss);
+    if(_lawnFeetTmp.length > 4){   // solo ordenamos si sobran candidatos (lo normal es que no)
+      _lawnFeetTmp.sort((a,b)=> ((a.pos.x-eye.x)**2 + (a.pos.z-eye.z)**2) - ((b.pos.x-eye.x)**2 + (b.pos.z-eye.z)**2));
+    }
     for(const p of _lawnFeetTmp){
-      if(k >= 8) break;
-      const r = (p.big ? 2.2*p.big : 1.15);
-      F[k++].set(p.pos.x, p.pos.z, p.pos.y, r);   // (x, z, y, radio): el shader lee el plano de un tirón
+      if(k >= 4) break;
+      F[k++].set(p.pos.x, p.pos.z, p.pos.y, (p.big ? 2.2*p.big : 1.15));   // (x, z, y, radio): así el shader lee el plano de un tirón
     }
   }
-  for(let i=k;i<8;i++) F[i].w = 0;                // los huecos sobrantes se desactivan con radio 0
+  _lawnU.uFeetN.value = k;
   /* CHUNKS: solo los cercanos. Con ~200 chunks en el mapa esto es ruido de CPU, y evita mandar a la
      GPU decenas de miles de briznas que el fundido dejaría en altura cero de todos modos. */
   const lim = _lawnU.uFade.value.y + LAWN_CHUNK, lim2 = lim*lim;
-  const cx = camera.position.x, cz = camera.position.z;
+  const cx = eye.x, cz = eye.z;
   for(const s of BELT.segs){
     const cs = s.lawnChunks; if(!cs) continue;
     if(!on || !s.group.visible){ for(const c of cs) c.visible = false; continue; }
