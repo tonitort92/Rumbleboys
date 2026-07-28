@@ -1379,6 +1379,11 @@ const VISUAL = {
   side: { color:0xffffff, intensity:0.26, pos:[58, 16, 6] },      // [int 0.10–0.60]
   // NIEBLA aérea (color del horizonte) — separa islas cercanas de lejanas
   fog:  { color:0xcfe2f4, near:72, far:142 },   // [near 40–100][far 120–180] far↓ = más bruma pero +pop-in del belt lejano
+  // ►DEPTH: PROFUNDIDAD TONAL (perspectiva aérea). La niebla SOLO TIÑE, y además empieza tan lejos
+  // (near 72) que el fondo conserva el mismo brillo y saturación que el primer plano = todo en el
+  // mismo plano. Esto añade, ANTES de la niebla, desaturación + bruma + levantado de sombras que
+  // crece con la distancia. Es lo que separa los planos. Coste 0 (va dentro del chunk de niebla).
+  depth: { on:true, near:42, far:140, sat:0.62, haze:0.20, lift:0.34 },   // [near/far] tramo donde crece (near POR ENCIMA de la distancia de cámara, ~14 en seguimiento y ~25-40 en general, para no tocar la zona de juego) · [sat 0–1] desatura · [haze 0–0.6] bruma previa · [lift 0–0.7] suelo de las sombras lejanas
   // PROFUNDIDAD DE CAMPO (bokeh) — el foco SIGUE a la acción
   dof:  { aperture:0.014, maxblur:0.028 },      // [aperture 0–0.03][maxblur 0–0.06]
   // OCLUSIÓN AMBIENTAL HORNEADA (pseudo-AO por vértice; coste runtime ~0)
@@ -1390,7 +1395,8 @@ const VISUAL = {
   env:  { on:true, intensity:0.55, sun:0.85 },   // [intensity 0–1] cuánto entorno entra · [sun 0–2] fuerza del reflejo del sol
   // ►CONTACT: sombra de contacto bajo los pies (ancla al personaje al suelo; el shadow map solo
   // no da resolución para el contacto). Se suma a la sombra real, no la sustituye.
-  contact: { on:true, opacity:0.34, size:1.25, fade:7 },   // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
+  contact: { on:true, opacity:0.34, size:1.25, fade:7,     // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
+             props:true, propOp:0.50, propSize:1.15 },     // ►CONTACT2: la MISMA junta bajo los props del escenario (muros/rocas/árboles/cajas), ver buildGroundDecals
   // ►IMPACT: refuerzo DIRECCIONAL del golpe (lo ya existente es omnidireccional). Se suma a bigHitFX.
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
   // ►WATER: espuma en crestas + valles hundidos + rugosidad por ola (lo que hace visible el reflejo).
@@ -1420,6 +1426,82 @@ renderer.toneMappingExposure = VISUAL.exposure;   // exposición global (ver VIS
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fc1ee);                  // DÍA: fondo azul cielo (apenas se ve tras la cúpula)
 scene.fog = new THREE.Fog(VISUAL.fog.color, VISUAL.fog.near, VISUAL.fog.far);   // niebla aérea del color del horizonte (ver VISUAL.fog; F2 en vivo). far culla el belt lejano (vista vs. perf)
+
+/* =====================================================================
+   ►DEPTH — PROFUNDIDAD TONAL (perspectiva aérea).
+
+   El problema (diagnóstico sobre captura real): las islas del fondo tienen
+   EL MISMO brillo y la MISMA saturación que el primer plano, así que todo
+   lee como un solo plano pegado. La niebla no lo arregla: empieza a 72u
+   (cuando lo interesante ya pasó) y sólo MEZCLA hacia un color — no toca
+   la saturación ni el contraste, que es lo que el ojo usa para leer
+   distancia en un cuadro estilizado.
+
+   Qué hace: un tramo propio (VISUAL.depth.near/far, más cerca que la
+   niebla) en el que la superficie va perdiendo saturación, ganando bruma
+   y levantando sus sombras. La niebla real sigue después, intacta.
+
+   Dónde: dentro del chunk `fog_fragment` de three, así que lo hereda
+   AUTOMÁTICAMENTE todo material con niebla (terreno, props, personajes,
+   mar, nubes) sin tocar un solo call-site y sin coste extra por frame —
+   son 5 instrucciones más en un shader que ya se ejecutaba.
+
+   Se tiñe hacia `fogColor`, que es UNIFORM y ya cambia por stage → cada
+   mundo recibe su bruma correcta solo (azul en el prado, ocre en el
+   desierto, negra en el espacio). No hay nada que añadir por stage.
+
+   GOTCHAS (verificados):
+   - El nombre de la varying de profundidad cambió entre versiones de three
+     (`fogDepth` → `vFogDepth`), así que NO se escribe a mano: se extrae del
+     propio chunk con una regex. Si no casa, el módulo se desactiva solo y
+     avisa por consola (un .replace() fallido sería un no-op SILENCIOSO).
+   - Los números van HORNEADOS como literales en el shader (añadir uniforms
+     a los materiales de serie exigiría un onBeforeCompile por material).
+     Retocar en vivo (F2) obliga a recompilar → por eso los sliders usan
+     onFinishChange (al soltar), no onChange.
+   - Recompilar NO basta con needsUpdate: three cachea el programa por una
+     clave que no mira el texto del shader → habría reusado el viejo. Por eso
+     applyDepthTone() firma cada material con customProgramCacheKey.
+   ===================================================================== */
+const _fogSrcOrig = (window.THREE && THREE.ShaderChunk) ? THREE.ShaderChunk.fog_fragment : null;
+const _fogMixLine = 'gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );';
+const _fogDepthVar = (function(){
+  if(!_fogSrcOrig) return null;
+  const m = /smoothstep\(\s*fogNear\s*,\s*fogFar\s*,\s*([A-Za-z_]\w*)\s*\)/.exec(_fogSrcOrig);
+  if(!m || _fogSrcOrig.indexOf(_fogMixLine) < 0){ console.warn('►DEPTH desactivado: el chunk fog_fragment de esta versión de three no encaja'); return null; }
+  return m[1];                                     // 'fogDepth' (r128) o 'vFogDepth' (r13x+)
+})();
+let _depthVer = 0;                                 // firma de recompilación (ver customProgramCacheKey)
+const _depthKey = function(){ return 'aer'+_depthVer; };
+function _depthChunk(){
+  const D = VISUAL.depth;
+  if(!D.on) return _fogSrcOrig;
+  const g = v => (+v).toFixed(4);                  // literales GLSL: SIEMPRE con punto decimal
+  return _fogSrcOrig.replace(_fogMixLine, [
+    'float aerT = smoothstep('+g(D.near)+', '+g(D.far)+', '+_fogDepthVar+');',
+    'float aerL = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));',
+    'gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(aerL), aerT*'+g(D.sat)+');',                       // 1) pierde color con la distancia
+    'gl_FragColor.rgb = mix(gl_FragColor.rgb, max(gl_FragColor.rgb, fogColor*'+g(D.lift)+'), aerT);', // 2) sus sombras se levantan (menos contraste al fondo)
+    'gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, aerT*'+g(D.haze)+');',                        // 3) bruma progresiva ANTES de que entre la niebla real
+    _fogMixLine
+  ].join('\n'));
+}
+/* aplica el look. Al cargar (live=false) sólo parchea el chunk: aún no ha compilado nada.
+   Desde F2 (live=true) hay que forzar la recompilación de lo que ya está en pantalla. */
+function applyDepthTone(live){
+  if(!_fogDepthVar) return;
+  THREE.ShaderChunk.fog_fragment = _depthChunk();
+  if(!live) return;
+  _depthVer++;
+  const seen = new Set();
+  scene.traverse(o=>{
+    const mm = o.material; if(!mm) return;
+    const arr = Array.isArray(mm) ? mm : [mm];
+    for(const m of arr){ if(!m || m.fog === false || seen.has(m.uuid)) continue; seen.add(m.uuid);
+      m.customProgramCacheKey = _depthKey; m.needsUpdate = true; }
+  });
+}
+applyDepthTone(false);   // ANTES de que se cree/compile ningún material
 /* NIEBLA CENTRAL: bruma suave (billboards) sobre la zona de lucha, aparte de la del horizonte */
 const _hazeTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
   const gr=x.createRadialGradient(64,64,0,64,64,64); gr.addColorStop(0,'rgba(255,255,255,0.55)'); gr.addColorStop(1,'rgba(255,255,255,0)');
@@ -4787,6 +4869,102 @@ const _contactTex = (function(){ const c=document.createElement('canvas'); c.wid
   gr.addColorStop(0.62,'rgba(0,0,0,0.42)'); gr.addColorStop(1,'rgba(0,0,0,0)');
   x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
 const _contactGeo = new THREE.PlaneGeometry(1,1);   // compartida por todos (solo el material es por jugador, por la opacidad)
+
+/* =====================================================================
+   ►CONTACT2 — JUNTA DE CONTACTO DE LOS PROPS DEL ESCENARIO.
+
+   Diagnóstico (sobre captura real): los muros de piedra, las rocas y los
+   árboles se APOYAN en el césped sin junta ninguna, como calcomanías. No es
+   un fallo de iluminación: el AO está horneado POR VÉRTICE y DENTRO de cada
+   objeto, así que entre objetos distintos no hace nada; y el shadow map
+   cubre ±42u a 2048 → no tiene densidad para resolver un contacto.
+
+   Esto pone bajo cada prop apoyado en el suelo la MISMA mancha que ya
+   llevan los jugadores (►CONTACT, misma textura).
+
+   Coste: 1 InstancedMesh POR SEGMENTO (6 draw calls en todo el mapa) y CERO
+   por frame — las manchas son hijas del grupo del segmento, así que viajan
+   con la cinta, se ocultan con ella y mueren con ella. Nada que actualizar.
+   ===================================================================== */
+const _gdecMat = new THREE.MeshBasicMaterial({ map:_contactTex, transparent:true, opacity:VISUAL.contact.propOp,
+  depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });   // CON niebla (a diferencia de la del jugador): la mancha debe irse al fondo con su prop
+const _gdecGeo = new THREE.PlaneGeometry(1,1); _gdecGeo.rotateX(-Math.PI/2);   // tumbada YA en la geometría → la matriz de instancia es sólo posición+escala
+const _gdecMeshes = [];                          // registro para los knobs en vivo (F2)
+const GDEC_MINH   = 0.55;   // alto mínimo del prop: por debajo es rasante (caminos, alfombras, charcos) y no hay junta que dibujar
+const GDEC_MAXW   = 20;     // huella máxima: los chunks de árboles fusionados y los bloques enormes no leen como "apoyados"
+const GDEC_MAX    = 420;    // tope de manchas por segmento (red de seguridad, no presupuesto: medido en Edge, el bloque más cargado pedía ~190 y van todas en 1 draw call. Si alguna vez topa, avisa por consola)
+const GDEC_Y      = 0.03;   // altura sobre la losa (igual que la del jugador; el groundRing va a +0.06 y sigue leyéndose encima)
+/* recompone las matrices de instancia (lo llama el knob de tamaño de F2) */
+function _gdecApply(im){
+  const k = VISUAL.contact.propSize, d = im.userData._gd, mtx = new THREE.Matrix4();
+  for(let i=0;i<d.length;i++){ const o = d[i];
+    mtx.makeScale(o.w*k, 1, o.d*k); mtx.setPosition(o.x, o.y, o.z); im.setMatrixAt(i, mtx); }
+  im.instanceMatrix.needsUpdate = true;
+}
+/* Lo llama buildSegment con el segmento YA construido. p0 = primer índice de platforms del segmento.
+   OJO: se llama ANTES de _applySegX, con el grupo aún en x=0 y las losas en coordenadas LOCALES —
+   por eso las manchas se guardan en local y luego viajan solas con el grupo. */
+function buildGroundDecals(seg, p0){
+  if(!seg || !seg.group || !THREE.InstancedMesh) return;
+  /* losas candidatas de ESTE segmento. Las móviles quedan fuera: la mancha es estática dentro del
+     grupo, así que sobre un ascensor o una losa que cae se despegaría. */
+  const segPls = platforms.slice(p0).filter(pl => (pl.solid || pl.float) && !pl._lift && !pl._vertMove);
+  if(!segPls.length) return;
+  const ox = seg.group.position.x, oy = seg.group.position.y, oz = seg.group.position.z;   // debería ser (0,0,0) aquí, pero no lo damos por hecho
+  const box = new THREE.Box3(), sz = new THREE.Vector3(), ctr = new THREE.Vector3();
+  const data = [];
+  for(const ch of seg.group.children){
+    if(!ch || ch.isInstancedMesh || ch.isPoints || ch.isSprite || ch.isLight) continue;
+    const ud = ch.userData || {};
+    if(ud.occFloor || ud.noOcc) continue;          // suelo pisable, planos rasantes, agua, lava: no son props apoyados
+    if(ud._s2TreeMerge) continue;                  // chunks de árboles fusionados (S2): son MUCHOS árboles en una malla → una sola mancha sería un manchón, y además se DISUELVEN al llegar al muro (updateBelt) y la mancha se quedaría
+    box.setFromObject(ch);                          // usa las bounding boxes cacheadas de las geometrías: barato y una sola vez
+    if(box.isEmpty() || !isFinite(box.min.y)) continue;
+    box.getSize(sz); box.getCenter(ctr);
+    if(sz.y < GDEC_MINH) continue;
+    if(sz.x > GDEC_MAXW || sz.z > GDEC_MAXW) continue;
+    if(Math.min(sz.x, sz.z) < 0.3) continue;        // hilos/postes finísimos: la mancha sería un punto sucio
+    const bMinY = box.min.y - oy, bMaxY = box.max.y - oy, cx = ctr.x - ox, cz = ctr.z - oz;
+    /* ¿APOYADO? el prop tiene que ATRAVESAR la cara superior de una losa que lo contiene en planta:
+       nace por debajo (o justo en ella) y sube por encima. Así caen solos los que flotan, los que
+       cuelgan (muros aéreos, péndulos, carámbanos) y los que van por el aire. */
+    let topY = null;
+    for(const pl of segPls){
+      if(cx < pl.minX-0.4 || cx > pl.maxX+0.4 || cz < pl.minZ-0.4 || cz > pl.maxZ+0.4) continue;
+      const y = pl.topY;
+      if(bMinY > y + 0.30 || bMaxY < y + 0.30) continue;   // no lo cruza: o flota encima o cuelga debajo
+      if(y - bMinY > 2.6) continue;                        // enterradísimo: es un bloque de terreno, no un prop apoyado
+      if(topY === null || y > topY) topY = y;
+    }
+    if(topY === null) continue;
+    /* props alargados (muros, vallas, troncos): una sola elipse concentraría la mancha en el centro
+       y dejaría los extremos flotando → cadena de manchas redondas a lo largo del eje mayor. */
+    const long = Math.max(sz.x, sz.z), short = Math.min(sz.x, sz.z), alongX = sz.x >= sz.z;
+    const n = Math.max(1, Math.min(10, Math.ceil(long / Math.max(0.6, short*0.9))));
+    const w = (n > 1 ? short : sz.x) * 1.65, d = (n > 1 ? short : sz.z) * 1.65;   // 1.65: la textura se desvanece a 0 en el borde, así que la mancha útil es menor que su cuadro
+    const span = Math.max(0, long - short);
+    for(let i=0;i<n;i++){
+      const u = (n === 1) ? 0 : (i/(n-1) - 0.5) * span;
+      data.push({ x: cx + (alongX ? u : 0), y: topY + GDEC_Y, z: cz + (alongX ? 0 : u), w, d });
+      if(data.length >= GDEC_MAX) break;
+    }
+    if(data.length >= GDEC_MAX) break;
+  }
+  if(!data.length) return;
+  if(data.length >= GDEC_MAX) console.warn('►CONTACT2: segmento '+seg.idx+' al tope ('+GDEC_MAX+') → props sin junta. Sube GDEC_MAX.');   // un recorte SILENCIOSO se leería como "cubierto todo"
+  const im = new THREE.InstancedMesh(_gdecGeo, _gdecMat, data.length);
+  im.userData._gd = data; im.userData.noOcc = true;   // noOcc: la mancha NUNCA es un oclusor (ni se funde ni tapa a nadie)
+  im.renderOrder = -1; im.castShadow = im.receiveShadow = false;
+  /* frustumCulled=false OBLIGATORIO: en r128 el frustum de un InstancedMesh se calcula con la esfera
+     de la GEOMETRÍA (un plano de 1×1 en el origen del segmento), no con las instancias → las manchas
+     desaparecerían de golpe en cuanto el centro del segmento saliera de cámara. El culling ya lo hace
+     el propio segmento (s.group.visible en updateBelt). */
+  im.frustumCulled = false;
+  im.visible = !!VISUAL.contact.props;
+  _gdecApply(im);
+  seg.group.add(im);
+  _gdecMeshes.push(im);
+}
 
 /* círculo del color de cada jugador, pegado al suelo: ves dónde caes y dónde estás */
 for(const _p of allPlayers){
@@ -18578,6 +18756,10 @@ function buildSegment(idx){
      marcados _s2TreeMerge) para ocultarlos en updateBelt EN CUANTO asoman por la pared-límite (v3).
      Solo árboles (bloquean la cámara); la flora es rasante y no está clampada a los bordes → NO se
      oculta. Cada uno lleva _lmn/_lmx (AABB en X, local de segmento) para el test de pared. */
+  /* ►CONTACT2: junta de contacto bajo los props de este segmento (muros, rocas, árboles, cajas…).
+     AQUÍ y no antes: el segmento ya está entero y las losas siguen en coordenadas locales. Va DESPUÉS
+     del registro de oclusores a propósito → la malla de manchas no se registra como oclusor. */
+  buildGroundDecals(seg, p0);
   seg.treeMeshes = seg.group.children.filter(c => c.userData._s2TreeMerge);
   for(let i=p0;i<platforms.length;i++){
     const pl = platforms[i];
@@ -20689,6 +20871,8 @@ function rebuildBelt(){
   if(typeof _s8Nodes!=='undefined') _s8Nodes.length=0;   // ►P10a: cristales resonantes
   if(typeof _s9Rings!=='undefined') _s9Rings.length=0;   // ►P10a: boost rings
   occluders.length = 0; occRoots.length = 0; _occFaded.clear();
+  for(const im of _gdecMeshes) im.dispose();   // ►CONTACT2: las manchas mueren con sus segmentos (libera los buffers de instancia; geometría y material son compartidos)
+  _gdecMeshes.length = 0;
   for(let i=0;i<BELT.count;i++){
     const seg = buildSegment(i);
     seg.x = BELT.startX + i*BELT.stride;
@@ -29668,6 +29852,23 @@ function setupVisualGUI(){
   fC.add(VISUAL.contact, 'opacity', 0, 0.7, 0.01).name('fuerza');
   fC.add(VISUAL.contact, 'size', 0.6, 2, 0.01).name('tamaño');
   fC.add(VISUAL.contact, 'fade', 3, 14, 0.5).name('altura de fundido');
+  /* ►CONTACT2: la misma junta bajo los props del escenario. Son mallas instanciadas ya construidas
+     → el tamaño recompone matrices (barato), la fuerza es la opacidad del material compartido. */
+  fC.add(VISUAL.contact, 'props').name('· props del escenario').onChange(v=>{ for(const im of _gdecMeshes) im.visible = !!v; });
+  fC.add(VISUAL.contact, 'propOp', 0, 0.7, 0.01).name('· fuerza (props)').onChange(v=>{ _gdecMat.opacity = v; });
+  fC.add(VISUAL.contact, 'propSize', 0.6, 2, 0.01).name('· tamaño (props)').onChange(()=>{ for(const im of _gdecMeshes) _gdecApply(im); });
+  fC.open();
+  /* ►DEPTH: profundidad tonal. Los números van horneados en el shader de la niebla → cada cambio
+     RECOMPILA los materiales visibles (tirón de ~1s). Por eso van con onFinishChange (al soltar). */
+  const fDep = gui.addFolder('Profundidad tonal (aérea)');
+  const upD = ()=>applyDepthTone(true);
+  fDep.add(VISUAL.depth, 'on').name('activada').onChange(upD);
+  fDep.add(VISUAL.depth, 'near', 0, 120, 1).name('empieza a (u.)').onFinishChange(upD);
+  fDep.add(VISUAL.depth, 'far', 60, 260, 1).name('acaba a (u.)').onFinishChange(upD);
+  fDep.add(VISUAL.depth, 'sat',  0, 1,    0.01).name('desaturación').onFinishChange(upD);
+  fDep.add(VISUAL.depth, 'haze', 0, 0.6,  0.01).name('bruma previa').onFinishChange(upD);
+  fDep.add(VISUAL.depth, 'lift', 0, 0.7,  0.01).name('sombras del fondo').onFinishChange(upD);
+  fDep.open();
   /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
   const fI = gui.addFolder('Impacto direccional');
   fI.add(VISUAL.impact, 'on').name('activado');
