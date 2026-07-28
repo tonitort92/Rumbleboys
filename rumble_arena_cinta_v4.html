@@ -1396,7 +1396,7 @@ const VISUAL = {
   // ►CONTACT: sombra de contacto bajo los pies (ancla al personaje al suelo; el shadow map solo
   // no da resolución para el contacto). Se suma a la sombra real, no la sustituye.
   contact: { on:true, opacity:0.34, size:1.25, fade:7,     // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
-             props:true, propOp:0.50, propSize:1.15 },     // ►CONTACT2: la MISMA junta bajo los props del escenario (muros/rocas/árboles/cajas), ver buildGroundDecals
+             props:true, propOp:0.45, propSize:1.15, tint:0x2a3542 },   // tint: NEGRO PURO NO — una sombra negra lee como agujero (ver CONTACT_TINT)     // ►CONTACT2: la MISMA junta bajo los props del escenario (muros/rocas/árboles/cajas), ver buildGroundDecals
   // ►IMPACT: refuerzo DIRECCIONAL del golpe (lo ya existente es omnidireccional). Se suma a bigHitFX.
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
   // ►WATER: espuma en crestas + valles hundidos + rugosidad por ola (lo que hace visible el reflejo).
@@ -4860,13 +4860,29 @@ function scoreTotal(p){ const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.item
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.rainT>0 || p._rainbowT>0); }
 function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; } }   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
-/* ►CONTACT: textura de la sombra de contacto. NO reusa _hazeTex a propósito: la bruma tiene una
+/* ►CONTACT · TINTE. Una sombra NEGRA PURA lee como AGUJERO, no como sombra: en el mundo real la
+   zona en sombra sigue recibiendo la luz del cielo, así que va hacia un azul oscuro, nunca a negro.
+   Por eso las texturas de abajo son BLANCAS con alfa (antes eran negras) y el color lo pone el
+   material → cambiar este tinte afecta a la vez a la del jugador y a las de los props.
+   ►OJO: si algún día se añade otro material con estas texturas, TIENE que llevar color propio; sin
+   él sale blanco (glow) en vez de sombra. */
+const CONTACT_TINT = VISUAL.contact.tint;         // azul-gris oscuro (sombra de exterior), no negro. Editable en vivo en F2 → "tinte"
+/* ►CONTACT: textura de la sombra del JUGADOR. NO reusa _hazeTex a propósito: la bruma tiene una
    caída lineal muy suave y una sombra necesita NÚCLEO (si no, lee como un glow gris, no como
-   contacto). Núcleo casi opaco hasta el 30% del radio y desvanecido cuadrático a partir de ahí. */
+   contacto). Núcleo hasta el 30% del radio y desvanecido cuadrático a partir de ahí. */
 const _contactTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
   const gr=x.createRadialGradient(32,32,0,32,32,32);
-  gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(0.30,'rgba(0,0,0,0.92)');
-  gr.addColorStop(0.62,'rgba(0,0,0,0.42)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  gr.addColorStop(0,'rgba(255,255,255,0.92)'); gr.addColorStop(0.30,'rgba(255,255,255,0.82)');
+  gr.addColorStop(0.62,'rgba(255,255,255,0.36)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
+/* ►CONTACT2: textura de la de los PROPS. Bastante MÁS SUAVE que la del jugador: la del jugador es
+   un blob pequeño en pantalla y necesita núcleo, pero la de un prop cubre metros de suelo y con
+   núcleo opaco se convierte en un charco negro (= la mancha de suciedad que ya nos cargó ►SURFACE).
+   Sin meseta y con máximo 0.62: oscurece el contacto, no abre un agujero. */
+const _gdecTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+  const gr=x.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,'rgba(255,255,255,0.62)'); gr.addColorStop(0.28,'rgba(255,255,255,0.50)');
+  gr.addColorStop(0.60,'rgba(255,255,255,0.22)'); gr.addColorStop(1,'rgba(255,255,255,0)');
   x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
 const _contactGeo = new THREE.PlaneGeometry(1,1);   // compartida por todos (solo el material es por jugador, por la opacidad)
 
@@ -4886,7 +4902,7 @@ const _contactGeo = new THREE.PlaneGeometry(1,1);   // compartida por todos (sol
    por frame — las manchas son hijas del grupo del segmento, así que viajan
    con la cinta, se ocultan con ella y mueren con ella. Nada que actualizar.
    ===================================================================== */
-const _gdecMat = new THREE.MeshBasicMaterial({ map:_contactTex, transparent:true, opacity:VISUAL.contact.propOp,
+const _gdecMat = new THREE.MeshBasicMaterial({ map:_gdecTex, color:CONTACT_TINT, transparent:true, opacity:VISUAL.contact.propOp,
   depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });   // CON niebla (a diferencia de la del jugador): la mancha debe irse al fondo con su prop
 const _gdecGeo = new THREE.PlaneGeometry(1,1); _gdecGeo.rotateX(-Math.PI/2);   // tumbada YA en la geometría → la matriz de instancia es sólo posición+escala
 const _gdecMeshes = [];                          // registro para los knobs en vivo (F2)
@@ -4974,7 +4990,7 @@ for(const _p of allPlayers){
   /* ►CONTACT: va POR DEBAJO del groundRing (renderOrder −1) para que el círculo de color del
      jugador siga leyéndose encima. fog:false → no se aclara con la niebla y deja de anclar. */
   _p.contactShadow = new THREE.Mesh(_contactGeo,
-    new THREE.MeshBasicMaterial({ map:_contactTex, transparent:true, opacity:VISUAL.contact.opacity, depthWrite:false, fog:false }));
+    new THREE.MeshBasicMaterial({ map:_contactTex, color:CONTACT_TINT, transparent:true, opacity:VISUAL.contact.opacity, depthWrite:false, fog:false }));
   _p.contactShadow.rotation.x = -Math.PI/2; _p.contactShadow.renderOrder = -1;
   _p.contactShadow.visible = false; scene.add(_p.contactShadow);
   _p.locator = new THREE.Mesh(new THREE.ConeGeometry(.34,.6,4), new THREE.MeshBasicMaterial({ color:_p.color }));   // flecha locator (solo humanos)
@@ -29857,6 +29873,11 @@ function setupVisualGUI(){
   fC.add(VISUAL.contact, 'props').name('· props del escenario').onChange(v=>{ for(const im of _gdecMeshes) im.visible = !!v; });
   fC.add(VISUAL.contact, 'propOp', 0, 0.7, 0.01).name('· fuerza (props)').onChange(v=>{ _gdecMat.opacity = v; });
   fC.add(VISUAL.contact, 'propSize', 0.6, 2, 0.01).name('· tamaño (props)').onChange(()=>{ for(const im of _gdecMeshes) _gdecApply(im); });
+  /* TINTE compartido (jugador + props): a negro puro lee como agujero. Toca a los dos a la vez. */
+  fC.addColor(VISUAL.contact, 'tint').name('tinte (no usar negro)').onChange(v=>{
+    _gdecMat.color.set(v);
+    for(const p of allPlayers) if(p.contactShadow) p.contactShadow.material.color.set(v);
+  });
   fC.open();
   /* ►DEPTH: profundidad tonal. Los números van horneados en el shader de la niebla → cada cambio
      RECOMPILA los materiales visibles (tirón de ~1s). Por eso van con onFinishChange (al soltar). */
