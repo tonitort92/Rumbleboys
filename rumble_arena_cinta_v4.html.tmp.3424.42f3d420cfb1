@@ -16145,6 +16145,8 @@ function buildRoadmap(elId){
 }
 /* espejo del dispatch de stageAdvance(), solo para el título de la tienda */
 function _nextStage(){
+  if(STAGE===3) return 11;   // ►WEST
+  if(STAGE===11) return 4;   // ►WEST
   if(STAGE===5) return 7;
   if(STAGE===8) return 10;
   return STAGE+1;
