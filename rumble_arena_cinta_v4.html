@@ -5288,16 +5288,29 @@ function updateLawn(dt){
     }
   }
   _lawnU.uFeetN.value = k;
-  /* CHUNKS: solo los cercanos. Con ~200 chunks en el mapa esto es ruido de CPU, y evita mandar a la
-     GPU decenas de miles de briznas que el fundido dejaría en altura cero de todos modos. */
+  /* CHUNKS: solo los cercanos Y los que están DELANTE. Con ~200 chunks en el mapa esto es ruido de
+     CPU, y evita mandar a la GPU decenas de miles de briznas.
+     ►El test de DELANTE/DETRÁS no es un lujo: los chunks llevan frustumCulled=false (obligatorio,
+     porque three calcula el frustum de un InstancedMesh con la esfera de la GEOMETRÍA —una brizna en
+     el origen del segmento— y no con las instancias). Sin este test, el disco de césped alrededor de
+     la acción se dibujaba ENTERO, incluida la mitad que queda a la espalda de la cámara: la mitad del
+     coste, tirada. */
   const lim = _lawnU.uFade.value.y + LAWN_CHUNK, lim2 = lim*lim;
   const cx = eye.x, cz = eye.z;
+  let fwx = 0, fwz = 1;                                    // hacia dónde mira la cámara, en planta
+  { const e = camera.matrixWorld.elements;                 // 3ª columna = -forward
+    const l = Math.hypot(e[8], e[10]) || 1;
+    fwx = -e[8]/l; fwz = -e[10]/l; }
+  const px = camera.position.x, pz = camera.position.z;
+  const ATRAS = -LAWN_CHUNK*1.5;                           // margen: un chunk justo al lado se queda (su otra mitad sí se ve)
   for(const s of BELT.segs){
     const cs = s.lawnChunks; if(!cs) continue;
     if(!on || !s.group.visible){ for(const c of cs) c.visible = false; continue; }
     for(const c of cs){
-      const dx = (s.x + c.position.x) - cx, dz = c.position.z - cz;
-      c.visible = (dx*dx + dz*dz) < lim2;
+      const wx = s.x + c.position.x, wz = c.position.z;
+      const dx = wx - cx, dz = wz - cz;
+      if(dx*dx + dz*dz >= lim2){ c.visible = false; continue; }
+      c.visible = ((wx - px)*fwx + (wz - pz)*fwz) > ATRAS;   // delante de la cámara (o pegado a ella)
     }
   }
 }
@@ -17369,17 +17382,27 @@ function updateFighter(p, dt){
      · SALTO colgado = TREPAS al borde SIEMPRE (no saltas), da igual hacia dónde apuntes el stick
      · colgarse NO recarga saltos ni dash (eso solo lo hace el suelo). */
   if(p.hang){
-    if(BELT.on) p.hang.x += BELT.vel*dt;
+    /* ►WEST: el ancla de un vagón ya se recalcula en ABSOLUTO cada frame desde el marco del tren
+       (_wUpdateTrains) → sumarle además la cinta la haría derivar el doble. */
+    if(BELT.on && !p.hang._train) p.hang.x += BELT.vel*dt;
     p.pos.set(p.hang.x, p.hang.y, p.hang.z);
     p.hangT += dt;
     p.onGround = false;
+    const _enTren = !!p.hang._train;
     if(!p.isAI){
       /* ►CLIMB (Toni): saltar colgado = TREPAR SIEMPRE, apuntes donde apuntes el stick.
          Ya no hay salida voluntaria saltando hacia atrás: para bajarte, sueltas LT y caes. */
-      if(wantJump){ ledgeClimb(p); wantJump = false; }             // salto a secas = TREPAR (sin saltar; consumido → no re-salta al pisar)
-      else if(!grabHeld && p.hangT>.12){ p.hang=null; p.hangCD=.45; p.vel.y=-2; }   // soltar LT = caer
+      if(wantJump){
+        /* ►WEST: colgado BOCA ABAJO del tren, ledgeClimb te subiría a un topY que está por ENCIMA
+           de ti = teletransporte absurdo. Ahí saltar significa SOLTARSE. */
+        if(_enTren && p.hang._inv){ p.hang=null; p.hangCD=.35; p.vel.set(0,-2,0); if(sfx.hangOut) sfx.hangOut(); }
+        else ledgeClimb(p);
+        wantJump = false;                                          // salto a secas = TREPAR (sin saltar; consumido → no re-salta al pisar)
+      }
+      /* ►WEST: el agarre al tren es AUTOMÁTICO — no exige mantener LT como el agarre a un borde */
+      else if(!_enTren && !grabHeld && p.hangT>.12){ p.hang=null; p.hangCD=.45; p.vel.y=-2; }   // soltar LT = caer
     }
-    else if(p.hangT>.4) ledgeClimb(p);                             // la CPU trepa y sigue (no se queda colgada)
+    else if(!_enTren && p.hangT>.4) ledgeClimb(p);                 // la CPU trepa y sigue (no se queda colgada)
   }
 
   /* --- ►CLIMB · TREPAR AL BORDE (anim de ponerse de pie) ---
@@ -21364,7 +21387,7 @@ function rebuildBelt(){
   platforms.length = 0; pads.length = 0; drifters.length = 0; bouncers.length = 0;
   _propSpots.length = 0; _fires.length = 0; _pathSpots.length = 0;
   S2_TOWERS.length = 0; S2_AMBUSHES.length = 0; _s2VineSpots.length = 0;   // ►CAMP: campamentos/emboscadas/hiedras mueren con sus segmentos
-  if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wTowers.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles, torres y props altos viven en los grupos de segmento
+  if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wTowers.length = 0; _wTrains.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles, torres, trenes y props altos viven en los grupos de segmento
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
@@ -24284,6 +24307,127 @@ function _wUpdateTowers(dt){
   }
 }
 
+/* ---- ►WEST · EL TREN ---------------------------------------------------------------------------
+   Un circuito CERRADO por meseta que la circunvala: tramos por arriba, una bajada por el borde, un
+   tramo BOCA ABAJO por debajo de la losa, y la subida que cierra el bucle.
+
+   Por qué una spline propia y no `pl._orbit` (que ya existe para las alfombras): _orbit es un
+   círculo plano a Y constante — no puede bajar bajo la meseta, no puede invertirse y no aporta
+   ORIENTACIÓN. Aquí hace falta un marco (adelante/lado/arriba) por punto.
+
+   Por qué el peralte va AUTORIZADO A MANO y no por Frenet: Frenet se retuerce solo en las rampas y
+   no te deja decidir DÓNDE se pone boca abajo, que es justo la gracia del recorrido.
+
+   El circuito se muestrea UNA vez a 192 puntos; en marcha no se evalúa la curva jamás, solo se
+   interpola entre muestras. */
+const _wTrains = [];
+const WTR_N = 192;                 // muestras precalculadas
+const WTR_GAP = 5.6;               // separación entre vagones a lo largo del raíl
+const _wtP = new THREE.Vector3(), _wtT = new THREE.Vector3(), _wtS = new THREE.Vector3(), _wtU = new THREE.Vector3();
+const _wtM = new THREE.Matrix4(), _wtW = new THREE.Vector3();
+
+function wTrainCircuit(P){
+  const curve = new THREE.CatmullRomCurve3(P.map(p=>new THREE.Vector3(p.x,p.y,p.z)), true, 'catmullrom', 0.5);
+  const N = WTR_N, nP = P.length;
+  const pos = new Float32Array(N*3), tan = new Float32Array(N*3), sd = new Float32Array(N*3), up = new Float32Array(N*3);
+  const _p = new THREE.Vector3(), _t = new THREE.Vector3(), _s = new THREE.Vector3(), _u = new THREE.Vector3();
+  let px=1, py=0, pz=0;
+  for(let i=0;i<N;i++){
+    const u = i/N;
+    curve.getPointAt(u, _p); curve.getTangentAt(u, _t).normalize();
+    /* peralte: interpola el de los puntos de control con smoothstep (transición suave a boca abajo) */
+    const f = u*nP, k0 = Math.floor(f)%nP, k1 = (k0+1)%nP, w = f - Math.floor(f);
+    const ws = w*w*(3-2*w);
+    const bank = P[k0].bank*(1-ws) + P[k1].bank*ws;
+    _s.set(-_t.z, 0, _t.x);                                  // side = T × arriba_mundo
+    if(_s.lengthSq() < 0.02) _s.set(px, py, pz);             // T casi vertical → conserva el lado anterior
+    _s.normalize();
+    _u.crossVectors(_s, _t).normalize();                     // up = side × T
+    const cb = Math.cos(bank), sb = Math.sin(bank);          // gira (side,up) alrededor de T
+    const sx=_s.x*cb + _u.x*sb, sy=_s.y*cb + _u.y*sb, sz=_s.z*cb + _u.z*sb;
+    const ux=_u.x*cb - _s.x*sb, uy=_u.y*cb - _s.y*sb, uz=_u.z*cb - _s.z*sb;
+    pos[i*3]=_p.x; pos[i*3+1]=_p.y; pos[i*3+2]=_p.z;
+    tan[i*3]=_t.x; tan[i*3+1]=_t.y; tan[i*3+2]=_t.z;
+    sd[i*3]=sx;  sd[i*3+1]=sy;  sd[i*3+2]=sz;
+    up[i*3]=ux;  up[i*3+1]=uy;  up[i*3+2]=uz;
+    px=_s.x; py=_s.y; pz=_s.z;
+  }
+  return { pos, tan, side:sd, up, N, len: curve.getLength(), curve };
+}
+/* muestreo por índice con lerp — 0 evaluaciones de curva en marcha */
+function _wtSample(c, u){
+  const f = ((u % 1) + 1) % 1 * c.N;
+  const i0 = Math.floor(f) % c.N, i1 = (i0+1) % c.N, w = f - Math.floor(f);
+  const a = i0*3, b = i1*3;
+  _wtP.set(c.pos[a]+(c.pos[b]-c.pos[a])*w, c.pos[a+1]+(c.pos[b+1]-c.pos[a+1])*w, c.pos[a+2]+(c.pos[b+2]-c.pos[a+2])*w);
+  _wtT.set(c.tan[a]+(c.tan[b]-c.tan[a])*w, c.tan[a+1]+(c.tan[b+1]-c.tan[a+1])*w, c.tan[a+2]+(c.tan[b+2]-c.tan[a+2])*w).normalize();
+  _wtS.set(c.side[a]+(c.side[b]-c.side[a])*w, c.side[a+1]+(c.side[b+1]-c.side[a+1])*w, c.side[a+2]+(c.side[b+2]-c.side[a+2])*w).normalize();
+  _wtU.set(c.up[a]+(c.up[b]-c.up[a])*w, c.up[a+1]+(c.up[b+1]-c.up[a+1])*w, c.up[a+2]+(c.up[b+2]-c.up[a+2])*w).normalize();
+}
+/* circuito estándar alrededor de una meseta rectangular: arriba → baja por el este → BOCA ABAJO
+   por debajo → sube por el oeste → cierra. `topY` es la cara pisable de la meseta. */
+function wTrainLoop(cx, cz, hx, hz, topY, opt){
+  const yT = topY + 0.35, yB = topY - 6.0;
+  const P = [
+    { x:cx-hx, y:yT, z:cz+hz, bank:0 },
+    { x:cx+hx, y:yT, z:cz+hz, bank:0 },
+    { x:cx+hx+1.6, y:yT-2.2, z:cz+hz*0.35, bank:0.55 },     // empieza a caer y a peraltar
+    /* solo el punto CENTRAL va a π: con los tres de abajo invertidos, el 41% del recorrido iba
+       boca abajo y dejaba de ser un tramo para ser medio viaje. Así queda en ~1/5. */
+    { x:cx+hx+1.6, y:yB, z:cz-hz*0.20, bank:2.0 },          // ya volcando
+    { x:cx, y:yB-0.4, z:cz-hz*0.95, bank:Math.PI },         // tramo INVERTIDO bajo la losa
+    { x:cx-hx-1.6, y:yB, z:cz-hz*0.20, bank:2.0 },
+    { x:cx-hx-1.6, y:yT-2.2, z:cz+hz*0.35, bank:0.55 },     // sube y se endereza
+  ];
+  return wTrain(wTrainCircuit(P), opt);
+}
+function wTrain(circuit, opt){
+  opt = opt || {};
+  const g = new THREE.Group(); scene.add(g);        // dentro de buildSegment cae en seg.group → scroll y cull gratis
+  /* RAÍLES: dos tubos desde muestras desplazadas ±side. Dos draw calls por circuito, y con
+     envMetal (nunca metalness a mano: sin IBL el metal sale NEGRO). */
+  const railMat = envMetal(new THREE.MeshStandardMaterial({ color:0x8a5230, roughness:0.55, flatShading:true }), 0.40);
+  for(const off of [-0.62, 0.62]){
+    const pts = [];
+    for(let i=0;i<circuit.N;i+=4){
+      const a=i*3;
+      pts.push(new THREE.Vector3(circuit.pos[a] + circuit.side[a]*off,
+                                 circuit.pos[a+1] + circuit.side[a+1]*off,
+                                 circuit.pos[a+2] + circuit.side[a+2]*off));
+    }
+    const rc = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(rc, 120, 0.11, 4, true), railMat);
+    tube.userData.noOcc = true;                     // un raíl fino no debe fundir nada
+    tube.castShadow = false;
+    g.add(tube);
+  }
+  const s0 = (opt.s0!=null) ? opt.s0 : Math.random()*circuit.len;   // cada meseta arranca en un punto distinto del bucle
+  const tr = { circuit, s:s0, s0, spd:opt.spd||9, g, cars:[], warned:false };
+  const defs = opt.cars || ['w_loco','w_coalcar','w_coalcar'];
+  for(let i=0;i<defs.length;i++){
+    const key = defs[i];
+    const m = getModel(key, DECOR_DEFSW);
+    const cg = new THREE.Group(); g.add(cg);
+    let hw = 2.2, hz = 1.5, top = 1.4;
+    if(m){
+      const def = DECOR_DEFSW[key], sc = (opt.carSize || (key==='w_loco'?6.0:5.0)) / (def.size||1);
+      m.scale.setScalar(sc);
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow = true; if(o.material) o.material.side = THREE.FrontSide; } });
+      cg.add(m);
+      _wBB.setFromObject(m); _wBB.getSize(_wSZ);
+      hw = Math.max(1.2, _wSZ.x*0.42); hz = Math.max(1.0, _wSZ.z*0.42); top = _wSZ.y*0.5;
+    }
+    /* el vagón es una PLATAFORMA: solid:false (float = se atraviesa desde abajo), noGrab (que
+       tryLedgeGrab no se enganche a su canto) y step para que al subir una rampa no te suelte. */
+    const plat = { minX:0, maxX:0, minZ:0, maxZ:0, lminX:0, lmaxX:0, topY:0, baseY:0,
+                   solid:false, float:cg, noGrab:true, step:0.6, _fell:true, _wCar:true };
+    platforms.push(plat);
+    tr.cars.push({ g:cg, plat, hw, hz, top, px:0, pz:0, key });
+  }
+  _wTrains.push(tr);
+  return tr;
+}
+
 /* el barril se detona PEGÁNDOLE (lo llama hitMinions, que es el barrido melee del jugador) */
 function _wHitBarrels(p, tip){
   for(const b of _wBarrels){
@@ -24295,9 +24439,136 @@ function _wHitBarrels(p, tip){
     burst(_fxV.set(_wbV.x, _wbV.y+0.3, _wbV.z), 0xffd05a, 6, 4, 4, .6); sfx.hit(8);
   }
 }
+/* tick del TREN. Corre desde el final de updateBelt: o sea DESPUÉS de _applySegX (que reescribe
+   minX/maxX desde lminX/lmaxX cada frame) y ANTES de la física del jugador — la regla de
+   "dibujo = colisión" que ya siguen las alfombras y los ascensores de la fábrica. */
+function _wUpdateTrains(dt){
+  for(const tr of _wTrains){
+    tr.s = (tr.s + tr.spd*dt) % tr.circuit.len;
+    const segX = (tr.g.parent && tr.g.parent.position) ? tr.g.parent.position.x : 0;
+    const segVis = (!tr.g.parent || tr.g.parent.visible);
+    for(let ci=0; ci<tr.cars.length; ci++){
+      const car = tr.cars[ci];
+      const s = (tr.s - ci*WTR_GAP + tr.circuit.len*4) % tr.circuit.len;
+      _wtSample(tr.circuit, s / tr.circuit.len);
+      const lx=_wtP.x, ly=_wtP.y, lz=_wtP.z;
+      const upY = _wtU.y;
+      /* malla en coords LOCALES del segmento (el grupo del segmento pone el offset de mundo) */
+      car.g.position.set(lx, ly, lz);
+      _wtM.makeBasis(_wtS, _wtU, _wtT);                 // x=lado · y=arriba · z=avance
+      car.g.quaternion.setFromRotationMatrix(_wtM);
+      /* colisión: AABB en MUNDO, y lminX/lmaxX en sync porque _applySegX los recompone cada frame */
+      const wx = segX + lx, pl = car.plat;
+      pl.minX = wx - car.hw; pl.maxX = wx + car.hw;
+      pl.lminX = pl.minX - segX; pl.lmaxX = pl.maxX - segX;
+      pl.minZ = lz - car.hz;  pl.maxZ = lz + car.hz;
+      pl.topY = ly + car.top; pl.baseY = ly - 0.5;
+      /* ►EL TRUCO CENTRAL: el vagón deja de ser suelo en cuanto se ladea o baja. `_fell` ya lo
+         saltan groundAt, collideWalls y platformTopAt → cero código nuevo en los bucles calientes. */
+      pl._fell = !(upY > 0.55);
+      /* ARRASTRE del pasajero con el delta LOCAL, no el de mundo: aquí el mundo se mueve bajo el
+         jugador y el jugador NO va enganchado a la cinta; con el delta de mundo se llevaría un
+         empujón extra de BELT.vel cada frame. */
+      const dlx = lx - car.px, dlz = lz - car.pz;
+      car.px = lx; car.pz = lz;
+      if(!pl._fell && (dlx || dlz)){
+        for(const p of players){
+          if(p.dead || p.out || !p.onGround || p.respDrop || p.hang) continue;
+          if(p.pos.x < pl.minX-0.2 || p.pos.x > pl.maxX+0.2 || p.pos.z < pl.minZ-0.2 || p.pos.z > pl.maxZ+0.2) continue;
+          if(Math.abs(p.pos.y - pl.topY) > 0.7) continue;
+          p.pos.x += dlx; p.pos.z += dlz;
+          p.pos.y = pl.topY;                             // reafirma la Y: el vagón sube y baja (fix de _spin)
+          if(p.vel.y < 0) p.vel.y = 0;
+        }
+        for(const mn of minions){
+          if(mn.dead) continue;
+          if(mn.pos.x < pl.minX-0.2 || mn.pos.x > pl.maxX+0.2 || mn.pos.z < pl.minZ-0.2 || mn.pos.z > pl.maxZ+0.2) continue;
+          if(Math.abs(mn.pos.y - pl.topY) > 0.8) continue;
+          mn.pos.x += dlx; mn.pos.z += dlz;
+        }
+      }
+      /* TRAMO BOCA ABAJO: el que esté justo debajo se AGARRA solo y hace el looping colgando */
+      if(upY < -0.5){
+        for(const p of players){
+          if(p.dead || p.out || p.hang || p.climbT>0 || (p.hangCD||0)>0) continue;
+          if(p.pos.x < pl.minX-0.6 || p.pos.x > pl.maxX+0.6 || p.pos.z < pl.minZ-0.6 || p.pos.z > pl.maxZ+0.6) continue;
+          const dy = p.pos.y - ly;
+          if(dy > -0.2 || dy < -2.6) continue;
+          /* guarda la mano en el MARCO del vagón → sigue pegada al mismo punto del techo durante
+             todo el recorrido invertido */
+          const rx = p.pos.x - wx, ry = p.pos.y - ly, rz = p.pos.z - lz;
+          p.hang = { x:p.pos.x, y:p.pos.y, z:p.pos.z, nx:0, nz:1, topY:ly,
+                     _train:car, _tr:tr,
+                     _oa: rx*_wtS.x + ry*_wtS.y + rz*_wtS.z,
+                     _ob: rx*_wtU.x + ry*_wtU.y + rz*_wtU.z,
+                     _oc: rx*_wtT.x + ry*_wtT.y + rz*_wtT.z };
+          p.hangT = 0; p.vel.set(0,0,0); p.onGround = false;
+          if(sfx.hangIn) sfx.hangIn(); else sfx.jump();
+        }
+      }
+      /* mantiene y suelta a quien va colgado de ESTE vagón */
+      for(const p of players){
+        if(!p.hang || p.hang._train !== car) continue;
+        if(p.dead || p.out){ p.hang = null; continue; }
+        p.hang.x = wx + _wtS.x*p.hang._oa + _wtU.x*p.hang._ob + _wtT.x*p.hang._oc;
+        p.hang.y = ly + _wtS.y*p.hang._oa + _wtU.y*p.hang._ob + _wtT.y*p.hang._oc;
+        p.hang.z = lz + _wtS.z*p.hang._oa + _wtU.z*p.hang._ob + _wtT.z*p.hang._oc;
+        p.hang.topY = ly + car.top;
+        p.hang._inv = (upY < 0.2);
+        if(upY > 0.2){                                   // el vagón se ha enderezado: te planta ENCIMA
+          p.hang = null; p.hangCD = .2;
+          p.pos.set(wx, pl.topY + 0.02, lz);
+          p.onGround = true; p.vel.set(0,0,0); p.jumps = (typeof airJumps==='function' ? airJumps() : 1) + 1;
+        }
+      }
+      /* GOLPE LATERAL: si no vas montado y te pilla de lado, daño fuerte y sales despedido.
+         Los hazards de escenario no usan applyHit: escriben damage/vel/hitstun a mano. */
+      for(const p of players){
+        if(p.dead || p.out || p.invuln>0 || p.hang || (p._trainCD||0)>0) continue;
+        if(p.pos.x < pl.minX-0.5 || p.pos.x > pl.maxX+0.5 || p.pos.z < pl.minZ-0.5 || p.pos.z > pl.maxZ+0.5) continue;
+        if(p.pos.y > pl.topY - 0.4) continue;             // ibas por encima: eso es ir montado, no un atropello
+        if(p.pos.y < ly - 2.2) continue;
+        p.damage += 28*defMul(p); p._trainCD = 1.0; p.hitFlash = .2;
+        p.hitstun = Math.max(p.hitstun, .5); p.onGround = false; p.hang = null;
+        p.vel.set(_wtT.x*16 + _wtS.x*8, 9, _wtT.z*16 + _wtS.z*8);
+        jiggle(p, 14); sfx.hit(30); shake = Math.max(shake, .4);
+        if(typeof camKick==='function') camKick(_wtT.x, _wtT.z, .8);
+        burst(_fxV.set(p.pos.x, p.pos.y+1, p.pos.z), 0xffb03a, 12, 7, 6, 1.0);
+      }
+      let seg = 0;
+      for(const mn of minions){                          // el quitapiedras siega a la horda
+        if(mn.dead || seg>6) continue;
+        if(mn.pos.x < pl.minX-0.5 || mn.pos.x > pl.maxX+0.5 || mn.pos.z < pl.minZ-0.5 || mn.pos.z > pl.maxZ+0.5) continue;
+        if(mn.pos.y > pl.topY - 0.4 || mn.pos.y < ly - 2.2) continue;
+        hurtEnemy(mn, 200, false);
+        mn.vel.set(_wtT.x*18, 8, _wtT.z*18); mn.hitstun = Math.max(mn.hitstun, .3); mn.onGround = false;
+        seg++;
+      }
+      /* HUMO de la chimenea, con el mismo gate que las hogueras: sin él, varios trenes saturan el
+         tope global de partículas y le roban el feedback al combate */
+      if(ci===0 && segVis){
+        const fd = (wx-camera.position.x)*(wx-camera.position.x) + (lz-camera.position.z)*(lz-camera.position.z);
+        if(fd < 3600 && Math.random() < dt*12)
+          burst(_fxV.set(wx + _wtU.x*car.top, ly + _wtU.y*car.top + 0.6, lz + _wtU.z*car.top), 0x9aa0a6, 1, 1.2, 2.4, .55);
+        /* TELEGRAFIADO: silbato cuando la cabeza se acerca a alguien (por oído, no por vista: con
+           la horda encima no ves el tren venir) */
+        let cerca = false;
+        for(const p of players){ if(p.dead||p.out) continue;
+          if(Math.hypot(p.pos.x-wx, p.pos.z-lz) < 15){ cerca = true; break; } }
+        if(cerca && !tr.warned){
+          tr.warned = true;
+          try{ if(typeof tone==='function'){ tone(880, .28, 'square', .12); tone(660, .34, 'square', .10, 60); } }catch(e){}
+        } else if(!cerca) tr.warned = false;
+      }
+    }
+  }
+  for(const p of players) if((p._trainCD||0)>0) p._trainCD = Math.max(0, p._trainCD - dt);
+}
+
 /* tick del stage (lo llama updateBelt al final) */
 function updateStageW(dt){
   _wUpdateTowers(dt);
+  _wUpdateTrains(dt);
   for(const b of _wBarrels){
     if(b.state !== 'fuse') continue;
     b.t -= dt;
@@ -24322,6 +24593,18 @@ function _wResetSeg(seg){
     if(t.state === 0 || t.mesh.parent !== seg.group) continue;
     t.state = 0; t.t = 0;
     t.mesh.rotation.copy(t.rot0); t.mesh.position.copy(t.pos0);
+  }
+  /* ►WEST · EL FALLO NÚMERO UNO DE ESTE SISTEMA: si alguien va colgado de un vagón de ESTA meseta
+     cuando el segmento se teletransporta 402u hacia atrás, se va con él. Soltarlo ANTES. */
+  for(const tr of _wTrains){
+    if(tr.g.parent !== seg.group) continue;
+    for(const p of players){
+      if(p.hang && p.hang._tr === tr){ p.hang = null; p.hangCD = .3; p.vel.set(0,-2,0); }
+      /* y a quien iba montado encima: que no viaje pegado al techo */
+      for(const car of tr.cars) if(!car.plat._fell && p.onGround && Math.abs(p.pos.y - car.plat.topY) < 0.7 &&
+        p.pos.x >= car.plat.minX-0.2 && p.pos.x <= car.plat.maxX+0.2) p.onGround = false;
+    }
+    tr.s = tr.s0; tr.warned = false;
   }
 }
 
@@ -24390,6 +24673,7 @@ function buildWCanyonRim(){
     addPropW('w_haystack', -25, -3, 0, 1.05, 0);
     wBarrel(-20, 9, 0, 1.0); wBarrel(-18.6, 8.2, 0, 0.95);   // alijo en la mesa oeste (la vía va en la este)
     wRailLine(14, 9, 'x', 3, 0, 0);
+    wTrainLoop(-17, 0, 13, 11, 0, { spd:9 });                 // circuito que circunvala la mesa oeste
     addPropW('w_hitch', -20, -2, 0, 0.95, 1.57);
   }
 }
@@ -24469,6 +24753,7 @@ function buildWRancho(){
     addPropW('w_barrow', -2, 0, 0, 1.0, 1.2);
     addPropW('w_hitch', -16, -3, 0, 1.0, 0);
     wBarrel(-18, 6, 0, 1.0); wBarrel(-16.8, 5.2, 0, 1.05); wBarrel(-19.2, 4.8, 0, 0.95);   // alijo junto al granero
+    wTrainLoop(-8, 2, 14, 12, 0, { spd:8.5 });
   }
 }
 
@@ -24509,6 +24794,7 @@ function buildWEstacion(){
     addPropW('w_shed', -24, -4, 0, 1.0, 0.4);
     wBarrel(7, 4, 0, 1.0); wBarrel(8.4, 3.2, 0, 0.95);   // pólvora al norte: la playa de vías queda al sur
     wWaterTower(2, 3, 0, 1.0);                            // aguada de la estación, al alcance de esos barriles
+    wTrainLoop(0, -2, 15, 7, 0, { spd:10.5 });             // la estación: el tren más rápido, aquí es el protagonista
   }
 }
 
@@ -24583,6 +24869,7 @@ function buildWGranMesa(){
     addPropW('w_hitch', -12, -6, 0, 1.0, 0);
     addPropW('w_hat', 6, 6, 0, 1.1, 0.7);
     wBarrel(-18, 12, 0, 1.0); wBarrel(-16.8, 11.2, 0, 1.05); wBarrel(19, -4, 0, 0.95);
+    wTrainLoop(0, 4, 20, 12, 0, { spd:9.5 });              // el circuito más largo, rodeando la gran mesa
   }
 }
 
