@@ -2090,33 +2090,14 @@ function applyTier(){
    personajes hay que compilarlos CON sus mallas presentes; por eso el warmup
    los hace visibles un instante (sin renderizar) y los deja como estaban.
    ===================================================================== */
-let _warmRT = null;                    // destino diminuto para el frame de calentamiento (ver abajo)
+let _warmRT = null;                    // destino diminuto para el frame de calentamiento (lo usa warmupGPU)
+/* Envoltorio: llama al pre-calentado de siempre (warmupGPU, mucho más abajo) y CUENTA cuántos
+   programas se han compilado, que es la métrica que importa. Devuelve ese número para que el bucle
+   de reposo del menú sepa cuándo puede pararse. */
 function warmupShaders(motivo){
-  if(!renderer || !scene || !camera) return 0;
+  if(typeof renderer === 'undefined' || !renderer || typeof warmupGPU !== 'function') return 0;
   const antes = renderer.info.programs ? renderer.info.programs.length : 0;
-  const ocultos = [];
-  try{
-    if(typeof allPlayers !== 'undefined') for(const p of allPlayers){
-      const r = p && p.gfx && p.gfx.root;
-      if(r && !r.visible){ ocultos.push(r); r.visible = true; }
-    }
-    renderer.compile(scene, camera);
-    /* renderer.compile() NO compila los programas del PASE DE SOMBRA (usa materiales de profundidad
-       aparte, y con skinning son variantes distintas). Medido: sin esto seguían compilándose ~47
-       programas justo al montarse el roster. Un frame completo a un destino de 8×8 los deja hechos:
-       la geometría pasa igual (que es lo que dispara la compilación) pero no cuesta relleno. */
-    if(renderer.shadowMap && renderer.shadowMap.enabled){
-      if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
-      const rtPrev = renderer.getRenderTarget();
-      const suPrev = renderer.shadowMap.needsUpdate;
-      renderer.shadowMap.needsUpdate = true;
-      renderer.setRenderTarget(_warmRT);
-      renderer.render(scene, camera);
-      renderer.setRenderTarget(rtPrev);
-      renderer.shadowMap.needsUpdate = suPrev;
-    }
-  } catch(e){ console.warn('►WARMUP:', e); }
-  finally { for(const r of ocultos) r.visible = false; }
+  warmupGPU();
   const n = (renderer.info.programs ? renderer.info.programs.length : 0) - antes;
   if(n > 0) console.log('[warmup] '+motivo+': '+n+' programas compilados por adelantado (total '+(antes+n)+')');
   return n;
@@ -28923,16 +28904,33 @@ function startDemo(){
 }
 /* PRE-CALENTADO de GPU: compila programas y sube buffers ANTES del primer frame jugable.
    Evita el tirón al alejar la cámara (cuando decoración fuera de cuadro entra por primera vez
-   al frustum, Three.js compilaba/subía su geometría en ese mismo frame). */
+   al frustum, Three.js compilaba/subía su geometría en ese mismo frame).
+   ►WARMUP (2026-07-28): esta era la implementación original, que se llamaba SOLO al cargar y en
+   launchMatch. Se le han añadido tres cosas que la medición demostró que faltaban:
+   1) los personajes OCULTOS se hacen visibles un instante — si no, sus materiales (con skinning, que
+      son variantes de programa distintas) no se compilan y el parón cae cuando aparecen luchando;
+   2) el render de calentamiento va a un destino de 8×8 en vez de a la pantalla → ya no hace falta
+      repintar detrás para tapar el flash del encuadre ancho;
+   3) quién la llama y cuándo: ver warmupShaders() y el bucle de reposo del menú. */
 function warmupGPU(){
   try {
     const cam0 = camera.clone();                 // cámara "alejada" para meter TODA la decoración en el frustum
     cam0.position.set(0, 60, 90); cam0.fov = 75; cam0.updateProjectionMatrix(); cam0.lookAt(0,0,0);
+    const ocultos = [];
+    if(typeof allPlayers !== 'undefined') for(const p of allPlayers){
+      const r = p && p.gfx && p.gfx.root;
+      if(r && !r.visible){ ocultos.push(r); r.visible = true; }
+    }
     if(renderer.compile) renderer.compile(scene, cam0);
     const prevAuto = renderer.shadowMap.autoUpdate, prevNeed = renderer.shadowMap.needsUpdate;
-    renderer.shadowMap.needsUpdate = true;       // fuerza generar el shadow map una vez
-    renderer.render(scene, cam0);                // un render real sube los buffers que falten
+    const rtPrev = renderer.getRenderTarget();
+    if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
+    renderer.shadowMap.needsUpdate = true;       // fuerza generar el shadow map una vez (renderer.compile NO compila el pase de sombra)
+    renderer.setRenderTarget(_warmRT);
+    renderer.render(scene, cam0);                // un render real sube los buffers y compila lo que falte
+    renderer.setRenderTarget(rtPrev);
     renderer.shadowMap.autoUpdate = prevAuto; renderer.shadowMap.needsUpdate = prevNeed;
+    for(const r of ocultos) r.visible = false;
   } catch(e){ console.warn('[warmupGPU] omitido', e); }
 }
 warmupGPU();
