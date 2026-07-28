@@ -21362,7 +21362,7 @@ function rebuildBelt(){
   platforms.length = 0; pads.length = 0; drifters.length = 0; bouncers.length = 0;
   _propSpots.length = 0; _fires.length = 0; _pathSpots.length = 0;
   S2_TOWERS.length = 0; S2_AMBUSHES.length = 0; _s2VineSpots.length = 0;   // ►CAMP: campamentos/emboscadas/hiedras mueren con sus segmentos
-  if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles y props altos viven en los grupos de segmento
+  if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wTowers.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles, torres y props altos viven en los grupos de segmento
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
@@ -24190,7 +24190,98 @@ function _wBarrelBlast(b){
     if(Math.hypot(_wbV.x-cx, _wbV.z-cz) > WB_CHAIN) continue;
     _wLightFuse(o, W.chainFuse[0] + Math.random()*(W.chainFuse[1]-W.chainFuse[0]), b.by);
   }
+  if(typeof _wTowerShock==='function') _wTowerShock(cx, cz, WB_R*1.6);   // la onda dobla la torre de agua cercana
 }
+/* ---- ►WEST · TORRE DE AGUA (3 estados) --------------------------------------------------------
+   Entera → doblada con fugas finas → muy doblada y reventada, con chorros que ARRASTRAN a todo el
+   que pillan (jugadores y horda por igual). No se rompe a puñetazos a propósito: es peligro de
+   escenario, no un saco — así no hay que testear golpes contra ella cada frame. La degradan las
+   explosiones de pólvora cercanas y, con el caos alto, un reloj lento.
+   El empuje es el de las RÁFAGAS del desierto (GUST) pero local y direccional: en el suelo va por
+   POSICIÓN (inmune a la fricción, no puedes plantarte) y en el aire por VELOCIDAD. */
+const _wTowers = [];
+const WT_TILT = [0, 0.30, 0.82];         // inclinación por estado
+function wWaterTower(x, z, topY, sc){
+  const m = addPropW('w_silo', x, z, topY, sc||1.0, Math.random()*6.283);
+  if(!m) return null;
+  m.traverse(o=>{ if(o.isMesh && o.material) o.material = Array.isArray(o.material) ? o.material.map(mm=>mm.clone()) : o.material.clone(); });
+  /* los edificios y la torre se colocan A MANO → fuera del barrido de solapes, que si no la
+     borraría en cuanto una plataforma le pase cerca (misma trampa que los edificios) */
+  for(let i=_wSegProps.length-1;i>=0;i--) if(_wSegProps[i].mesh===m){ _wSegProps.splice(i,1); break; }
+  /* baseY = el SUELO donde se apoya. addPropW centra el modelo, así que la posición de la malla
+     está a media altura del silo (~4.5u): usarla como origen del chorro dejaba al jugador que
+     pisa el suelo FUERA de la banda vertical y el empuje no se notaba. El agua sale por abajo. */
+  const t = { mesh:m, state:0, t:0, baseY:topY, rot0:m.rotation.clone(), pos0:m.position.clone(),
+              jets:[ { a:Math.random()*6.283 }, { a:0 } ] };
+  t.jets[1].a = t.jets[0].a + Math.PI * (0.8 + Math.random()*0.4);   // dos chorros casi opuestos
+  _wTowers.push(t);
+  return t;
+}
+function _wTowerSet(t, st){
+  if(st === t.state || st > 2) return;
+  t.state = st; t.t = 0;
+  /* SIEMPRE desde la transformación ORIGINAL + un único offset: si se acumula, al reciclar el
+     segmento la torre no vuelve nunca a su sitio (lección de las losetas-trampa de la pirámide) */
+  t.mesh.rotation.copy(t.rot0); t.mesh.rotation.z = t.rot0.z + WT_TILT[st];
+  t.mesh.position.copy(t.pos0); t.mesh.position.y = t.pos0.y - WT_TILT[st]*0.9;
+  if(st > 0){
+    t.mesh.getWorldPosition(_wbV);
+    const c = _fxV.set(_wbV.x, _wbV.y, _wbV.z);
+    burst(c, 0x9fd8ff, st===2 ? 26 : 12, 7, 6, 1.0);
+    burst(c, 0xd8cfc0, st===2 ? 12 : 6, 5, 4, .8);
+    ring(c, 0x7fc4ff, st===2 ? 22 : 14, .45);
+    shake = Math.max(shake, st===2 ? .38 : .2);
+    sfx.crack();
+  }
+}
+/* la onda de una explosión de pólvora dobla la torre un escalón */
+function _wTowerShock(cx, cz, R){
+  for(const t of _wTowers){
+    if(t.state >= 2) continue;
+    t.mesh.getWorldPosition(_wbV);
+    if(Math.hypot(_wbV.x - cx, _wbV.z - cz) > R) continue;
+    _wTowerSet(t, t.state + 1);
+  }
+}
+function _wUpdateTowers(dt){
+  for(const t of _wTowers){
+    if(t.state === 0) continue;
+    t.mesh.getWorldPosition(_wbV);
+    const cx = _wbV.x, cy = t.baseY + 0.6, cz = _wbV.z;   // el chorro brota a ras de suelo, no del centro del silo
+    const fuerte = (t.state === 2);
+    const gnd = fuerte ? 5.5 : 3.0, air = fuerte ? 18 : 10;
+    const len = fuerte ? 9.5 : 6.0, wid = fuerte ? 3.2 : 2.0;
+    for(const j of t.jets){
+      const dx = Math.cos(j.a), dz = Math.sin(j.a);
+      /* chorro visual, con el mismo gate de distancia+visibilidad que las hogueras: sin él, varias
+         torres a la vez se comen el tope global de partículas y el combate se queda sin feedback */
+      const _fd = (cx-camera.position.x)*(cx-camera.position.x) + (cz-camera.position.z)*(cz-camera.position.z);
+      if(_fd < 3600 && (!t.mesh.parent || t.mesh.parent.visible) && Math.random() < dt*(fuerte ? 30 : 14)){
+        const r = Math.random()*len;
+        burst(_fxV.set(cx + dx*r, cy + Math.random()*0.8, cz + dz*r), 0x9fd8ff, 1, 2, 2, .5);
+      }
+      for(const p of players){
+        if(p.dead || p.out || p.hang || p.invuln>0) continue;      // colgado o recién aparecido: exento (regla de GUST)
+        const rx = p.pos.x - cx, rz = p.pos.z - cz;
+        const along = rx*dx + rz*dz, perp = Math.abs(-rx*dz + rz*dx);
+        if(along < 0 || along > len || perp > wid || Math.abs(p.pos.y - cy) > 3.5) continue;
+        if(p.onGround){ p.pos.x += dx*gnd*dt; p.pos.z += dz*gnd*dt; }
+        else          { p.vel.x += dx*air*dt; p.vel.z += dz*air*dt; }
+      }
+      for(const mn of minions){
+        if(mn.dead) continue;
+        const rx = mn.pos.x - cx, rz = mn.pos.z - cz;
+        const along = rx*dx + rz*dz, perp = Math.abs(-rx*dz + rz*dx);
+        if(along < 0 || along > len || perp > wid) continue;
+        mn.vel.x += dx*8*dt; mn.vel.z += dz*8*dt;                   // la horda también sale arrastrada
+      }
+    }
+    /* reloj lento: cuanto más caos, antes acaba de reventar sola */
+    t.t += dt;
+    if(t.state === 1 && t.t > 26 - chaosLvl*1.6) _wTowerSet(t, 2);
+  }
+}
+
 /* el barril se detona PEGÁNDOLE (lo llama hitMinions, que es el barrido melee del jugador) */
 function _wHitBarrels(p, tip){
   for(const b of _wBarrels){
@@ -24204,6 +24295,7 @@ function _wHitBarrels(p, tip){
 }
 /* tick del stage (lo llama updateBelt al final) */
 function updateStageW(dt){
+  _wUpdateTowers(dt);
   for(const b of _wBarrels){
     if(b.state !== 'fuse') continue;
     b.t -= dt;
@@ -24223,6 +24315,11 @@ function _wResetSeg(seg){
     if(b.mesh.parent !== seg.group) continue;     // solo los de ESTA meseta
     b.state = 'idle'; b.t = 0; b.by = null;
     b.mesh.visible = true; _wFuseGlow(b, 0);
+  }
+  for(const t of _wTowers){                       // y la torre vuelve a estar de una pieza
+    if(t.state === 0 || t.mesh.parent !== seg.group) continue;
+    t.state = 0; t.t = 0;
+    t.mesh.rotation.copy(t.rot0); t.mesh.position.copy(t.pos0);
   }
 }
 
@@ -24325,6 +24422,7 @@ function buildWPuebloSpawn(){
     addPropW('w_cart',   9, 4.2, 0, 1.0, -0.7);
     addPropW('w_hat',    2.5, -1.2, 0, 1.1, 0.4);      // sombrero en mitad de la calle
     addPropW('w_boots', -3.5, 1.4, 0, 1.1, -0.9);
+    wWaterTower(6, 8, 0, 1.0);                          // el depósito del pueblo, al alcance de la pólvora de la calle
     addPropW('w_cow', -24, 8, 0, 1.0, 1.2); addPropW('w_cow', -27, 3.5, 0, 0.95, -0.4);
     addPropW('w_haystack', -22, 2, 0, 1.0, 0);
     addPropW('w_shed', 26, -6, 0, 1.0, -0.5);
@@ -24359,6 +24457,7 @@ function buildWRancho(){
   if(W_DECOR_ON){
     wBuilding('w_barn', -13, 8, 0, 12, 0, { roofFrac:0.55 });          // el granero, pisable
     addPropW('w_silo', -3, 12, 0, 1.0, 0);
+    wWaterTower(-19, 10, 0, 1.05);                       // el depósito del rancho, junto al alijo del granero
     wField(20, -6, 0, 12, 9, 'w_wheat');                               // la era: trigo en filas
     wField(-6, -4, 0, 9, 7, 'w_corn');                                 // maizal junto al corral
     addPropW('w_cow', -6, -8, 0, 1.05, 0.6); addPropW('w_cow', -10, -6.5, 0, 1.0, -1.1);
@@ -24407,6 +24506,7 @@ function buildWEstacion(){
     addPropW('w_hitch', 10, 2, 0, 1.0, 0);
     addPropW('w_shed', -24, -4, 0, 1.0, 0.4);
     wBarrel(7, 4, 0, 1.0); wBarrel(8.4, 3.2, 0, 0.95);   // pólvora al norte: la playa de vías queda al sur
+    wWaterTower(2, 3, 0, 1.0);                            // aguada de la estación, al alcance de esos barriles
   }
 }
 
