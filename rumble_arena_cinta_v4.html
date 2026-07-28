@@ -23859,6 +23859,15 @@ function wField(cx, cz, topY, sx, sz, key){
     if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:1.2 });
   }
 }
+/* VALLA de verdad (el asset `w_fence` que mandó Toni), repetida sobre un eje. Antes solo se usaba
+   la valla PROCEDURAL del desierto (s3Fence) y este modelo se quedaba sin colocar en ningún sitio. */
+function wFenceLine(cx, cz, along, n, topY, yaw){
+  const paso = 2.3;
+  const dx = (along==='x') ? paso : 0, dz = (along==='x') ? 0 : paso;
+  const ry = (yaw!=null) ? yaw : (along==='x' ? 0 : Math.PI/2);
+  for(let i=0;i<n;i++)
+    addPropW('w_fence', cx + (i-(n-1)/2)*dx, cz + (i-(n-1)/2)*dz, topY, 1.0, ry);
+}
 /* tramo de VÍA suelta (decorativa): repetición sobre un eje, patrón sjPath */
 function wRailLine(cx, cz, along, n, topY, yaw){
   const dx = (along==='x') ? 3.6 : 0, dz = (along==='x') ? 0 : 3.6;
@@ -24481,34 +24490,78 @@ function _wResetSeg(seg){
 /* siembra dispersa del stage (equivalente a scatterModelDecorSJ): cachivaches del oeste sobre las
    tapas grandes, respetando huellas de props y caminos. */
 function scatterModelDecorW(startIdx){
-  if(!W_DECOR_ON) return;
+  if(!W_DECOR_ON || !_modelAvailable()) return;
   const plats = platforms.slice(startIdx).filter(pl =>
-    pl.solid && (pl.maxX-pl.minX) >= 5 && (pl.maxZ-pl.minZ) >= 5);
+    pl.solid && !pl.float && (pl.maxX-pl.minX) >= 3 && (pl.maxZ-pl.minZ) >= 3);
   if(!plats.length) return;
-  const drop = (key, count, scMin, scMax)=>{
+  /* punto INTERIOR: elipse en los blobs (un lerp del AABB los sacaría por el borde redondeado),
+     rectángulo en las losas — mismo criterio que el scatter del desierto */
+  const spot = (pl)=>{
+    if(pl.blob){ const a = Math.random()*Math.PI*2, r = Math.sqrt(Math.random())*0.82;
+      return { x:(pl.minX+pl.maxX)/2 + Math.cos(a)*(pl.maxX-pl.minX)/2*r,
+               z:(pl.minZ+pl.maxZ)/2 + Math.sin(a)*(pl.maxZ-pl.minZ)/2*r }; }
+    return { x:THREE.MathUtils.lerp(pl.minX+0.8, pl.maxX-0.8, Math.random()),
+             z:THREE.MathUtils.lerp(pl.minZ+0.8, pl.maxZ-0.8, Math.random()) };
+  };
+  /* tabla = DECOR_DEFSW (props del western) o DECOR_DEFS3 (flora del desierto, reutilizada a
+     propósito: es el mismo bioma seco y Toni la autorizó explícitamente) */
+  const drop = (key, table, count, scMin, scMax)=>{
     for(let i=0;i<count;i++){
       const pl = plats[(Math.random()*plats.length)|0];
-      const x = pl.minX + 1.6 + Math.random()*Math.max(0.1, (pl.maxX-pl.minX-3.2));
-      const z = pl.minZ + 1.6 + Math.random()*Math.max(0.1, (pl.maxZ-pl.minZ-3.2));
-      if(typeof _nearProp==='function' && _nearProp(x, z, 1.4)) continue;
-      if(typeof _nearPath==='function' && _nearPath(x, z)) continue;
-      addPropW(key, x, z, pl.topY, (scMin + Math.random()*(scMax-scMin)), Math.random()*6.283);
+      const s = spot(pl);
+      if(_inWall(s.x, s.z, pl.topY, 0.5)) continue;
+      if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 0.8)) continue;
+      if(typeof _nearPath==='function' && _nearPath(s.x, s.z)) continue;
+      if(table === DECOR_DEFSW){ addPropW(key, s.x, s.z, pl.topY, scMin + Math.random()*(scMax-scMin), Math.random()*6.283); continue; }
+      const m = getModel(key, table); if(!m) return;
+      const f = scMin + Math.random()*(scMax-scMin);
+      m.scale.setScalar(f);
+      m.position.set(s.x, pl.topY + (m.userData.halfH||0)*f - 0.04, s.z);
+      m.rotation.y = Math.random()*Math.PI*2;
+      m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+      scene.add(m);
+      if(typeof _propSpots!=='undefined') _propSpots.push({ x:s.x, z:s.z, r:Math.max(0.9, (table[key]&&table[key].size ? table[key].size*0.4 : 1))*f });
     }
   };
-  drop('w_haystack', 3, 0.85, 1.15);
-  drop('w_barrel',   3, 0.9,  1.1);
-  drop('w_cart',     1, 0.9,  1.1);
-  drop('w_barrow',   1, 0.9,  1.1);
-  drop('w_hat',      1, 0.9,  1.2);      // sombrero tirado en el suelo
-  drop('w_boots',    1, 0.9,  1.2);      // botas tiradas
-  if(typeof addCactus==='function'){      // los cactus SÍ son del desierto: reutilizados a propósito
-    for(let i=0;i<3;i++){
-      const pl = plats[(Math.random()*plats.length)|0];
-      const x = pl.minX + 1.8 + Math.random()*Math.max(0.1, (pl.maxX-pl.minX-3.6));
-      const z = pl.minZ + 1.8 + Math.random()*Math.max(0.1, (pl.maxZ-pl.minZ-3.6));
-      if(typeof _nearProp==='function' && _nearProp(x, z, 1.4)) continue;
-      addCactus(Math.random()<0.5 ? 's3_cactus' : 's3_cactus3', x, z, pl.topY, 0.9 + Math.random()*0.3);
-    }
+  /* --- FLORA del bioma seco (densidad a la altura del desierto: antes iban 13 props por sala y
+         la meseta se veía PELADA) --- */
+  drop('s3_agave', DECOR_DEFS3, 12, 0.8, 1.3);
+  drop('s3_aloe',  DECOR_DEFS3, 12, 0.8, 1.3);
+  drop('s3_bloom', DECOR_DEFS3, 11, 0.8, 1.3);            // flores del desierto
+  drop('s3_cactusbarrel', DECOR_DEFS3, 7, 0.45, 0.8);
+  drop('s3_cactus3', DECOR_DEFS3, 5, 0.5, 0.8);
+  drop('s3_rock',  DECOR_DEFS3, 6, 0.8, 1.4);
+  drop('s3_rock2', DECOR_DEFS3, 5, 0.8, 1.4);
+  drop('s3_rock3', DECOR_DEFS3, 4, 0.9, 1.5);
+  drop('s3_boulder', DECOR_DEFS3, 4, 0.9, 1.6);
+  /* CACTUS grandes: van por addCactus, que además los registra como bouncers (pinchan de verdad) */
+  if(typeof addCactus==='function') for(let i=0;i<4;i++){
+    const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
+    if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 1.6)) continue;
+    addCactus(Math.random()<0.5 ? 's3_cactus' : 's3_cactus3', s.x, s.z, pl.topY, 0.9 + Math.random()*0.35);
+  }
+  /* --- CACHIVACHES del oeste (los assets que mandó Toni) --- */
+  drop('w_haystack', DECOR_DEFSW, 4, 0.85, 1.15);
+  drop('w_wheat',    DECOR_DEFSW, 5, 0.8,  1.1);          // matas sueltas fuera de los campos
+  drop('w_corn',     DECOR_DEFSW, 3, 0.8,  1.05);
+  drop('w_cart',     DECOR_DEFSW, 1, 0.9,  1.1);
+  drop('w_cart2',    DECOR_DEFSW, 1, 0.9,  1.1);
+  drop('w_barrow',   DECOR_DEFSW, 2, 0.9,  1.1);
+  drop('w_hitch',    DECOR_DEFSW, 2, 0.9,  1.05);
+  drop('w_hat',      DECOR_DEFSW, 2, 0.9,  1.2);          // sombrero tirado en el suelo
+  drop('w_boots',    DECOR_DEFSW, 2, 0.9,  1.2);          // botas tiradas
+  /* vallas sueltas de la valla REAL de Toni (antes solo se usaba la procedural del desierto) */
+  for(let i=0;i<3;i++){
+    const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
+    if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 2.2)) continue;
+    wFenceLine(s.x, s.z, Math.random()<0.5 ? 'x' : 'z', 2 + (Math.random()*3|0), pl.topY);
+  }
+  /* BARRILES: cada barril que se ve es de PÓLVORA de verdad. Nada de barriles decorativos
+     idénticos a los explosivos — el jugador tiene que poder fiarse de lo que ve. */
+  for(let i=0;i<2;i++){
+    const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
+    if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 1.6)) continue;
+    wBarrel(s.x, s.z, pl.topY, 0.9 + Math.random()*0.2);
   }
 }
 
@@ -24605,8 +24658,9 @@ function buildWRancho(){
   s3DuneHill(-30, -12, 4.0, 3.0, 2.4, 'rose');
   s3Blob(12, -16, 3.0, 2.4, 1.6, 'rose'); s3Blob(-2, -18, 2.8, 2.2, 2.2, 'rose');
   /* el corral: vallas de verdad (aquí irán los caballos en la Fase 5) */
-  s3Fence(-8, -10.5, 'x', 16, 0, 1.15); s3Fence(-16.5, -4, 'z', 13, 0, 1.15);
-  s3Fence(0.5, -4, 'z', 13, 0, 1.15);
+  /* EL CORRAL con la valla REAL del lote (w_fence) en vez de la procedural del desierto: ese
+     modelo estaba convertido pero no se colocaba en ningún sitio. */
+  if(W_DECOR_ON){ wFenceLine(-8, -10.5, 'x', 7, 0); wFenceLine(-16.5, -4, 'z', 6, 0); wFenceLine(0.5, -4, 'z', 6, 0); }
   s3Watchtower(-20, 14, 6.5);                                         // emboscada desde el pajar
   addPad(-8, 2); addPad(23, -8);
   s2JumpWalls(2);
