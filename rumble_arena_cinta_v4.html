@@ -6114,7 +6114,7 @@ let stageIntroT = 0, _stageIntroDur = STAGE_INTRO_T, _siLastCount = -1, _siCamA0
 const STAGE_CAUTION = {
   2:'¡CUIDADO: RAYOS!',
   3:'¡CUIDADO: NUEVOS MINIONS!',
-  11:'¡CUIDADO: MESETAS PARTIDAS SOBRE EL VACÍO!',   // ►WEST (cambiar a los trenes cuando entren en la Fase 2)
+  11:'¡CUIDADO: BARRILES DE PÓLVORA Y MUCHO VACÍO!',   // ►WEST (añadir los trenes cuando entren)
   4:'¡CUIDADO: RÁFAGAS DE VIENTO Y ARENA QUE TE FRENA!',
   5:'¡CUIDADO: MUCHAS TRAMPAS!',
   7:'¡CUIDADO: SUELO RESBALADIZO!',
@@ -13608,6 +13608,7 @@ addEventListener('keydown', e=>{ if(e.code==='Backquote' && running && !gameOver
 /* golpe del jugador a los minions (melee de martillo/carga/espada/bate/break) */
 function hitMinions(p){
   const tip = hammerTip(p), kind = p.atk.kind;
+  if(STAGE===11 && typeof _wHitBarrels==='function') _wHitBarrels(p, tip);   // ►WEST: el mismo barrido melee prende los barriles de pólvora
   for(const mn of minions){
     if(mn.dead || mn.invuln>0 || mn.hitCD>0) continue;
     const mc = mn.pos.clone().add(new THREE.Vector3(0, 1*mn.scale, 0));
@@ -19159,7 +19160,10 @@ function updateBelt(dt){
   const cx = camera.position.x, cz = camera.position.z;
   for(const s of BELT.segs){
     s.x += adv;
-    if(s.x > BELT.exitX){ s.x -= BELT._span; if((STAGE===5 || STAGE===3) && typeof _s4ResetSegPads==='function') _s4ResetSegPads(s); }   // ►S5/►JAPAN: al reciclar el segmento, resetea sus losas-trampa/tatamis (que no reaparezcan cayendo en la niebla)
+    if(s.x > BELT.exitX){ s.x -= BELT._span;
+      if((STAGE===5 || STAGE===3) && typeof _s4ResetSegPads==='function') _s4ResetSegPads(s);   // ►S5/►JAPAN: al reciclar el segmento, resetea sus losas-trampa/tatamis (que no reaparezcan cayendo en la niebla)
+      if(STAGE===11 && typeof _wResetSeg==='function') _wResetSeg(s);                           // ►WEST: la meseta que vuelve a entrar trae barriles nuevos
+    }
     _applySegX(s);
     const dx = Math.max(0, Math.abs(cx - s.x) - HALF);
     let vis = Math.hypot(dx, cz) <= fogFar;
@@ -21358,6 +21362,7 @@ function rebuildBelt(){
   platforms.length = 0; pads.length = 0; drifters.length = 0; bouncers.length = 0;
   _propSpots.length = 0; _fires.length = 0; _pathSpots.length = 0;
   S2_TOWERS.length = 0; S2_AMBUSHES.length = 0; _s2VineSpots.length = 0;   // ►CAMP: campamentos/emboscadas/hiedras mueren con sus segmentos
+  if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles y props altos viven en los grupos de segmento
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
@@ -24089,8 +24094,8 @@ function wStreet(cx, cz, opt){
     const a = casas[(i*2) % casas.length], b = casas[(i*2+1) % casas.length];
     wBuilding(a, x, cz - sep, topY, 6.2, 0,         { roofFrac:0.62 });   // acera sur, mirando al norte
     wBuilding(b, x, cz + sep, topY, 6.0, Math.PI,   { roofFrac:0.62 });   // acera norte, mirando al sur
-    addPropW('w_hitch',  x + paso*0.42, cz - sep + 2.8, topY, 0.9, 0);
-    addPropW('w_barrel', x - paso*0.42, cz + sep - 2.6, topY, 1.0, Math.random()*6.283);
+    addPropW('w_hitch', x + paso*0.42, cz - sep + 2.8, topY, 0.9, 0);
+    wBarrel(x - paso*0.42, cz + sep - 2.6, topY, 1.0);   // pólvora arrimada a las fachadas, fuera del paso
   }
 }
 /* campo en FILAS ordenadas (copia literal de sjWheatField): trigo o maíz según la clave */
@@ -24118,6 +24123,109 @@ function wRailLine(cx, cz, along, n, topY, yaw){
     addPropW('w_rail', cx + (i-(n-1)/2)*dx, cz + (i-(n-1)/2)*dz, topY, 1.0, (yaw!=null?yaw:(along==='x'?0:Math.PI/2)));
   }
 }
+/* ---- ►WEST · BARRILES DE PÓLVORA -------------------------------------------------------------
+   Recurso que se GASTA, no una trampa que reaparece: una vez volados, esa meseta se queda sin
+   pólvora hasta que vuelve a entrar por la cinta. Encadenan con las mechas ESCALONADAS, que es lo
+   que hace que una cascada se lea como cascada y no como un único fogonazo (patrón updateMines).
+   El TREN no los detonará (Fase 4): por eso se siembran lejos de los pasillos de raíl. */
+const W = { barrelRespawn:true, fuse:0.5, chainFuse:[0.12, 0.26] };   // knobs del stage
+const _wBarrels = [];
+const WB_R = 5.6, WB_DMG = 34, WB_CHAIN = 7.0;
+const _wbV = new THREE.Vector3();
+function wBarrel(x, z, topY, sc){
+  const m = addPropW('w_barrel', x, z, topY, sc||1.0, Math.random()*6.283);
+  if(!m) return null;
+  /* material CLONADO por barril: la mecha parpadea en emisivo y no puede encender a los demás
+     (misma razón que las losetas-trampa de la pirámide clonan el suyo) */
+  m.traverse(o=>{ if(o.isMesh && o.material) o.material = Array.isArray(o.material) ? o.material.map(mm=>mm.clone()) : o.material.clone(); });
+  const b = { mesh:m, state:'idle', t:0, by:null };
+  _wBarrels.push(b);
+  return b;
+}
+function _wFuseGlow(b, k){          // k=0 apagado · k>0 brasa
+  b.mesh.traverse(o=>{ if(o.isMesh && o.material && o.material.emissive){
+    o.material.emissive.setHex(k>0 ? 0xff4400 : 0x000000); o.material.emissiveIntensity = k; } });
+}
+function _wLightFuse(b, delay, by){
+  if(!b || b.state!=='idle') return;
+  b.state = 'fuse'; b.t = (delay!=null) ? delay : W.fuse; b.by = by||null;
+  try{ if(typeof tone==='function') tone(1500, .06, 'sawtooth', .09); }catch(e){}
+}
+function _wBarrelBlast(b){
+  if(b.state === 'dead') return;
+  b.state = 'dead'; b.mesh.visible = false; _wFuseGlow(b, 0);
+  b.mesh.getWorldPosition(_wbV);
+  const cx = _wbV.x, cy = _wbV.y + 0.6, cz = _wbV.z;
+  const c = _fxV.set(cx, cy, cz);
+  burst(c, 0xffb03a, 22, 9, 7, 1.2); burst(c, 0x6b6560, 10, 5, 5, .9); ring(c, 0xff7a2a, 24, .5);
+  shake = Math.max(shake, .45); fovKick = Math.max(fovKick, .45); sfx.crack();
+  for(const o of players){
+    if(o.dead || o.out || o.invuln>0) continue;
+    const dx=o.pos.x-cx, dz=o.pos.z-cz, dy=(o.pos.y+1)-cy, d=Math.hypot(dx,dz,dy);
+    if(d > WB_R) continue;
+    const k = 1 - d/WB_R;
+    let ux=dx, uz=dz; const h=Math.hypot(ux,uz)||1; ux/=h; uz/=h;
+    if(o.block){ o.damage += WB_DMG*.3*k*defMul(o); o.shieldFlash=.18; o.vel.x+=ux*4*k; o.vel.z+=uz*4*k; continue; }
+    const dmg = WB_DMG*k*defMul(o);
+    o.damage += dmg; o.hitFlash = .2;
+    if(b.by && b.by!==o){ credit(b.by, dmg); o.lastHitBy = b.by; }   // si lo detonaste tú, los puntos son tuyos
+    const kb = (10 + o.damage*.12)*k;
+    o.vel.set(ux*kb, 5.5*k + 2.5, uz*kb);
+    o.hitstun = Math.max(o.hitstun, .36); o.onGround = false; o.hang = null;
+    jiggle(o, 12); sfx.hit(o.damage);
+  }
+  for(const mn of minions){
+    if(mn.dead) continue;
+    const dx=mn.pos.x-cx, dz=mn.pos.z-cz, d=Math.hypot(dx,dz);
+    if(d > WB_R) continue;
+    const k = 1 - d/WB_R;
+    hurtEnemy(mn, 95*k, false); if(b.by) mn.lastHitBy = b.by;
+    let ux=dx, uz=dz; const h=Math.hypot(ux,uz)||1; ux/=h; uz/=h;
+    mn.vel.set(ux*11*k, 5*k, uz*11*k); mn.hitstun = Math.max(mn.hitstun, .3); mn.onGround = false;
+  }
+  /* CADENA: al vecino se le prende una mecha CORTA y con jitter → la cascada se oye y se ve */
+  for(const o of _wBarrels){
+    if(o===b || o.state!=='idle') continue;
+    o.mesh.getWorldPosition(_wbV);
+    if(Math.hypot(_wbV.x-cx, _wbV.z-cz) > WB_CHAIN) continue;
+    _wLightFuse(o, W.chainFuse[0] + Math.random()*(W.chainFuse[1]-W.chainFuse[0]), b.by);
+  }
+}
+/* el barril se detona PEGÁNDOLE (lo llama hitMinions, que es el barrido melee del jugador) */
+function _wHitBarrels(p, tip){
+  for(const b of _wBarrels){
+    if(b.state !== 'idle') continue;
+    b.mesh.getWorldPosition(_wbV); _wbV.y += 0.6;
+    if(Math.abs(p.pos.y - _wbV.y) > 2.4) continue;
+    if(tip.distanceTo(_wbV) > 2.4) continue;
+    _wLightFuse(b, W.fuse, p);
+    burst(_fxV.set(_wbV.x, _wbV.y+0.3, _wbV.z), 0xffd05a, 6, 4, 4, .6); sfx.hit(8);
+  }
+}
+/* tick del stage (lo llama updateBelt al final) */
+function updateStageW(dt){
+  for(const b of _wBarrels){
+    if(b.state !== 'fuse') continue;
+    b.t -= dt;
+    _wFuseGlow(b, 0.2 + (Math.sin((W.fuse - b.t)*30)*0.5 + 0.5)*1.6);   // parpadeo acelerando
+    if(Math.random() < dt*14){ b.mesh.getWorldPosition(_wbV);
+      burst(_fxV.set(_wbV.x, _wbV.y+0.9, _wbV.z), 0xffd05a, 1, 2, 3, .5); }
+    if(b.t <= 0) _wBarrelBlast(b);
+  }
+}
+/* ►WEST · reciclado: la cinta recicla los segmentos por TELETRANSPORTE (updateBelt), no los
+   reconstruye — así que el estado mutable de una sala hay que devolverlo a mano, igual que hace
+   _s4ResetSegPads. Aquí es donde "la meseta que entra trae barriles nuevos". */
+function _wResetSeg(seg){
+  if(!W.barrelRespawn) return;
+  for(const b of _wBarrels){
+    if(b.state === 'idle') continue;
+    if(b.mesh.parent !== seg.group) continue;     // solo los de ESTA meseta
+    b.state = 'idle'; b.t = 0; b.by = null;
+    b.mesh.visible = true; _wFuseGlow(b, 0);
+  }
+}
+
 /* siembra dispersa del stage (equivalente a scatterModelDecorSJ): cachivaches del oeste sobre las
    tapas grandes, respetando huellas de props y caminos. */
 function scatterModelDecorW(startIdx){
@@ -24181,6 +24289,7 @@ function buildWCanyonRim(){
     addPropW('w_cart2', -13, -7, 0, 1.0, 0.9);
     addPropW('w_barrow', 11, 8, 0, 1.0, 0.3);
     addPropW('w_haystack', -25, -3, 0, 1.05, 0);
+    wBarrel(-20, 9, 0, 1.0); wBarrel(-18.6, 8.2, 0, 0.95);   // alijo en la mesa oeste (la vía va en la este)
     wRailLine(14, 9, 'x', 3, 0, 0);
     addPropW('w_hitch', -20, -2, 0, 0.95, 1.57);
   }
@@ -24258,6 +24367,7 @@ function buildWRancho(){
     addPropW('w_wagon', 6, 10, 0, 1.0, -0.4);
     addPropW('w_barrow', -2, 0, 0, 1.0, 1.2);
     addPropW('w_hitch', -16, -3, 0, 1.0, 0);
+    wBarrel(-18, 6, 0, 1.0); wBarrel(-16.8, 5.2, 0, 1.05); wBarrel(-19.2, 4.8, 0, 0.95);   // alijo junto al granero
   }
 }
 
@@ -24296,6 +24406,7 @@ function buildWEstacion(){
     addPropW('w_barrow', -2, 1.5, 0, 0.95, -0.5);
     addPropW('w_hitch', 10, 2, 0, 1.0, 0);
     addPropW('w_shed', -24, -4, 0, 1.0, 0.4);
+    wBarrel(7, 4, 0, 1.0); wBarrel(8.4, 3.2, 0, 0.95);   // pólvora al norte: la playa de vías queda al sur
   }
 }
 
@@ -24328,8 +24439,10 @@ function buildWMinas(){
     addPropW('w_railslope', -4, 2, 0, 1.0, 0);
     addPropW('w_coalcar', -14, 2, 0, 1.0, 0.04);
     addPropW('w_cart2', 16, 0, 0, 1.0, 1.1);
-    addPropW('w_barrel', -8, -5, 0, 1.0, 0.5); addPropW('w_barrel', -6.6, -5.8, 0, 1.05, -0.9);
-    addPropW('w_barrel', 20, 6, 0, 1.0, 1.7);   // ►Fase 2: estos barriles pasarán a ser pólvora activa
+    /* pólvora de la mina: un alijo de tres (cadena) y uno suelto, ambos LEJOS de la vía — el tren
+       de la Fase 4 no debe poder gastártelos por su cuenta */
+    wBarrel(-8, -5, 0, 1.0); wBarrel(-6.6, -5.8, 0, 1.05); wBarrel(-9.2, -6.4, 0, 0.95);
+    wBarrel(20, 6, 0, 1.0);
     addPropW('w_barrow', -17, 0, 0, 0.95, 0.2);
     addPropW('w_haystack', 24, 2, 0, 1.0, 0);
   }
@@ -24367,6 +24480,7 @@ function buildWGranMesa(){
     addPropW('w_cart', -22, 10, 0, 1.0, -0.3);
     addPropW('w_hitch', -12, -6, 0, 1.0, 0);
     addPropW('w_hat', 6, 6, 0, 1.1, 0.7);
+    wBarrel(-18, 12, 0, 1.0); wBarrel(-16.8, 11.2, 0, 1.05); wBarrel(19, -4, 0, 0.95);
   }
 }
 
