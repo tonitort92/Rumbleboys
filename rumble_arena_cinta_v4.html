@@ -1398,8 +1398,9 @@ const VISUAL = {
   env:  { on:true, intensity:0.55, sun:0.85 },   // [intensity 0–1] cuánto entorno entra · [sun 0–2] fuerza del reflejo del sol
   // ►CONTACT: sombra de contacto bajo los pies (ancla al personaje al suelo; el shadow map solo
   // no da resolución para el contacto). Se suma a la sombra real, no la sustituye.
-  contact: { on:true, opacity:0.34, size:1.25, fade:7,     // [opacity 0–0.7] · [size 0.6–2] · [fade 3–14] altura a la que ya no se ve
-             props:true, propOp:0.45, propSize:1.15, tint:0x2a3542 },   // tint: NEGRO PURO NO — una sombra negra lee como agujero (ver CONTACT_TINT)     // ►CONTACT2: la MISMA junta bajo los props del escenario (muros/rocas/árboles/cajas), ver buildGroundDecals
+  // ►CONTACT / ►CONTACT2 RETIRADOS (2026-07-28, decisión de Toni: "se ve muy gris y difusa"). Eran
+  // manchas pintadas bajo jugadores y props. El anclaje al suelo se queda en manos de las SOMBRAS
+  // REALES de las luces. Si alguna vez se recupera la idea, que NO sea un blob gris.
   // ►IMPACT: refuerzo DIRECCIONAL del golpe (lo ya existente es omnidireccional). Se suma a bigHitFX.
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
   // ►WATER: espuma en crestas + valles hundidos + rugosidad por ola (lo que hace visible el reflejo).
@@ -4952,139 +4953,11 @@ function scoreTotal(p){ const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.item
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.rainT>0 || p._rainbowT>0); }
 function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; } }   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
-/* ►CONTACT · TINTE. Una sombra NEGRA PURA lee como AGUJERO, no como sombra: en el mundo real la
-   zona en sombra sigue recibiendo la luz del cielo, así que va hacia un azul oscuro, nunca a negro.
-   Por eso las texturas de abajo son BLANCAS con alfa (antes eran negras) y el color lo pone el
-   material → cambiar este tinte afecta a la vez a la del jugador y a las de los props.
-   ►OJO: si algún día se añade otro material con estas texturas, TIENE que llevar color propio; sin
-   él sale blanco (glow) en vez de sombra. */
-const CONTACT_TINT = VISUAL.contact.tint;         // azul-gris oscuro (sombra de exterior), no negro. Editable en vivo en F2 → "tinte"
-/* ►CONTACT: textura de la sombra del JUGADOR. NO reusa _hazeTex a propósito: la bruma tiene una
-   caída lineal muy suave y una sombra necesita NÚCLEO (si no, lee como un glow gris, no como
-   contacto). Núcleo hasta el 30% del radio y desvanecido cuadrático a partir de ahí. */
-const _contactTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
-  const gr=x.createRadialGradient(32,32,0,32,32,32);
-  gr.addColorStop(0,'rgba(255,255,255,0.92)'); gr.addColorStop(0.30,'rgba(255,255,255,0.82)');
-  gr.addColorStop(0.62,'rgba(255,255,255,0.36)'); gr.addColorStop(1,'rgba(255,255,255,0)');
-  x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
-/* ►CONTACT2: textura de la de los PROPS. Bastante MÁS SUAVE que la del jugador: la del jugador es
-   un blob pequeño en pantalla y necesita núcleo, pero la de un prop cubre metros de suelo y con
-   núcleo opaco se convierte en un charco negro (= la mancha de suciedad que ya nos cargó ►SURFACE).
-   Sin meseta y con máximo 0.62: oscurece el contacto, no abre un agujero. */
-const _gdecTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
-  const gr=x.createRadialGradient(32,32,0,32,32,32);
-  gr.addColorStop(0,'rgba(255,255,255,0.62)'); gr.addColorStop(0.28,'rgba(255,255,255,0.50)');
-  gr.addColorStop(0.60,'rgba(255,255,255,0.22)'); gr.addColorStop(1,'rgba(255,255,255,0)');
-  x.fillStyle=gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
-const _contactGeo = new THREE.PlaneGeometry(1,1);   // compartida por todos (solo el material es por jugador, por la opacidad)
-
-/* =====================================================================
-   ►CONTACT2 — JUNTA DE CONTACTO DE LOS PROPS DEL ESCENARIO.
-
-   Diagnóstico (sobre captura real): los muros de piedra, las rocas y los
-   árboles se APOYAN en el césped sin junta ninguna, como calcomanías. No es
-   un fallo de iluminación: el AO está horneado POR VÉRTICE y DENTRO de cada
-   objeto, así que entre objetos distintos no hace nada; y el shadow map
-   cubre ±42u a 2048 → no tiene densidad para resolver un contacto.
-
-   Esto pone bajo cada prop apoyado en el suelo la MISMA mancha que ya
-   llevan los jugadores (►CONTACT, misma textura).
-
-   Coste: 1 InstancedMesh POR SEGMENTO (6 draw calls en todo el mapa) y CERO
-   por frame — las manchas son hijas del grupo del segmento, así que viajan
-   con la cinta, se ocultan con ella y mueren con ella. Nada que actualizar.
-   ===================================================================== */
-const _gdecMat = new THREE.MeshBasicMaterial({ map:_gdecTex, color:CONTACT_TINT, transparent:true, opacity:VISUAL.contact.propOp,
-  depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });   // CON niebla (a diferencia de la del jugador): la mancha debe irse al fondo con su prop
-const _gdecGeo = new THREE.PlaneGeometry(1,1); _gdecGeo.rotateX(-Math.PI/2);   // tumbada YA en la geometría → la matriz de instancia es sólo posición+escala
-const _gdecMeshes = [];                          // registro para los knobs en vivo (F2)
-const GDEC_MINH   = 0.55;   // alto mínimo del prop: por debajo es rasante (caminos, alfombras, charcos) y no hay junta que dibujar
-const GDEC_MAXW   = 20;     // huella máxima: los chunks de árboles fusionados y los bloques enormes no leen como "apoyados"
-const GDEC_MAX    = 420;    // tope de manchas por segmento (red de seguridad, no presupuesto: medido en Edge, el bloque más cargado pedía ~190 y van todas en 1 draw call. Si alguna vez topa, avisa por consola)
-const GDEC_Y      = 0.03;   // altura sobre la losa (igual que la del jugador; el groundRing va a +0.06 y sigue leyéndose encima)
-/* recompone las matrices de instancia (lo llama el knob de tamaño de F2) */
-function _gdecApply(im){
-  const k = VISUAL.contact.propSize, d = im.userData._gd, mtx = new THREE.Matrix4();
-  for(let i=0;i<d.length;i++){ const o = d[i];
-    mtx.makeScale(o.w*k, 1, o.d*k); mtx.setPosition(o.x, o.y, o.z); im.setMatrixAt(i, mtx); }
-  im.instanceMatrix.needsUpdate = true;
-}
-/* Lo llama buildSegment con el segmento YA construido. p0 = primer índice de platforms del segmento.
-   OJO: se llama ANTES de _applySegX, con el grupo aún en x=0 y las losas en coordenadas LOCALES —
-   por eso las manchas se guardan en local y luego viajan solas con el grupo. */
-function buildGroundDecals(seg, p0){
-  if(!seg || !seg.group || !THREE.InstancedMesh) return;
-  /* losas candidatas de ESTE segmento. Las móviles quedan fuera: la mancha es estática dentro del
-     grupo, así que sobre un ascensor o una losa que cae se despegaría. */
-  const segPls = platforms.slice(p0).filter(pl => (pl.solid || pl.float) && !pl._lift && !pl._vertMove);
-  if(!segPls.length) return;
-  const ox = seg.group.position.x, oy = seg.group.position.y, oz = seg.group.position.z;   // debería ser (0,0,0) aquí, pero no lo damos por hecho
-  const box = new THREE.Box3(), sz = new THREE.Vector3(), ctr = new THREE.Vector3();
-  const data = [];
-  for(const ch of seg.group.children){
-    if(!ch || ch.isInstancedMesh || ch.isPoints || ch.isSprite || ch.isLight) continue;
-    const ud = ch.userData || {};
-    if(ud.occFloor || ud.noOcc) continue;          // suelo pisable, planos rasantes, agua, lava: no son props apoyados
-    if(ud._s2TreeMerge) continue;                  // chunks de árboles fusionados (S2): son MUCHOS árboles en una malla → una sola mancha sería un manchón, y además se DISUELVEN al llegar al muro (updateBelt) y la mancha se quedaría
-    box.setFromObject(ch);                          // usa las bounding boxes cacheadas de las geometrías: barato y una sola vez
-    if(box.isEmpty() || !isFinite(box.min.y)) continue;
-    box.getSize(sz); box.getCenter(ctr);
-    if(sz.y < GDEC_MINH) continue;
-    if(sz.x > GDEC_MAXW || sz.z > GDEC_MAXW) continue;
-    if(Math.min(sz.x, sz.z) < 0.3) continue;        // hilos/postes finísimos: la mancha sería un punto sucio
-    const bMinY = box.min.y - oy, bMaxY = box.max.y - oy, cx = ctr.x - ox, cz = ctr.z - oz;
-    /* ¿APOYADO? el prop tiene que ATRAVESAR la cara superior de una losa que lo contiene en planta:
-       nace por debajo (o justo en ella) y sube por encima. Así caen solos los que flotan, los que
-       cuelgan (muros aéreos, péndulos, carámbanos) y los que van por el aire. */
-    let topY = null;
-    for(const pl of segPls){
-      if(cx < pl.minX-0.4 || cx > pl.maxX+0.4 || cz < pl.minZ-0.4 || cz > pl.maxZ+0.4) continue;
-      const y = pl.topY;
-      if(bMinY > y + 0.30 || bMaxY < y + 0.30) continue;   // no lo cruza: o flota encima o cuelga debajo
-      if(y - bMinY > 2.6) continue;                        // enterradísimo: es un bloque de terreno, no un prop apoyado
-      if(topY === null || y > topY) topY = y;
-    }
-    if(topY === null) continue;
-    /* props alargados (muros, vallas, troncos): una sola elipse concentraría la mancha en el centro
-       y dejaría los extremos flotando → cadena de manchas redondas a lo largo del eje mayor. */
-    const long = Math.max(sz.x, sz.z), short = Math.min(sz.x, sz.z), alongX = sz.x >= sz.z;
-    const n = Math.max(1, Math.min(10, Math.ceil(long / Math.max(0.6, short*0.9))));
-    const w = (n > 1 ? short : sz.x) * 1.65, d = (n > 1 ? short : sz.z) * 1.65;   // 1.65: la textura se desvanece a 0 en el borde, así que la mancha útil es menor que su cuadro
-    const span = Math.max(0, long - short);
-    for(let i=0;i<n;i++){
-      const u = (n === 1) ? 0 : (i/(n-1) - 0.5) * span;
-      data.push({ x: cx + (alongX ? u : 0), y: topY + GDEC_Y, z: cz + (alongX ? 0 : u), w, d });
-      if(data.length >= GDEC_MAX) break;
-    }
-    if(data.length >= GDEC_MAX) break;
-  }
-  if(!data.length) return;
-  if(data.length >= GDEC_MAX) console.warn('►CONTACT2: segmento '+seg.idx+' al tope ('+GDEC_MAX+') → props sin junta. Sube GDEC_MAX.');   // un recorte SILENCIOSO se leería como "cubierto todo"
-  const im = new THREE.InstancedMesh(_gdecGeo, _gdecMat, data.length);
-  im.userData._gd = data; im.userData.noOcc = true;   // noOcc: la mancha NUNCA es un oclusor (ni se funde ni tapa a nadie)
-  im.renderOrder = -1; im.castShadow = im.receiveShadow = false;
-  /* frustumCulled=false OBLIGATORIO: en r128 el frustum de un InstancedMesh se calcula con la esfera
-     de la GEOMETRÍA (un plano de 1×1 en el origen del segmento), no con las instancias → las manchas
-     desaparecerían de golpe en cuanto el centro del segmento saliera de cámara. El culling ya lo hace
-     el propio segmento (s.group.visible en updateBelt). */
-  im.frustumCulled = false;
-  im.visible = !!VISUAL.contact.props;
-  _gdecApply(im);
-  seg.group.add(im);
-  _gdecMeshes.push(im);
-}
-
 /* círculo del color de cada jugador, pegado al suelo: ves dónde caes y dónde estás */
 for(const _p of allPlayers){
   _p.groundRing = new THREE.Mesh(new THREE.RingGeometry(.55,.82,30),
     new THREE.MeshBasicMaterial({ color:_p.color, transparent:true, opacity:.6, side:THREE.DoubleSide, depthWrite:false }));
   _p.groundRing.rotation.x = -Math.PI/2; _p.groundRing.visible = false; scene.add(_p.groundRing);
-  /* ►CONTACT: va POR DEBAJO del groundRing (renderOrder −1) para que el círculo de color del
-     jugador siga leyéndose encima. fog:false → no se aclara con la niebla y deja de anclar. */
-  _p.contactShadow = new THREE.Mesh(_contactGeo,
-    new THREE.MeshBasicMaterial({ map:_contactTex, color:CONTACT_TINT, transparent:true, opacity:VISUAL.contact.opacity, depthWrite:false, fog:false }));
-  _p.contactShadow.rotation.x = -Math.PI/2; _p.contactShadow.renderOrder = -1;
-  _p.contactShadow.visible = false; scene.add(_p.contactShadow);
   _p.locator = new THREE.Mesh(new THREE.ConeGeometry(.34,.6,4), new THREE.MeshBasicMaterial({ color:_p.color }));   // flecha locator (solo humanos)
   _p.locator.rotation.x = Math.PI; _p.locator.visible = false; scene.add(_p.locator);
   _p.gfx.root.visible = false;
@@ -5360,7 +5233,6 @@ function setRoster(humans, cpus){
     const p = allPlayers[i], active = i < total, human = active && i < humans;
     p.gfx.root.visible = active;
     p.groundRing.visible = false; p.locator.visible = false;   // se reactivan por frame en updateFighter
-    if(p.contactShadow) p.contactShadow.visible = false;       // ►CONTACT: mismo ciclo de vida que el groundRing
     if(active){
       p.isAI = !human;
       p.kbInput  = human && (humans===1 || i===0);                          // teclado: humano único (solo) o P1 (multi)
@@ -6172,7 +6044,6 @@ function narrateStageStart(){
     if(p.groundRing) p.groundRing.visible = false;
     if(p.locator)    p.locator.visible    = false;
     if(p._stamBar)   p._stamBar.g.visible = false;
-    if(p.contactShadow) p.contactShadow.visible = false;   // ►CONTACT
   }
   clearCues();                   // por si quedaban timers de la cuenta del intro de partida
   if(!musicOn || demo) return;   // mismos frenos que narrate()
@@ -18217,24 +18088,6 @@ function updateFighter(p, dt){
     const gy = p.dead ? null : groundAt(p.pos.x, p.pos.z, p.pos.y+0.2, -200);
     if(gy!==null){ p.groundRing.visible = true; p.groundRing.position.set(p.pos.x, gy+0.06, p.pos.z); }
     else p.groundRing.visible = false;
-    /* ►CONTACT: sombra bajo los pies. Cuanto más alto está, más GRANDE y más DÉBIL (penumbra).
-       Reusa el gy de arriba → no cuesta ninguna consulta de suelo extra. */
-    if(p.contactShadow){
-      const C = VISUAL.contact;
-      if(gy===null || !C.on){ p.contactShadow.visible = false; }
-      else{
-        const h = Math.max(0, p.pos.y - gy);
-        const k = Math.min(1, h / Math.max(0.001, C.fade));            // 0 = pegado al suelo · 1 = ya no se ve
-        const f = (1-k)*(1-k);                                          // caída cuadrática: se desvanece rápido al despegar
-        p.contactShadow.visible = f > 0.01;
-        if(p.contactShadow.visible){
-          const s = C.size * (1 + k*0.9);                               // al subir, la sombra se abre
-          p.contactShadow.scale.set(s, s, 1);
-          p.contactShadow.position.set(p.pos.x, gy+0.03, p.pos.z);      // por debajo del groundRing (gy+0.06)
-          p.contactShadow.material.opacity = C.opacity * f;
-        }
-      }
-    }
     if(p===_camMe()){                            // GLOW suave SOLO bajo el personaje que llevas (le acompaña incluso saltando: cae al suelo de debajo)
       if(gy!==null){ meGlow.visible = true; meGlow.position.set(p.pos.x, gy+0.04, p.pos.z); meGlow.material.opacity = 0.55 + 0.1*Math.sin(t*2.2); }   // luz MÁS fuerte (antes 0.28)
       else meGlow.visible = false;
@@ -19129,7 +18982,6 @@ function buildSegment(idx){
   /* ►CONTACT2: junta de contacto bajo los props de este segmento (muros, rocas, árboles, cajas…).
      AQUÍ y no antes: el segmento ya está entero y las losas siguen en coordenadas locales. Va DESPUÉS
      del registro de oclusores a propósito → la malla de manchas no se registra como oclusor. */
-  buildGroundDecals(seg, p0);
   buildLawn(seg, p0);   // ►LAWN: tapiza las tapas de suelo de este segmento (usa _propSpots/_pathSpots, que ya existen aquí)
   seg.treeMeshes = seg.group.children.filter(c => c.userData._s2TreeMerge);
   for(let i=p0;i<platforms.length;i++){
@@ -21246,8 +21098,6 @@ function rebuildBelt(){
   if(typeof _s8Nodes!=='undefined') _s8Nodes.length=0;   // ►P10a: cristales resonantes
   if(typeof _s9Rings!=='undefined') _s9Rings.length=0;   // ►P10a: boost rings
   occluders.length = 0; occRoots.length = 0; _occFaded.clear();
-  for(const im of _gdecMeshes) im.dispose();   // ►CONTACT2: las manchas mueren con sus segmentos (libera los buffers de instancia; geometría y material son compartidos)
-  _gdecMeshes.length = 0;
   _lawnJobs.length = 0;   // ►LAWN: si un segmento anterior dejó tapas a medias, que no se cuelen en el primero del stage nuevo
   for(let i=0;i<BELT.count;i++){
     const seg = buildSegment(i);
@@ -30222,23 +30072,6 @@ function setupVisualGUI(){
   fE.add(VISUAL.env, 'on').name('activado').onChange(upd);
   fE.add(VISUAL.env, 'intensity', 0, 1, 0.01).name('intensidad').onChange(upd);
   fE.add(VISUAL.env, 'sun', 0, 2, 0.01).name('reflejo del sol').onChange(upd);
-  /* ►CONTACT: sombra bajo los pies. Se aplica sola en updateFighter (no necesita onChange). */
-  const fC = gui.addFolder('Sombra de contacto');
-  fC.add(VISUAL.contact, 'on').name('activada');
-  fC.add(VISUAL.contact, 'opacity', 0, 0.7, 0.01).name('fuerza');
-  fC.add(VISUAL.contact, 'size', 0.6, 2, 0.01).name('tamaño');
-  fC.add(VISUAL.contact, 'fade', 3, 14, 0.5).name('altura de fundido');
-  /* ►CONTACT2: la misma junta bajo los props del escenario. Son mallas instanciadas ya construidas
-     → el tamaño recompone matrices (barato), la fuerza es la opacidad del material compartido. */
-  fC.add(VISUAL.contact, 'props').name('· props del escenario').onChange(v=>{ for(const im of _gdecMeshes) im.visible = !!v; });
-  fC.add(VISUAL.contact, 'propOp', 0, 0.7, 0.01).name('· fuerza (props)').onChange(v=>{ _gdecMat.opacity = v; });
-  fC.add(VISUAL.contact, 'propSize', 0.6, 2, 0.01).name('· tamaño (props)').onChange(()=>{ for(const im of _gdecMeshes) _gdecApply(im); });
-  /* TINTE compartido (jugador + props): a negro puro lee como agujero. Toca a los dos a la vez. */
-  fC.addColor(VISUAL.contact, 'tint').name('tinte (no usar negro)').onChange(v=>{
-    _gdecMat.color.set(v);
-    for(const p of allPlayers) if(p.contactShadow) p.contactShadow.material.color.set(v);
-  });
-  fC.open();
   /* ►LAWN: césped. Viento/pisado/distancia son uniforms → en vivo. Densidad y altura son geometría
      ya generada → piden reconstruir la cinta (rebuildBelt), que tarda un poco: van con onFinishChange. */
   const fL = gui.addFolder('Césped (suelo)');
