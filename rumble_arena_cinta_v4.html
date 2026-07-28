@@ -2102,6 +2102,49 @@ function warmupShaders(motivo){
   if(n > 0) console.log('[warmup] '+motivo+': '+n+' programas compilados por adelantado (total '+(antes+n)+')');
   return n;
 }
+/* =====================================================================
+   ►WARMUP2 — lo que NO existe hasta que aparece.
+
+   El pre-calentado normal solo puede compilar lo que ESTÁ en la escena. Tras
+   arreglar personajes y sombras seguían compilándose ~27 programas ya en
+   partida, y son justo las cosas que se crean sobre la marcha: el arma que
+   recoges, la cápsula que cae, el icono de la mejora, el anillo del golpe.
+   Cada una compila su programa la PRIMERA vez que se dibuja — o sea, en mitad
+   de la pelea, que es exactamente cuando no toca.
+
+   Truco: se crea UNA de cada, se cuelgan bajo el mundo (y=-25, dentro del
+   encuadre ancho que usa el calentado, pero donde no se juega), se calienta y
+   se retiran. Los modelos vienen de la caché compartida, así que crearlos y
+   tirarlos no cuesta memoria nueva: lo único que queda es su programa ya
+   compilado. Una sola vez por sesión.
+   ===================================================================== */
+let _warmSpawnDone = false;
+function warmupSpawnables(){
+  if(_warmSpawnDone || typeof scene === 'undefined') return 0;
+  let n = 0;
+  try{
+    const G = new THREE.Group();
+    G.position.set(0, -25, 0);                       // bajo el mundo, pero dentro del encuadre del calentado
+    const add = o => { if(o) G.add(o); };
+    /* iconos de cápsulas/mejoras (uno por tipo: cada uno trae su material) */
+    if(typeof CAP_TYPES !== 'undefined' && typeof buildBoostModel === 'function')
+      for(const ty of CAP_TYPES) add(buildBoostModel(ty));
+    /* armas: las de mano y las que caen al suelo */
+    if(typeof HELD_DEFS !== 'undefined') for(const k in HELD_DEFS) add(getModel(k, HELD_DEFS));
+    if(typeof MODEL_DEFS !== 'undefined') for(const k in MODEL_DEFS) add(getModel(k));
+    /* efectos: el cubo del estallido, el anillo del impacto y el halo del suelo. Son materiales
+       distintos (el anillo y el halo van transparentes) → programas distintos. */
+    if(typeof partGeo !== 'undefined' && typeof burstMat === 'function') add(new THREE.Mesh(partGeo, burstMat(0xffffff)));
+    if(typeof ringGeo !== 'undefined') add(new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ transparent:true })));
+    if(typeof _haloGeo !== 'undefined') add(new THREE.Mesh(_haloGeo, new THREE.MeshBasicMaterial({ transparent:true, side:THREE.DoubleSide })));
+    if(!G.children.length) return 0;
+    scene.add(G);
+    n = warmupShaders('objetos de partida (' + G.children.length + ' tipos)');
+    scene.remove(G);
+    _warmSpawnDone = true;
+  } catch(e){ console.warn('►WARMUP objetos:', e); }
+  return n;
+}
 /* agrupa varias peticiones seguidas en una sola pasada (los 6 personajes llegan casi a la vez) */
 let _warmT = 0;
 function scheduleWarmup(motivo){
@@ -30077,7 +30120,8 @@ startDemo();   // arranca el fondo "attract" del menú al cargar
 (function warmupIdle(){
   let vacias = 0, veces = 0;
   const tick = ()=>{
-    const n = warmupShaders('reposo');
+    let n = warmupShaders('reposo');
+    n += warmupSpawnables();      // ►WARMUP2: una sola vez, en cuanto la escena está montada
     vacias = (n > 0) ? 0 : vacias + 1;
     if(vacias < 3 && ++veces < 25) setTimeout(tick, 2000);
   };
