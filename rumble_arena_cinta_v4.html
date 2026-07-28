@@ -6516,6 +6516,37 @@ function _normalize(root, size, rot, glow){
       if(glow && m.emissive && m.color && !m.map && !m.vertexColors){ m.emissive.copy(m.color).multiplyScalar(.16); } } }); } });
   return g;
 }
+/* ►FIX CAJA NEGRA. Algunos OBJ vienen con los COLORES DE VÉRTICE casi a cero (medido: 'crate' tiene
+   un máximo de 0.153 en los tres canales) y su material los usa (`vertexColors:true`). Como el
+   material MULTIPLICA color × color-de-vértice, ningún tinte del material puede levantar eso: por eso
+   los apaños que ya había en addCrate y addProp —que tiñen `material.color`— no bastaban y la caja
+   seguía saliendo negra en el prado.
+   Se renormalizan aquí, en la PLANTILLA y antes del primer render (nada que resubir a la GPU), y solo
+   cuando son patológicos: si el modelo ya tiene un máximo razonable, no se toca. Se conserva la
+   variación relativa entre vértices (es un reescalado, no un aplanado), así que el modelo mantiene su
+   sombreado propio y los tintes de addCrate/addProp vuelven a hacer lo que dicen que hacen. */
+function _liftDarkVertexColors(root, key){
+  /* Umbral APRETADO a propósito: solo lo patológico. Medido en este proyecto: 'crate' 0.153 (roto,
+     salía negro) y 'rocks2' 0.350 (oscuro pero INTENCIONADO — con el umbral en 0.35 se aclaraban
+     todas las rocas del prado ×2.4, un cambio que nadie pidió). Entre 0.22 y 0.35 no se toca nada. */
+  const TARGET = 0.75, THRESH = 0.22;
+  root.traverse(o=>{
+    if(!o.isMesh || !o.geometry) return;
+    const col = o.geometry.attributes.color; if(!col) return;
+    const is = col.itemSize, n = col.count, src = col.array;
+    let mx = 0;
+    for(let v=0; v<n; v++) for(let c=0; c<Math.min(3, is); c++){ const x = src[v*is+c]; if(x > mx) mx = x; }
+    if(mx <= 0.001 || mx >= THRESH) return;                 // negro total o ya razonable: no tocar
+    const k = TARGET/mx, arr = new Float32Array(src.length);
+    for(let v=0; v<n; v++){
+      for(let c=0; c<Math.min(3, is); c++) arr[v*is+c] = Math.min(1, src[v*is+c]*k);
+      if(is === 4) arr[v*is+3] = src[v*is+3];               // el alfa NO se escala
+    }
+    const na = new THREE.BufferAttribute(arr, is); na.needsUpdate = true;
+    o.geometry.setAttribute('color', na);                   // atributo NUEVO, no mutación (ver la ficha del gotcha del VAO)
+    console.log('[fix] '+key+': colores de vértice casi negros (máx '+mx.toFixed(3)+') → reescalados a '+TARGET);
+  });
+}
 /* devuelve un clone normalizado del modelo, o null si no se puede (=> procedural) */
 function getModel(defKey, table){
   const def = (table || MODEL_DEFS)[defKey];
@@ -6526,6 +6557,7 @@ function getModel(defKey, table){
     if(_modelAvailable()){
       const raw = _parseRaw(def.key);
       if(raw) tpl = _normalize(raw, def.size, def.rot, true);
+      if(tpl) _liftDarkVertexColors(tpl, defKey);
     }
     MODEL_CACHE[cacheKey] = tpl;   // null si no disponible (no reintenta)
   }
