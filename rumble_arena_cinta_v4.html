@@ -1302,6 +1302,7 @@ window.addEventListener('load', function(){
 <script src="stage7_models.js?v=1"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
 <script src="stage2_ruins_models.js?v=1"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
 <script src="stage_japan_models.js?v=1"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
+<script src="western_anims.js?v=1"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
 <script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
@@ -1406,54 +1407,24 @@ const VISUAL = {
   impact: { on:true, disc:1, spray:1, streaks:1 },   // cada uno 0 = apagado · 1 = normal · 2 = exagerado
   // ►WATER: espuma en crestas + valles hundidos + rugosidad por ola (lo que hace visible el reflejo).
   water: { on:true, foam:0.75, deep:0.35, shine:0.30 },   // [foam 0–1] espuma · [deep 0–0.7] volumen del oleaje · [shine 0–0.45] reflejo del agua lisa
-  // ►LAWN: césped corto que CUBRE el suelo (antes solo había matas sueltas sobre verde plano).
-  // Se mueve con el viento y se aplasta al pisarlo. Todo en el vertex shader → 0 coste de CPU.
-  lawn: { on:true, density:20, height:0.40, wind:0.10, speed:1.5, trample:0.30, fade:1.0 },   // [density MATAS/m², cada mata son 4 briznas] y [height] piden reconstruir · el resto es en vivo · [fade] multiplica la distancia del tier
 };
-
-/* ►LAWN · uniforms y su aplicación. DECLARADOS AQUÍ ARRIBA, junto a VISUAL, y NO junto a su módulo:
-   applyTier() se ejecuta a nivel superior al cargar y llama a applyLawnLive(); con el const declarado
-   abajo seguiría en zona muerta temporal → ReferenceError → el script inline entero aborta → splash
-   para siempre. Ya pasó con ►SURFACE. `typeof x==='undefined'` NO protege de esto en const/let. */
-const _lawnU = {
-  uTime:    { value: 0 },
-  /* uEye = CENTRO del disco de césped. NO es la cámara: la cámara va ~14u por DETRÁS del jugador, así
-     que midiendo desde ella el césped se quedaba en la losa donde estás (reporte de Toni: "solo veo la
-     hierba en la primera plataforma"). Se mide desde un punto entre la cámara y lo que mira. */
-  uEye:     { value: new THREE.Vector3(0,0,0) },
-  uFade:    { value: new THREE.Vector2(17, 30) },   // (empieza a encogerse, desaparecida del todo)
-  uWind:    { value: new THREE.Vector4(0.10, 1.5, 0.55, 0.42) },   // fuerza, velocidad, frecuencia x, frecuencia z
-  uTrample: { value: 0.30 },
-  /* 4 pies, no 8: el bucle corre POR VÉRTICE (≈1 millón por frame con el césped denso), así que cada
-     hueco se paga caro. Se quedan los 4 luchadores más cercanos a la acción — los de más allá no
-     pisan nada que se vea. uFeetN corta el bucle: con nadie cerca (menú, jefe lejos) no se ejecuta. */
-  uFeet:    { value: Array.from({length:4}, ()=>new THREE.Vector4(0,0,0,0)) },   // (x, z, y, radio)
-  uFeetN:   { value: 0 },
-};
-let _lawnTierFade = 30;                              // distancia de fundido que impone el tier de calidad
-function applyLawnLive(){
-  const L = VISUAL.lawn, f = Math.max(6, _lawnTierFade * L.fade);
-  _lawnU.uFade.value.set(f*0.55, f);
-  _lawnU.uWind.value.set(L.wind, L.speed, 0.55, 0.42);
-  _lawnU.uTrample.value = L.trample;
-}
 
 /* =====================================================================
    ►LOADTIME — cronómetro del arranque.
-   Por qué existe: el navegador de pruebas headless renderiza por software, y eso infla la
-   compilación de shaders ~50×, así que allí NO se puede saber dónde se va de verdad la carga en una
-   máquina con GPU. Esto lo mide en la máquina real y lo escribe en la consola (F12) en UNA línea.
-   Coste: cuatro llamadas a performance.now(). ►Si molesta, borra este bloque y sus 4 _mark().
+   Escribe en la consola (F12) UNA línea con el reparto del arranque. Existe porque el navegador de
+   pruebas headless renderiza por software y allí la compilación de shaders se infla ~50×: el dato
+   útil solo se obtiene en una máquina con GPU de verdad. Lectura real (2026-07-28):
+   `modelos 1012 ms · mundo 2312 ms · shaders 2611 ms · 1er frame 202 ms · TOTAL 6137 ms`
+   ►Si molesta, borra este bloque y sus 4 llamadas a _mark().
    ===================================================================== */
 const _LT0 = performance.now(), _LT = [];
-let _lawnMs = 0;                       // cuánto de "mundo" se lo lleva generar el césped (ver buildSegment)
 function _mark(n){ _LT.push([n, performance.now()]); }
 function _loadReport(){
   let prev = _LT0, s = '';
   for(const [n, t] of _LT){ s += n + ' ' + Math.round(t - prev) + ' ms · '; prev = t; }
-  if(_lawnMs > 0) s += '[de "mundo", césped ' + Math.round(_lawnMs) + ' ms] · ';
   console.log('%c[carga] ' + s + 'TOTAL ' + Math.round(prev - _LT0) + ' ms', 'background:#123;color:#8f8;padding:2px 6px');
 }
+
 /* STAGE actual (1 = prado original · 2 = bosque/jungla oscuro). Declarado AQUÍ ARRIBA porque
    lo leen funciones de decoración (addTree/addRock/addCenterProps/scatterModelDecor…) que se
    ejecutan ya en la construcción inicial de la cinta. El módulo Stage 2 (más abajo) lo conmuta. */
@@ -2029,9 +2000,9 @@ function attachComposerDepth(){
    Cada tier controla DOF, bloom, grano/viñeta, sombra y el tope del DRS. qMode 'auto'
    empieza en 'alto' y baja/sube de tier solo según FPS sostenidos. */
 const TIERS = {
-  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, lawn:26, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel) · ►LAWN: radio del césped (medido desde LA ACCIÓN, no desde la cámara)
-  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  lawn:38, drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
-  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  lawn:50, drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar) · ►LAWN: 50 cubre el ancho jugable entero (los muros están a ±42)
+  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel)
+  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
+  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
 };
 const TIER_ORDER = ['bajo','medio','alto'];
 /* detección de móvil/táctil: arranca conservador para que un móvil malo NO empiece ahogado.
@@ -2076,7 +2047,6 @@ function applyTier(){
   if(gradePass){ gradePass.uniforms.grain.value = t.grain; gradePass.uniforms.vignette.value = t.vignette; }
   setShadow(t.shadow);
   applyEnvironment();                                                       // ►ENVMAP: el tier decide si hay IBL (bajo = no)
-  _lawnTierFade = t.lawn; applyLawnLive();                                  // ►LAWN: el tier NO quita el césped, solo acerca el horizonte al que se ve (lo que de verdad cuesta)
   applyRenderScale(Math.min(t.drsMax, Math.max(PIXEL_FLOOR, curRatio)));   // reclampa el ratio al rango del tier
 }
 /* =====================================================================
@@ -3137,11 +3107,7 @@ const FLOWER_MATS = [ mat(0xff6f91,{emissive:0xff6f91,emissiveIntensity:.22}),
    Las flores sueltas (flower2/flower3), rocas y árboles los pone scatterModelDecor. */
 /* el césped se genera DESPUÉS de los muros (para poder saltarse lo que queda bajo una valla) */
 const _grassJobs = [];
-const _lawnJobs = [];   // ►LAWN: las MISMAS tapas de suelo que reciben matas, guardadas para que buildLawn las tapice al final del segmento
 function flushGrass(){
-  /* ►LAWN: se capturan SIEMPRE, también en los stages sin matas de prado: quién recibe césped lo
-     decide LAWN_STAGES, no este gate. Así añadir el bosque o la nieve es rellenar una ficha. */
-  for(const j of _grassJobs) _lawnJobs.push(j);
   if(STAGE>=2){ _grassJobs.length = 0; return; }   // STAGE 2/3: sin matas de césped del prado (la cobertura la da la vegetación temática)
   for(const j of _grassJobs){ dressTop(j.g, j.sx, j.sz, j.topY, j.cx, j.cz);
   if(j.grassMat) addBumps(j.g, j.sx, j.sz, j.topY, j.grassMat, j.cx, j.cz); } _grassJobs.length = 0; }
@@ -3150,9 +3116,7 @@ function dressTop(g, sx, sz, topY, cx, cz){
   if(!pieces || !pieces.length) return;
   const area = sx*sz;
   const ix = Math.max(0.5, sx-0.7), iz = Math.max(0.5, sz-0.7);   // margen interior
-  /* ►LAWN: con el césped corto cubriendo TODO el suelo, las matas altas pasan de ser la cobertura a
-     ser ACENTOS → se aclaran un 30% (si no, queda recargado). Sin césped, densidad de siempre. */
-  const n = Math.round(Math.min(30, Math.max(8, Math.round(area*0.5))) * (lawnCoversStage() ? 0.7 : 1));
+  const n = Math.min(30, Math.max(8, Math.round(area*0.5)));      // densidad orgánica ∝ área (cada mata = clump de hojas)
   const PA=[], NA=[], CA=[];
   const _v=new THREE.Vector3(), _m=new THREE.Matrix4(), _nm=new THREE.Matrix3(), _q=new THREE.Quaternion(), _e=new THREE.Euler(), _s=new THREE.Vector3();
   for(let i=0;i<n;i++){
@@ -5072,249 +5036,6 @@ for(const _p of allPlayers){
   _p.locator.rotation.x = Math.PI; _p.locator.visible = false; scene.add(_p.locator);
   _p.gfx.root.visible = false;
 }
-/* =====================================================================
-   ►LAWN — CÉSPED CORTO que cubre el suelo, se mueve y se pisa.
-
-   Antes: el suelo era VERDE PLANO con matas altas sueltas por encima. La
-   cobertura no existía, y el color plano de las superficies era la raíz del
-   diagnóstico gráfico (ver la ficha graphics-stylized-not-pbr). Esto es
-   GEOMETRÍA, no microdetalle, así que SÍ se lee a la distancia de cámara del
-   juego — al revés que ►SURFACE.
-
-   Arquitectura, calcada a la de ►CONTACT2 porque funciona:
-   - Las briznas se generan al construir el segmento, sobre LAS MISMAS tapas
-     de suelo que ya recibían matas (`_lawnJobs`, llenado por flushGrass) → no
-     hay ninguna lista de superficies que mantener a mano.
-   - Se agrupan en CHUNKS de ~7u, cada uno un InstancedMesh hijo del grupo del
-     segmento → viajan con la cinta solos. Cada frame solo se encienden los
-     chunks cerca de la cámara (una comparación de distancia por chunk).
-   - Viento, pisado y fundido por distancia van ENTEROS en el vertex shader:
-     cero trabajo de CPU por brizna. Lo único que se sube por frame son el
-     reloj y 8 posiciones de pies.
-
-   Decisiones que parecen detalles y no lo son:
-   - Las normales de la brizna apuntan ARRIBA (no hacia fuera): así el césped
-     recibe la misma luz que el suelo que tapiza. Con la normal real de un
-     plano vertical, las briznas salen oscuras y el suelo parece sucio.
-   - El fundido por distancia ENCOGE la brizna hasta el suelo en vez de
-     apagarla: sin él, a lo lejos el césped es ruido que parpadea (píxeles de
-     sub-brizna) y overdraw regalado. Es también el knob del tier de calidad.
-   - Los chunks NO son oclusores (`noOcc`): registerOccluder CLONA los
-     materiales de lo que registra, y `Material.copy()` de three no copia
-     `onBeforeCompile` → el clon perdería viento y pisado.
-   ===================================================================== */
-/* Ficha POR STAGE. Añadir un mundo = añadir una entrada (y mirarlo en juego). */
-const LAWN_STAGES = {
-  /* OJO con los verdes: el césped es Lambert y el suelo Standard → con el MISMO hex la brizna sale
-     bastante más clara que el suelo y el prado parece pajizo. Estos van a propósito por debajo. */
-  1: { h:0.30, dens:1.00, bot:0x2b5a23, top:0x59a03e, vary:0.13 },   // prado
-};
-function lawnCoversStage(){ return !!(VISUAL.lawn.on && LAWN_STAGES[STAGE]); }
-const LAWN_CHUNK = 12;     // lado del chunk (u.): más pequeño = mejor culling pero más draw calls. Medido: a 7 se encendían ~106 chunks (=106 draw calls) en una vista de partida; subiéndolo bajan mucho y el desperdicio de briznas fuera de radio lo absorbe el fundido (salen con altura cero)
-/* MATA de 3 briznas, no una suelta: una brizna por instancia leía como PINCHOS sueltos clavados en el
-   suelo, no como césped. Metiendo 3 en la misma instancia se triplica la densidad visual sin tocar ni
-   el número de instancias (que es lo que cuesta RAM y tiempo de generación) ni los draw calls.
-   La escala de instancia es UNIFORME (todo relativo a la altura) para no deformar las normales, así
-   que el ancho y la separación de la mata van en unidades de altura. */
-const _lawnH = [];   // fracción de altura por vértice (la usa el degradado de color)
-const _lawnGeo = (function(){
-  const P=[], N=[], A=[], IDX=[];
-  /* x,z = sitio en la mata · yaw = giro · h = altura relativa · w = medio-ancho · lean = caída de la punta · ph = desfase de viento */
-  const BLADES = [
-    { x: 0.00, z: 0.00, yaw: 0.0,  h:1.00, w:0.075, lean:0.10, ph:0.0 },
-    { x: 0.22, z: 0.14, yaw: 1.2,  h:0.78, w:0.065, lean:0.26, ph:2.2 },
-    { x:-0.19, z: 0.17, yaw:-1.0,  h:0.62, w:0.060, lean:0.20, ph:4.3 },
-    { x: 0.04, z:-0.21, yaw: 2.5,  h:0.86, w:0.068, lean:0.23, ph:1.3 },   // 4ª: densidad visual GRATIS (misma instancia, mismo draw call)
-  ];
-  for(const b of BLADES){
-    const c = Math.cos(b.yaw), s = Math.sin(b.yaw), base = P.length/3;
-    const put = (x, y, z)=>{ P.push(b.x + (x*c - z*s), y, b.z + (x*s + z*c)); N.push(0,1,0); A.push(b.ph); };
-    put(-b.w, 0, 0);                       _lawnH.push(0);
-    put( b.w, 0, 0);                       _lawnH.push(0);
-    put(-b.w*0.68, b.h*0.52, b.lean*0.3);  _lawnH.push(0.52);
-    put( b.w*0.68, b.h*0.52, b.lean*0.3);  _lawnH.push(0.52);
-    put( 0,        b.h,      b.lean);      _lawnH.push(1);
-    IDX.push(base+0, base+1, base+3,  base+0, base+3, base+2,  base+2, base+3, base+4);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setIndex(IDX);
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P,3));
-  g.setAttribute('normal',   new THREE.Float32BufferAttribute(N,3));   // ARRIBA: la brizna se ilumina como el suelo que tapiza
-  g.setAttribute('aH',       new THREE.Float32BufferAttribute(_lawnH.slice(),1));
-  g.setAttribute('aP',       new THREE.Float32BufferAttribute(A,1));   // desfase: las 3 briznas de la mata no ondean a la vez
-  return g;
-})();
-function _lawnBakeColors(cfg){                                // degradado base→punta en color de vértice
-  const bot = new THREE.Color(cfg.bot), top = new THREE.Color(cfg.top), C = [];
-  for(const h of _lawnH){ const c = bot.clone().lerp(top, Math.pow(h,0.7)); C.push(c.r,c.g,c.b); }
-  _lawnGeo.setAttribute('color', new THREE.Float32BufferAttribute(C,3));
-}
-const _lawnMat = new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide });
-_lawnMat.customProgramCacheKey = ()=>'lawn';                  // obligatorio: si no, three reusa el programa de un Lambert normal y el césped sale tieso
-_lawnMat.onBeforeCompile = (sh)=>{
-  Object.assign(sh.uniforms, _lawnU);
-  sh.vertexShader = [
-    'attribute float aH; attribute float aP;',
-    'uniform float uTime; uniform vec2 uFade; uniform vec3 uEye; uniform vec4 uWind; uniform float uTrample; uniform vec4 uFeet[4]; uniform int uFeetN;'
-  ].join('\n') + '\n' + sh.vertexShader;
-  /* CARA TRASERA: con DoubleSide, Lambert ilumina la trasera con la normal INVERTIDA (vLightBack usa
-     -dotNL). Como nuestras normales miran ARRIBA, la trasera se ilumina desde abajo → briznas NEGRAS
-     en la mitad de las matas (pasó de verdad, se veían pinchos negros). Igualamos las dos caras. */
-  const LB = '#include <lights_lambert_vertex>';
-  if(sh.vertexShader.indexOf(LB) < 0) console.warn('►LAWN: no se encontró lights_lambert_vertex — la cara trasera del césped saldrá negra');
-  else sh.vertexShader = sh.vertexShader.replace(LB, LB + '\n#ifdef DOUBLE_SIDED\nvLightBack = vLightFront; vIndirectBack = vIndirectFront;\n#endif');
-  const SRC = '#include <project_vertex>';
-  if(sh.vertexShader.indexOf(SRC) < 0){ console.warn('►LAWN: no se encontró project_vertex — el césped queda estático'); return; }
-  sh.vertexShader = sh.vertexShader.replace(SRC, [
-    'vec4 lwL = vec4(transformed, 1.0); vec4 lwR = vec4(0.0, 0.0, 0.0, 1.0);',
-    '#ifdef USE_INSTANCING',
-    '  lwL = instanceMatrix * lwL; lwR = instanceMatrix * lwR;',   // el doblado tiene que ir DESPUÉS de la instancia: si no, el giro de cada brizna rotaría la dirección del viento
-    '#endif',
-    'vec4 lwW = modelMatrix * lwL;',
-    'vec3 lwRoot = (modelMatrix * lwR).xyz;',                      // raíz de ESTA brizna, en mundo
-    'float lwUp = lwW.y - lwRoot.y;',
-    'float lwFar = distance(uEye.xz, lwRoot.xz);',
-    'float lwK = 1.0 - smoothstep(uFade.x, uFade.y, lwFar);',      // 1 cerca → 0 lejos
-    'float lwPh = lwRoot.x*uWind.z + lwRoot.z*uWind.w + uTime*uWind.y + aP;',
-    'float lwGust = 0.62 + 0.38*sin(lwRoot.x*0.05 + lwRoot.z*0.043 + uTime*0.5);',   // ráfagas lentas que recorren el prado
-    'vec2 lwB = vec2(sin(lwPh), cos(lwPh*0.73)) * uWind.x * lwGust * aH * aH;',      // dobla ∝ altura² (la base no se mueve)
-    'for(int i=0;i<4;i++){',
-    '  if(i >= uFeetN) break;',                                    // corte por uniform: misma rama para todos los vértices, así que es barato
-    '  vec4 ft = uFeet[i];',
-    '  vec2 d = lwRoot.xz - ft.xy;',                               // ft = (x, z, y, radio) — empaquetado así para leer el plano de un vec2
-    '  float rr = max(ft.w, 0.0001);',
-    '  float inf = (1.0 - smoothstep(rr*0.3, rr, length(d))) * (1.0 - smoothstep(0.7, 1.7, abs(ft.z - lwRoot.y))) * step(0.0001, ft.w);',
-    '  lwB += normalize(d + vec2(0.0001, 0.0)) * inf * uTrample * aH;',   // se aparta del pie…
-    '  lwUp *= (1.0 - inf*0.7);',                                        // …y se aplasta
-    '}',
-    'lwW.xz += lwB;',
-    'lwW.y = lwRoot.y + lwUp * lwK;',                              // el fundido la encoge hasta el suelo…
-    'lwW.xz = mix(lwRoot.xz, lwW.xz, lwK);',                       // …y en anchura, para que desaparezca sin parpadear
-    'vec4 mvPosition = viewMatrix * lwW;',                         // OJO: fog_vertex y compañía usan mvPosition — hay que declararla igual
-    'gl_Position = projectionMatrix * mvPosition;'
-  ].join('\n'));
-};
-/* ---- construcción (una vez por segmento) ---- */
-function buildLawn(seg, p0){
-  const cfg = LAWN_STAGES[STAGE];
-  if(!cfg || !VISUAL.lawn.on || !_lawnJobs.length || !THREE.InstancedMesh){ _lawnJobs.length = 0; return; }
-  _lawnBakeColors(cfg);
-  /* rejilla de huecos: props y caminos de piedra ya existen (esto corre al final del segmento) y el
-     césped los esquiva. Cada hueco se mete en TODAS las celdas que toca → 1 consulta por brizna. */
-  const HC = 4, holes = new Map();
-  const addHole = (s, k)=>{ const r = (s.r||1)*k;
-    for(let cx=Math.floor((s.x-r)/HC); cx<=Math.floor((s.x+r)/HC); cx++)
-      for(let cz=Math.floor((s.z-r)/HC); cz<=Math.floor((s.z+r)/HC); cz++){
-        const key = cx+','+cz; let a = holes.get(key); if(!a) holes.set(key, a=[]); a.push({x:s.x, z:s.z, r2:r*r}); } };
-  if(typeof _propSpots !== 'undefined') for(const s of _propSpots) addHole(s, 0.8);
-  if(typeof _pathSpots !== 'undefined') for(const s of _pathSpots) addHole(s, 0.9);
-  const inHole = (x, z)=>{ const a = holes.get(Math.floor(x/HC)+','+Math.floor(z/HC)); if(!a) return false;
-    for(const h of a){ const dx=x-h.x, dz=z-h.z; if(dx*dx+dz*dz < h.r2) return true; } return false; };
-
-  const dens = Math.max(1, VISUAL.lawn.density * cfg.dens), H = VISUAL.lawn.height * cfg.h/0.30;
-  const chunks = [], mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s3 = new THREE.Vector3(), col = new THREE.Color();
-  let total = 0;
-  for(const j of _lawnJobs){
-    const gx = j.g.position.x, gz = j.g.position.z;              // el grupo de la tapa ya está colocado; sus coords son las del segmento
-    const ix = Math.max(0.8, j.sx - 0.55), iz = Math.max(0.8, j.sz - 0.55);   // margen: la brizna no asoma por el canto redondeado
-    const nx = Math.max(1, Math.ceil(ix/LAWN_CHUNK)), nz = Math.max(1, Math.ceil(iz/LAWN_CHUNK));
-    const cw = ix/nx, cd = iz/nz;
-    for(let a=0;a<nx;a++) for(let b=0;b<nz;b++){
-      const ox = -ix/2 + cw*(a+0.5), oz = -iz/2 + cd*(b+0.5);    // centro del chunk, relativo a la tapa
-      const want = Math.round(cw*cd*dens);
-      if(want < 4) continue;
-      const P = [];
-      for(let i=0;i<want;i++){
-        const lx = (Math.random()-0.5)*cw, lz = (Math.random()-0.5)*cd;
-        const wx = gx + ox + lx, wz = gz + oz + lz;
-        if(j.cx != null && _inWall(wx, wz, j.topY, 0.35)) continue;   // ni dentro ni pegada a un muro (cx=null = la tapa ES la cima de un muro: ahí el césped SÍ va)
-        if(inHole(wx, wz)) continue;                              // props y caminos de piedra a la vista
-        P.push(lx, lz);
-      }
-      if(P.length < 8) continue;
-      const n = P.length/2;
-      const im = new THREE.InstancedMesh(_lawnGeo, _lawnMat, n);
-      for(let i=0;i<n;i++){
-        const hh = H * (0.70 + Math.random()*0.66);                // altura variada = aspecto natural
-        e.set(0, Math.random()*Math.PI*2, 0); q.setFromEuler(e);    // vuelta entera: la mata no es simétrica
-        v.set(P[i*2], 0, P[i*2+1]); s3.setScalar(hh);               // escala UNIFORME: no deforma las normales (el ancho ya va en la geometría, relativo a la altura)
-        mtx.compose(v, q, s3); im.setMatrixAt(i, mtx);
-        const t = 1 + (Math.random()-0.5)*2*cfg.vary;              // manchas naturales de tono (unas zonas más claras que otras)
-        col.setRGB(t, t, t); im.setColorAt(i, col);
-      }
-      im.instanceMatrix.needsUpdate = true; if(im.instanceColor) im.instanceColor.needsUpdate = true;
-      im.position.set(gx + ox, j.topY - 0.03, gz + oz);
-      /* receiveShadow = FALSE a propósito. Con recepción de sombra salían MATAS NEGRAS sueltas por el
-         prado (verificado en captura: apagándola desaparecen todas). La brizna es un plano vertical con
-         la normal forzada hacia ARRIBA y se apoya justo en la cara del suelo → el test de profundidad
-         del shadow map la da por tapada en cuanto el sol raso. Además ahorra el sampleo de sombra en
-         ~100k vértices. Se pierde el oscurecimiento del césped dentro de una sombra grande: aceptable
-         a esta escala (briznas de 30 cm) y se nota mucho menos que las matas negras. */
-      im.userData.noOcc = true; im.castShadow = false; im.receiveShadow = false;
-      im.frustumCulled = false;                                   // igual que ►CONTACT2: en r128 el frustum de un InstancedMesh mira la esfera de la GEOMETRÍA (una brizna en el origen), no las instancias
-      im.visible = false;                                         // lo enciende updateLawn según distancia
-      seg.group.add(im); chunks.push(im); total += n;
-    }
-  }
-  _lawnJobs.length = 0;
-  seg.lawnChunks = chunks;
-  if(!window._lawnLogged){ window._lawnLogged = true; console.log('[lawn] segmento '+seg.idx+': '+chunks.length+' chunks, '+total+' briznas'); }
-}
-/* ---- por frame: reloj, pies y qué chunks se encienden ---- */
-const _lawnFeetTmp = [];
-function updateLawn(dt){
-  const on = lawnCoversStage();
-  _lawnU.uTime.value += dt;
-  /* CENTRO del disco: entre la cámara y lo que mira, tirando hacia lo que mira. Así el césped rodea
-     LA ACCIÓN (que es lo que se ve), no la lente. Midiendo desde la cámara, con ella 14u por detrás
-     del jugador, el césped se acababa justo delante de tus pies. */
-  const eye = _lawnU.uEye.value;
-  if(typeof camTarget !== 'undefined') eye.set(camera.position.x*0.35 + camTarget.x*0.65, camTarget.y, camera.position.z*0.35 + camTarget.z*0.65);
-  else eye.copy(camera.position);
-  /* PIES: los 4 luchadores más cercanos a la acción (jugadores + jefe). Es lo ÚNICO que sube por
-     frame; el aplastado en sí lo calcula el shader brizna a brizna. */
-  const F = _lawnU.uFeet.value;
-  let k = 0;
-  if(on && typeof players !== 'undefined'){
-    _lawnFeetTmp.length = 0;
-    for(const p of players) if(p && !p.dead && p.pos) _lawnFeetTmp.push(p);
-    if(typeof BOSSFIGHT !== 'undefined' && BOSSFIGHT && BOSSFIGHT.boss && BOSSFIGHT.boss.pos) _lawnFeetTmp.push(BOSSFIGHT.boss);
-    if(_lawnFeetTmp.length > 4){   // solo ordenamos si sobran candidatos (lo normal es que no)
-      _lawnFeetTmp.sort((a,b)=> ((a.pos.x-eye.x)**2 + (a.pos.z-eye.z)**2) - ((b.pos.x-eye.x)**2 + (b.pos.z-eye.z)**2));
-    }
-    for(const p of _lawnFeetTmp){
-      if(k >= 4) break;
-      F[k++].set(p.pos.x, p.pos.z, p.pos.y, (p.big ? 2.2*p.big : 1.15));   // (x, z, y, radio): así el shader lee el plano de un tirón
-    }
-  }
-  _lawnU.uFeetN.value = k;
-  /* CHUNKS: solo los cercanos Y los que están DELANTE. Con ~200 chunks en el mapa esto es ruido de
-     CPU, y evita mandar a la GPU decenas de miles de briznas.
-     ►El test de DELANTE/DETRÁS no es un lujo: los chunks llevan frustumCulled=false (obligatorio,
-     porque three calcula el frustum de un InstancedMesh con la esfera de la GEOMETRÍA —una brizna en
-     el origen del segmento— y no con las instancias). Sin este test, el disco de césped alrededor de
-     la acción se dibujaba ENTERO, incluida la mitad que queda a la espalda de la cámara: la mitad del
-     coste, tirada. */
-  const lim = _lawnU.uFade.value.y + LAWN_CHUNK, lim2 = lim*lim;
-  const cx = eye.x, cz = eye.z;
-  let fwx = 0, fwz = 1;                                    // hacia dónde mira la cámara, en planta
-  { const e = camera.matrixWorld.elements;                 // 3ª columna = -forward
-    const l = Math.hypot(e[8], e[10]) || 1;
-    fwx = -e[8]/l; fwz = -e[10]/l; }
-  const px = camera.position.x, pz = camera.position.z;
-  const ATRAS = -LAWN_CHUNK*1.5;                           // margen: un chunk justo al lado se queda (su otra mitad sí se ve)
-  for(const s of BELT.segs){
-    const cs = s.lawnChunks; if(!cs) continue;
-    if(!on || !s.group.visible){ for(const c of cs) c.visible = false; continue; }
-    for(const c of cs){
-      const wx = s.x + c.position.x, wz = c.position.z;
-      const dx = wx - cx, dz = wz - cz;
-      if(dx*dx + dz*dz >= lim2){ c.visible = false; continue; }
-      c.visible = ((wx - px)*fwx + (wz - pz)*fwz) > ATRAS;   // delante de la cámara (o pegado a ella)
-    }
-  }
-}
-
 /* GLOW SUAVE en el suelo bajo TU personaje (el que llevas): una luz falsa que siempre lo acompaña.
    Reusa la textura radial de la bruma (_hazeTex). ►AJUSTA: opacity=intensidad · scale=tamaño · color=tono de la luz */
 const meGlow = new THREE.Mesh(new THREE.PlaneGeometry(1,1),
@@ -19147,7 +18868,6 @@ function buildSegment(idx){
   /* ►CONTACT2: junta de contacto bajo los props de este segmento (muros, rocas, árboles, cajas…).
      AQUÍ y no antes: el segmento ya está entero y las losas siguen en coordenadas locales. Va DESPUÉS
      del registro de oclusores a propósito → la malla de manchas no se registra como oclusor. */
-  { const _lt = performance.now(); buildLawn(seg, p0); _lawnMs += performance.now() - _lt; }   // ►LAWN: tapiza las tapas de suelo de este segmento (usa _propSpots/_pathSpots, que ya existen aquí). Cronometrado para saber su parte del arranque.
   seg.treeMeshes = seg.group.children.filter(c => c.userData._s2TreeMerge);
   for(let i=p0;i<platforms.length;i++){
     const pl = platforms[i];
@@ -19169,7 +18889,6 @@ function _applySegX(seg){
 }
 
 function updateBelt(dt){
-  updateLawn(dt);   // ►LAWN: ANTES del early-return (el césped se mueve aunque la cinta esté parada)
   if(!BELT.on) return;
   BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
   const adv = BELT.vel * dt;
@@ -21380,7 +21099,6 @@ function enableS2Scenery(on){
 function rebuildBelt(){
   if(!BELT.on) return;
   for(const seg of BELT.segs){
-    if(seg.lawnChunks) for(const c of seg.lawnChunks) c.dispose();   // ►LAWN: libera los buffers de instancia ANTES de perder la referencia (geometría y material son compartidos)
     scene.remove(seg.group);
   }
   BELT.segs.length = 0;
@@ -21388,6 +21106,7 @@ function rebuildBelt(){
   _propSpots.length = 0; _fires.length = 0; _pathSpots.length = 0;
   S2_TOWERS.length = 0; S2_AMBUSHES.length = 0; _s2VineSpots.length = 0;   // ►CAMP: campamentos/emboscadas/hiedras mueren con sus segmentos
   if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wTowers.length = 0; _wTrains.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles, torres, trenes y props altos viven en los grupos de segmento
+  if(typeof _wAnimals!=='undefined'){ for(const a of _wAnimals){ if(a.m && a.m.parent) a.m.parent.remove(a.m); } _wAnimals.length = 0; _wASpawnT = 3; }   // ►WEST: los animales viven en la RAÍZ → hay que quitarles la malla a mano (patrón pingüinos)
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
@@ -21419,7 +21138,6 @@ function rebuildBelt(){
   if(typeof _s8Nodes!=='undefined') _s8Nodes.length=0;   // ►P10a: cristales resonantes
   if(typeof _s9Rings!=='undefined') _s9Rings.length=0;   // ►P10a: boost rings
   occluders.length = 0; occRoots.length = 0; _occFaded.clear();
-  _lawnJobs.length = 0;   // ►LAWN: si un segmento anterior dejó tapas a medias, que no se cuelen en el primero del stage nuevo
   for(let i=0;i<BELT.count;i++){
     const seg = buildSegment(i);
     seg.x = BELT.startX + i*BELT.stride;
@@ -24428,6 +24146,157 @@ function wTrain(circuit, opt){
   return tr;
 }
 
+/* ---- ►WEST · ANIMALES (caballo / burro / vaca) -------------------------------------------------
+   Rigs GLB con clips propios (western_anims.js). Viven en la RAÍZ de la escena, no en el grupo del
+   segmento: así el reciclado no los teletransporta, y a cambio hay que derivarlos a mano con la
+   cinta (patrón del pingüino del stage 7).
+   No entran en platforms[] ni en minions[]: son props con test de contacto, fuera de todos los
+   bucles calientes. Tope duro de 6 vivos — cada uno es un rig skinned y el mixer es lo caro. */
+const _wAnimals = [];
+const WA_CAP = 6;
+const WA_KINDS = {
+  horse:  { glb:'WHORSE_GLB_B64',  walk:1.7, run:8.5, embiste:0.35 },
+  donkey: { glb:'WDONKEY_GLB_B64', walk:1.4, run:7.0, embiste:0.30 },
+  cow:    { glb:'WCOW_GLB_B64',    walk:1.1, run:6.0, embiste:0.05 },   // la vaca casi nunca embiste: pasta
+};
+const _wATpl = {}, _wATried = {};
+let _wASpawnT = 3, _wAnimT = 0;
+function _wAnimBuildTpl(kind){
+  if(_wATpl[kind]) return _wATpl[kind];
+  const cfg = WA_KINDS[kind]; if(!cfg) return null;
+  if(_wATried[kind]) return null;
+  const b64 = window[cfg.glb];
+  if(!(b64 && THREE.GLTFLoader)){ console.warn('[west-animal] aún sin '+cfg.glb+'/GLTFLoader — reintento en el próximo spawn'); return null; }
+  _wATried[kind] = true;
+  try{
+    const bin = atob(b64), buf = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+    /* ►GLTFLoader.parse es ASÍNCRONO (decodifica texturas por blob URL): esto devuelve null la
+       primera vez y el spawn reintenta solo. No asumas que la plantilla existe tras el parse. */
+    new THREE.GLTFLoader().parse(buf.buffer, '', g=>{
+      _wATpl[kind] = { scene:g.scene, animations:g.animations||[] };
+      console.log('[west-animal] '+kind+' listo ·', _wATpl[kind].animations.map(a=>a.name).join('/'));
+    }, e=>console.warn('[west-animal] parse '+kind, e));
+  }catch(e){ console.warn('[west-animal] build '+kind, e); }
+  return _wATpl[kind] || null;
+}
+function _wAnimInst(kind){
+  const t = _wAnimBuildTpl(kind);
+  if(!t || !t.scene) return null;
+  const m = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(t.scene) : t.scene.clone();
+  /* ►WESTERN FIX: los GLB de este pipeline salen con transparent=true espurio → una malla de dos
+     caras sin depth-write pinta desordenado. Ningún animal necesita alfa. */
+  m.traverse(o=>{ if(!o.isMesh) return;
+    o.castShadow = true; o.frustumCulled = false;          // el bbox de un rig miente → culling a mano
+    const arr = Array.isArray(o.material) ? o.material : [o.material];
+    for(const mm of arr){ if(mm && mm.transparent){ mm.transparent=false; mm.depthWrite=true; mm.needsUpdate=true; } }
+  });
+  const mixer = new THREE.AnimationMixer(m), acts = {};
+  for(const c of t.animations) acts[c.name] = mixer.clipAction(c);
+  return { m, mixer, acts };
+}
+function _wAnimPlay(a, tok){
+  if(a.clip === tok || !a.acts[tok]) return;
+  if(a.clip && a.acts[a.clip]) a.acts[a.clip].fadeOut(0.2);
+  a.acts[tok].reset().fadeIn(0.2).play();
+  a.clip = tok;
+}
+function wSpawnAnimal(kind, x, z, y){
+  if(_wAnimals.length >= WA_CAP) return null;
+  const inst = _wAnimInst(kind); if(!inst) return null;
+  inst.m.position.set(x, y, z);
+  inst.m.rotation.y = Math.random()*6.283;
+  scene.add(inst.m);
+  const a = { kind, cfg:WA_KINDS[kind], m:inst.m, mixer:inst.mixer, acts:inst.acts, clip:null,
+              st:'graze', t:1+Math.random()*4, vy:0, tx:x, tz:z, ground:true };
+  _wAnimPlay(a, kind==='cow' ? 'eat' : 'idle');
+  _wAnimals.push(a);
+  return a;
+}
+function _wUpdateAnimals(dt){
+  _wAnimT += dt;
+  /* aparición: por detrás de la cámara, sobre suelo real, para que entren derivando con la cinta */
+  _wASpawnT -= dt;
+  if(_wASpawnT <= 0){
+    _wASpawnT = 4 + Math.random()*4;
+    if(_wAnimals.length < WA_CAP){
+      const kinds = ['cow','cow','horse','donkey'];               // la vaca es la más común (pasta en los campos)
+      for(let i=0;i<6;i++){
+        const x = camera.position.x - 46 - Math.random()*22, z = -18 + Math.random()*30;
+        const gy = platformTopAt(x, z, -0.2);
+        if(gy===null) continue;
+        wSpawnAnimal(kinds[(Math.random()*kinds.length)|0], x, z, gy);
+        break;
+      }
+    }
+  }
+  const camX = camera.position.x, camZ = camera.position.z;
+  for(let i=_wAnimals.length-1;i>=0;i--){
+    const a = _wAnimals[i], p = a.m.position;
+    if(BELT.on) p.x += BELT.vel*dt;                               // deriva con el mundo (vive en la raíz)
+    /* JALEO: lo que hace que un animal salga por patas */
+    let amenaza = null, dmin = 1e9;
+    for(const q of players){ if(q.dead||q.out) continue;
+      const d = Math.hypot(q.pos.x-p.x, q.pos.z-p.z); if(d<dmin){ dmin=d; amenaza=q; } }
+    if(a.st!=='fall' && a.st!=='flee' && (dmin < 4.5 || shake > 0.3)){
+      if(a.st!=='charge' && Math.random() < a.cfg.embiste*0.5 && dmin < 7 && amenaza){ a.st='charge'; a.t=2.2; _wAnimPlay(a,'run'); }
+      else { a.st='flee'; a.t = 2.5 + Math.random()*2; _wAnimPlay(a,'run');
+             a.fx = (p.x - (amenaza?amenaza.pos.x:p.x-1)); a.fz = (p.z - (amenaza?amenaza.pos.z:p.z));
+             const h=Math.hypot(a.fx,a.fz)||1; a.fx/=h; a.fz/=h; }
+    }
+    a.t -= dt;
+    let mvx = 0, mvz = 0, guard = true;
+    if(a.st==='graze'){
+      a.m.rotation.y += Math.sin(_wAnimT*0.7 + p.x)*0.002;
+      if(a.t<=0){ a.st='walk'; a.t=3+Math.random()*4; _wAnimPlay(a,'walk');
+        a.tx = p.x + (Math.random()-0.5)*14; a.tz = p.z + (Math.random()-0.5)*12; }
+    } else if(a.st==='walk'){
+      const dx=a.tx-p.x, dz=a.tz-p.z, d=Math.hypot(dx,dz)||1;
+      mvx = dx/d*a.cfg.walk; mvz = dz/d*a.cfg.walk;
+      if(a.t<=0 || d<1.2){ a.st='graze'; a.t=4+Math.random()*5; _wAnimPlay(a, a.kind==='cow'?'eat':'idle'); }
+    } else if(a.st==='flee'){
+      mvx = a.fx*a.cfg.run; mvz = a.fz*a.cfg.run;
+      guard = false;                                              // ►huyendo se TIRAN de la meseta a propósito
+      if(a.t<=0){ a.st='graze'; a.t=3+Math.random()*3; _wAnimPlay(a, a.kind==='cow'?'eat':'idle'); }
+    } else if(a.st==='charge'){
+      if(amenaza){ const dx=amenaza.pos.x-p.x, dz=amenaza.pos.z-p.z, d=Math.hypot(dx,dz)||1;
+        mvx = dx/d*a.cfg.run*0.8; mvz = dz/d*a.cfg.run*0.8;
+        if(d < 1.6 && (amenaza._wAnimCD||0)<=0){                  // embestida: empuja, no destroza
+          amenaza._wAnimCD = 1.2;
+          amenaza.damage += 8*defMul(amenaza); amenaza.hitFlash=.15;
+          amenaza.vel.set(dx/d*13, 6, dz/d*13); amenaza.hitstun=Math.max(amenaza.hitstun,.22);
+          amenaza.onGround=false; jiggle(amenaza,8); sfx.hit(12); shake=Math.max(shake,.22);
+          a.st='flee'; a.t=2; a.fx=-dx/d; a.fz=-dz/d;
+        }
+      }
+      if(a.t<=0){ a.st='flee'; a.t=1.5; a.fx=-(mvx||1); a.fz=-(mvz||0); }
+    }
+    /* avance con (o sin) guarda anti-caída */
+    if(mvx || mvz){
+      const nx = p.x + mvx*dt, nz = p.z + mvz*dt;
+      const gy = platformTopAt(nx, nz, -0.2);
+      if(gy!==null || !guard){
+        p.x = nx; p.z = nz;
+        if(gy!==null && a.st!=='fall'){ p.y = gy; a.vy = 0; }
+        else if(a.st!=='fall'){ a.st='fall'; a.vy = 1.5; _wAnimPlay(a,'run');
+          burst(_fxV.set(p.x, p.y+0.3, p.z), 0xd9a074, 6, 4, 3, .7); }
+      }
+      a.m.rotation.y = Math.atan2(mvx, mvz);
+    }
+    if(a.st==='fall'){ a.vy -= 18*dt; p.y += a.vy*dt; p.x += mvx*dt*0.4; }
+    /* cull manual: los rigs llevan frustumCulled=false, así que si no se apagan se dibujan siempre */
+    const fd = Math.hypot(p.x-camX, p.z-camZ);
+    const vis = fd < 62;
+    a.m.visible = vis;
+    if(vis) a.mixer.update(dt);                                   // el update de un mixer skinned es lo caro
+    /* baja: se salió por delante o se lo tragó el cañón */
+    if(p.x > BELT.exitX || p.y < blastDownY() - 4){
+      scene.remove(a.m); _wAnimals.splice(i,1);
+    }
+  }
+  for(const q of players) if((q._wAnimCD||0)>0) q._wAnimCD = Math.max(0, q._wAnimCD - dt);
+}
+
 /* el barril se detona PEGÁNDOLE (lo llama hitMinions, que es el barrido melee del jugador) */
 function _wHitBarrels(p, tip){
   for(const b of _wBarrels){
@@ -24569,6 +24438,7 @@ function _wUpdateTrains(dt){
 function updateStageW(dt){
   _wUpdateTowers(dt);
   _wUpdateTrains(dt);
+  _wUpdateAnimals(dt);
   for(const b of _wBarrels){
     if(b.state !== 'fuse') continue;
     b.t -= dt;
@@ -31374,19 +31244,6 @@ function setupVisualGUI(){
   fE.add(VISUAL.env, 'on').name('activado').onChange(upd);
   fE.add(VISUAL.env, 'intensity', 0, 1, 0.01).name('intensidad').onChange(upd);
   fE.add(VISUAL.env, 'sun', 0, 2, 0.01).name('reflejo del sol').onChange(upd);
-  /* ►LAWN: césped. Viento/pisado/distancia son uniforms → en vivo. Densidad y altura son geometría
-     ya generada → piden reconstruir la cinta (rebuildBelt), que tarda un poco: van con onFinishChange. */
-  const fL = gui.addFolder('Césped (suelo)');
-  const upL = ()=>applyLawnLive();
-  const upLBuild = ()=>{ applyLawnLive(); if(typeof rebuildBelt==='function') rebuildBelt(); };
-  fL.add(VISUAL.lawn, 'on').name('activado').onChange(upLBuild);
-  fL.add(VISUAL.lawn, 'density', 2, 40, 1).name('densidad (briznas/m²)').onFinishChange(upLBuild);
-  fL.add(VISUAL.lawn, 'height', 0.1, 0.8, 0.01).name('altura').onFinishChange(upLBuild);
-  fL.add(VISUAL.lawn, 'wind', 0, 0.4, 0.005).name('viento: fuerza').onChange(upL);
-  fL.add(VISUAL.lawn, 'speed', 0, 4, 0.05).name('viento: velocidad').onChange(upL);
-  fL.add(VISUAL.lawn, 'trample', 0, 0.8, 0.01).name('pisado').onChange(upL);
-  fL.add(VISUAL.lawn, 'fade', 0.4, 2, 0.05).name('distancia (× tier)').onChange(upL);
-  fL.open();
   /* ►DEPTH: profundidad tonal. Los números van horneados en el shader de la niebla → cada cambio
      RECOMPILA los materiales visibles (tirón de ~1s). Por eso van con onFinishChange (al soltar). */
   /* ►RIM: luz de borde. Mismo trato que ►DEPTH — recompila al soltar el slider. */
