@@ -1383,7 +1383,10 @@ const VISUAL = {
   // (near 72) que el fondo conserva el mismo brillo y saturación que el primer plano = todo en el
   // mismo plano. Esto añade, ANTES de la niebla, desaturación + bruma + levantado de sombras que
   // crece con la distancia. Es lo que separa los planos. Coste 0 (va dentro del chunk de niebla).
-  depth: { on:true, near:42, far:140, sat:0.62, haze:0.20, lift:0.34 },   // [near/far] tramo donde crece (near POR ENCIMA de la distancia de cámara, ~14 en seguimiento y ~25-40 en general, para no tocar la zona de juego) · [sat 0–1] desatura · [haze 0–0.6] bruma previa · [lift 0–0.7] suelo de las sombras lejanas
+  depth: { on:true, near:42, far:140, sat:0.62, haze:0.20, lift:0.34 },
+  // ►RIM: LUZ DE BORDE. Volumen para props y personajes sin tocar modelos ni texturas. Se llama rim2
+  // porque VISUAL.rim ya existe y es OTRA cosa (la luz rasante real de la escena).
+  rim2: { on:true, strength:0.30, power:3.0, color:0xbfd8ff },   // [strength 0–1] · [power 1–8] cuanto más alto, más pegado al borde · color frío = luz de cielo   // [near/far] tramo donde crece (near POR ENCIMA de la distancia de cámara, ~14 en seguimiento y ~25-40 en general, para no tocar la zona de juego) · [sat 0–1] desatura · [haze 0–0.6] bruma previa · [lift 0–0.7] suelo de las sombras lejanas
   // PROFUNDIDAD DE CAMPO (bokeh) — el foco SIGUE a la acción
   dof:  { aperture:0.014, maxblur:0.028 },      // [aperture 0–0.03][maxblur 0–0.06]
   // OCLUSIÓN AMBIENTAL HORNEADA (pseudo-AO por vértice; coste runtime ~0)
@@ -1501,8 +1504,22 @@ const _fogDepthVar = (function(){
   if(!m || _fogSrcOrig.indexOf(_fogMixLine) < 0){ console.warn('►DEPTH desactivado: el chunk fog_fragment de esta versión de three no encaja'); return null; }
   return m[1];                                     // 'fogDepth' (r128) o 'vFogDepth' (r13x+)
 })();
-let _depthVer = 0;                                 // firma de recompilación (ver customProgramCacheKey)
-const _depthKey = function(){ return 'aer'+_depthVer; };
+/* firma de recompilación COMPARTIDA por todos los parches de shader globales (►DEPTH, ►RIM…). Una
+   sola, a propósito: si cada módulo pusiera la suya, el último en asignar customProgramCacheKey
+   borraría la del anterior y ese dejaría de refrescarse. */
+let _depthVer = 0;
+const _depthKey = function(){ return 'gfx'+_depthVer; };
+/* fuerza la recompilación de lo que ya está en pantalla tras cambiar un chunk global */
+function _recompileShaders(onlyFogged){
+  _depthVer++;
+  const seen = new Set();
+  scene.traverse(o=>{
+    const mm = o.material; if(!mm) return;
+    const arr = Array.isArray(mm) ? mm : [mm];
+    for(const m of arr){ if(!m || seen.has(m.uuid)) continue; if(onlyFogged && m.fog === false) continue;
+      seen.add(m.uuid); m.customProgramCacheKey = _depthKey; m.needsUpdate = true; }
+  });
+}
 function _depthChunk(){
   const D = VISUAL.depth;
   if(!D.on) return _fogSrcOrig;
@@ -1521,17 +1538,54 @@ function _depthChunk(){
 function applyDepthTone(live){
   if(!_fogDepthVar) return;
   THREE.ShaderChunk.fog_fragment = _depthChunk();
-  if(!live) return;
-  _depthVer++;
-  const seen = new Set();
-  scene.traverse(o=>{
-    const mm = o.material; if(!mm) return;
-    const arr = Array.isArray(mm) ? mm : [mm];
-    for(const m of arr){ if(!m || m.fog === false || seen.has(m.uuid)) continue; seen.add(m.uuid);
-      m.customProgramCacheKey = _depthKey; m.needsUpdate = true; }
-  });
+  if(live) _recompileShaders(true);
 }
 applyDepthTone(false);   // ANTES de que se cree/compile ningún material
+
+/* =====================================================================
+   ►RIM — LUZ DE BORDE.
+
+   Para qué: da VOLUMEN a props y personajes sin tocar ni un modelo ni una
+   textura. Los bordes que miran de refilón a la cámara reciben un poco de luz
+   fría, que es lo que separa una figura del fondo y lo que hace que una caja
+   deje de leerse como una mancha de color plano.
+
+   Dónde: dentro del chunk `lights_fragment_end` de three, así que lo heredan
+   TODOS los materiales Standard/Physical — terreno, props, personajes, jefes —
+   sin tocar un solo call-site. El césped (Lambert) NO lo incluye, y está bien
+   así: no queremos borde en cada brizna.
+
+   Por qué se ve poco en el suelo y mucho en las figuras: el término es
+   (1 - normal·vista)^power. El suelo mira hacia arriba y la cámara lo ve
+   bastante de frente → casi nada; una silueta de perfil → todo. Sale gratis
+   la selectividad que a mano costaría una máscara.
+
+   Va ANTES del tonemapping (suma a la luz, no al píxel final), así que se
+   comporta como una luz de verdad y no “quema” los blancos.
+
+   Mismos gotchas que ►DEPTH: números horneados como literales, sliders con
+   onFinishChange y customProgramCacheKey compartido para forzar recompilación.
+   ===================================================================== */
+const _rimSrcOrig = (window.THREE && THREE.ShaderChunk) ? THREE.ShaderChunk.lights_fragment_end : null;
+const _rimOK = !!(_rimSrcOrig && /RE_IndirectDiffuse/.test(_rimSrcOrig));
+if(_rimSrcOrig && !_rimOK) console.warn('►RIM desactivado: el chunk lights_fragment_end de esta versión de three no encaja');
+function _rimChunk(){
+  const R = VISUAL.rim2;
+  if(!_rimOK || !R.on) return _rimSrcOrig;
+  const g = v => (+v).toFixed(4);
+  const c = new THREE.Color(R.color);
+  return _rimSrcOrig + '\n' + [
+    'float rimF = 1.0 - saturate(dot(geometry.normal, geometry.viewDir));',
+    'rimF = pow(rimF, '+g(R.power)+');',
+    'reflectedLight.indirectDiffuse += rimF * '+g(R.strength)+' * vec3('+g(c.r)+', '+g(c.g)+', '+g(c.b)+');'
+  ].join('\n');
+}
+function applyRimLight(live){
+  if(!_rimOK) return;
+  THREE.ShaderChunk.lights_fragment_end = _rimChunk();
+  if(live) _recompileShaders(false);
+}
+applyRimLight(false);   // ANTES de que se cree/compile ningún material
 /* NIEBLA CENTRAL: bruma suave (billboards) sobre la zona de lucha, aparte de la del horizonte */
 const _hazeTex = (function(){ const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
   const gr=x.createRadialGradient(64,64,0,64,64,64); gr.addColorStop(0,'rgba(255,255,255,0.55)'); gr.addColorStop(1,'rgba(255,255,255,0)');
@@ -30200,6 +30254,14 @@ function setupVisualGUI(){
   fL.open();
   /* ►DEPTH: profundidad tonal. Los números van horneados en el shader de la niebla → cada cambio
      RECOMPILA los materiales visibles (tirón de ~1s). Por eso van con onFinishChange (al soltar). */
+  /* ►RIM: luz de borde. Mismo trato que ►DEPTH — recompila al soltar el slider. */
+  const fRim = gui.addFolder('Luz de borde (volumen)');
+  const upR = ()=>applyRimLight(true);
+  fRim.add(VISUAL.rim2, 'on').name('activada').onChange(upR);
+  fRim.add(VISUAL.rim2, 'strength', 0, 1, 0.01).name('fuerza').onFinishChange(upR);
+  fRim.add(VISUAL.rim2, 'power', 1, 8, 0.1).name('finura del borde').onFinishChange(upR);
+  fRim.addColor(VISUAL.rim2, 'color').name('color').onFinishChange(upR);
+  fRim.open();
   const fDep = gui.addFolder('Profundidad tonal (aérea)');
   const upD = ()=>applyDepthTone(true);
   fDep.add(VISUAL.depth, 'on').name('activada').onChange(upD);
