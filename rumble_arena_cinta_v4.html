@@ -2149,6 +2149,37 @@ function subirTexturasDe(root){
   });
   return n;
 }
+/* ►PRECALENTAR UN OBJETO — el remate de lo anterior.
+   Medido (informe 30/07 tras subir las texturas): los parones que quedaban traen "+15 programas ·
+   +0 texturas", o sea COMPILACIÓN, ~30 ms por programa. El motivo: `renderer.compile()` compila los
+   programas de la vista principal pero **no los del PASE DE SOMBRA** (usa materiales de profundidad
+   aparte, y con skinning son variantes distintas), y encima el pre-calentado dejaba la instancia a 400
+   unidades bajo el mundo, donde no la dibuja nadie — ni la cámara ni el sol.
+   Aquí se hace bien: el objeto se pone un instante EN EL ORIGEN (dentro del alcance de la sombra), se
+   compila, se sube su textura y se dibuja UN frame a un destino de 8×8 con el shadow map forzado. Todo
+   dentro del mismo bloque síncrono, así que no hay ningún frame real por medio: no se ve nada. */
+function precalentarObjeto(root, motivo){
+  if(!root || typeof renderer === 'undefined' || !renderer) return 0;
+  const antes = renderer.info.programs ? renderer.info.programs.length : 0;
+  const pos = root.position.clone(), tenia = !!root.parent;
+  try{
+    root.position.set(0, 0, 0);
+    if(!tenia) scene.add(root);
+    subirTexturasDe(root);
+    if(renderer.compile) renderer.compile(scene, camera);      // programas de la vista principal
+    if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
+    const rtPrev = renderer.getRenderTarget(), suPrev = renderer.shadowMap.needsUpdate;
+    renderer.shadowMap.needsUpdate = true;                     // …y los del pase de SOMBRA, que compile() no toca
+    renderer.setRenderTarget(_warmRT);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(rtPrev);
+    renderer.shadowMap.needsUpdate = suPrev;
+  }catch(e){ console.warn('►PRECALENTAR ' + motivo + ':', e); }
+  finally { if(!tenia && root.parent) root.parent.remove(root); root.position.copy(pos); }
+  const n = (renderer.info.programs ? renderer.info.programs.length : 0) - antes;
+  if(n > 0) console.log('[precalentado] ' + motivo + ': ' + n + ' programas');
+  return n;
+}
 function warmupShaders(motivo){
   if(typeof renderer === 'undefined' || !renderer || typeof warmupGPU !== 'function') return 0;
   const antes = renderer.info.programs ? renderer.info.programs.length : 0;
@@ -8483,15 +8514,11 @@ const _GOB_ZERO = new THREE.Matrix4().makeScale(0,0,0);   // matriz nula → ocu
            y se usa warmupLigero (compile con la cámara real) en vez del compile a pelo. */
         encolarSiEnPartida('prewarm goblin ' + t, ()=>{
           const w = _gobBuildInst(t);
-          w.root.position.set(0, -400, 0); scene.add(w.root);
-          if(typeof warmupLigero === 'function') warmupLigero('goblin ' + t);
-          else if(renderer.compile) renderer.compile(scene, camera);
-          /* ►TEXSUBE: lo que faltaba. compile() NO sube texturas, y esta instancia entra y sale de la
-             escena sin dibujarse, así que su atlas se subía en el primer combate en el que apareciera
-             este tipo — uno de los parones de 3-4 s dentro de drawScene(). */
-          const _nt = subirTexturasDe(w.root);
-          if(_nt) console.log('[texsube] goblin ' + t + ': ' + _nt + ' texturas a la GPU');
-          scene.remove(w.root);
+          /* ►PRECALENTAR: sube su atlas Y compila sus programas, los de la vista y los del pase de
+             sombra. Antes esto solo llamaba a compile() con la instancia enterrada a y=-400: ni se
+             subía la textura (parones de 3-4 s) ni se compilaba su variante de sombra (+15 programas
+             de golpe al aparecer los minions). Los dos fallos medidos, los dos aquí. */
+          precalentarObjeto(w.root, 'goblin ' + t);
           _gobPool[t].push(w);
         });
       }, err=>{ console.warn('[goblin] parse '+t, err); }); })(type);
