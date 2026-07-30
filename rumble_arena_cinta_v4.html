@@ -2166,14 +2166,22 @@ function precalentarObjeto(root, motivo){
     root.position.set(0, 0, 0);
     if(!tenia) scene.add(root);
     subirTexturasDe(root);
-    if(renderer.compile) renderer.compile(scene, camera);      // programas de la vista principal
+    if(renderer.compile) renderer.compile(scene, camera);      // programas de la vista principal (recorre la escena entera, la visibilidad da igual)
     if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
+    /* El render de calentamiento solo tiene que dibujar ESTE objeto. Si se deja el mundo entero
+       visible cuesta un ojo: medido en el menú, 6.044 draw calls y 6 millones de triángulos en un
+       frame, 1,9 s. Se esconde la cinta mientras dura (el objeto sigue visible, y el shadow map se
+       regenera solo en el siguiente frame de juego). */
+    const ocultos = [];
+    try{ if(typeof BELT !== 'undefined' && BELT.segs) for(const sg of BELT.segs){
+      if(sg.group && sg.group.visible){ sg.group.visible = false; ocultos.push(sg.group); } } }catch(e){}
     const rtPrev = renderer.getRenderTarget(), suPrev = renderer.shadowMap.needsUpdate;
     renderer.shadowMap.needsUpdate = true;                     // …y los del pase de SOMBRA, que compile() no toca
     renderer.setRenderTarget(_warmRT);
     renderer.render(scene, camera);
     renderer.setRenderTarget(rtPrev);
     renderer.shadowMap.needsUpdate = suPrev;
+    for(const g of ocultos) g.visible = true;
   }catch(e){ console.warn('►PRECALENTAR ' + motivo + ':', e); }
   finally { if(!tenia && root.parent) root.parent.remove(root); root.position.copy(pos); }
   const n = (renderer.info.programs ? renderer.info.programs.length : 0) - antes;
@@ -2334,9 +2342,22 @@ function hitchTick(ms, calls, tris){
      de dejarlo en "algo del render". Leerlos es gratis (son contadores que three ya lleva). */
   const _pg = renderer.info.programs ? renderer.info.programs.length : 0;
   const _tx = (renderer.info.memory && renderer.info.memory.textures) || 0;
+  const _dp = _pg - (HITCH.lastPg||_pg);
+  /* ►QUÉ programa. Saber que se compilaron 15 no basta: hay que saber CUÁLES, porque la clave dice el
+     tipo de material y sus flags (skinning, mapas, sombra…) y eso señala al sistema culpable. Solo se
+     hace en los frames donde el contador SUBE, así que no cuesta nada en los 6.000 frames normales. */
+  let _nuevos = '';
+  if(_dp > 0 && HITCH.progSet){
+    const lista = [];
+    for(const pr of renderer.info.programs){
+      const k = pr.cacheKey || '';
+      if(!HITCH.progSet.has(k)){ HITCH.progSet.add(k); if(lista.length < 4) lista.push(k.slice(0, 90).replace(/\s+/g,' ')); }
+    }
+    _nuevos = lista.join(' ¦ ');
+  }
   if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
     HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000),
-                        dp:_pg - (HITCH.lastPg||_pg), dt:_tx - (HITCH.lastTx||_tx), ctx:hitchCtx() });
+                        dp:_dp, dt:_tx - (HITCH.lastTx||_tx), prog:_nuevos, ctx:hitchCtx() });
   }
   HITCH.lastPg = _pg; HITCH.lastTx = _tx;
   if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
@@ -2378,6 +2399,8 @@ function hitchStart(){
   HITCH.lentas.length = 0;
   hitchInstrumentar();
   HITCH.on = true; HITCH.t0 = performance.now(); HITCH.dts.length = 0; HITCH.peores.length = 0;
+  /* foto de los programas que YA existen: lo que aparezca después es lo que se compila en marcha */
+  try{ HITCH.progSet = new Set((renderer.info.programs||[]).map(p=>p.cacheKey||'')); }catch(e){ HITCH.progSet = null; }
   console.log('%c[tirones] GRABANDO… (vale desde el MENÚ: sigue grabando al entrar en partida). F8 otra vez para el informe, o corta solo a los 150 s', 'background:#420;color:#fd0;padding:2px 6px');
   if(typeof showBanner === 'function') showBanner('MIDIENDO TIRONES', 2);
 }
@@ -2423,7 +2446,8 @@ function hitchStop(){
     'background:#124;color:#8cf;padding:2px 6px');
   const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,12);
   const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · '
-    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · ' + x.ctx).join('\n');
+    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · ' + x.ctx
+    + (x.prog ? '\n        programas nuevos: ' + x.prog : '')).join('\n');
   if(top.length) console.log('[tirones] peores frames:\n' + peoresTxt);
   /* fichero: resumen + máquina + los peores + el histograma, que es lo que de verdad se lee después */
   const bandas = [8,16,25,33,50,100,250,1e9], etiq = ['<8','8-16','16-25','25-33','33-50','50-100','100-250','>250'];
