@@ -2231,6 +2231,31 @@ function hitchStart(){
   console.log('%c[tirones] GRABANDO… juega normal y pulsa F8 otra vez para el informe (o espera 90 s)', 'background:#420;color:#fd0;padding:2px 6px');
   if(typeof showBanner === 'function') showBanner('MIDIENDO TIRONES', 2);
 }
+/* Datos de la MÁQUINA: sin esto un informe no sirve para comparar entre equipos. */
+function hitchMaquina(){
+  let gpu = 'desconocida';
+  try{ const gl = renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if(ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL); }catch(e){}
+  const c = renderer.domElement;
+  return [
+    'navegador: ' + navigator.userAgent,
+    'gpu: ' + gpu,
+    'lienzo: ' + c.width + 'x' + c.height + ' · pixelRatio ' + curRatio.toFixed(2) + ' · devicePixelRatio ' + devicePixelRatio,
+    'calidad: ' + (typeof qMode!=='undefined'?qMode:'?') + ' → tier ' + (typeof effName!=='undefined'?effName:'?'),
+    'nucleos: ' + (navigator.hardwareConcurrency || '?') + ' · memoria js: ' + (performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576)+' MB' : 'n/d')
+  ].join('\n');
+}
+/* El informe se DESCARGA como .txt (además de escribirse en consola): así no hay que copiar nada a
+   mano de la consola, que es un engorro. Cae en la carpeta de Descargas. */
+function hitchDescargar(txt){
+  try{
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type:'text/plain' }));
+    a.download = 'tirones-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ console.warn('[tirones] no se pudo descargar el informe', e); }
+}
 function hitchStop(){
   if(!HITCH.on) return;
   HITCH.on = false;
@@ -2246,9 +2271,32 @@ function hitchStop(){
   console.log('%c[tirones] ' + seg.toFixed(0) + ' s · mediana ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps) · p95 ' + p95.toFixed(1)
     + ' · p99 ' + p99.toFixed(1) + ' · >50ms: ' + g50 + ' · >100ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min · ' + veredicto,
     'background:#124;color:#8cf;padding:2px 6px');
-  const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,8);
-  if(top.length) console.log('[tirones] peores frames:\n' + top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · ' + x.ctx).join('\n'));
-  if(typeof showBanner === 'function') showBanner('INFORME EN LA CONSOLA (F12)', 2.5);
+  const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,12);
+  const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · ' + x.ctx).join('\n');
+  if(top.length) console.log('[tirones] peores frames:\n' + peoresTxt);
+  /* fichero: resumen + máquina + los peores + el histograma, que es lo que de verdad se lee después */
+  const bandas = [8,16,25,33,50,100,250,1e9], etiq = ['<8','8-16','16-25','25-33','33-50','50-100','100-250','>250'];
+  const hist = bandas.map((b,i)=> d.filter(x=> x<b && x>=(i?bandas[i-1]:0)).length);
+  const txt = [
+    'INFORME DE TIRONES · RUMBLEBOYS',
+    new Date().toString(),
+    '',
+    hitchMaquina(),
+    '',
+    'duracion: ' + seg.toFixed(1) + ' s · frames: ' + n,
+    'mediana: ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps)',
+    'p95: ' + p95.toFixed(1) + ' ms · p99: ' + p99.toFixed(1) + ' ms',
+    'frames >50 ms: ' + g50 + ' · >100 ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min',
+    'VEREDICTO: ' + veredicto + '   (objetivo: mediana<=17, p99<=33, cero frames >100)',
+    '',
+    'reparto de frames por tiempo:',
+    etiq.map((e,i)=> '  ' + e.padEnd(8) + ' ms: ' + hist[i]).join('\n'),
+    '',
+    'peores frames (ms · cuando · draw calls · triangulos · contexto):',
+    peoresTxt || '  (ninguno por encima de 50 ms)'
+  ].join('\n');
+  hitchDescargar(txt);
+  if(typeof showBanner === 'function') showBanner('INFORME DESCARGADO', 2.5);
 }
 /* Escucha propia (no toca el manejador de teclas del juego, que lo edita otra sesión) */
 window.addEventListener('keydown', e=>{ if(e.key === 'F8'){ e.preventDefault(); HITCH.on ? hitchStop() : hitchStart(); } });
@@ -24160,17 +24208,22 @@ function _wtSample(c, u){
 /* circuito estándar alrededor de una meseta rectangular: arriba → baja por el este → BOCA ABAJO
    por debajo → sube por el oeste → cierra. `topY` es la cara pisable de la meseta. */
 function wTrainLoop(cx, cz, hx, hz, topY, opt){
-  const yT = topY + 0.35, yB = topY - 6.0;
+  /* ►WEST-VÍA-PLANA: el circuito va ENTERO sobre la superficie de la meseta. Antes bajaba a
+     topY-6 con peralte hasta π para pasar por debajo e invertirse; eso dejaba tramos de raíl
+     colgando en el aire (la meseta no se extiende hasta ahí abajo) y era feísimo. Decisión de
+     Toni: la vía nunca vuela. Todos los puntos a la misma cota y sin peralte.
+     `hx`/`hz` deben ir METIDOS en la huella real de la losa (ver la llamada de cada builder): si
+     coinciden con el borde, el raíl asoma sobre el vacío en las esquinas del bucle. */
+  const y = topY + 0.35;
   const P = [
-    { x:cx-hx, y:yT, z:cz+hz, bank:0 },
-    { x:cx+hx, y:yT, z:cz+hz, bank:0 },
-    { x:cx+hx+1.6, y:yT-2.2, z:cz+hz*0.35, bank:0.55 },     // empieza a caer y a peraltar
-    /* solo el punto CENTRAL va a π: con los tres de abajo invertidos, el 41% del recorrido iba
-       boca abajo y dejaba de ser un tramo para ser medio viaje. Así queda en ~1/5. */
-    { x:cx+hx+1.6, y:yB, z:cz-hz*0.20, bank:2.0 },          // ya volcando
-    { x:cx, y:yB-0.4, z:cz-hz*0.95, bank:Math.PI },         // tramo INVERTIDO bajo la losa
-    { x:cx-hx-1.6, y:yB, z:cz-hz*0.20, bank:2.0 },
-    { x:cx-hx-1.6, y:yT-2.2, z:cz+hz*0.35, bank:0.55 },     // sube y se endereza
+    { x:cx-hx, y, z:cz+hz, bank:0 },
+    { x:cx+hx*0.45, y, z:cz+hz, bank:0 },
+    { x:cx+hx, y, z:cz+hz*0.45, bank:0 },
+    { x:cx+hx, y, z:cz-hz*0.45, bank:0 },
+    { x:cx+hx*0.45, y, z:cz-hz, bank:0 },
+    { x:cx-hx*0.45, y, z:cz-hz, bank:0 },
+    { x:cx-hx, y, z:cz-hz*0.45, bank:0 },
+    { x:cx-hx, y, z:cz+hz*0.45, bank:0 },
   ];
   return wTrain(wTrainCircuit(P), opt);
 }
