@@ -2113,6 +2113,42 @@ function procesarDiferidos(){
   catch(e){ console.warn('►DIFERIDO ' + t.nombre + ':', e); }
   return 1;
 }
+/* =====================================================================
+   ►TEXSUBE — subir las texturas a la GPU ANTES, no en mitad del combate.
+
+   Hallazgo del informe del 30/07 (el que por fin dio nombres): los parones de
+   3-4 s los provoca `drawScene()`, o sea el propio dibujado. Dentro de un
+   render solo dos cosas cuestan segundos: compilar programas y SUBIR TEXTURAS.
+   Y el pre-calentado que había solo cubría lo primero: `renderer.compile()`
+   compila programas pero **no sube ni una textura**. Peor aún, el pre-calentado
+   del minion metía la instancia en la escena y la sacaba sin DIBUJARLA nunca,
+   así que sus atlas se subían la primera vez que ese tipo de minion aparecía
+   de verdad — en plena pelea, y son 19 tipos con ~13 MB de GLB.
+
+   `renderer.initTexture(tex)` (existe desde r119) sube una textura al momento
+   sin dibujar nada. Esto la llama para cada mapa de cada material del modelo,
+   una sola vez (se marca la textura para no repetir).
+   ===================================================================== */
+const _TEX_SLOTS = ['map','emissiveMap','normalMap','roughnessMap','metalnessMap','aoMap','alphaMap',
+                    'bumpMap','specularMap','lightMap','displacementMap','gradientMap'];
+function subirTexturasDe(root){
+  if(!root || typeof renderer === 'undefined' || !renderer || !renderer.initTexture) return 0;
+  let n = 0;
+  root.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    for(const m of ms){
+      if(!m) continue;
+      for(const k of _TEX_SLOTS){
+        const t = m[k];
+        if(t && t.isTexture && !t.__subida){
+          try{ renderer.initTexture(t); t.__subida = true; n++; }catch(e){}
+        }
+      }
+    }
+  });
+  return n;
+}
 function warmupShaders(motivo){
   if(typeof renderer === 'undefined' || !renderer || typeof warmupGPU !== 'function') return 0;
   const antes = renderer.info.programs ? renderer.info.programs.length : 0;
@@ -2261,9 +2297,17 @@ function hitchCtx(){
 function hitchTick(ms, calls, tris){
   if(!HITCH.on || !(ms > 0) || ms > HITCH.max) return;         // por encima de HITCH.max = pestaña en segundo plano, no cuenta
   if(HITCH.dts.length < HITCH.tope) HITCH.dts.push(ms);
+  /* ►PROGRAMAS y TEXTURAS del frame. El informe del 30/07 senaló a drawScene() como el que se come los
+     3-4 s, y ahí dentro solo hay dos cosas que cuesten segundos: COMPILAR un programa o SUBIR una
+     textura a la GPU. Anotando cuántos se crearon en ese frame, el informe distingue una de otra en vez
+     de dejarlo en "algo del render". Leerlos es gratis (son contadores que three ya lleva). */
+  const _pg = renderer.info.programs ? renderer.info.programs.length : 0;
+  const _tx = (renderer.info.memory && renderer.info.memory.textures) || 0;
   if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
-    HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000), ctx:hitchCtx() });
+    HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000),
+                        dp:_pg - (HITCH.lastPg||_pg), dt:_tx - (HITCH.lastTx||_tx), ctx:hitchCtx() });
   }
+  HITCH.lastPg = _pg; HITCH.lastTx = _tx;
   if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
 }
 /* ►HITCH · QUIÉN se comió el frame. Saber que un frame duró 4 s no sirve de nada si no sabes QUÉ lo
@@ -2347,7 +2391,8 @@ function hitchStop(){
     + ' · p99 ' + p99.toFixed(1) + ' · >50ms: ' + g50 + ' · >100ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min · ' + veredicto,
     'background:#124;color:#8cf;padding:2px 6px');
   const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,12);
-  const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · ' + x.ctx).join('\n');
+  const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · '
+    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · ' + x.ctx).join('\n');
   if(top.length) console.log('[tirones] peores frames:\n' + peoresTxt);
   /* fichero: resumen + máquina + los peores + el histograma, que es lo que de verdad se lee después */
   const bandas = [8,16,25,33,50,100,250,1e9], etiq = ['<8','8-16','16-25','25-33','33-50','50-100','100-250','>250'];
@@ -4561,6 +4606,9 @@ function applyCharModel(p){
   if(rc && rc.shield) attachShield(p);              // caballero: cuelga el escudo del brazo izquierdo
   if(rc && rc.offhand==='bow') attachBow(p);        // arquera: cuelga el arco en la mano izquierda
   p._heldKind = undefined; syncHeld(p);        // pone el arma recogida en la mano (o deja ver la katana de clase)
+  /* ►TEXSUBE: sube YA el atlas del personaje. Si no, se sube en el primer frame en que se le vea, y
+     eso es un parón dentro de drawScene() — el mismo fallo que con los minions. */
+  if(p._charModel) subirTexturasDe(p._charModel);
   if(p===P1) console.log('[char]', isStatic?'(estático)':'(rig)', p._charKey||'humanoide', '· mano:', !!p._charHand, '· clips:', (tpl.animations||[]).length);
   /* ►WARMUP: acaba de entrar un personaje NUEVO en la escena (su GLB llegó ahora). Sus materiales
      traen skinning y son los que más programas compilan; si no se hace aquí, el parón cae justo
@@ -8438,6 +8486,11 @@ const _GOB_ZERO = new THREE.Matrix4().makeScale(0,0,0);   // matriz nula → ocu
           w.root.position.set(0, -400, 0); scene.add(w.root);
           if(typeof warmupLigero === 'function') warmupLigero('goblin ' + t);
           else if(renderer.compile) renderer.compile(scene, camera);
+          /* ►TEXSUBE: lo que faltaba. compile() NO sube texturas, y esta instancia entra y sale de la
+             escena sin dibujarse, así que su atlas se subía en el primer combate en el que apareciera
+             este tipo — uno de los parones de 3-4 s dentro de drawScene(). */
+          const _nt = subirTexturasDe(w.root);
+          if(_nt) console.log('[texsube] goblin ' + t + ': ' + _nt + ' texturas a la GPU');
           scene.remove(w.root);
           _gobPool[t].push(w);
         });
