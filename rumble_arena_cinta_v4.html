@@ -21262,7 +21262,7 @@ function rebuildBelt(){
   if(S2_SCENERY.group) S2_SCENERY.group.visible = S2_SCENERY.on && S2_DECOR_ON;   // respeta deco OFF tras un rebuild
   updateBelt(0);                     // ►R6b: pasada de wrap+visibilidad YA (sin esto, 1 frame mostraba los segmentos lejanos antes del primer tick → pop)
   if(renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
-  warmupShaders('cinta reconstruida');   // ►WARMUP: materiales del stage nuevo, compilados AQUÍ y no cuando la plataforma asoma por el horizonte
+  warmupLigero('cinta reconstruida');   // ►WARMUP: materiales del stage nuevo, compilados AQUÍ y no cuando la plataforma asoma por el horizonte. LIGERO: reconstruir la cinta pasa EN PARTIDA (cambio de stage) y el warmup completo costaba ~1 s.
 }
 
 /* ---- CLIMA: tormenta + lluvia ligera (solo STAGE 2) ---- */
@@ -30210,6 +30210,19 @@ function warmupPermitido(){
     return true;
   }catch(e){ return true; }
 }
+/* Versión LIGERA para los momentos en los que sí hace falta compilar dentro del juego (al empezar la
+   pelea, al reconstruir la cinta): solo `renderer.compile` con la cámara REAL. Compila los programas
+   igual, pero sin el render completo con cámara ancha ni el pase de sombra, que es lo que costaba el
+   segundo entero. No es tan completo (se deja fuera el pase de sombra), pero es la diferencia entre
+   40 ms y 1.100 ms en mitad de la partida. */
+function warmupLigero(motivo){
+  try{
+    const antes = renderer.info.programs ? renderer.info.programs.length : 0;
+    if(renderer.compile) renderer.compile(scene, camera);
+    const n = (renderer.info.programs ? renderer.info.programs.length : 0) - antes;
+    if(n > 0) console.log('[warmup ligero] ' + motivo + ': ' + n + ' programas');
+  }catch(e){ console.warn('►WARMUP ligero:', e); }
+}
 function warmupGPU(){
   if(!warmupPermitido()) return;
   try {
@@ -30312,7 +30325,9 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   if(typeof resetBossFight==='function') resetBossFight();  // desmonta arena/aro/jefe y restaura BELT/bossActive
 }
 function launchMatch(){
-  warmupShaders('inicio de partida');   // ►WARMUP: aquí ya están cargados los personajes elegidos. El parón cae en la transición de menú, no cuando aparecen luchando.
+  /* ►WARMUP: aquí NO se pre-calienta. Medido en la máquina de Toni: esta llamada era el peor frame de
+     todo un informe de 150 s — 1.151 ms de congelación justo al entrar. Lo que hubiera compilado ya lo
+     compila el bucle de reposo mientras se lee el menú. */
   document.getElementById('startOverlay').style.display = 'none';   // oculta menús ya (el demo/cinemática se ve detrás de "¿PREPARADOS?")
   document.getElementById('endOverlay').style.display = 'none';
   document.getElementById('endNowBtn').style.display = 'none';
@@ -30348,7 +30363,7 @@ function launchMatch(){
        programas GPU de una tacada (tapado por "¡LUCHA!") en vez de compilar-al-aparecer durante los
        primeros 5-10 s de juego. Tras el warmup, un drawScene() con la cámara real evita el flash del
        encuadre ancho que usa el warmup. (warmupGPU ya iba en try/catch; antes solo corría al cargar). */
-    try { warmupGPU(); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }
+    try { warmupLigero('¡LUCHA!'); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }   // ►MEDIDO: aquí el warmup COMPLETO era un parón de ~1,1 s (el peor frame de un informe de 150 s). La versión ligera compila lo mismo sin repintar el mundo.
     music.volume = .45; running = true;
     showBanner(STUDIO.on ? '🎬 MODO STUDIO' : (TRAIN.on?'¡A ENTRENAR!':'¡LUCHA!'), 1); tone(330,.18,'square',.15, 200); crowdCheer(.55);
   });
