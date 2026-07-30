@@ -2210,7 +2210,7 @@ function perfTick(ftMs){
    consola (F12). Si te olvidas, corta solo a los 90 s. Coste mientras graba:
    meter un número en un array por frame.
    ===================================================================== */
-const HITCH = { on:false, t0:0, dts:[], peores:[], tope:9000, max:5000, dur:150000 };   // tope: 9000 frames ≈ 150 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático, holgado para que quepa MENÚ + navegar + entrar en partida
+const HITCH = { on:false, t0:0, dts:[], peores:[], lentas:[], tope:9000, max:5000, dur:150000 };   // tope: 9000 frames ≈ 150 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático, holgado para que quepa MENÚ + navegar + entrar en partida
 function hitchCtx(){
   let mn = 0, viv = 0;
   try{ if(typeof minions !== 'undefined') mn = minions.length; }catch(e){}
@@ -2230,7 +2230,36 @@ function hitchTick(ms, calls, tris){
   }
   if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
 }
+/* ►HITCH · QUIÉN se comió el frame. Saber que un frame duró 4 s no sirve de nada si no sabes QUÉ lo
+   causó. Esto envuelve un puñado de funciones sospechosas (las que crean cosas: modelos, segmentos,
+   arenas, minions, jefes) y apunta cualquier llamada que pase de 30 ms. Como una función declarada
+   arriba del script vive también en window, se puede sustituir por la envoltura y los que la llaman
+   pasan por ella. Coste cuando NO se está grabando: una comparación booleana. */
+const HITCH_VIGILAR = ['spawnMinion','spawnMinionAt','spawnCapsule','spawnItem','applyCharModel','applySkin',
+  'getModel','buildSegment','rebuildBelt','buildFighter','buildHeldWeapon','buildHandWeapon','buildBossArena',
+  'startBossFight','setStage','applyStageTheme','applyStageMusic','initMinionInstances','gobAttach',
+  'scatterModelDecor','flushGrass','getForestTrees','splitModelPieces','warmupGPU','warmupLigero','drawScene',
+  'updateMinions','updateBelt','updateFighter','updateOcclusion','rebakeAO','applyBakedAO'];
+function hitchInstrumentar(){
+  for(const n of HITCH_VIGILAR){
+    const f = window[n];
+    if(typeof f !== 'function' || f.__vig) continue;
+    const env = function(){
+      if(!HITCH.on) return f.apply(this, arguments);
+      const a = performance.now();
+      try { return f.apply(this, arguments); }
+      finally {
+        const d = performance.now() - a;
+        if(d > 30 && HITCH.lentas.length < 60) HITCH.lentas.push({ n, ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) });
+      }
+    };
+    env.__vig = true;
+    try{ window[n] = env; }catch(e){}
+  }
+}
 function hitchStart(){
+  HITCH.lentas.length = 0;
+  hitchInstrumentar();
   HITCH.on = true; HITCH.t0 = performance.now(); HITCH.dts.length = 0; HITCH.peores.length = 0;
   console.log('%c[tirones] GRABANDO… (vale desde el MENÚ: sigue grabando al entrar en partida). F8 otra vez para el informe, o corta solo a los 150 s', 'background:#420;color:#fd0;padding:2px 6px');
   if(typeof showBanner === 'function') showBanner('MIDIENDO TIRONES', 2);
@@ -2295,6 +2324,9 @@ function hitchStop(){
     '',
     'reparto de frames por tiempo:',
     etiq.map((e,i)=> '  ' + e.padEnd(8) + ' ms: ' + hist[i]).join('\n'),
+    '',
+    'llamadas LENTAS (>30 ms) — esto dice QUE se comio el frame:',
+    (HITCH.lentas.length ? HITCH.lentas.slice().sort((a,b)=>b.ms-a.ms).slice(0,20).map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.n + '()').join('\n') : '  (ninguna)'),
     '',
     'peores frames (ms · cuando · draw calls · triangulos · contexto):',
     peoresTxt || '  (ninguno por encima de 50 ms)'
