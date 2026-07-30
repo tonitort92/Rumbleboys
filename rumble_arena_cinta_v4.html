@@ -18282,8 +18282,24 @@ function updateFighter(p, dt){
     }
   }
 
-  /* parpadeo invulnerable */
-  g.root.visible = p.invuln>0 ? (Math.floor(t*14)%2===0) : true;
+  /* PARPADEO invulnerable.
+     ►OJO, ESTO CAUSABA LOS TIRONES (medido el 30/07): del `root` cuelgan DOS PointLight (el `glow` de
+     vulnerabilidad y el `charLight` del jugador). Al ocultar el root, three deja de recorrer esa rama
+     entera y esas luces DESAPARECEN de la cuenta de luces de la escena. Y el número de luces forma
+     parte de la clave del programa de CADA material: cada vez que cambia, todo lo visible recompila.
+     Con el parpadeo a 14 Hz y varios jugadores muriendo y reapareciendo, eso son los "+15 programas"
+     de golpe que salían en el informe (~30 ms cada uno = casi un segundo de congelación).
+     Solución: parpadear las MALLAS, no el root. Se ve exactamente igual y las luces no se mueven de
+     la cuenta. `_blinkOff` recuerda el estado para no recorrer el modelo en cada frame. */
+  const _blink = p.invuln>0 ? (Math.floor(t*14)%2===0) : true;
+  if(g._blinkOn !== _blink){
+    g._blinkOn = _blink;
+    for(const c of g.root.children){
+      if(c.isLight) continue;                                  // las luces NO se tocan (es TODO el motivo del cambio)
+      if(!_blink){ if(c.__pv === undefined) c.__pv = c.visible; c.visible = false; }
+      else if(c.__pv !== undefined){ c.visible = c.__pv; c.__pv = undefined; }   // restaura lo que cada hijo tuviera (el muñeco de cajas sigue oculto si hay GLB)
+    }
+  }
   if(p.groundRing){                              // círculo locator pegado al suelo bajo el jugador
     const gy = p.dead ? null : groundAt(p.pos.x, p.pos.z, p.pos.y+0.2, -200);
     if(gy!==null){ p.groundRing.visible = true; p.groundRing.position.set(p.pos.x, gy+0.06, p.pos.z); }
@@ -30445,6 +30461,16 @@ function warmupGPU(){
       const r = p && p.gfx && p.gfx.root;
       if(r && !r.visible){ ocultos.push(r); r.visible = true; }
     }
+    /* ►CINTA ENTERA (30/07). Esto es lo que faltaba, y explica el sintoma que describe Toni: "al alejar
+       la camara y ver el horizonte con las plataformas generandose". Los segmentos lejanos de la cinta
+       estan OCULTOS por el culling de niebla (updateBelt), asi que este calentamiento nunca los dibuja
+       → sus materiales compilan y sus texturas suben la primera vez que entran en camara, en plena
+       partida. Medido: picos de "+15 programas" cuyas claves solo difieren en el campo `map`, o sea
+       materiales de ESCENARIO con y sin textura estrenandose. Aqui se hacen visibles todos un instante. */
+    if(typeof BELT !== 'undefined' && BELT.segs) for(const sg of BELT.segs){
+      if(sg.group && !sg.group.visible){ ocultos.push(sg.group); sg.group.visible = true; }
+    }
+    subirTexturasDe(scene);                                    // y de paso, TODAS las texturas del escenario a la GPU
     if(renderer.compile) renderer.compile(scene, cam0);
     const prevAuto = renderer.shadowMap.autoUpdate, prevNeed = renderer.shadowMap.needsUpdate;
     const rtPrev = renderer.getRenderTarget();
