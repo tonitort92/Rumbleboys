@@ -19049,7 +19049,7 @@ function updateBelt(dt){
       }
     }
   }
-  if((STAGE===4 || STAGE===5 || STAGE===6 || STAGE===7) && typeof updateCarpets==='function') updateCarpets(dt);   // ►S4/S5/S6: bob de alfombras · ►S6M: blobs móviles (bob/patrulla/órbita/giro) — física (topY) y malla juntas, ANTES de updateFighter
+  if((STAGE===4 || STAGE===5 || STAGE===6 || STAGE===7 || STAGE===11) && typeof updateCarpets==='function') updateCarpets(dt);   // ►S4/S5/S6: bob de alfombras · ►S6M: blobs móviles (bob/patrulla/órbita/giro) — física (topY) y malla juntas, ANTES de updateFighter · ►WEST: tablones móviles del 11
   /* ►WEST: el `STAGE>=5` de aquí abajo también captura al 11 (western), que no tiene ninguna losa
      trampa ni péndulo. Hoy no rompería porque rebuildBelt vacía los arrays, pero es coste gratuito
      por frame y una mina para el día que el western sí tenga sus propios arrays. Exclusión explícita. */
@@ -19441,27 +19441,33 @@ function buildSWScenery(){
   const DUSK  = new THREE.Color(0x6a4a6e).convertSRGBToLinear();    // violeta de la hora azul
   const cDark = new THREE.Color('#5e2f22').convertSRGBToLinear();   // estrato en sombra
   const cLite = new THREE.Color('#a86a46').convertSRGBToLinear();   // estrato con el último sol
-  /* 1) FONDO DEL CAÑÓN, muy abajo: plano desplazado en CPU una vez (estático = barato). El término
-        de valle en V hace la garganta central por la que se intuye el río. */
+  /* 1) FONDO DEL CAÑÓN: una MESETA ARENOSA, no un desierto de dunas ni una garganta en V.
+        Pedido de Toni: "el suelo del decorado de gran cañón como una meseta arenosa, con colores
+        marrones y rojos como ya lo estamos haciendo". Antes tenía una V central profunda (leía
+        como barranco) y una paleta ocre pálida que no casaba con la roca roja del stage. Ahora es
+        relieve ancho y poco profundo, con escalones de meseta y la paleta roja del propio stage. */
   {
     const geo = new THREE.PlaneGeometry(620, 620, 80, 80);
     const pa = geo.attributes.position;
-    const c1 = new THREE.Color('#7d4530').convertSRGBToLinear();
-    const c2 = new THREE.Color('#c08a5e').convertSRGBToLinear();
+    const c1 = new THREE.Color('#6e3a28').convertSRGBToLinear();   // roca roja en sombra
+    const c2 = new THREE.Color('#c98a5e').convertSRGBToLinear();   // arenisca al sol
     const cc = new THREE.Color(), col = new Float32Array(pa.count*3);
     for(let i=0;i<pa.count;i++){
       const x = pa.getX(i), z = pa.getY(i);
-      const valle = -6.5 * Math.exp(-(x*x) / 2600);                                   // garganta central
-      const h = valle + 2.2*Math.sin(x*0.035 + z*0.022) + 1.4*Math.sin(x*0.09 - z*0.05 + 1.1);
+      /* ondulación ANCHA + escalones: `floor` sobre una senoidal lenta da mesetas planas con
+         cantos, que es la silueta del terreno de cañón (no dunas redondas) */
+      const base = 1.6*Math.sin(x*0.012 + z*0.009) + 1.1*Math.sin(x*0.021 - z*0.017 + 2.1);
+      const escalon = Math.floor(base*1.5)/1.5;
+      const h = escalon + 0.5*Math.sin(x*0.07 + z*0.05);
       pa.setZ(i, h);
-      const t = THREE.MathUtils.clamp((h + 7) / 12 + (Math.random()-.5)*0.05, 0, 1);
+      const t = THREE.MathUtils.clamp((h + 3) / 6 + (Math.random()-.5)*0.06, 0, 1);
       cc.lerpColors(c1, c2, t);
       col[i*3]=cc.r; col[i*3+1]=cc.g; col[i*3+2]=cc.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col,3));
     geo.computeVertexNormals();
     const floor = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0, flatShading:true }));
-    floor.rotation.x = -Math.PI/2; floor.position.y = -24;   // a -46 quedaba MUY por debajo de fog.far → el mundo se acababa en naranja; a -24 cierra el encuadre como el mar de dunas del S4 (-19)
+    floor.rotation.x = -Math.PI/2; floor.position.y = -24;
     G.add(floor);
   }
   /* 2) TRES ANILLOS de mesetas. Un material por anillo (no por meseta) → 3 programas, no 20. */
@@ -23861,6 +23867,26 @@ const DECOR_DEFSW = {
   w_barrel:    { key:'w_barrel',    size:1.3 },
 };
 const _wSegProps = [];
+/* Realce de VALOR sobre los colores de vértice. Cacheado por geometría+factor: si no, cada
+   edificio colocado volvería a multiplicar sobre el anterior y acabarían blancos.
+   ►Gotcha del VAO: hay que SUSTITUIR el atributo, no mutarlo — un atributo mutado en sitio no se
+   re-sube a la GPU y el cambio no se ve (ya nos pasó con la oclusión de props). */
+const _wLiftCache = new Map();
+function _wLiftColors(root, k){
+  root.traverse(o=>{
+    if(!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.color) return;
+    const src = o.geometry, ck = src.uuid + '|' + k;
+    let g = _wLiftCache.get(ck);
+    if(!g){
+      g = src.clone();
+      const a = src.attributes.color, arr = new Float32Array(a.array.length);
+      for(let i=0;i<arr.length;i++) arr[i] = Math.min(1, a.array[i]*k);
+      g.setAttribute('color', new THREE.BufferAttribute(arr, a.itemSize));
+      _wLiftCache.set(ck, g);
+    }
+    o.geometry = g;
+  });
+}
 /* colocador canónico — copia de addPropSJ con sus dos lecciones: sentar el prop sobre el suelo
    REALMENTE medido (no sobre el topY pedido, o las patas se hunden) y una huella de despeje
    proporcional al tamaño (si no, el decor disperso aparece DENTRO del granero). */
@@ -23879,6 +23905,18 @@ function addPropW(key, x, z, topY, sc, yaw){
      FrontSide. Los props pequeños/vegetales se quedan a doble cara. */
   const _sz = (DECOR_DEFSW[key] && DECOR_DEFSW[key].size) || 1;
   const _solido = (_sz >= 4);
+  /* ►WEST-FACHADAS. Toni: "la cabin sigue plana, sin multicolor... y el saloon igual y super plano".
+     Eran DOS problemas distintos, por eso bajar la cuantización del atlas no bastó:
+       · el cottage y el shed traen UN SOLO material (sus FBX no llevan textura) → son literalmente
+         un color plano y no hay nada que recuperar del asset;
+       · el saloon sí tiene 51 tonos, pero todos marrones oscuros, y con exposición 0,70 más la
+         niebla acaban leyendo como negro.
+     Sin meter texturas (decisión suya): multitono horneado por celda con la MISMA herramienta que
+     usa la madera del bosque, y un realce de valor encima. */
+  if(_solido){
+    if(typeof _s2ToneFor==='function') _s2ToneFor(key, m, 0.20, 0.18, 0.50);
+    _wLiftColors(m, 1.45);
+  }
   m.traverse(o=>{ if(o.isMesh){ o.castShadow = true; if(_solido && o.material) o.material.side = THREE.FrontSide; } });
   scene.add(m);
   const _fp = Math.max(1.1, _sz*0.42) * sc;
@@ -24561,12 +24599,15 @@ function scatterModelDecorW(startIdx){
   };
   /* tabla = DECOR_DEFSW (props del western) o DECOR_DEFS3 (flora del desierto, reutilizada a
      propósito: es el mismo bioma seco y Toni la autorizó explícitamente) */
-  const drop = (key, table, count, scMin, scMax)=>{
+  const drop = (key, table, count, scMin, scMax, sep)=>{
+    /* `sep` = holgura exigida frente a otros props. Los objetos PEQUENOS tirados por el suelo
+       (sombrero, botas) competian con la flora por el mismo sitio con el 0.8 de todos y se
+       rechazaban casi siempre: por eso Toni no los veia. */
     for(let i=0;i<count;i++){
       const pl = plats[(Math.random()*plats.length)|0];
       const s = spot(pl);
       if(_inWall(s.x, s.z, pl.topY, 0.5)) continue;
-      if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 0.8)) continue;
+      if(typeof _nearProp==='function' && _nearProp(s.x, s.z, (sep!=null?sep:0.8))) continue;
       if(typeof _nearPath==='function' && _nearPath(s.x, s.z)) continue;
       if(table === DECOR_DEFSW){ addPropW(key, s.x, s.z, pl.topY, scMin + Math.random()*(scMax-scMin), Math.random()*6.283); continue; }
       const m = getModel(key, table); if(!m) return;
@@ -24597,15 +24638,15 @@ function scatterModelDecorW(startIdx){
     addCactus(Math.random()<0.5 ? 's3_cactus' : 's3_cactus3', s.x, s.z, pl.topY, 0.9 + Math.random()*0.35);
   }
   /* --- CACHIVACHES del oeste (los assets que mandó Toni) --- */
-  drop('w_haystack', DECOR_DEFSW, 4, 0.85, 1.15);
-  drop('w_wheat',    DECOR_DEFSW, 5, 0.8,  1.1);          // matas sueltas fuera de los campos
-  drop('w_corn',     DECOR_DEFSW, 3, 0.8,  1.05);
-  drop('w_cart',     DECOR_DEFSW, 1, 0.9,  1.1);
-  drop('w_cart2',    DECOR_DEFSW, 1, 0.9,  1.1);
-  drop('w_barrow',   DECOR_DEFSW, 2, 0.9,  1.1);
-  drop('w_hitch',    DECOR_DEFSW, 2, 0.9,  1.05);
-  drop('w_hat',      DECOR_DEFSW, 2, 0.9,  1.2);          // sombrero tirado en el suelo
-  drop('w_boots',    DECOR_DEFSW, 2, 0.9,  1.2);          // botas tiradas
+  drop('w_haystack', DECOR_DEFSW, 6, 0.85, 1.15);
+  drop('w_wheat',    DECOR_DEFSW, 8, 0.8,  1.1);          // matas sueltas fuera de los campos
+  drop('w_corn',     DECOR_DEFSW, 9, 0.8,  1.05);   // Toni echaba en falta maiz por la superficie
+  drop('w_cart',     DECOR_DEFSW, 3, 0.9,  1.1);
+  drop('w_cart2',    DECOR_DEFSW, 3, 0.9,  1.1);
+  drop('w_barrow',   DECOR_DEFSW, 4, 0.9,  1.1);
+  drop('w_hitch',    DECOR_DEFSW, 4, 0.9,  1.05);
+  drop('w_hat',      DECOR_DEFSW, 5, 0.9,  1.2, 0.35);    // sombrero tirado en el suelo
+  drop('w_boots',    DECOR_DEFSW, 5, 0.9,  1.2, 0.35);    // botas tiradas
   /* vallas sueltas de la valla REAL de Toni (antes solo se usaba la procedural del desierto) */
   for(let i=0;i<3;i++){
     const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
@@ -24642,6 +24683,14 @@ function buildWCanyonRim(){
   addFloating(-5, 10.8, -12, 3.4, 2.8);
   addFloating(9, 9.2, 13, 3.8, 2.8);
   s3Fence(-17, 11.4, 'x', 10, 0, 1.1); s3Fence(17, -9.4, 'x', 9, 0, 1.1);
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-32, 4, 2.6, 2.0, 5.5, 'rose'); s3Blob(31, 6, 2.6, 2.0, 6.0, 'rose');
+  s3Blob(-16, -18, 2.8, 2.2, 5.0, 'rose'); s3Blob(14, -16, 2.6, 2.0, 5.8, 'rose');
+  addFloating(0, 6.2, 8, 3.6, 2.6);    _s6Drift({ axis:'x', amp:4.5, w:0.34 });
+  addFloating(-8, 7.4, -16, 3.2, 2.4); _s6Drift({ axis:'y', amp:2.2, w:0.60 });
   addPad(-17, 0); addPad(17, 1);
   s2JumpWalls(0);
   if(W_DECOR_ON){
@@ -24676,6 +24725,14 @@ function buildWPuebloSpawn(){
   s3DuneHill(-29, -12, 4.2, 3.2, 3.0, 'rose');
   s3DuneHill(30, 12, 4.0, 3.0, 2.6, 'rose');
   s3Fence(-25, 13.4, 'x', 11, 0, 1.1); s3Fence(25, -11.4, 'x', 10, 0, 1.1);
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-30, 18, 2.6, 2.0, 5.4, 'rose'); s3Blob(30, -16, 2.6, 2.0, 5.8, 'rose');
+  s3Blob(0, -16, 3.0, 2.2, 5.0, 'rose');
+  addFloating(-10, 6.0, -14, 3.6, 2.6); _s6Drift({ axis:'x', amp:4.0, w:0.32 });
+  addFloating(12, 7.0, 14, 3.2, 2.4);   _s6Drift({ axis:'y', amp:2.0, w:0.55 });
   addPad(0, 0); addPad(0, 14);
   s2JumpWalls(1);
   if(W_DECOR_ON){
@@ -24701,7 +24758,7 @@ function buildWRancho(){
   s3Slab(-8, 2, 30, 26, 0, 'rose');                                   // gran explanada del rancho
   s3Slab(23, -8, 18, 14, 0, 'dune');                                  // era de trilla (arena más clara: contraste)
   /* mordida: entre las dos hay un hueco en z>6 que hay que rodear o saltar */
-  addRopeBridge(7.5, 14, 17, 14, 0.4, { width:2.4, sag:0.45 });
+  addRopeBridge(6.2, -6, 14.8, -6, 0.4, { width:2.4, sag:0.45 });   // z=14 dejaba el extremo este SOBRE EL VACIO: la 2a losa no llega ahi. z=-6 es la unica banda donde coexisten
   /* pajar / granero: 2º nivel grande y pisable */
   modUpperDeck(-14, 16, { sx:16, sz:9, topY:6.5, kind:'rose' });
   modStairs(-4, 12, { steps:4, dir:{x:-1,z:0.5}, rise:1.7, run:2.6, y0:0.4 });
@@ -24718,6 +24775,14 @@ function buildWRancho(){
      modelo estaba convertido pero no se colocaba en ningún sitio. */
   if(W_DECOR_ON){ wFenceLine(-8, -10.5, 'x', 7, 0); wFenceLine(-16.5, -4, 'z', 6, 0); wFenceLine(0.5, -4, 'z', 6, 0); }
   s3Watchtower(-20, 14, 6.5);                                         // emboscada desde el pajar
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-30, 6, 2.6, 2.0, 5.6, 'rose'); s3Blob(26, 8, 2.6, 2.0, 6.2, 'rose');
+  s3Blob(10, 6, 2.8, 2.2, 5.2, 'rose');
+  addFloating(2, 6.4, -14, 3.6, 2.6);   _s6Drift({ axis:'z', amp:4.0, w:0.30 });
+  addFloating(-18, 7.6, -16, 3.2, 2.4); _s6Drift({ axis:'y', amp:2.4, w:0.58 });
   addPad(-8, 2); addPad(23, -8);
   s2JumpWalls(2);
   if(W_DECOR_ON){
@@ -24743,7 +24808,7 @@ function buildWEstacion(){
   /* andén: una franja elevada a lo largo de la mesa, no un bloque en medio */
   modUpperDeck(-10, 12, { sx:18, sz:7, topY:5, kind:'rose' });
   modUpperDeck(12, 12, { sx:12, sz:7, topY:5, kind:'rose' });
-  addRopeBridge(0, 12, 5.5, 12, 5.2, { width:2.2, sag:0.25 });        // pasarela entre los dos andenes
+  addRopeBridge(-1.8, 12, 6.8, 12, 5.05, { width:2.2, sag:0.25 });  // metido 0.8u en cada anden (antes empezaba a 1u del borde y te caias antes de pisarlo)        // pasarela entre los dos andenes
   modStairs(-2, 6, { steps:3, dir:{x:0,z:1}, rise:1.7, run:2.5, y0:0.3 });
   modStairs(18, 7, { steps:3, dir:{x:0,z:1}, rise:1.7, run:2.5, y0:0.3 });
   /* torre de agua de la estación: 3er nivel */
@@ -24756,6 +24821,14 @@ function buildWEstacion(){
   s3Blob(22, 3, 3.0, 2.4, 2.4, 'rose');
   s3Fence(-10, 8.4, 'x', 14, 5, 1.0); s3Fence(12, 8.4, 'x', 10, 5, 1.0);   // barandilla del andén
   s2GapWall(0, -11, 'x', 6, 3.0, 0.9);
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-30, 6, 2.6, 2.0, 5.4, 'rose'); s3Blob(30, 4, 2.6, 2.0, 6.0, 'rose');
+  s3Blob(-6, -18, 2.8, 2.2, 5.0, 'rose'); s3Blob(10, -18, 2.6, 2.0, 5.6, 'rose');
+  addFloating(0, 8.6, 2, 3.6, 2.6);    _s6Drift({ axis:'x', amp:4.5, w:0.36 });
+  addFloating(20, 6.6, -8, 3.2, 2.4);  _s6Drift({ axis:'y', amp:2.2, w:0.62 });
   addPad(0, -2); addPad(-10, 12);
   s2JumpWalls(3);
   if(W_DECOR_ON){
@@ -24783,7 +24856,7 @@ function buildWMinas(){
   s3Slab(-14, -2, 22, 18, 0, 'rose');                                 // boca de mina (nivel 0)
   s3Slab(18, 4, 20, 16, 0, 'rose');                                   // muelle de carga
   /* la mordida grande: todo el corredor central z<-8 es vacío */
-  addRopeBridge(-4.5, 8, 8.5, 8, 0.5, { width:2.4, sag:0.55 });
+  addRopeBridge(-3.8, 2, 8.8, 2, 0.5, { width:2.4, sag:0.55 });     // z=8 dejaba el extremo oeste en el aire (la losa acaba en z=7)
   /* andamiaje: 2º y 3er nivel encadenados con tablones */
   modUpperDeck(-16, 14, { sx:14, sz:8, topY:6, kind:'rose' });
   modStairs(-8, 9, { steps:3, dir:{x:-1,z:0.4}, rise:2.0, run:2.7, y0:0.4 });
@@ -24798,6 +24871,14 @@ function buildWMinas(){
   s3Blob(29, 14, 2.6, 2.1, 2.0, 'rose');
   s3Fence(-14, 6.4, 'x', 12, 0, 1.1);
   s3Watchtower(-16, 15, 6);
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-32, 8, 2.6, 2.0, 5.8, 'rose'); s3Blob(31, -8, 2.6, 2.0, 6.4, 'rose');
+  s3Blob(-16, 12, 2.8, 2.2, 5.2, 'rose');
+  addFloating(4, 6.8, -14, 3.6, 2.6);   _s6Drift({ axis:'x', amp:4.0, w:0.33 });
+  addFloating(-14, 8.6, -16, 3.2, 2.4); _s6Drift({ axis:'y', amp:2.6, w:0.56 });
   addPad(-14, -2); addPad(18, 4);
   s2JumpWalls(4);
   if(W_DECOR_ON){
@@ -24827,7 +24908,7 @@ function buildWGranMesa(){
   modUpperDeck(-8, 20, { sx:20, sz:8, topY:6.5, kind:'rose' });
   modUpperDeck(14, 19, { sx:12, sz:7, topY:9.5, kind:'rose' });       // escalón al 3er nivel
   modStairs(-18, 14, { steps:4, dir:{x:0,z:1}, rise:1.75, run:2.6, y0:0.4 });
-  addRopeBridge(2.5, 20, 8.5, 19.5, 6.8, { width:2.3, sag:0.35 });
+  addRopeBridge(-21.6, 20, -17.4, 20, 6.5, { width:2.3, sag:0.35 });   // ANTES unia dos decks a alturas DISTINTAS (6.5 y 9.5) y el extremo este caia DENTRO del cuerpo solido del alto. Ahora une el deck oeste (topY 6.5) con la orilla de su misma cota
   /* 3er nivel: la aguja, dominando toda la mesa */
   s3Blob(16, 22, 3.0, 2.4, 15, 'rose');
   addFloating(6, 11.6, 22, 3.4, 2.6); addFloating(11, 13.4, 21, 3.0, 2.4);
@@ -24835,6 +24916,14 @@ function buildWGranMesa(){
   modWallGate(-12, 8, { along:'x', h:6.8, span:8, kind:'rose', gap:4.6 });
   s3Fence(0, 16.4, 'x', 18, 0, 1.1); s3Fence(-8, 24.4, 'x', 14, 6.5, 1.0);
   s3Watchtower(10, 21, 9.5);
+  /* ►WEST-2N: rutas LATERALES a cota de 2º nivel + plataformas MÓVILES. _s6Drift() convierte
+     la ÚLTIMA addFloating en móvil (helper que ya usaba el stage de nieve); el 11 está añadido
+     al gate de updateCarpets y animateDeco ya respeta las que llevan _bob.
+     OJO con el ancla: s2JumpWalls(0..5) TAMBIÉN existe en los builders de la jungla. */
+  s3Blob(-24, 20, 2.8, 2.2, 6.5, 'rose');   // orilla OESTE del puente del deck alto
+  s3Blob(28, 10, 2.6, 2.0, 6.0, 'rose'); s3Blob(-28, -6, 2.6, 2.0, 5.6, 'rose');
+  addFloating(-4, 7.4, -14, 3.6, 2.6);  _s6Drift({ axis:'x', amp:5.0, w:0.30 });
+  addFloating(18, 8.2, 4, 3.2, 2.4);    _s6Drift({ axis:'y', amp:2.4, w:0.58 });
   addPad(0, 4); addPad(-8, 20);
   s2JumpWalls(5);
   if(W_DECOR_ON){
@@ -30026,6 +30115,11 @@ function animateDeco(dt){
   }
   for(const pl of platforms){
     if(pl.float && pl.float.position){   // solo los FLOTANTES con grupo THREE bambolean; los tablones de addRopeBridge llevan float:true (booleano, colisión estática) y NO deben entrar aquí
+      /* ►WEST: una plataforma con movimiento PROPIO (_bob de updateCarpets) no puede pasar por
+         aquí: este bambaleo decorativo corre DESPUÉS de updateBelt y le machacaría topY y la Y de
+         la malla cada frame → el sube-baja no se movería nunca. El lateral sí sobrevivía (esto no
+         toca X/Z), y por eso el fallo sería silencioso y difícil de ver. */
+      if(pl._bob) continue;
       const dy = Math.sin(t*.9 + (pl.lminX!==undefined?pl.lminX:pl.minX))*0.25;
       pl.float.position.y = pl.baseY + dy;
       pl.topY = pl.baseY + 0.22 + dy;
@@ -30102,7 +30196,22 @@ function startDemo(){
    2) el render de calentamiento va a un destino de 8×8 en vez de a la pantalla → ya no hace falta
       repintar detrás para tapar el flash del encuadre ancho;
    3) quién la llama y cuándo: ver warmupShaders() y el bucle de reposo del menú. */
+/* ►WARMUP · GUARDA MEDIDA CON DATOS (2026-07-30). El pre-calentado hace un render COMPLETO del mundo
+   con cámara ancha: en la máquina de Toni eso son 2.800 draw calls y 2,5 M de triángulos, o sea
+   **1.151 ms de congelación** — el peor frame de todo un informe de tirones de 150 s. Y los siguientes
+   cuatro peores (851, 817, 767, 667 ms, entre los segundos 15 y 20) eran el bucle de reposo, que
+   seguía disparándose YA EMPEZADA la partida.
+   Regla: el pre-calentado SOLO corre fuera de la partida. Si hay partida en marcha, no se toca nada:
+   un parón de medio segundo mientras juegas es peor que la compilación que pretendía evitar. */
+function warmupPermitido(){
+  try{
+    if(typeof running !== 'undefined' && running) return false;      // partida en marcha → NUNCA
+    if(typeof gameOver !== 'undefined' && gameOver) return true;
+    return true;
+  }catch(e){ return true; }
+}
 function warmupGPU(){
+  if(!warmupPermitido()) return;
   try {
     const cam0 = camera.clone();                 // cámara "alejada" para meter TODA la decoración en el frustum
     cam0.position.set(0, 60, 90); cam0.fov = 75; cam0.updateProjectionMatrix(); cam0.lookAt(0,0,0);
