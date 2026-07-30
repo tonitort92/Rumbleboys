@@ -1305,8 +1305,6 @@ window.addEventListener('load', function(){
 <script src="western_anims.js?v=1"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
 <script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
 
-<script src="stage1_ground_tex.js?v=1"></script> <!-- ►GTEX (PRUEBA): tiles de ESTRUCTURA en gris para el suelo del prado (fotos CC0 de polyhaven estilizadas). Se componen sobre las celdas de color, no las sustituyen -->
-
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260711a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
@@ -2656,131 +2654,6 @@ function makeFieldTexture(palette, repeat=1/24){
   tex.magFilter = THREE.NearestFilter;                // celdas nítidas
   tex.anisotropy = 4;
   return tex;
-}
-/* =====================================================================
-   ►GTEX (PRUEBA, stage 1) — TEXTURA DE SUELO con estructura.
-   El suelo ya lleva textura (makeFieldTexture: celdas de color, 1 tile cada 24 u = celdas de 1,5 u),
-   pero es SOLO color: no hay nada dibujado dentro de la celda y por eso lee plano. Esto compone,
-   en el MISMO mapa y sin materiales ni draw calls nuevos, un segundo nivel de detalle:
-
-       celdas de color (24 u)  ×  tile de estructura en gris (escala ajustable, ~6 u)   [modo 'overlay']
-
-   El tile de estructura es NEUTRO en 128: donde no hay nada, el color de la celda sale intacto.
-   Así la paleta del prado no cambia — solo se le añade dibujo.
-
-   Escala: es lo único que hundió a ►SURFACE. Un luchador mide 1,8 u; a esta cámara, por debajo de
-   ~5 px en pantalla el detalle desaparece en los mipmaps. Con el tile cada 6 u, una mata de 0,4 u
-   son ~15 px en el tile y se ve. NO bajar de ahí "para que haya más detalle".
-
-   Es un PROTOTIPO con interruptor (F2 → "Suelo con textura"), no un sistema terminado.
-   ===================================================================== */
-const GTEX = { on:true, tile:'matas', fuerza:0.75, escala:6, bordes:false, px:1024 };
-const S1_GREENS_TEX = ['#6fcf6a','#55ab52','#7ed87a','#62bf5e','#86dd7f'];
-let _gtexOrig = null;         // mapa clásico del prado, para poder volver
-const _gtexImgs = {};         // tiles de estructura ya decodificados/dibujados
-/* MATAS dibujadas: la alternativa a la foto. Grupos de trazos claros y oscuros + manchas suaves,
-   todo repetido en 9 posiciones para que el tile CIERRE por los cuatro lados. */
-function _gtexTuftTile(px){
-  const cv = document.createElement('canvas'); cv.width = cv.height = px;
-  const c = cv.getContext('2d');
-  c.fillStyle = '#808080'; c.fillRect(0,0,px,px);                      // neutro
-  let s = 987654321;
-  const rnd = ()=> (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-  const wrapDraw = fn => { for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ c.save(); c.translate(dx*px, dy*px); fn(); c.restore(); } };
-  /* manchas grandes (claros y sombras del terreno) */
-  for(let i=0;i<26;i++){
-    const x = rnd()*px, y = rnd()*px, r = px*(0.05 + rnd()*0.07), oscura = rnd()<0.55;
-    wrapDraw(()=>{ const g = c.createRadialGradient(x,y,0,x,y,r);
-      g.addColorStop(0, oscura ? 'rgba(60,60,60,0.55)' : 'rgba(210,210,210,0.45)');
-      g.addColorStop(1, 'rgba(128,128,128,0)');
-      c.fillStyle = g; c.beginPath(); c.arc(x,y,r,0,6.2832); c.fill(); });
-  }
-  /* matas: 3-5 briznas que salen del mismo punto */
-  for(let i=0;i<150;i++){
-    const x = rnd()*px, y = rnd()*px, h = px*(0.030 + rnd()*0.045), n = 3 + ((rnd()*3)|0);
-    const claro = rnd() < 0.5;
-    wrapDraw(()=>{
-      c.strokeStyle = claro ? 'rgba(225,225,225,0.85)' : 'rgba(55,55,55,0.75)';
-      c.lineWidth = Math.max(1, px/300); c.lineCap = 'round';
-      for(let k=0;k<n;k++){
-        const a = -Math.PI/2 + (k-(n-1)/2)*0.42 + (rnd()-0.5)*0.2, l = h*(0.65 + rnd()*0.5);
-        c.beginPath(); c.moveTo(x, y);
-        c.quadraticCurveTo(x + Math.cos(a)*l*0.5, y + Math.sin(a)*l*0.6,
-                           x + Math.cos(a)*l,     y + Math.sin(a)*l);
-        c.stroke();
-      }
-    });
-  }
-  return cv;
-}
-/* devuelve (y cachea) el tile de estructura pedido; los de foto vienen de stage1_ground_tex.js */
-function _gtexTile(name, cb){
-  if(name === 'ninguna') return cb(null);
-  if(_gtexImgs[name]) return cb(_gtexImgs[name]);
-  if(name === 'matas'){ _gtexImgs.matas = _gtexTuftTile(256); return cb(_gtexImgs.matas); }
-  const src = (window.GROUND_TEX || {})[name];
-  if(!src){ console.warn('►GTEX: no existe el tile', name); return cb(null); }
-  const img = new Image();
-  img.onload = ()=>{ _gtexImgs[name] = img; cb(img); };
-  img.onerror = ()=>{ console.warn('►GTEX: no carga el tile', name); cb(null); };
-  img.src = src;
-}
-/* celdas de color + estructura en 'overlay' → UNA textura (mismo material, mismos draw calls) */
-function _gtexCompose(palette, detail){
-  const px = GTEX.px, cells = 16, cs = px/cells;
-  const cv = document.createElement('canvas'); cv.width = cv.height = px;
-  const c = cv.getContext('2d');
-  for(let y=0;y<cells;y++) for(let x=0;x<cells;x++){
-    c.fillStyle = palette[(Math.random()*palette.length)|0];
-    c.fillRect(x*cs, y*cs, cs+1, cs+1);
-  }
-  if(detail && GTEX.fuerza > 0){
-    const n = Math.max(1, Math.round(24 / GTEX.escala));        // el mapa cubre 24 u (repeat 1/24)
-    c.globalCompositeOperation = 'overlay'; c.globalAlpha = GTEX.fuerza;
-    for(let ty=0;ty<n;ty++) for(let tx=0;tx<n;tx++) c.drawImage(detail, tx*px/n, ty*px/n, px/n, px/n);
-    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
-  }
-  const tex = new THREE.CanvasTexture(cv);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1/24, 1/24);                                    // misma escala de celda que el clásico
-  tex.magFilter = THREE.NearestFilter;
-  tex.anisotropy = 4;
-  return tex;
-}
-/* ►GTEX-CLONES. Cambiar M.grass.map NO se ve: el suelo pisable no usa M.grass, usa el CLON que
-   fabrica aoVariant() para poder llevar colores de vértice (el AO horneado), y ese clon se quedó
-   con el mapa viejo. Además cualquier otro sitio pudo clonar. Por eso el cambio se propaga a: el
-   material base, su variante de AO y CUALQUIER material de la escena que tuviera el mapa anterior.
-   Síntoma si se olvida: la textura cambia en memoria y la pantalla no se inmuta (pasó). */
-let _gtexPrev = null;
-function _gtexSwap(tex){
-  const prev = _gtexPrev || _gtexOrig;
-  M.grass.map = tex; M.grass.needsUpdate = true;
-  try {
-    const v = _aoMatCache.get(M.grass);
-    if(v){ v.map = tex; v.needsUpdate = true; }
-  } catch(e){}
-  try {
-    scene.traverse(o=>{ if(!o.isMesh || !o.material) return;
-      const ms = Array.isArray(o.material) ? o.material : [o.material];
-      ms.forEach(m=>{ if(m && m.map === prev && m.map !== tex){ m.map = tex; m.needsUpdate = true; } }); });
-  } catch(e){}
-  if(prev && prev !== _gtexOrig && prev !== tex && prev.dispose) prev.dispose();
-  _gtexPrev = tex;
-}
-/* aplica o retira la prueba. Se llama al final de applyStageTheme y desde el panel F2. */
-function applyGroundTex(){
-  if(typeof M === 'undefined' || !M.grass) return;
-  if(!_gtexOrig) _gtexOrig = M.grass.map;
-  const off = ()=>{ if((_gtexPrev || M.grass.map) !== _gtexOrig) _gtexSwap(_gtexOrig); };
-  if(!GTEX.on || (typeof STAGE !== 'undefined' && STAGE !== 1)) return off();
-  _gtexTile(GTEX.tile, img=>{
-    if(!img) return off();
-    if(typeof STAGE !== 'undefined' && STAGE !== 1) return off();          // pudo cambiar de stage mientras cargaba
-    const t = _gtexCompose(S1_GREENS_TEX, img);
-    t.encoding = THREE.sRGBEncoding;
-    _gtexSwap(t);
-  });
 }
 /* LADRILLO MULTI-TONO GRIS: filas de ladrillos escalonados con varias tonalidades de gris + junta oscura */
 function makeBrickTexture(){
@@ -19644,10 +19517,6 @@ function applyStageTheme(stage){
   } else if(stage===10){
     _applyS10Theme();                                                                 // ►P9 STAGE 10 · VÍA ARCOÍRIS (definido junto al bloque S10)
   }
-  /* ►GTEX (PRUEBA): va DESPUÉS de todas las ramas — _restoreS1Theme ya ha dejado el mapa clásico del
-     prado, así que aquí solo hay que componerle la estructura encima (y en cualquier otro stage se
-     retira sola). Al ser lo último, ninguna rama puede pisarlo. */
-  if(typeof applyGroundTex === 'function') applyGroundTex();
   applyVisual();
 }
 /* restaura el PRADO (antiguo cuerpo del else) — base común desde la que se aplica cualquier stage */
@@ -31872,17 +31741,6 @@ function setupVisualGUI(){
   fDep.add(VISUAL.depth, 'haze', 0, 0.6,  0.01).name('bruma previa').onFinishChange(upD);
   fDep.add(VISUAL.depth, 'lift', 0, 0.7,  0.01).name('sombras del fondo').onFinishChange(upD);
   fDep.open();
-  /* ►GTEX (PRUEBA · stage 1): textura de suelo. ABIERTA — es lo que hay que juzgar ahora.
-     'ninguna' = exactamente el suelo de siempre, para comparar sin recargar. */
-  if(typeof GTEX !== 'undefined'){
-    const upG = ()=>applyGroundTex();
-    const fG = gui.addFolder('Suelo con textura (PRUEBA · prado)');
-    fG.add(GTEX, 'on').name('activada').onChange(upG);
-    fG.add(GTEX, 'tile', ['matas','hierba','pedregoso','ninguna']).name('dibujo').onChange(upG);
-    fG.add(GTEX, 'fuerza', 0, 1, 0.05).name('fuerza').onFinishChange(upG);
-    fG.add(GTEX, 'escala', 2, 24, 1).name('un tile cada (u.)').onFinishChange(upG);
-    fG.open();
-  }
   /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
   const fI = gui.addFolder('Impacto direccional');
   fI.add(VISUAL.impact, 'on').name('activado');
