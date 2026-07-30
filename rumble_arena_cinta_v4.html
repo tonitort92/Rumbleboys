@@ -2185,8 +2185,74 @@ function perfTick(ftMs){
     const r = renderer.info.render;
     perfHUDEl.textContent = (1000/Math.max(1,ftAvg)).toFixed(0)+' fps · '+curRatio.toFixed(2)+'x · '+r.calls+' calls · '+(r.triangles/1000).toFixed(0)+'k tris · '+(qMode==='auto'?'auto→':'')+effName;
   }
+  hitchTick(ftMs, renderer.info.render.calls, renderer.info.render.triangles);   // ►HITCH: grabador de tirones (F8), justo aquí porque ftMs es el frame time REAL sin recortar
   renderer.info.reset();                                            // cierra el conteo del frame (tras leerlo)
 }
+
+/* =====================================================================
+   ►HITCH — GRABADOR DE TIRONES (tecla F8).
+
+   Por qué existe: el HUD (F3) muestra una MEDIA MÓVIL, que es justo lo que
+   ESCONDE los tirones. 60 fps de media con veinte parones de 200 ms se siente
+   horrible; 45 fps clavados se sienten perfectos. Para "que no pegue tirones"
+   la métrica no es la media, son los frames PEORES.
+
+   Qué mide en una sesión: mediana (cómo va normalmente), percentil 95 y 99
+   (el 1% peor ES el tirón) y cuántos frames pasan de 50 ms (salto visible) y
+   de 100 ms (parón). Y de los peores guarda el CONTEXTO — stage, si hay jefe,
+   cuántos minions, draw calls y triángulos — que es lo que dice DÓNDE mirar.
+
+   Objetivo publicable y comprobable: mediana ≤ 16 ms, p99 ≤ 33 ms y CERO
+   frames por encima de 100 ms en una partida entera. Eso se aprueba o se
+   suspende; "va fluido" no.
+
+   Uso: F8 empieza a grabar, F8 otra vez corta y escribe el informe en la
+   consola (F12). Si te olvidas, corta solo a los 90 s. Coste mientras graba:
+   meter un número en un array por frame.
+   ===================================================================== */
+const HITCH = { on:false, t0:0, dts:[], peores:[], tope:5400, max:5000, dur:90000 };   // tope: 5400 frames ≈ 90 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático
+function hitchCtx(){
+  let mn = 0, viv = 0;
+  try{ if(typeof minions !== 'undefined') mn = minions.length; }catch(e){}
+  try{ if(typeof players !== 'undefined') viv = players.filter(p=>!p.dead).length; }catch(e){}
+  const jefe = (typeof BOSSFIGHT !== 'undefined' && BOSSFIGHT && BOSSFIGHT.phase && BOSSFIGHT.phase !== 'none') ? BOSSFIGHT.phase : 'no';
+  return 'stage' + (typeof STAGE !== 'undefined' ? STAGE : '?') + ' jefe:' + jefe + ' minions:' + mn + ' vivos:' + viv;
+}
+function hitchTick(ms, calls, tris){
+  if(!HITCH.on || !(ms > 0) || ms > HITCH.max) return;         // por encima de HITCH.max = pestaña en segundo plano, no cuenta
+  if(HITCH.dts.length < HITCH.tope) HITCH.dts.push(ms);
+  if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
+    HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000), ctx:hitchCtx() });
+  }
+  if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
+}
+function hitchStart(){
+  HITCH.on = true; HITCH.t0 = performance.now(); HITCH.dts.length = 0; HITCH.peores.length = 0;
+  console.log('%c[tirones] GRABANDO… juega normal y pulsa F8 otra vez para el informe (o espera 90 s)', 'background:#420;color:#fd0;padding:2px 6px');
+  if(typeof showBanner === 'function') showBanner('MIDIENDO TIRONES', 2);
+}
+function hitchStop(){
+  if(!HITCH.on) return;
+  HITCH.on = false;
+  const d = HITCH.dts.slice().sort((a,b)=>a-b), n = d.length;
+  if(n < 30){ console.log('[tirones] muy pocos frames grabados (' + n + '), prueba otra vez'); return; }
+  const q = p => d[Math.min(n-1, Math.floor(n*p))];
+  const seg = (performance.now() - HITCH.t0) / 1000;
+  const p50 = q(0.50), p95 = q(0.95), p99 = q(0.99);
+  const g50 = d.filter(x=>x>50).length, g100 = d.filter(x=>x>100).length;
+  /* Umbral de la mediana en 17 y no en 16: a 60 fps con vsync el frame time es 16,7 ms, así que con 16
+     un resultado PERFECTO suspendía (pasó en la prueba). p99≤33 = el 1% peor no baja de 30 fps. */
+  const veredicto = (p50<=17 && p99<=33 && g100===0) ? 'APRUEBA' : 'SUSPENDE';
+  console.log('%c[tirones] ' + seg.toFixed(0) + ' s · mediana ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps) · p95 ' + p95.toFixed(1)
+    + ' · p99 ' + p99.toFixed(1) + ' · >50ms: ' + g50 + ' · >100ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min · ' + veredicto,
+    'background:#124;color:#8cf;padding:2px 6px');
+  const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,8);
+  if(top.length) console.log('[tirones] peores frames:\n' + top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · ' + x.ctx).join('\n'));
+  if(typeof showBanner === 'function') showBanner('INFORME EN LA CONSOLA (F12)', 2.5);
+}
+/* Escucha propia (no toca el manejador de teclas del juego, que lo edita otra sesión) */
+window.addEventListener('keydown', e=>{ if(e.key === 'F8'){ e.preventDefault(); HITCH.on ? hitchStop() : hitchStart(); } });
+
 /* ►PERF: restaura la CALIDAD elegida en una sesión anterior (setQuality ya la guardaba, pero nadie
    la leía al arrancar → siempre volvía a 'auto'). 'auto' sigue siendo el defecto adaptativo. */
 try{ const _sq = localStorage.getItem('blockout_quality'); if(_sq === 'auto' || TIERS[_sq]){ qMode = _sq; if(qMode==='auto') autoIdx = IS_MOBILE?0:2; } }catch(e){}
