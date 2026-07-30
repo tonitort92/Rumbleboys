@@ -6182,7 +6182,7 @@ function narrateStageStart(){
      (el bucle de updateFighter está gateado por stageIntroT en frame()) y APARECEN — cayendo desde su
      spawn — justo al acabar la voz, en _stageIntroEnd (el "¡LUCHA!"). */
   for(const p of players){
-    if(p.gfx && p.gfx.root) p.gfx.root.visible = false;
+    if(p.gfx && p.gfx.root) fighterHide(p.gfx);   // ►LUZFIJA: oculta el cuerpo sin mover la cuenta de luces
     if(p.groundRing) p.groundRing.visible = false;
     if(p.locator)    p.locator.visible    = false;
     if(p._stamBar)   p._stamBar.g.visible = false;
@@ -6212,7 +6212,7 @@ function _stageIntroEnd(){
   for(const p of players){
     safeSpawn(p); p.vel.set(0,0,0);                    // re-suelta cayendo justo al "¡LUCHA!"
     p.damage = 0; p.hitstun = 0; p.hitFlash = 0; p.stun = 0; p.atk.phase = 'none';
-    if(p.gfx && p.gfx.root) p.gfx.root.visible = true; // ►aparecen ahora, no durante la cinemática
+    if(p.gfx && p.gfx.root) fighterShow(p.gfx); // ►aparecen ahora, no durante la cinemática (►LUZFIJA)
   }
   hideStageCaution();            // ►STAGECAUTION: se retira el aviso justo con el "¡LUCHA!"
   showBanner('¡LUCHA!', 1); try{ tone(330,.18,'square',.15, 200); }catch(e){}
@@ -15707,7 +15707,7 @@ function ko(p){
   ring(bp.clone().add(new THREE.Vector3(0,1,0)), p.color, 28, .6);
   fovKick = Math.max(fovKick, 1.2);
   shake = 1; sfx.ko(); sfx.fallout(); if(!demo) crowdCheer(.6);   // ¡el público ruge con cada KO!
-  p.gfx.root.visible = false;
+  fighterHide(p.gfx);   // ►LUZFIJA: NO root.visible=false — sacaría sus luces de la cuenta y todo recompilaría
   showBanner(p.isAI ? '¡FUERA!' : '¡TE HAN SACADO!', 1.1);
 
   if(demo || TRAIN.on || ETERNO){ p.respawnT = 1.1; if(TRAIN.on) p.stocks = 4; return; }   // attract/entrenamiento/►ETERNO: reaparece siempre, no se elimina ni acaba
@@ -15811,7 +15811,7 @@ function safeSpawn(p){            // reaparece CAYENDO sobre la franja central s
 }
 function respawn(p){
   p._portalOut = false;                                                                    // ►PORTALOUT: por si quedó congelado (no debería reaparecer congelado)
-  if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); p.gfx.root.visible = true; }   // restaura el visual por si quedó desintegrado (cruce de portal)
+  if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); fighterShow(p.gfx); }   // restaura el visual por si quedó desintegrado (cruce de portal) (►LUZFIJA)
   p.dead = false;
   p.damage = 0;
   p.lastHitBy = null; p._rainbowT = 0;
@@ -15826,7 +15826,7 @@ function respawn(p){
   p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // pierdes arma/arcoíris al morir
   p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false; p.magnetT = 0;   // ►INTERSTAGE: ...y los pasivos RECOGIDOS
   p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };       // ...y los boosts de CÁPSULA. Lo COMPRADO en la tienda (p.own/p.ownPas) NO se toca: sobrevive a la muerte
-  p.gfx.root.visible = true;
+  fighterShow(p.gfx);   // ►LUZFIJA: reaparece restaurando luces (intensity) y mallas (__pv)
 }
 /* ===== fin de partida: nota D-/S+, recuento de EXP animado y leaderboard rebrandeado ===== */
 /* color de clase aclarado para UI (mismo criterio que uiLite del picker): aclara solo azul/lila oscuros */
@@ -18359,6 +18359,35 @@ function _ownedPlayer(){
 function updateOwnedCharLight(){
   const own = _ownedPlayer();
   for(const p of allPlayers){ const cl = p.gfx && p.gfx.charLight; if(cl) cl.visible = (p === own); }
+}
+
+/* ►LUZFIJA (30/07): ocultar/mostrar un LUCHADOR sin mover la CUENTA DE LUCES de la escena.
+   Medido con las claves de programa COMPLETAS (el informe F8 las corta a 90 chars y esconde justo
+   este campo): cada muerte/reaparición apagaba el root entero y con él sus PointLight (glow +
+   charLight) → `numPointLights` cambia → three recompila TODO lo visible (+16 programas ≈ 1 s de
+   parón, en cada KO, toda la partida). Es el mismo mal que el parpadeo de invulnerabilidad que ya
+   se arregló en updateFighter — este es el camino de MUERTE, que quedó sin tocar.
+   Las luces se apagan con intensity=0 (siguen en escena y en la cuenta: la clave no se mueve) y las
+   mallas se ocultan con el MISMO convenio __pv del parpadeo, así los dos sistemas no se pisan. */
+function fighterHide(g){
+  if(!g || !g.root || g._ljOff) return;
+  g._ljOff = true;
+  g.root.visible = true;              // el root ya NO se apaga nunca: apagarlo saca las luces de la cuenta
+  for(const c of g.root.children){
+    if(c.isLight){ if(c.__i0===undefined){ c.__i0 = c.intensity; c.intensity = 0; } }
+    else { if(c.__pv===undefined) c.__pv = c.visible; c.visible = false; }
+  }
+}
+function fighterShow(g){
+  if(!g || !g.root) return;
+  g.root.visible = true;              // cubre también a los que seguían ocultos por root (pool al cargar)
+  if(!g._ljOff) return;
+  g._ljOff = false;
+  for(const c of g.root.children){
+    if(c.isLight){ if(c.__i0!==undefined){ c.intensity = c.__i0; c.__i0 = undefined; } }
+    else if(c.__pv!==undefined){ c.visible = c.__pv; c.__pv = undefined; }
+  }
+  g._blinkOn = true;                  // re-sincroniza el parpadeo de invulnerabilidad (comparte __pv)
 }
 
 /* ===== OCLUSIÓN: lo que se cruza entre cámara y jugador se vuelve transparente ===== */
@@ -29794,7 +29823,7 @@ function stageResetPlayers(){
     p.stocks = 4 + (p.own.lives||0)*2;                   // vidas base + las COMPRADAS (carta +2 VIDAS)
     p.out = false; p.outOrder = 0;
     p._disCancel = true; p._portalOut = false;                                              // corta el dissolve del portal si sigue en vuelo · ►PORTALOUT: descongela
-    if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); p.gfx.root.visible = true; }   // deshace la desintegración del portal
+    if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); fighterShow(p.gfx); }   // deshace la desintegración del portal (►LUZFIJA)
     p.dead = false; p.damage = 0;
     safeSpawn(p); p.vel.set(0,0,0);
     p.hitstun = 0; p.stun = 0; p.atk.phase = 'none'; p.hang = null; p.swing = null; p.sandSink = 0;
@@ -30524,7 +30553,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.hangCD = 0; p.hangT = 0; p.stam = STAM_MAX; p.stamLock = false; if(p._stamBar) p._stamBar.g.visible = false;   // ►LTSTAM: aguante lleno al (re)empezar
     clearGrabs(p);   // ►LTGRAB: sin agarres colgando de la partida anterior
     p.block = false; p.comboStage = 0; p.comboWindow = 0; p.stun = 0; p.hitFlash = 0;
-    p.invuln = 1.5; p.gfx.root.visible = true;
+    p.invuln = 1.5; fighterShow(p.gfx);   // ►LUZFIJA
     p.power = 0; p.shardAmmo = SHARD_AMMO; p.shardCD = 0; p.shardReload = 0; p.qAmmo = Q_AMMO; p.qReload = 0; p.qCD = 0; p._qMax = 0; p.healCD = 0; p.buffSpdT = 0; p.buffRateT = 0; p.buffDmgT = 0; p.buffDefT = 0;
     p.throwT = 0; endBeam(p);
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
