@@ -6370,6 +6370,24 @@ function _parseRaw(key){
   if(data.tex){                                   // textura incrustada (arcoíris/bosque/marigold): se queda como está
     const tex = new THREE.TextureLoader().load(data.tex);
     tex.encoding = THREE.sRGBEncoding;
+    /* ►WEST-TEX. `std:true` = asset que CONSERVA su atlas original (las dos cabañas del western) y
+       quiere el material del juego, no el MeshPhongMaterial que fabrica MTLLoader: así entra en los
+       mismos parches de shader que todo lo demás (►DEPTH/►RIM) y sombrea igual que los props
+       horneados. UN material compartido por todas las submallas → 1 draw call por malla, igual que
+       antes de texturizar; el sobrecoste real es la textura (1024², ~5 MB de VRAM con mipmaps). */
+    if(data.std){
+      if(typeof renderer!=='undefined' && renderer.capabilities) tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+      /* `lift` = el MISMO realce de valor que _wLiftColors aplica a los colores de vértice de los
+         edificios horneados, pero aquí sobre la textura: estos atlas son marrones muy oscuros y con
+         la exposición 0,70 del juego más la niebla leen como negro (lo mismo que ya pasó con el
+         saloon). `color` es un uniform vec3, así que un valor >1 multiplica de verdad, no se clampea. */
+      const mat = new THREE.MeshStandardMaterial({ map:tex, color:0xffffff, roughness:.88, metalness:0, flatShading:true });
+      if(data.lift) mat.color.setScalar(data.lift);
+      obj.traverse(o=>{ if(o.isMesh && o.geometry){
+        if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();   // el OBJ va sin `vn` (las recalcula el juego, como en _bakeColored)
+        o.material = mat; } });
+      return obj;
+    }
     obj.traverse(o=>{ if(o.isMesh){ const ms=Array.isArray(o.material)?o.material:[o.material];
       ms.forEach(m=>{ if(m){ m.map=tex; if(m.color) m.color.setRGB(1,1,1); m.needsUpdate=true; } }); } });
     return obj;
@@ -23944,7 +23962,11 @@ function addPropW(key, x, z, topY, sc, yaw){
        · el saloon sí tiene 51 tonos, pero todos marrones oscuros, y con exposición 0,70 más la
          niebla acaban leyendo como negro.
      Sin meter texturas (decisión suya): multitono horneado por celda con la MISMA herramienta que
-     usa la madera del bosque, y un realce de valor encima. */
+     usa la madera del bosque, y un realce de valor encima.
+     ►WEST-TEX (30-jul): las dos CABAÑAS seguían leyendo planas y ahí sí había algo que recuperar —
+     su atlas original (1024², 23/43 KB) — así que w_cabin y w_logcabin vuelven a ir texturizadas
+     (ver `std:true` en _parseRaw). No entran aquí: el multitono y el realce solo tocan mallas con
+     atributo de color, y una malla texturizada no lo tiene → los dos pasos son no-op por sí solos. */
   if(_solido){
     if(typeof _s2ToneFor==='function') _s2ToneFor(key, m, 0.20, 0.18, 0.50);
     _wLiftColors(m, 1.45);
