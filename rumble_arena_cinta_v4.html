@@ -2081,6 +2081,38 @@ let _warmRT = null;                    // destino diminuto para el frame de cale
 /* Envoltorio: llama al pre-calentado de siempre (warmupGPU, mucho más abajo) y CUENTA cuántos
    programas se han compilado, que es la métrica que importa. Devuelve ese número para que el bucle
    de reposo del menú sepa cuándo puede pararse. */
+/* =====================================================================
+   ►DIFERIDO — nada pesado dentro de la partida.
+
+   Causa medida de los parones de ~4 s (informe de tirones del 30/07, cuatro
+   congelaciones con draw calls BAJOS = no es dibujo, es JS bloqueando):
+   hay trabajo pesado que ARRANCA al cargar pero TERMINA de forma asíncrona —
+   los callbacks de GLTFLoader.parse de los 19 tipos de minion (~13 MB de GLB)
+   y algún setTimeout — y aterriza cuando le da la gana, o sea, en mitad de la
+   pelea. Ya existía el guardián correcto (`warmupPermitido`), pero esas rutas
+   no pasaban por él.
+
+   Regla: si la partida está en marcha, el trabajo se ENCOLA y se hace luego,
+   de una tarea por vuelta, cuando no se está jugando. Nada cambia visualmente:
+   es el mismo trabajo, en otro momento.
+   ===================================================================== */
+const _difCola = [];
+function encolarSiEnPartida(nombre, fn){
+  const puedo = (typeof warmupPermitido !== 'function') || warmupPermitido();
+  if(puedo){ try{ fn(); }catch(e){ console.warn('►DIFERIDO ' + nombre + ':', e); } return true; }
+  _difCola.push({ nombre, fn });
+  return false;
+}
+/* Vacía la cola: UNA tarea por llamada, y solo fuera de partida. Lo llama el bucle de reposo del menú
+   (warmupIdle) y también el final de partida, así que nunca se queda trabajo colgado. */
+function procesarDiferidos(){
+  if(!_difCola.length) return 0;
+  if(typeof warmupPermitido === 'function' && !warmupPermitido()) return 0;
+  const t = _difCola.shift();
+  try{ t.fn(); console.log('[diferido] hecho: ' + t.nombre + ' (quedan ' + _difCola.length + ')'); }
+  catch(e){ console.warn('►DIFERIDO ' + t.nombre + ':', e); }
+  return 1;
+}
 function warmupShaders(motivo){
   if(typeof renderer === 'undefined' || !renderer || typeof warmupGPU !== 'function') return 0;
   const antes = renderer.info.programs ? renderer.info.programs.length : 0;
@@ -2108,6 +2140,10 @@ function warmupShaders(motivo){
 let _warmSpawnDone = false;
 function warmupSpawnables(){
   if(_warmSpawnDone || typeof scene === 'undefined') return 0;
+  /* ►DIFERIDO: le faltaba el guardián que sí tiene warmupGPU. Lo llama el bucle de reposo hasta 50 s
+     después de cargar, y parsea OBJ de hasta 272 KB: si el jugador ya entró a jugar, eso es un parón
+     en mitad de la partida. Espera a que se salga de la pelea. */
+  if(typeof warmupPermitido === 'function' && !warmupPermitido()) return 0;
   let n = 0;
   try{
     const G = new THREE.Group();
@@ -2239,7 +2275,13 @@ const HITCH_VIGILAR = ['spawnMinion','spawnMinionAt','spawnCapsule','spawnItem',
   'getModel','buildSegment','rebuildBelt','buildFighter','buildHeldWeapon','buildHandWeapon','buildBossArena',
   'startBossFight','setStage','applyStageTheme','applyStageMusic','initMinionInstances','gobAttach',
   'scatterModelDecor','flushGrass','getForestTrees','splitModelPieces','warmupGPU','warmupLigero','drawScene',
-  'updateMinions','updateBelt','updateFighter','updateOcclusion','rebakeAO','applyBakedAO'];
+  'updateMinions','updateBelt','updateFighter','updateOcclusion','rebakeAO','applyBakedAO',
+  /* ►PUNTOS CIEGOS (30/07): el informe decía "es JavaScript" pero no cuál, porque NINGUNA de estas
+     estaba vigilada — y son justo las sospechosas de los parones de 4 s. updateCharMixers corre cada
+     frame y es quien reintenta el recoloreado del atlas píxel a píxel; _gobBuildInst clona esqueletos
+     y materiales; procesarDiferidos es la cola nueva. Si algo vuelve a congelar, ahora sale con nombre. */
+  'updateCharMixers','recolorAtlas','_gobBuildInst','warmupSpawnables','applyEnvironment',
+  'procesarDiferidos','_dgolemSandstone','buildCharHammer','updateParts','updateCamera','animateDeco'];
 function hitchInstrumentar(){
   for(const n of HITCH_VIGILAR){
     const f = window[n];
@@ -8383,13 +8425,22 @@ const _GOB_ZERO = new THREE.Matrix4().makeScale(0,0,0);   // matriz nula → ocu
       ((t)=>{ new THREE.GLTFLoader().parse(buf.buffer, '', gltf=>{
         _gobTpl[t] = { scene:gltf.scene, animations:gltf.animations||[] };
         console.log('[goblin] '+t+' animado listo ·', _gobTpl[t].animations.map(a=>a.name).join('/'));
-        try{                                              // ►PERF2: PRE-CALIENTA 1 instancia (clone+mixer+shader) AHORA,
-          const w = _gobBuildInst(t);                     // en la carga/menú — el primer spawn en partida ya no da tirón
+        /* ►PERF2: PRE-CALIENTA 1 instancia (clone+mixer+shader) — en la carga/menú, para que el primer
+           spawn en partida no dé tirón.
+           ►DIFERIDO (30/07): esto vive DENTRO del callback de GLTFLoader.parse, o sea que se ejecuta
+           cuando termina de parsear cada uno de los 19 GLB (~13 MB en total) — un momento que NO se
+           controla y que muy a menudo cae ya en partida. Y lo que hace es caro: clonar un esqueleto,
+           cuatro traverse, clonar materiales… y un renderer.compile de la escena ENTERA. Era, con toda
+           probabilidad, uno de los parones de ~4 s del informe. Ahora se encola si hay pelea en marcha,
+           y se usa warmupLigero (compile con la cámara real) en vez del compile a pelo. */
+        encolarSiEnPartida('prewarm goblin ' + t, ()=>{
+          const w = _gobBuildInst(t);
           w.root.position.set(0, -400, 0); scene.add(w.root);
-          if(renderer.compile) renderer.compile(scene, camera);   // compila el programa skinned+map del goblin
+          if(typeof warmupLigero === 'function') warmupLigero('goblin ' + t);
+          else if(renderer.compile) renderer.compile(scene, camera);
           scene.remove(w.root);
           _gobPool[t].push(w);
-        }catch(e){ console.warn('[goblin] prewarm '+t, e); }
+        });
       }, err=>{ console.warn('[goblin] parse '+t, err); }); })(type);
     }catch(e){ console.warn('[goblin] load '+type, e); }
   }
@@ -9494,7 +9545,10 @@ function _dgolemBakeWhenReady(m){
   let tries = 0;
   (function go(){
     const t = m.map; if(!t) return;
-    if(t.image && t.image.width){ m.map = _dgolemSandstone(t); m.needsUpdate = true; return; }
+    /* ►DIFERIDO: el horneado recorre el atlas PÍXEL A PÍXEL. Este sondeo puede aterrizar hasta 10 s
+       después de cargar — o sea, ya en partida — y encima desde un setTimeout, invisible para el
+       grabador de tirones. Si hay pelea en marcha, se encola. */
+    if(t.image && t.image.width){ encolarSiEnPartida('horneado gólem desierto', ()=>{ m.map = _dgolemSandstone(t); m.needsUpdate = true; }); return; }
     if(++tries > 200){ console.warn('[dgolem] la textura Atlas no decodificó — sin rampa arenisca'); return; }
     setTimeout(go, 50);
   })();
@@ -31460,6 +31514,12 @@ startDemo();   // arranca el fondo "attract" del menú al cargar
   };
   requestAnimationFrame(()=>setTimeout(tick, 300));
 })();
+/* ►DIFERIDO: vaciado de la cola. Va por su cuenta y NO se apaga nunca (al contrario que el bucle de
+   reposo de arriba, que se para solo): el trabajo encolado puede llegar en cualquier momento —los GLB
+   de los minions terminan de parsear cuando terminan— y hay que recogerlo al salir de la pelea.
+   Una tarea cada 250 ms: si hay 19 pendientes (un tipo de minion cada una), se despachan en cinco
+   segundos de menú sin que se note, y de una en una para no encadenar dos trabajos caros en un frame. */
+setInterval(()=>{ try{ procesarDiferidos(); }catch(e){} }, 250);
 
 /* =====================================================================
    APLICAR CONFIG VISUAL EN VIVO — vuelca VISUAL sobre luces/fog/renderer
