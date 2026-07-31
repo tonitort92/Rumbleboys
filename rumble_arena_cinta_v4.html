@@ -2321,7 +2321,7 @@ function perfTick(ftMs){
    consola (F12). Si te olvidas, corta solo a los 90 s. Coste mientras graba:
    meter un número en un array por frame.
    ===================================================================== */
-const HITCH = { on:false, t0:0, dts:[], peores:[], lentas:[], tope:9000, max:5000, dur:150000 };   // tope: 9000 frames ≈ 150 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático, holgado para que quepa MENÚ + navegar + entrar en partida
+const HITCH = { on:false, t0:0, dts:[], peores:[], lentas:[], peorPor:{}, lts:[], lastHeap:0, tope:9000, max:5000, dur:150000 };   // tope: 9000 frames ≈ 150 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático, holgado para que quepa MENÚ + navegar + entrar en partida
 function hitchCtx(){
   let mn = 0, viv = 0;
   try{ if(typeof minions !== 'undefined') mn = minions.length; }catch(e){}
@@ -2356,9 +2356,12 @@ function hitchTick(ms, calls, tris){
     _nuevos = lista.join(' ¦ ');
   }
   if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
+    /* delta de HEAP a través del frame malo: una CAÍDA grande = el recolector de basura pasó por aquí */
+    const _hp = performance.memory ? Math.round((performance.memory.usedJSHeapSize - HITCH.lastHeap)/1048576) : 0;
     HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000),
-                        dp:_dp, dt:_tx - (HITCH.lastTx||_tx), prog:_nuevos, ctx:hitchCtx() });
+                        dp:_dp, dt:_tx - (HITCH.lastTx||_tx), hp:_hp, prog:_nuevos, ctx:hitchCtx() });
   }
+  if(performance.memory) HITCH.lastHeap = performance.memory.usedJSHeapSize;
   HITCH.lastPg = _pg; HITCH.lastTx = _tx;
   if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
 }
@@ -2369,7 +2372,7 @@ function hitchTick(ms, calls, tris){
    pasan por ella. Coste cuando NO se está grabando: una comparación booleana. */
 const HITCH_VIGILAR = ['spawnMinion','spawnMinionAt','spawnCapsule','spawnItem','applyCharModel','applySkin',
   'getModel','buildSegment','rebuildBelt','buildFighter','buildHeldWeapon','buildHandWeapon','buildBossArena',
-  'startBossFight','setStage','applyStageTheme','applyStageMusic','initMinionInstances','gobAttach',
+  'applyStageTheme','applyStageMusic','initMinionInstances','gobAttach',
   'scatterModelDecor','flushGrass','getForestTrees','splitModelPieces','warmupGPU','warmupLigero','drawScene',
   'updateMinions','updateBelt','updateFighter','updateOcclusion','rebakeAO','applyBakedAO',
   /* ►PUNTOS CIEGOS (30/07): el informe decía "es JavaScript" pero no cuál, porque NINGUNA de estas
@@ -2377,7 +2380,13 @@ const HITCH_VIGILAR = ['spawnMinion','spawnMinionAt','spawnCapsule','spawnItem',
      frame y es quien reintenta el recoloreado del atlas píxel a píxel; _gobBuildInst clona esqueletos
      y materiales; procesarDiferidos es la cola nueva. Si algo vuelve a congelar, ahora sale con nombre. */
   'updateCharMixers','recolorAtlas','_gobBuildInst','warmupSpawnables','applyEnvironment',
-  'procesarDiferidos','_dgolemSandstone','buildCharHammer','updateParts','updateCamera','animateDeco'];
+  'procesarDiferidos','_dgolemSandstone','buildCharHammer','updateParts','updateCamera','animateDeco',
+  /* ►PUNTOS CIEGOS 2 (31/07): el congelón de 3,1 s del informe de Toni no lo reclamó NADIE porque
+     estas no estaban vigiladas. El brute (élite) clona el esqueleto del jefe + TODOS sus materiales
+     con needsUpdate, síncrono y en plena partida — sospechoso nº1. (Fuera van 'startBossFight' y
+     'setStage', que no existen: el array los descartaba en silencio.) */
+  'spawnBrute','bruteAttach','bruteTint','carcherAttach','syncHeld','_tintInst',
+  'goToStage2','stageAdvance','precalentarObjeto','subirTexturasDe'];
 function hitchInstrumentar(){
   for(const n of HITCH_VIGILAR){
     const f = window[n];
@@ -2388,7 +2397,14 @@ function hitchInstrumentar(){
       try { return f.apply(this, arguments); }
       finally {
         const d = performance.now() - a;
-        if(d > 30 && HITCH.lentas.length < 60) HITCH.lentas.push({ n, ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) });
+        if(d > 30){
+          /* tope 60→200, y ADEMÁS el peor caso por función en un mapa que NO se satura.
+             ►LECCIÓN (31/07): con la banda de 33-50 ms, drawScene llenaba las 60 plazas en ~30 s
+             y el congelón de 3,1 s de los 58 s SE DESCARTÓ — el informe salió "sin culpable". */
+          if(HITCH.lentas.length < 200) HITCH.lentas.push({ n, ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) });
+          const w = HITCH.peorPor[n];
+          if(!w || d > w.ms) HITCH.peorPor[n] = { ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) };
+        }
       }
     };
     env.__vig = true;
@@ -2397,6 +2413,16 @@ function hitchInstrumentar(){
 }
 function hitchStart(){
   HITCH.lentas.length = 0;
+  HITCH.peorPor = {}; HITCH.lts.length = 0;
+  HITCH.lastHeap = performance.memory ? performance.memory.usedJSHeapSize : 0;
+  /* ►GC/LONGTASK (31/07): si un frame malo no lo reclama ninguna función vigilada, estas dos pistas
+     dicen si fue el recolector de basura (el heap CAE de golpe) o una longtask del navegador. */
+  try{
+    if(!HITCH._ltObs && window.PerformanceObserver){
+      HITCH._ltObs = new PerformanceObserver(list=>{ for(const e of list.getEntries()) if(HITCH.lts.length<400) HITCH.lts.push({ t:e.startTime, d:Math.round(e.duration) }); });
+    }
+    if(HITCH._ltObs) HITCH._ltObs.observe({ entryTypes:['longtask'] });
+  }catch(e){}
   hitchInstrumentar();
   HITCH.on = true; HITCH.t0 = performance.now(); HITCH.dts.length = 0; HITCH.peores.length = 0;
   /* foto de los programas que YA existen: lo que aparezca después es lo que se compila en marcha */
@@ -2444,9 +2470,10 @@ function hitchStop(){
   console.log('%c[tirones] ' + seg.toFixed(0) + ' s · mediana ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps) · p95 ' + p95.toFixed(1)
     + ' · p99 ' + p99.toFixed(1) + ' · >50ms: ' + g50 + ' · >100ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min · ' + veredicto,
     'background:#124;color:#8cf;padding:2px 6px');
+  try{ if(HITCH._ltObs) HITCH._ltObs.disconnect(); }catch(e){}
   const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,12);
   const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · '
-    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · ' + x.ctx
+    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · heap' + ((x.hp||0)>=0?'+':'') + (x.hp||0) + 'MB · ' + x.ctx
     + (x.prog ? '\n        programas nuevos: ' + x.prog : '')).join('\n');
   if(top.length) console.log('[tirones] peores frames:\n' + peoresTxt);
   /* fichero: resumen + máquina + los peores + el histograma, que es lo que de verdad se lee después */
@@ -2469,6 +2496,14 @@ function hitchStop(){
     '',
     'llamadas LENTAS (>30 ms) — esto dice QUE se comio el frame:',
     (HITCH.lentas.length ? HITCH.lentas.slice().sort((a,b)=>b.ms-a.ms).slice(0,20).map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.n + '()').join('\n') : '  (ninguna)'),
+    '',
+    /* mapa que NO se satura: aunque drawScene llene el top con la banda de 33-50 ms, el peor caso
+       de CADA funcion vigilada queda registrado — asi el proximo "congelon sin culpable" tiene nombre */
+    'peor caso POR FUNCION (no se satura):',
+    (Object.keys(HITCH.peorPor).length ? Object.entries(HITCH.peorPor).sort((a,b)=>b[1].ms-a[1].ms).slice(0,15)
+      .map(([n,w])=>'  ' + w.ms + ' ms  a los ' + w.s + ' s  ·  ' + n + '()').join('\n') : '  (ninguna >30 ms)'),
+    '',
+    'longtasks del navegador: ' + HITCH.lts.length + (HITCH.lts.length ? ' · peor ' + Math.max(...HITCH.lts.map(x=>x.d)) + ' ms' : ''),
     '',
     'peores frames (ms · cuando · draw calls · triangulos · contexto):',
     peoresTxt || '  (ninguno por encima de 50 ms)'
@@ -9355,6 +9390,23 @@ let _bossTpl = null;   // { root, clips:{name:AnimationClip}, baseScale, baseY }
   meshSrc.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){ o.castShadow=true; o.frustumCulled=false; if(o.material){ o.material.metalness=0; o.material.roughness=0.9; } } });
   _bossTpl = { root:meshSrc, clips, baseScale, baseY: -box2.min.y*baseScale };
   console.log('[boss] listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
+  /* ►ELITE-WARM (31/07): el mini-jefe élite (spawnBrute) clonaba el esqueleto + TODOS los materiales
+     del jefe y compilaba sus shaders SÍNCRONO, en plena partida, la primera vez que salía (caos ≥4)
+     — el congelón de ~3 s "sin culpable" del informe de Toni. Mismo remedio que los goblins
+     (►PERF2, gobLoad): construir la primera instancia FUERA de partida, calentarla y dejarla en el
+     pool; la aparición real solo hace _brutePool.pop(). bruteRemove deshace el alta sin dejar rastro. */
+  /* A LA COLA directamente, no a encolarSiEnPartida: (1) este IIFE corre SÍNCRONO al cargar y
+     bruteAttach usa consts (`BRUTE_SCALE_K`, `_brutePool`) declaradas miles de líneas MÁS ABAJO →
+     TDZ, la trampa conocida del proyecto — encolar ejecutaría YA (menú) y explotaría; (2) aunque no
+     explotara, sería trabajo pesado EN LA CARGA, que está desterrado. En _difCola lo drena el bucle
+     de reposo del menú a su ritmo (1 tarea/250 ms), después de cargar y nunca en partida. */
+  _difCola.push({ nombre:'precalentar brute (elite)', fn:()=>{
+    try{
+      const fake = {};
+      bruteAttach(fake);
+      if(fake._binst){ precalentarObjeto(fake._binst.root, 'brute (elite)'); bruteRemove(fake); }
+    }catch(e){ console.warn('[elite-warm]', e); }
+  } });
 })();
 
 /* ===================================================================
