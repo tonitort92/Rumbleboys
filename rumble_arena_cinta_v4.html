@@ -18512,7 +18512,37 @@ const occRoots = [];                               // OBJETOS oclusores completo
 const _occRay = new THREE.Raycaster();
 const _occFrom = new THREE.Vector3(), _occTo = new THREE.Vector3(), _occDir = new THREE.Vector3();
 let _occFaded = new Set(), _occNow = new Set();   // ►PERF: dos sets reutilizados (swap) → sin new Set() por tick (30Hz)
-function registerOccluder(root){                   // registra un OBJETO entero: clona materiales y agrupa sus mallas
+/* ►OCCIDX: buffers reutilizados de la poda del raycast (ver updateOcclusion) */
+let _occIdxOn = true;
+const _occABv = new THREE.Vector3(), _occPt = new THREE.Vector3(), _occCV = new THREE.Vector3();
+const _occCand = [], _occCandRoots = new Set();
+/* Candidatas al raycast de oclusión (lee _occFrom/_occTo, que pone el llamador). Dos podas POR RAÍZ:
+   (a) su segmento de cinta está oculto por el cull de niebla → fuera (el raycast de three IGNORA
+       `visible`, así que antes esto se testeaba igualmente);
+   (b) su esfera-unión (precalculada al registrar, en local del root → sigue a la cinta vía
+       matrixWorld) no toca el segmento de rayo cámara→jugador, margen rad+1.0 — cubre también el
+       test lente-dentro del llamador. Función separada para poder VALIDARLA por equivalencia. */
+function _occBuildCand(){
+  _occABv.copy(_occTo).sub(_occFrom); const _len2 = Math.max(_occABv.lengthSq(), 1e-6);
+  _occCandRoots.clear();
+  for(const root of occRoots){
+    const sg = root.userData._occSeg;
+    if(sg && sg.group && !sg.group.visible) continue;              // (a) hundido en la niebla
+    const lc = root.userData._occSphC;
+    if(lc !== undefined){                                          // (b) esfera-unión vs segmento de rayo
+      _occCV.copy(lc).applyMatrix4(root.matrixWorld);
+      _occPt.copy(_occCV).sub(_occFrom);
+      const tt = Math.max(0, Math.min(1, _occPt.dot(_occABv) / _len2));
+      _occPt.copy(_occABv).multiplyScalar(tt).add(_occFrom);
+      if(_occPt.distanceTo(_occCV) > root.userData._occSphR + 1.0) continue;
+    }
+    _occCandRoots.add(root);
+  }
+  _occCand.length = 0;
+  for(const o of occluders) if(_occCandRoots.has(o.userData._occRoot)) _occCand.push(o);
+  return _occCand;
+}
+function registerOccluder(root, seg){              // registra un OBJETO entero: clona materiales y agrupa sus mallas
   if(!root || root.userData._occ) return;
   const meshes = [];
   root.traverse(o=>{ if(o.isMesh && o.material){
@@ -18521,6 +18551,19 @@ function registerOccluder(root){                   // registra un OBJETO entero:
   }});
   if(!meshes.length) return;
   root.userData._occ = true; root.userData._occMeshes = meshes; occRoots.push(root);
+  /* ►OCCIDX (31/07): datos para PODAR el raycast — (a) el segmento de cinta al que pertenece (si su
+     grupo está oculto por la niebla, ni se testea) y (b) una ESFERA-UNIÓN del objeto entero, en
+     coords LOCALES del root (se lleva a mundo con su matrixWorld cada tick: sigue a la cinta). */
+  if(seg) root.userData._occSeg = seg;
+  try{
+    root.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(root);
+    if(!box.isEmpty()){
+      const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length()*0.5;
+      root.userData._occSphC = root.worldToLocal(c.clone());
+      root.userData._occSphR = r;
+    }
+  }catch(e){}
 }
 function _occSetOpacity(root, op){                  // funde/restaura TODAS las mallas del objeto a la vez
   const meshes = root.userData._occMeshes; if(!meshes) return;
@@ -18571,11 +18614,19 @@ function updateOcclusion(){
   const dist = _occDir.length(); if(dist < 0.6) return;
   _occDir.multiplyScalar(1/dist);
   _occRay.set(_occFrom, _occDir); _occRay.near = 0.3; _occRay.far = dist - 0.6;   // lo que está ENTRE cámara y jugador
-  const hits = _occRay.intersectObjects(occluders, false);
+  /* ►OCCIDX (31/07): PODA antes del raycast. Antes se testeaban TODAS las sub-mallas de los 6
+     segmentos (cientos, a 200 u en la niebla incluidas) a 30 Hz. Dos filtros POR RAÍZ:
+     (a) su segmento de cinta está oculto por el cull de niebla → fuera (el raycast de three ignora
+         `visible`, así que esto no era gratis como parecía);
+     (b) su esfera-unión (precalculada al registrar, en local del root) no toca el SEGMENTO de rayo
+         cámara→jugador con margen rad+1.0 — margen que cubre también el test lente-dentro de abajo.
+     `_occIdxOn=false` (consola) = apagado de emergencia (testear todas, como siempre). */
+  const cand = _occIdxOn ? _occBuildCand() : occluders;
+  const hits = _occRay.intersectObjects(cand, false);
   const now = _occNow; now.clear();   // ►PERF: reutiliza el set (clear no aloca) en vez de new Set()
   for(const h of hits){ const r = h.object.userData._occRoot; if(r) now.add(r); }   // funde el OBJETO entero, no solo el trozo impactado
   /* además: lo que la cámara TOCA o tiene dentro (la lente se mete en un árbol/muro/caja) */
-  for(const o of occluders){
+  for(const o of cand){
     const root = o.userData._occRoot;
     if(!root || now.has(root) || !o.geometry) continue;
     if(root.userData.occFloor) continue;   // ►OCC-FIX: los SUELOS son grandes y planos → su boundingSphere (radio = decenas de u.) engulle a la cámara casi siempre = falso positivo (se fundían sin tapar nada). El raycast ya los funde si de verdad se interponen; el guard rescata el nivel más bajo. La contención (lente-dentro-de-objeto) es solo para árboles/muros/cajas.
@@ -19336,7 +19387,7 @@ function buildSegment(idx){
      entero. Se hace al final: el césped ya está dentro de cada grupo → se funde con su objeto. */
   for(const child of seg.group.children){
     if(child.userData.noOcc || child.isInstancedMesh) continue;
-    registerOccluder(child);
+    registerOccluder(child, seg);   // ►OCCIDX: con su segmento → la poda salta lo hundido en la niebla
   }
   /* ►FIX arrastre-cinta: árboles del segmento (chunks del scatter + árboles sueltos de escena, todos
      marcados _s2TreeMerge) para ocultarlos en updateBelt EN CUANTO asoman por la pared-límite (v3).
