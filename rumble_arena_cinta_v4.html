@@ -2290,6 +2290,7 @@ addEventListener('keydown', e=>{ if(e.code==='F4' || e.key==='F4'){
 /* --- tick de perf (desde frame()): media de frame-time, DRS y auto-tier --- */
 let ftAvg = 16.7, perfWarm = 0, drsCool = 0, autoBad = 0, autoGood = 0, hudAccum = 0;
 function perfTick(ftMs){
+  window._aabbFrame = _aabbN; _aabbN = 0;   // ►PLATIDX: tests AABB del frame que acaba (para medir el índice A/B)
   if(isFinite(ftMs) && ftMs>0.5 && ftMs<200) ftAvg += (Math.min(ftMs,100) - ftAvg) * 0.1;   // media móvil del frame-time
   if(perfWarm < 60){ perfWarm++; }                                  // calienta antes de tocar nada
   else if(effName){
@@ -7303,7 +7304,7 @@ function updateShardsFly(dt){
     const x = s.m.position.x, y = s.m.position.y, z = s.m.position.z;
     /* choca con suelo y con sólidos (los muros del laberinto dan cobertura) */
     let hitWorld = y < .04 && overAnyPlatform(x, z);
-    if(!hitWorld) for(const pl of platforms){
+    if(!hitWorld) for(const pl of _platCandidates(x, x)){ _aabbN++;   // ►PLATIDX
       if(pl.solid && y < pl.topY && y > pl.baseY &&
          x>pl.minX && x<pl.maxX && z>pl.minZ && z<pl.maxZ){ hitWorld = true; break; }
     }
@@ -7941,7 +7942,7 @@ function updateWprojs(dt){
     else if(Math.random()<.85) burst(s.m.position, 0xff8a3a, 1, 1.2, .7, .5);
     const x=s.m.position.x, y=s.m.position.y, z=s.m.position.z;
     let hitWorld = y<.04 && overAnyPlatform(x,z);
-    if(!hitWorld) for(const pl of platforms){
+    if(!hitWorld) for(const pl of _platCandidates(x, x)){ _aabbN++;   // ►PLATIDX
       if(pl.solid && y<pl.topY && y>pl.baseY && x>pl.minX && x<pl.maxX && z>pl.minZ && z<pl.maxZ){ hitWorld=true; break; } }
     if(hitWorld){ if(s.kind==='missile') missileExplode(s); killWproj(i, s.kind==='missile'?null:0xdff1ff); continue; }
     let consumedM=false;                              // impacto contra MINIONS
@@ -8984,7 +8985,7 @@ function updateMprojs(dt){
     if(Math.random()<.5) burst(s.m.position, s.trailCol || (s.spin?0xff3fc0:0xff5050), 1, 1, .6, .4);   // ►G3R: estela recoloreable (ámbar en los orbes del brujo)
     const x=s.m.position.x,y=s.m.position.y,z=s.m.position.z;
     let hw=y<.04 && overAnyPlatform(x,z);
-    if(!hw) for(const pl of platforms){ if(pl.solid && y<pl.topY && y>pl.baseY && x>pl.minX && x<pl.maxX && z>pl.minZ && z<pl.maxZ){ hw=true; break; } }
+    if(!hw) for(const pl of _platCandidates(x, x)){ _aabbN++; if(pl.solid && y<pl.topY && y>pl.baseY && x>pl.minX && x<pl.maxX && z>pl.minZ && z<pl.maxZ){ hw=true; break; } }   // ►PLATIDX
     if(hw){ killMproj(i); continue; }
     let consumed=false;
     for(const p of players){
@@ -14484,6 +14485,40 @@ function _inBlob(pl, x, z, m){
   return u*u + v*v <= 1;
 }
 let _groundPl = null;   // ►S4: plataforma que devolvió groundAt (para saber si pisas ARENA)
+/* =====================================================================
+   ►PLATIDX (31/07) — ÍNDICE POR FRANJA X para las consultas de plataforma.
+   Medido: `platforms` (~150 entradas en el stage 1) se barría LINEAL ~20 veces por frame
+   (22 minions + 6 jugadores + proyectiles) ≈ 18.000 tests AABB/frame. Pero la PARTICIÓN ya
+   existía: cada plataforma de cinta pertenece a un segmento (seg.plats, franja de X de ~67 u) y
+   _applySegX ya la recorre cada frame — solo faltaba USARLA al consultar.
+   Candidatas de una consulta [x0,x1] = plataformas de los segmentos cuyo rango X (bounds reales,
+   ver _applySegX) solape [x0-M, x1+M], MÁS las "sueltas" (sin cinta: arenas de jefe, extras),
+   que se refrescan solas cuando cambia platforms.length. ~150 → ~25-50 tests por consulta.
+   `_platIdxOn=false` (consola) = apagado de emergencia: vuelve al barrido lineal de siempre.
+   ►OJO: `_qPlats` es un buffer COMPARTIDO entre llamadas — no llamar a otra consulta de plataforma
+   DESDE DENTRO de un bucle sobre el resultado (hoy ningún llamador lo hace; si hiciera falta,
+   copiar el resultado antes). */
+let _platIdxOn = true;
+const _loosePlats = [], _qPlats = [];
+let _looseLen = -1;
+let _aabbN = 0;                        // contador de tests por frame (lo resetea perfTick; para medir A/B)
+function _platCandidates(x0, x1){
+  if(!_platIdxOn || (typeof _segP0 !== 'undefined' && _segP0 > 0) ||
+     typeof BELT === 'undefined' || !BELT.segs || !BELT.segs.length) return platforms;
+  if(_looseLen !== platforms.length){  // alta/baja de plataformas (rejillas de jefe, losetas…) → refresca las sueltas
+    _looseLen = platforms.length;
+    _loosePlats.length = 0;
+    for(const pl of platforms) if(!pl.belt) _loosePlats.push(pl);
+  }
+  const M = 1.0;                       // holgura > radio máximo de consulta (R=0.32 de collideWalls, m=0.4 de overAnyPlatform)
+  _qPlats.length = 0;
+  for(const sg of BELT.segs){
+    if(sg.qMinX === undefined){ for(const pl of sg.plats) _qPlats.push(pl); continue; }   // sin bounds aún (antes del 1er updateBelt): candidato siempre
+    if(x1 >= sg.qMinX - M && x0 <= sg.qMaxX + M) for(const pl of sg.plats) _qPlats.push(pl);
+  }
+  for(const pl of _loosePlats) _qPlats.push(pl);
+  return _qPlats;
+}
 /* ►S4RIDE: altura REAL de la superficie de un RODILLO (perfil circular) en (x,z). El rodillo es
    pisable en su franja AABB; dentro de ella el suelo es la cima curva del tambor, no un plano. */
 function _rollTop(pl, x, z){
@@ -14495,7 +14530,7 @@ function _rollTop(pl, x, z){
 function groundAt(x, z, yFrom, yTo){
   // devuelve topY de la plataforma sobre la que caería al pasar de yFrom a yTo
   let best = null; _groundPl = null;
-  for(const pl of platforms){
+  for(const pl of _platCandidates(x, x)){ _aabbN++;   // ►PLATIDX: consulta puntual → solo el segmento bajo (x) + sueltas
     if(pl._bossNoFloor || pl._fell) continue;          // segmento de cinta oculto bajo/junto a la arena → NO es suelo · ►S3TRAP: loseta-trampa caída = sin suelo (te hundes)
     const inside = pl.blob ? _inBlob(pl, x, z, 0) : (x>=pl.minX && x<=pl.maxX && z>=pl.minZ && z<=pl.maxZ);
     if(inside){
@@ -14513,7 +14548,9 @@ function groundAt(x, z, yFrom, yTo){
 function collideWalls(p, prevX, prevZ, landY){
   const R = .32;                                   // radio del cuerpo
   p._wallHit = null;                               // normal del muro tocado este frame (para el SALTO DE PARED)
-  for(const pl of platforms){
+  /* ►PLATIDX: intervalo BARRIDO [prevX, x] — el anti-túnel de abajo compara contra prevX, así que
+     el segmento de SALIDA de un dash también tiene que ser candidato, no solo el de llegada */
+  for(const pl of _platCandidates(Math.min(prevX, p.pos.x), Math.max(prevX, p.pos.x))){ _aabbN++;
     if(!pl.solid || pl._bossNoFloor || pl._fell) continue;     // segmento enmascarado por la arena → ni suelo ni muro · ►S3TRAP: loseta caída no es muro tampoco
     const _top = pl._roll ? _rollTop(pl, p.pos.x, p.pos.z) : pl.topY;
     /* ►FIX REPULSOR INVISIBLE (#8): si al EMPEZAR el frame estabas EN/POR ENCIMA de la cima y vas
@@ -14590,8 +14627,11 @@ function wallJump(p){
    pequeño que el AABB y el margen permisivo validaba props colgando junto al borde. */
 function overAnyPlatform(x, z, m){
   if(m===undefined) m = 0.4;
-  /* en build (_segP0>0) solo mira las plataformas de ESTE segmento → no coge suelo fantasma del segmento en x=0; en runtime _segP0=0 → todas */
-  for(let i=_segP0;i<platforms.length;i++){ const pl=platforms[i];
+  /* en build (_segP0>0) solo mira las plataformas de ESTE segmento → no coge suelo fantasma del
+     segmento en x=0 (_platCandidates devuelve `platforms` entera en ese caso y el i0 lo respeta);
+     en runtime _segP0=0 → candidatas del índice ►PLATIDX */
+  const list = _segP0>0 ? platforms : _platCandidates(x-m, x+m), i0 = _segP0>0 ? _segP0 : 0;
+  for(let i=i0;i<list.length;i++){ const pl=list[i]; _aabbN++;
     if(pl.blob){ if(_inBlob(pl, x, z, m)) return true; continue; }   // ►S4: test de elipse
     if(x>=pl.minX-m && x<=pl.maxX+m && z>=pl.minZ-m && z<=pl.maxZ+m) return true; }
   return false;
@@ -14600,7 +14640,8 @@ function overAnyPlatform(x, z, m){
 function platformTopAt(x, z, m){
   if(m===undefined) m = 0.3;
   let best=null;
-  for(let i=_segP0;i<platforms.length;i++){ const pl=platforms[i]; if(!pl.solid || pl._bossNoFloor || pl._fell) continue;
+  const list = _segP0>0 ? platforms : _platCandidates(x-m, x+m), i0 = _segP0>0 ? _segP0 : 0;   // ►PLATIDX (misma regla que overAnyPlatform)
+  for(let i=i0;i<list.length;i++){ const pl=list[i]; _aabbN++; if(!pl.solid || pl._bossNoFloor || pl._fell) continue;
     if(pl.blob){ if(_inBlob(pl, x, z, m) && (best===null || pl.topY>best)) best=pl.topY; continue; }   // ►S4: test de elipse
     if(x>=pl.minX-m && x<=pl.maxX+m && z>=pl.minZ-m && z<=pl.maxZ+m){
       if(best===null || pl.topY>best) best=pl.topY; } }
@@ -14785,7 +14826,7 @@ function tryLedgeGrab(p){
   if(p.vel.y > 3 || p.hangCD>0 || p.dashT>0) return;
   if(p.stamLock || p.stam<=0) return;                // agotaste el aguante: caes sin reengancharte
   const margin = 1.0 + chaosLvl*.1;                  // ventana de borde más generosa
-  for(const pl of platforms){
+  for(const pl of _platCandidates(p.pos.x - margin, p.pos.x + margin)){ _aabbN++;   // ►PLATIDX: el intervalo incluye la ventana de agarre
     if(pl._bossNoFloor) continue;                    // segmento enmascarado por la arena → sin borde
     if(pl.noGrab) continue;                          // ►LTSTAM: marcado como NO agarrable (trampas/saltadores)
     if(!(p.pos.y > pl.topY-1.9 && p.pos.y < pl.topY-0.15)) continue;   // banda vertical más amplia
@@ -17820,7 +17861,7 @@ function updateFighter(p, dt){
        atraviesan desde abajo (nunca hacen tapón al recuperarte). Hierba/piedras/decor no colisionan. */
     if(p.vel.y > 0){
       const HEAD = 1.5;
-      for(const pl of platforms){
+      for(const pl of _platCandidates(p.pos.x, p.pos.x)){ _aabbN++;   // ►PLATIDX (bonk de techo: consulta puntual)
         if(!pl.solid || pl.float || pl._bossNoFloor) continue;
         if(p.pos.y + HEAD <= pl.baseY || oldY + HEAD > pl.baseY + 0.05) continue;   // solo si la CABEZA cruza la base subiendo en este frame
         const inside = pl.blob ? _inBlob(pl, p.pos.x, p.pos.z, -0.1) : (p.pos.x>pl.minX+0.05 && p.pos.x<pl.maxX-0.05 && p.pos.z>pl.minZ+0.05 && p.pos.z<pl.maxZ-0.05);
@@ -18552,7 +18593,7 @@ function updateOcclusion(){
   const _gp = (me.onGround && me._groundPl) ? me._groundPl : null;
   if(_gp && _gp._group && now.has(_gp._group)){
     let _lowest = true;
-    for(const pl of platforms){
+    for(const pl of _platCandidates(me.pos.x, me.pos.x)){ _aabbN++;   // ►PLATIDX (guard de oclusión, 30 Hz)
       if(!pl.solid || pl === _gp) continue;
       if(me.pos.x>=pl.minX && me.pos.x<=pl.maxX && me.pos.z>=pl.minZ && me.pos.z<=pl.maxZ && pl.topY < _gp.topY - 0.5){ _lowest = false; break; }   // hay suelo sólido MÁS BAJO bajo mis pies → estoy en una plataforma superior
     }
@@ -19320,7 +19361,12 @@ function buildSegment(idx){
 
 function _applySegX(seg){
   seg.group.position.x = seg.x;
-  for(const pl of seg.plats){ pl.minX = pl.lminX + seg.x; pl.maxX = pl.lmaxX + seg.x; }
+  /* ►PLATIDX: de paso (este bucle YA corre cada frame) se acumulan los bounds X REALES del segmento.
+     Derivarlos de los AABB tras escribirlos cubre gratis las plataformas-patrulla que mutan lminX/lmaxX. */
+  let qmin = Infinity, qmax = -Infinity;
+  for(const pl of seg.plats){ pl.minX = pl.lminX + seg.x; pl.maxX = pl.lmaxX + seg.x;
+    if(pl.minX < qmin) qmin = pl.minX; if(pl.maxX > qmax) qmax = pl.maxX; }
+  seg.qMinX = qmin; seg.qMaxX = qmax;
   for(const pd of seg.padList){ pd.pos.x = pd.lx + seg.x; }
 }
 
