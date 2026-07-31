@@ -1369,6 +1369,7 @@ const VOICE_READY_SRC = "data:audio/mpeg;base64,SUQzBAAAAAIUfFRTU0UAAAAOAAADTGF2
    Estilo cálido/frío: KEY cálida (sol), sombras/relleno hacia el azul.
    ===================================================================== */
 const VISUAL = {
+  partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
   // SOL (KEY, cálido, con sombra) — la luz que esculpe el mapa
@@ -5455,12 +5456,69 @@ const ringGeo = new THREE.TorusGeometry(.5,.05,6,28);   // compartida (antes: 1 
 const _burstMat = new Map();                            // materiales de burst cacheados por color (cubo inmutable → compartible)
 function burstMat(color){ let m=_burstMat.get(color); if(!m){ m=new THREE.MeshBasicMaterial({ color }); m.userData.shared=true; _burstMat.set(color,m); } return m; }
 const cubePool = [];                                    // ►PERF2: pool del burst (EL efecto más usado; antes: new Mesh por partícula = churn de GC constante)
+/* =====================================================================
+   ►PARTINST (31/07) — los CUBOS del burst (el ~80% de las partículas) en UN InstancedMesh.
+   Antes cada cubo era un Mesh propio: hasta 460 draw calls, y 460 nodos que los 3 recorridos de
+   escena por frame (color + silueta + máscara del contorno) tenían que visitar. Ahora: 1 draw call
+   y 1 nodo, con matrices+color por instancia (mismo patrón que renderMinionInstances).
+   El toggle vive en F2 (VISUAL.partInst); en OFF los spawns nuevos vuelven al camino de mallas de
+   siempre (los cubos instanciados vivos se extinguen solos en <1 s). Mismo look: misma geometría,
+   mismo material básico, mismos colores por ráfaga. */
+let _piMesh = null;
+const _piPool = [];                                     // registros {pos,v} reutilizados (sin new por ráfaga)
+const _piO = new THREE.Object3D();                      // scratch para componer cada matriz
+function _piInit(){
+  if(_piMesh) return _piMesh;
+  _piMesh = new THREE.InstancedMesh(partGeo, new THREE.MeshBasicMaterial({ color:0xffffff }), PART_MAX);
+  _piMesh.frustumCulled = false;                        // hay bursts a lo largo de toda la cinta
+  _piMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  /* ►OJO r128: setColorAt crea el buffer instanceColor con tamaño `this.count` EN ESE MOMENTO.
+     Hay que llamarlo ANTES de poner count=0 (recién construido, count=PART_MAX) — al revés nace un
+     buffer de longitud CERO y todos los cubos salen NEGROS (lo cazó el A/B de capturas). */
+  _piMesh.setColorAt(0, _tmpCol.setHex(0xffffff));
+  if(_piMesh.instanceColor) _piMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  _piMesh.count = 0;
+  scene.add(_piMesh);
+  return _piMesh;
+}
+function _piSpawn(pos, colHex, scale, life, vx, vy, vz){
+  const rec = _piPool.pop() || { inst:true, pos:new THREE.Vector3(), v:new THREE.Vector3() };
+  rec.pos.copy(pos); rec.v.set(vx, vy, vz);
+  rec.colHex = colHex; rec.s = scale; rec.rx = 0; rec.ry = 0; rec.life = life;
+  parts.push(rec);
+}
+/* re-empaqueta los cubos instanciados vivos en [0,k) — se llama al final de updateParts */
+function _piRender(){
+  if(!_piMesh) return;
+  let k = 0;
+  for(const p of parts){
+    if(!p.inst) continue;
+    _piO.position.copy(p.pos); _piO.rotation.set(p.rx, p.ry, 0); _piO.scale.setScalar(p.s);
+    _piO.updateMatrix();
+    _piMesh.setMatrixAt(k, _piO.matrix);
+    _piMesh.setColorAt(k, _tmpCol.setHex(p.colHex));
+    k++;
+  }
+  if(k === 0 && _piMesh.count === 0) return;            // nada que subir ni que limpiar
+  _piMesh.count = k;
+  _piMesh.instanceMatrix.needsUpdate = true;
+  if(_piMesh.instanceColor) _piMesh.instanceColor.needsUpdate = true;
+}
 const _fxV = new THREE.Vector3();                       // ►PERF2: scratch para posiciones de efecto (burst/ring COPIAN pos → no hace falta clonar al llamar)
 const _fxV2 = new THREE.Vector3();                      // ►LTGRAB: 2º scratch (dirección de empuje al soltar a un rival)
 function burst(pos, color, n, speed=7, up=4, scale=1){
   const free = PART_MAX - parts.length;            // recorta la ráfaga si vamos justos (sin notarse)
   if(free <= 0) return;
   if(n > free) n = free;
+  if(VISUAL.partInst){                                  // ►PARTINST: mismo movimiento/colores, 1 draw call
+    _piInit();
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2, r = Math.random();
+      _piSpawn(pos, color, (0.6+Math.random()*1.2)*scale, .45+Math.random()*.5,
+               Math.cos(a)*speed*r, Math.random()*up+1, Math.sin(a)*speed*r);
+    }
+    return;
+  }
   const bm = burstMat(color);
   for(let i=0;i<n;i++){
     let m = cubePool.pop();
@@ -5492,6 +5550,17 @@ function burstDir(pos, color, n, dir, speed=9, spread=.55, up=1.4, scale=1){
   if(_bdA.lengthSq() < 1e-4) _bdA.set(1,0,0);
   _bdA.normalize();
   _bdB.crossVectors(dir, _bdA).normalize();
+  if(VISUAL.partInst){                                  // ►PARTINST (mismo cono, 1 draw call)
+    _piInit();
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2, r = Math.random()*spread, sp = speed*(0.45+Math.random()*0.55);
+      _piSpawn(pos, color, (0.6+Math.random()*1.2)*scale, .30+Math.random()*.32,
+               (dir.x + (_bdA.x*Math.cos(a) + _bdB.x*Math.sin(a))*r) * sp,
+               (dir.y + (_bdA.y*Math.cos(a) + _bdB.y*Math.sin(a))*r) * sp + Math.random()*up,
+               (dir.z + (_bdA.z*Math.cos(a) + _bdB.z*Math.sin(a))*r) * sp);
+    }
+    return;
+  }
   const bm = burstMat(color);
   for(let i=0;i<n;i++){
     let m = cubePool.pop();
@@ -5737,6 +5806,14 @@ function updateParts(dt){
   for(let i=parts.length-1;i>=0;i--){
     const p = parts[i];
     p.life -= dt;
+    if(p.inst){                                          // ►PARTINST: cubo instanciado — datos puros, sin Mesh
+      if(p.life<=0){ _piPool.push(p); parts.splice(i,1); continue; }
+      p.pos.addScaledVector(p.v, dt);
+      p.v.y -= 14*dt;
+      p.s *= 1-2.2*dt;
+      p.rx += dt*6; p.ry += dt*5;                        // mismo movimiento que el cubo de siempre
+      continue;
+    }
     if(p.life<=0){
       scene.remove(p.m);
       if(p.pool){ p.m.visible = false; p.pool.push(p.m); }   // ►PERF: recicla malla+material a su pool (sin dispose = sin churn de GC en combate)
@@ -5778,6 +5855,7 @@ function updateParts(dt){
     else p.m.scale.multiplyScalar(1-2.2*dt);
     p.m.rotation.x += dt*6; p.m.rotation.y += dt*5;
   }
+  _piRender();   // ►PARTINST: vuelca matrices+color de los cubos instanciados vivos (1 draw call)
 }
 
 /* ---------- sonido (WebAudio sintetizado) ---------- */
@@ -31949,6 +32027,9 @@ function setupVisualGUI(){
   fDep.add(VISUAL.depth, 'haze', 0, 0.6,  0.01).name('bruma previa').onFinishChange(upD);
   fDep.add(VISUAL.depth, 'lift', 0, 0.7,  0.01).name('sombras del fondo').onFinishChange(upD);
   fDep.open();
+  /* ►PARTINST: se lee en cada spawn de burst — sin onChange; los cubos vivos del modo anterior se extinguen solos */
+  const fP = gui.addFolder('Partículas');
+  fP.add(VISUAL, 'partInst').name('burst instanciado (1 draw call)');
   /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
   const fI = gui.addFolder('Impacto direccional');
   fI.add(VISUAL.impact, 'on').name('activado');
