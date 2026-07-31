@@ -1370,6 +1370,8 @@ const VOICE_READY_SRC = "data:audio/mpeg;base64,SUQzBAAAAAIUfFRTU0UAAAAOAAADTGF2
    ===================================================================== */
 const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
+  maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
+  halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
   // SOL (KEY, cálido, con sombra) — la luz que esculpe el mapa
@@ -1819,12 +1821,24 @@ let charDepthRT = null, maskRT = null;
 function tagOutlineLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(OUTLINE_LAYER); }); }
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
-/* marca cada frame los elementos interactivos del mapa para que conserven su saturación */
+/* marca los elementos interactivos del mapa para que conserven su saturación.
+   ►MASKMEMO (31/07): antes hacía traverse() COMPLETO de cada cápsula/ítem/saltador/pad CADA frame
+   aunque nada hubiera cambiado. Los layers PERSISTEN en el objeto → basta marcar una vez, y
+   re-marcar solo si el root cambió de nº de hijos (p.ej. un modelo async que se cuelga después).
+   Si algo saliera desaturado, VISUAL.maskRetag=true (F2) restaura el re-marcado por frame y biseca. */
+function tagMaskLayerOnce(root){
+  if(!root) return;
+  const n = root.children.length;
+  if(root.userData._maskN === n) return;
+  root.userData._maskN = n;
+  root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); });
+}
 function tagInteractiveMask(){
-  if(typeof capsules!=='undefined') for(const c of capsules) tagMaskLayer(c.m);
-  if(typeof items   !=='undefined') for(const it of items)   tagMaskLayer(it.m);
-  if(typeof bouncers!=='undefined') for(const b of bouncers) tagMaskLayer(b.mesh);
-  if(typeof pads    !=='undefined') for(const pd of pads)    tagMaskLayer(pd.top && pd.top.parent ? pd.top.parent : pd.top);
+  const tag = (VISUAL && VISUAL.maskRetag) ? tagMaskLayer : tagMaskLayerOnce;
+  if(typeof capsules!=='undefined') for(const c of capsules) tag(c.m);
+  if(typeof items   !=='undefined') for(const it of items)   tag(it.m);
+  if(typeof bouncers!=='undefined') for(const b of bouncers) tag(b.mesh);
+  if(typeof pads    !=='undefined') for(const pd of pads)    tag(pd.top && pd.top.parent ? pd.top.parent : pd.top);
 }
 /* PROFUNDIDAD DE CAMPO (bokeh): enfoca la acción y desenfoca fondo/primer plano.
    ►►► AJUSTA: aperture = cuánto desenfoca · maxblur = desenfoque máximo ◄◄◄ */
@@ -1872,7 +1886,7 @@ try {
       outlinePass = new THREE.Pass();
       outlinePass._uni = _uni;
       outlinePass.render = function(renderer, writeBuffer, readBuffer){
-        if(!charDepthRT || !charDepthRT.depthTexture){ this.needsSwap = false; return; }
+        if(!charDepthRT){ this.needsSwap = false; return; }   // ►HALFMASK: ya no lleva depthTexture (se lee el alpha del color)
         this.needsSwap = true;
         /* 1) vuelca la profundidad de SÓLO los personajes jugables (capa OUTLINE_LAYER) */
         const prevMask = camera.layers.mask;
@@ -1901,16 +1915,19 @@ try {
         renderer.clear();
         renderer.render(scene, camera);
         for(let i=0;i<_swapped.length;i+=2) _swapped[i].material = _swapped[i+1];   // restaura materiales originales
-        renderer.setClearColor(_pcHex, _pcA);
-        scene.background = _bg;
         /* 1b) máscara "NO DESATURAR": personajes (capa 1) + interactivos (capa 2) → maskRT.
-           Sólo renderiza esas capas (objetos del resto de la escena se saltan) → barato. */
-        if(maskRT && maskRT.depthTexture){
+           Sólo renderiza esas capas (objetos del resto de la escena se saltan) → barato.
+           ►HALFMASK: va ANTES de restaurar clearColor/background — el grade ahora lee el ALPHA de
+           este target como presencia, así que fuera de los objetos tiene que quedar alpha=0 (con el
+           fondo restaurado, el background rellenaba TODO con alpha 1 y la máscara no distinguía). */
+        if(maskRT){
           camera.layers.enable(MASK_LAYER);   // ahora ve capas 1 y 2
           renderer.setRenderTarget(maskRT);
           renderer.clear();
           renderer.render(scene, camera);
         }
+        renderer.setClearColor(_pcHex, _pcA);
+        scene.background = _bg;
         camera.layers.mask = prevMask;
         renderer.shadowMap.autoUpdate = prevAuto; renderer.shadowMap.needsUpdate = prevNeeds;
         /* 2) dibuja el borde de color de clase POR FUERA de la silueta (dilatación) */
@@ -1951,8 +1968,8 @@ try {
         '  vec4 c=texture2D(tDiffuse,vUv);',
         '  c.rgb=(c.rgb-0.5)*contrast+0.5;',
         '  float l=dot(c.rgb,vec3(0.299,0.587,0.114));',
-        '  float isChar=step(texture2D(tCharDepth,vUv).x, 0.9999);',     // 1 = PERSONAJE jugable
-        '  float isProt=step(texture2D(tProtect,vUv).x, 0.9999);',       // 1 = personaje O elemento interactivo (saltadores/boosts/objetos/armas/pasivas)
+        '  float isChar=step(0.5, texture2D(tCharDepth,vUv).a);',        // 1 = PERSONAJE jugable · ►HALFMASK: presencia por ALPHA del color (filtra linear a media res; el depth con Nearest salía dentado)
+        '  float isProt=step(0.7, texture2D(tProtect,vUv).a);',          // 1 = personaje O interactivo · umbral alto: los translúcidos (depthWrite:false) tampoco contaban en la máscara de depth antigua
         '  float f=mix(mix(satScene, 1.0, isProt), satChar, isChar);',   // personaje: +10% · interactivo: sin tocar · resto: -25%
         '  c.rgb=mix(vec3(l),c.rgb,saturation*f);',
         '  float g=hash(vUv*vec2(1280.0,720.0)+fract(time)*97.0)-0.5;',   // grano animado
@@ -1978,22 +1995,22 @@ function attachComposerDepth(){
     dt.type = THREE.UnsignedIntType; dt.minFilter = THREE.NearestFilter; dt.magFilter = THREE.NearestFilter;   // 24-bit: menos ruido de cuantización a distancia
     rt.depthTexture = dt;
   }
-  /* render-target aparte donde se vuelca SÓLO la profundidad de los personajes (capa OUTLINE_LAYER):
-     el contorno detecta bordes sobre ÉL, no sobre toda la escena. */
-  if(!charDepthRT) charDepthRT = new THREE.WebGLRenderTarget(w, h, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, depthBuffer:true });
-  else charDepthRT.setSize(w, h);
-  if(charDepthRT.depthTexture && charDepthRT.depthTexture.dispose) charDepthRT.depthTexture.dispose();
-  const cdt = new THREE.DepthTexture(w, h);
-  cdt.type = THREE.UnsignedIntType; cdt.minFilter = THREE.NearestFilter; cdt.magFilter = THREE.NearestFilter;
-  charDepthRT.depthTexture = cdt;
-  charDepthRT.dispose();   // ►FIX "no carga hasta resize": fuerza el rebuild del framebuffer CON la depthTexture recién asignada (igual que en los RT del composer).
-  /* maskRT: profundidad de personajes + interactivos (capas 1 y 2) → máscara de NO-DESATURAR del color-grade */
-  if(!maskRT) maskRT = new THREE.WebGLRenderTarget(w, h, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, depthBuffer:true });
-  else maskRT.setSize(w, h);
-  if(maskRT.depthTexture && maskRT.depthTexture.dispose) maskRT.depthTexture.dispose();
-  const mdt = new THREE.DepthTexture(w, h);
-  mdt.type = THREE.UnsignedIntType; mdt.minFilter = THREE.NearestFilter; mdt.magFilter = THREE.NearestFilter;
-  maskRT.depthTexture = mdt;
+  /* ►HALFMASK (31/07): charDepthRT (silueta de personajes) y maskRT (máscara no-desaturar) eran
+     FULL-RES y llevaban una DepthTexture cada uno que el grade leía con Nearest. Ahora van a MEDIA
+     resolución y el grade/contorno leen su COLOR (alpha = presencia), que SÍ filtra linear → borde
+     suave, 4× menos relleno en los 2 pases extra y 2 DepthTextures menos. El contorno es un borde
+     grueso: a media resolución no se distingue (A/B de capturas). El detalle que hundiría esto es
+     leer el DEPTH a media resolución (Nearest → borde dentado): por eso se lee el ALPHA.
+     VISUAL.halfMask=false (F2) = full-res, para bisecar. */
+  const mk = (typeof VISUAL !== 'undefined' && VISUAL.halfMask === false) ? 1.0 : 0.5;
+  const w2 = Math.max(1, Math.floor(w*mk)), h2 = Math.max(1, Math.floor(h*mk));
+  if(!charDepthRT) charDepthRT = new THREE.WebGLRenderTarget(w2, h2, { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter, depthBuffer:true });
+  else charDepthRT.setSize(w2, h2);
+  if(charDepthRT.depthTexture){ if(charDepthRT.depthTexture.dispose) charDepthRT.depthTexture.dispose(); charDepthRT.depthTexture = null; }
+  charDepthRT.dispose();   // ►FIX "no carga hasta resize": fuerza el rebuild del framebuffer con la config nueva
+  if(!maskRT) maskRT = new THREE.WebGLRenderTarget(w2, h2, { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter, depthBuffer:true });
+  else maskRT.setSize(w2, h2);
+  if(maskRT.depthTexture){ if(maskRT.depthTexture.dispose) maskRT.depthTexture.dispose(); maskRT.depthTexture = null; }
   maskRT.dispose();
 }
 
@@ -2641,8 +2658,8 @@ saveGet();   // carga temprana: el resto del arranque (home, selector) ya la enc
 let _shadowTick = 0;
 function drawScene(){ tagInteractiveMask();   // marca cada frame los interactivos (saltadores/boosts/objetos/armas/pasivas) en MASK_LAYER → conservan saturación
   if(gradePass){ gradePass.uniforms.time.value = performance.now()*0.001;   // anima el grano
-    gradePass.uniforms.tCharDepth.value = charDepthRT ? charDepthRT.depthTexture : null;   // máscara de PERSONAJES (la rellena el pase de contorno) → +10% saturación
-    gradePass.uniforms.tProtect.value   = maskRT ? maskRT.depthTexture : null; }            // máscara personajes+interactivos → no se les baja la saturación
+    gradePass.uniforms.tCharDepth.value = charDepthRT ? charDepthRT.texture : null;   // ►HALFMASK: ahora es el COLOR (alpha=presencia), no el depth — máscara de PERSONAJES → +10% saturación
+    gradePass.uniforms.tProtect.value   = maskRT ? maskRT.texture : null; }            // máscara personajes+interactivos → no se les baja la saturación
   if(_decoTimeUniform) _decoTimeUniform.value = t;                         // mar + banderas animados en GPU (vertex shader)
   skyDome.position.copy(camera.position);                                  // cielo = skybox (centrado en la cámara) → no parallaxea
   applyEnvironment();                                                      // ►ENVMAP: comparar la firma es gratis; solo regenera si cambió el cielo/sol (= cambio de stage)
@@ -32030,6 +32047,8 @@ function setupVisualGUI(){
   /* ►PARTINST: se lee en cada spawn de burst — sin onChange; los cubos vivos del modo anterior se extinguen solos */
   const fP = gui.addFolder('Partículas');
   fP.add(VISUAL, 'partInst').name('burst instanciado (1 draw call)');
+  fP.add(VISUAL, 'maskRetag').name('re-marcar máscara cada frame (debug)');
+  fP.add(VISUAL, 'halfMask').name('contorno a media resolución').onChange(()=>attachComposerDepth());
   /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
   const fI = gui.addFolder('Impacto direccional');
   fI.add(VISUAL.impact, 'on').name('activado');
