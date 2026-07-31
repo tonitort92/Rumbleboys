@@ -2243,6 +2243,22 @@ function warmupSpawnables(){
   } catch(e){ console.warn('►WARMUP objetos:', e); }
   return n;
 }
+/* ►WARMUP3 (31/07): las ARMAS DE LOS MINIONS (arco/hacha/martillo/revólver). El prewarm por-tipo de
+   los goblins (`prewarm goblin t`) construye la instancia ANTES de que estas plantillas async hayan
+   cargado → `armed=false`, y el arma se cuelga en el gobAttach de PARTIDA: mallas y materiales que
+   debutan en combate. Se calientan aparte, cuando existan (el bucle de reposo reintenta). */
+let _warmGobArmas = false;
+function warmupArmasMinion(){
+  if(_warmGobArmas || typeof scene === 'undefined') return 0;
+  if(typeof warmupPermitido === 'function' && !warmupPermitido()) return 0;
+  if(!(typeof _bowTpl !== 'undefined' && _bowTpl && _vikAxeTpl && _vikHammerTpl)) return 0;   // aún cargando → reintenta
+  _warmGobArmas = true;
+  try{
+    const g = new THREE.Group();
+    g.add(_bowTpl.clone(true), _vikAxeTpl.clone(true), _vikHammerTpl.clone(true), _buildRevolver());
+    return precalentarObjeto(g, 'armas de minion');
+  }catch(e){ console.warn('►WARMUP armas minion', e); return 0; }
+}
 /* agrupa varias peticiones seguidas en una sola pasada (los 6 personajes llegan casi a la vez) */
 let _warmT = 0;
 function scheduleWarmup(motivo){
@@ -2353,7 +2369,10 @@ function hitchTick(ms, calls, tris){
       const k = pr.cacheKey || '';
       if(!HITCH.progSet.has(k)){ HITCH.progSet.add(k); if(lista.length < 4) lista.push(k.slice(0, 90).replace(/\s+/g,' ')); }
     }
-    _nuevos = lista.join(' ¦ ');
+    /* ►(31/07): +N programas SIN clave nueva = claves YA VISTAS recompilándose — o sea, un
+       material.dispose() soltó el programa y el siguiente uso lo recompila. Es OTRO culpable
+       (churn de dispose), no un material estrenándose; que el informe lo distinga. */
+    _nuevos = lista.length ? lista.join(' ¦ ') : '(sin clave nueva: recompilación de claves YA VISTAS — churn de dispose, no material nuevo)';
   }
   if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
     /* delta de HEAP a través del frame malo: una CAÍDA grande = el recolector de basura pasó por aquí */
@@ -8640,11 +8659,15 @@ function _gobArmModel(root, weapon){
 }
 /* ►WESTERN: revólver low-poly procedural — empuñadura en el ORIGEN, cañón hacia +Z (misma convención
    que buildHandWeapon('sword') → el fit de mano se comparte). Largo total ~0.42u para un char de 1.85u. */
+let _revMats = null;   // ►PERF (31/07): antes creaba 3 MeshStandardMaterial NUEVOS por revólver (uno por pistolero) — mismo look, materiales compartidos como hace burstMat
 function _buildRevolver(){
   const g = new THREE.Group();
-  const steel  = new THREE.MeshStandardMaterial({ color:0x8f97a3, roughness:.35, metalness:.7 });
-  const steelD = new THREE.MeshStandardMaterial({ color:0x5c636e, roughness:.4,  metalness:.65 });
-  const wood   = new THREE.MeshStandardMaterial({ color:0x6b4423, roughness:.7,  metalness:.05 });
+  if(!_revMats) _revMats = {
+    steel:  new THREE.MeshStandardMaterial({ color:0x8f97a3, roughness:.35, metalness:.7 }),
+    steelD: new THREE.MeshStandardMaterial({ color:0x5c636e, roughness:.4,  metalness:.65 }),
+    wood:   new THREE.MeshStandardMaterial({ color:0x6b4423, roughness:.7,  metalness:.05 })
+  };
+  const steel = _revMats.steel, steelD = _revMats.steelD, wood = _revMats.wood;
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.30,10), steel);
   barrel.rotation.x = Math.PI/2; barrel.position.set(0,.045,.20); g.add(barrel);
   const drum = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.09,10), steelD);
@@ -30647,6 +30670,12 @@ function launchMatch(){
   /* ►WARMUP: aquí NO se pre-calienta. Medido en la máquina de Toni: esta llamada era el peor frame de
      todo un informe de 150 s — 1.151 ms de congelación justo al entrar. Lo que hubiera compilado ya lo
      compila el bucle de reposo mientras se lee el menú. */
+  /* ►COLA (31/07): pero si el jugador entra RÁPIDO, la cola diferida (prewarms de pieles de minion,
+     1 tarea/250 ms) puede no haber drenado — y esos trabajos NO corren en partida, así que el primer
+     spawn de cada tipo compilaba sus 2 programas en pleno combate (+2 ≈ 117 ms medidos). Drenarla
+     ENTERA aquí: estamos aún fuera de partida y "¿PREPARADOS?" (2,6 s) lo tapa. Caso normal: 0 tareas. */
+  { let _dren = 0; try{ while(procesarDiferidos()) _dren++; }catch(e){}
+    if(_dren) console.log('[diferido] ' + _dren + ' trabajos drenados antes de la partida (tapados por ¿PREPARADOS?)'); }
   document.getElementById('startOverlay').style.display = 'none';   // oculta menús ya (el demo/cinemática se ve detrás de "¿PREPARADOS?")
   document.getElementById('endOverlay').style.display = 'none';
   document.getElementById('endNowBtn').style.display = 'none';
@@ -31720,6 +31749,7 @@ startDemo();   // arranca el fondo "attract" del menú al cargar
   const tick = ()=>{
     let n = warmupShaders('reposo');
     n += warmupSpawnables();      // ►WARMUP2: una sola vez, en cuanto la escena está montada
+    n += warmupArmasMinion();     // ►WARMUP3: armas de minion (arco/hacha/martillo/revólver), cuando sus plantillas existan
     vacias = (n > 0) ? 0 : vacias + 1;
     if(vacias < 3 && ++veces < 25) setTimeout(tick, 2000);
   };
