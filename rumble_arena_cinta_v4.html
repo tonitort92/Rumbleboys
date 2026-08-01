@@ -1247,10 +1247,6 @@ window.addEventListener('load', function(){
         <button class="bigOpt" id="modeCampaign">🏰<span>CAMPAÑA</span><small>Guardado automático: sigues en la pantalla a la que llegaste</small></button>
         <button class="bigOpt" id="modeSurvival">💀<span>SURVIVAL</span><small>Sin guardados: una tirada, a por el récord</small></button>
         <button class="bigOpt" id="modeTrain">🎯<span>ENTRENAMIENTO</span><small>Practica solo con minions</small></button>
-        <!-- ►STUDIO: modo TEMPORAL para grabar los vídeos de ataque (pedido de Toni). Clon del
-             entrenamiento pero: un cacho del Stage 1 QUIETO (sin cinta), UN minion INMORTAL e
-             INMÓVIL de saco, y F1/F2 para cambiar de personaje sin salir. -->
-        <button class="bigOpt" id="modeStudio">🎬<span>MODO STUDIO</span><small>Saco quieto · F1/F2 cambia personaje</small></button>
       </div>
     </div>
     <!-- paso 4: modos de MULTIJUGADOR. Las dos llevan a la MISMA sala online (el lobby de siempre);
@@ -1344,11 +1340,11 @@ window.addEventListener('load', function(){
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/BokehShader.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/BokehPass.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<!-- ►AO: oclusión ambiental de pantalla (SSAO). Solo tier ALTO + toggle F2. SimplexNoise es su dependencia. -->
+<!-- ►AO: oclusión ambiental de pantalla (SSAO). Solo tier ALTO (se enciende/apaga en VISUAL.ao). SimplexNoise es su dependencia. -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/math/SimplexNoise.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/SSAOShader.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/SSAOPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19/dist/lil-gui.umd.min.js"></script>   <!-- panel de debug de iluminación/atmósfera (tecla F2) -->
+<!-- ►LIMPIEZA DEV (2026-08-01): fuera lil-gui (panel de F2). Era la única dependencia de CDN aparte de three. -->
 <!-- carga de modelos OBJ (r128 globales) + datos incrustados -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
@@ -1431,14 +1427,18 @@ const VOICE_READY_SRC = "data:audio/mpeg;base64,SUQzBAAAAAIUfFRTU0UAAAAOAAADTGF2
 
 /* =====================================================================
    VISUAL — CONFIG CENTRAL de iluminación/atmósfera (overhaul game-feel).
-   TODO lo ajustable en UN sitio. El panel de debug (tecla F2) edita estos
-   valores EN VIVO y llama applyVisual(). Rangos recomendados entre [ ].
+   TODO lo ajustable en UN sitio. Rangos recomendados entre [ ].
+   ►LIMPIEZA DEV (1/08/2026): el panel de sliders (tecla F2, lil-gui) SE BORRÓ junto con el
+   resto de herramientas. Estos valores se editan A MANO aquí y se recargan; los comentarios
+   que digan "toggle en F2" quieren decir "cambia el valor de esta línea y recarga".
    Estilo cálido/frío: KEY cálida (sol), sombras/relleno hacia el azul.
    ===================================================================== */
 const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
   ao: { on:true, radius:1.1, min:0.04, max:3.0 },   // ►AO: oclusión de anclaje (SSAO, solo tier alto). TODO en unidades de vista/mundo (gotcha r128)
+  ink: { on:true, strength:0.32, umbral:0.35 },     // ►INK: tinta sutil del MUNDO (bordes de profundidad; jugadores/minions fuera)
+  minOutline: { on:true },                          // ►MINSIL: outline sutil de minions con el color del mapa
   halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
@@ -1878,6 +1878,7 @@ for(let i=0;i<FIRE_LIGHTS;i++){ const fl = new THREE.PointLight(0xff8a2e, 0, 12,
 let READABILITY_MODE = true;
 let composer = null, bloomPass = null, fxaaPass = null, bokehPass = null, gradePass = null, outlinePass = null;
 let renderPass = null, ssaoPass = null;   // ►AO: el RenderPass se apaga cuando el SSAO (que ya renderiza la escena) está activo
+let inkPass = null;   // ►INK: tinta sutil de mundo (bordes de profundidad; jugadores/minions excluidos por máscara)
 /* El CONTORNO toon ya no es global: se restringe a los PERSONAJES JUGABLES PRINCIPALES.
    Sus mallas se marcan en OUTLINE_LAYER y el pase detecta bordes sobre un depth que sólo
    contiene esa capa → el resto del juego (escenario, minions, objetos) queda sin contorno. */
@@ -1888,6 +1889,12 @@ const OUTLINE_LAYER = 1;
 const MASK_LAYER = 2;
 let charDepthRT = null, maskRT = null;
 function tagOutlineLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(OUTLINE_LAYER); }); }
+/* ►MINSIL (1/08): los MINIONS entran en el MISMO pase de silueta que los jugadores, pero con el
+   color del MAPA (portalPalette) y anillo CORTO en el shader (outline sutil). Registro en creación
+   (pools → una sola vez); el pase les swapea el material como a los jugadores. Efecto lateral
+   deliberado: al ir en capa OUTLINE también entran en la máscara de no-desaturar (conservan color). */
+const _minSil = [];
+function registerMinionSil(root){ if(root) root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } }); }
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
 /* marca los elementos interactivos del mapa para que conserven su saturación.
@@ -1975,13 +1982,15 @@ try {
           'void main(){',
           '  vec4 col=texture2D(tDiffuse,vUv);',
           '  vec4 cur=texture2D(tCharColor,vUv);',
-          '  if(cur.a>0.5){ gl_FragColor=col; return; }',   // sobre el personaje: escena tal cual (la línea va por fuera)
+          '  if(cur.a>0.4){ gl_FragColor=col; return; }',   // sobre personaje O minion: escena tal cual (la línea va por fuera) — ►MINSIL baja el umbral (minions van con alfa media)
           '  vec2 o=vec2(texel.x/texel.y,1.0)*thickness;',   // radio isotrópico en fracción de altura (mismo borde a cualquier resolución)
           '  vec3 oc=vec3(0.0); float found=0.0;',
           '  for(int i=0;i<16;i++){',                          // 16 direcciones: si hay un personaje a <= thickness → borde con SU color de clase
           '    float a=float(i)*0.392699;',                    // 2*PI/16
           '    vec4 s=texture2D(tCharColor, vUv+vec2(cos(a),sin(a))*o);',
-          '    if(s.a>0.5){ oc=s.rgb; found=1.0; }',
+          '    if(s.a>0.85){ oc=s.rgb; found=1.0; }',                 // anillo LARGO: solo jugadores (alfa 1)
+          '    vec4 s2=texture2D(tCharColor, vUv+vec2(cos(a),sin(a))*o*0.45);',   // ►MINSIL: anillo CORTO — outline sutil de minions (color del mapa) y tramo interior del de jugadores
+          '    if(s2.a>0.4){ oc=s2.rgb; found=max(found, s2.a>0.85 ? 1.0 : 0.7); }',
           '  }',
           '  gl_FragColor=vec4(mix(col.rgb, oc, found*strength), col.a);',
           '}'].join('\n')
@@ -2011,6 +2020,20 @@ try {
             let sm = _silCache[key];
             if(!sm){ sm = new THREE.MeshBasicMaterial({ color:hex, fog:false, skinning: !!o.isSkinnedMesh }); _silCache[key]=sm; }
             _swapped.push(o, o.material); o.material = sm; } });
+        }
+        /* ►MINSIL: los minions al MISMO target, con el color del MAPA y alfa media (0.62) → el
+           shader los distingue de los jugadores (alfa 1) y les dibuja el anillo CORTO (sutil).
+           Los del pool fuera de escena no se dibujan aunque se les cambie el material (inofensivo). */
+        if(typeof _minSil !== 'undefined' && _minSil.length && typeof VISUAL !== 'undefined' && (!VISUAL.minOutline || VISUAL.minOutline.on !== false)){
+          const stCol = (typeof portalPalette === 'function') ? portalPalette()[1] : 0x35ff6a;
+          for(const o of _minSil){
+            if(!o.material || o.material.depthWrite === false) continue;
+            const key = 'min' + (o.isSkinnedMesh ? '_s' : '');
+            let sm = _silCache[key];
+            if(!sm){ sm = new THREE.MeshBasicMaterial({ fog:false, transparent:true, opacity:0.62, skinning: !!o.isSkinnedMesh }); _silCache[key]=sm; }
+            sm.color.setHex(stCol);
+            _swapped.push(o, o.material); o.material = sm;
+          }
         }
         const _pcHex = renderer.getClearColor(new THREE.Color()).getHex ? renderer.getClearColor(new THREE.Color()).getHex() : 0x000000, _pcA = renderer.getClearAlpha();
         const _bg = scene.background; scene.background = null;   // ►CLAVE: si no, el fondo de la escena rellena charDepthRT con alpha=1 en TODO → la silueta no se distingue del vacío → contorno invisible
@@ -2042,6 +2065,35 @@ try {
       };
       outlinePass.enabled = READABILITY_MODE;
       composer.addPass(outlinePass);
+      /* ►INK (1/08, pedido de Toni): TINTA sutil en el MUNDO — línea oscura donde hay salto de
+         profundidad (bordes de plataformas, props, muros). Los jugadores y minions quedan FUERA
+         (ya llevan su outline propio): se saltan vía la máscara de silueta (tCharColor.a).
+         La profundidad se elige por frame en drawScene: con SSAO activo, la del pase de normales
+         (que además ya excluye transparencias); si no, la del RenderPass (composer.renderTarget2). */
+      inkPass = new THREE.ShaderPass({
+        uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null},
+                   cameraNear:{value:0.1}, cameraFar:{value:1000}, texel:{value:new THREE.Vector2(1/1280,1/720)},
+                   strength:{value:0.32}, umbral:{value:0.35} },
+        vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+        fragmentShader:[
+          '#include <packing>',
+          'uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tSil;',
+          'uniform float cameraNear, cameraFar, strength, umbral; uniform vec2 texel; varying vec2 vUv;',
+          'float vz(vec2 uv){ float d=texture2D(tDepth, uv).x; return -perspectiveDepthToViewZ(d, cameraNear, cameraFar); }',
+          'void main(){',
+          '  vec4 col=texture2D(tDiffuse, vUv);',
+          '  if(texture2D(tSil, vUv).a>0.4){ gl_FragColor=col; return; }',   // jugadores/minions: su outline manda
+          '  float z=vz(vUv);',
+          '  if(z>cameraFar*0.85){ gl_FragColor=col; return; }',             // cielo/fondo lejano: sin tinta
+          '  float dx=abs(vz(vUv+vec2(texel.x,0.0))-z), dy=abs(vz(vUv+vec2(0.0,texel.y))-z);',
+          '  float edge=max(dx,dy);',
+          '  float lim=umbral*(1.0+z*0.06);',                                // umbral crece con la distancia (sin tinta de ruido al fondo)
+          '  float ink=smoothstep(lim, lim*2.2, edge)*strength;',
+          '  gl_FragColor=vec4(mix(col.rgb, vec3(0.02,0.02,0.05), ink), col.a);',
+          '}'].join('\n')
+      });
+      inkPass.enabled = true;
+      composer.addPass(inkPass);
     }
     if(THREE.BokehPass){   // DoF real (basado en profundidad): enfoca la acción, desenfoca el resto
       bokehPass = new THREE.BokehPass(scene, camera, { focus: 24, aperture: DOF.aperture, maxblur: DOF.maxblur, width: innerWidth, height: innerHeight });
@@ -2408,23 +2460,11 @@ function setQuality(mode){
   effName = '';            // fuerza re-aplicar
   applyTier();
 }
-/* --- HUD de métricas (F3 o ?perf) --- */
-let perfHUD = /[?&]perf(=|&|$)/.test(location.search);
-const perfHUDEl = document.createElement('div');
-perfHUDEl.id = 'perfHUD';
-perfHUDEl.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;font:700 12px/1.45 ui-monospace,monospace;color:#9bffa0;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:6px;pointer-events:none;white-space:pre;display:'+(perfHUD?'block':'none');
-document.body.appendChild(perfHUDEl);
-addEventListener('keydown', e=>{ if(e.code==='F3' || e.key==='F3'){ perfHUD=!perfHUD; perfHUDEl.style.display=perfHUD?'block':'none'; e.preventDefault(); } });
-/* F4: A/B en vivo de la legibilidad (contorno + brillo domado). Re-skinea a todos. */
-addEventListener('keydown', e=>{ if(e.code==='F4' || e.key==='F4'){
-  READABILITY_MODE = !READABILITY_MODE;
-  if(outlinePass) outlinePass.enabled = READABILITY_MODE;   // contorno global ON/OFF (el brillo domado lee el flag por frame)
-  if(typeof showBanner==='function') showBanner('LEGIBILIDAD: '+(READABILITY_MODE?'ON':'OFF'), 1.2);
-  e.preventDefault();
-} });
+/* ►LIMPIEZA DEV (2026-08-01): fuera el HUD de métricas (F3 / ?perf) y el A/B de legibilidad (F4).
+   READABILITY_MODE se queda —lo lee el render cada frame— pero ya no se puede alternar en caliente. */
 
 /* --- tick de perf (desde frame()): media de frame-time, DRS y auto-tier --- */
-let ftAvg = 16.7, perfWarm = 0, drsCool = 0, autoBad = 0, autoGood = 0, hudAccum = 0;
+let ftAvg = 16.7, perfWarm = 0, drsCool = 0, autoBad = 0, autoGood = 0;
 function perfTick(ftMs){
   window._aabbFrame = _aabbN; _aabbN = 0;   // ►PLATIDX: tests AABB del frame que acaba (para medir el índice A/B)
   if(isFinite(ftMs) && ftMs>0.5 && ftMs<200) ftAvg += (Math.min(ftMs,100) - ftAvg) * 0.1;   // media móvil del frame-time
@@ -2444,231 +2484,9 @@ function perfTick(ftMs){
       else if(autoGood>360 && autoIdx<2){ autoIdx++; autoGood=0; applyTier(); }              // ~6s holgado → sube
     }
   }
-  hudAccum += ftMs;
-  if(perfHUD && hudAccum>200){ hudAccum=0;
-    const r = renderer.info.render;
-    perfHUDEl.textContent = (1000/Math.max(1,ftAvg)).toFixed(0)+' fps · '+curRatio.toFixed(2)+'x · '+r.calls+' calls · '+(r.triangles/1000).toFixed(0)+'k tris · '+(qMode==='auto'?'auto→':'')+effName;
-  }
-  hitchTick(ftMs, renderer.info.render.calls, renderer.info.render.triangles);   // ►HITCH: grabador de tirones (F8), justo aquí porque ftMs es el frame time REAL sin recortar
   renderer.info.reset();                                            // cierra el conteo del frame (tras leerlo)
 }
 
-/* =====================================================================
-   ►HITCH — GRABADOR DE TIRONES (tecla F8).
-
-   Por qué existe: el HUD (F3) muestra una MEDIA MÓVIL, que es justo lo que
-   ESCONDE los tirones. 60 fps de media con veinte parones de 200 ms se siente
-   horrible; 45 fps clavados se sienten perfectos. Para "que no pegue tirones"
-   la métrica no es la media, son los frames PEORES.
-
-   Qué mide en una sesión: mediana (cómo va normalmente), percentil 95 y 99
-   (el 1% peor ES el tirón) y cuántos frames pasan de 50 ms (salto visible) y
-   de 100 ms (parón). Y de los peores guarda el CONTEXTO — stage, si hay jefe,
-   cuántos minions, draw calls y triángulos — que es lo que dice DÓNDE mirar.
-
-   Objetivo publicable y comprobable: mediana ≤ 16 ms, p99 ≤ 33 ms y CERO
-   frames por encima de 100 ms en una partida entera. Eso se aprueba o se
-   suspende; "va fluido" no.
-
-   Uso: F8 empieza a grabar, F8 otra vez corta y escribe el informe en la
-   consola (F12). Si te olvidas, corta solo a los 90 s. Coste mientras graba:
-   meter un número en un array por frame.
-   ===================================================================== */
-const HITCH = { on:false, t0:0, dts:[], peores:[], lentas:[], peorPor:{}, lts:[], lastHeap:0, tope:9000, max:5000, dur:150000 };   // tope: 9000 frames ≈ 150 s a 60 fps · max: por encima de eso es la pestaña en segundo plano, no un tirón · dur: corte automático, holgado para que quepa MENÚ + navegar + entrar en partida
-function hitchCtx(){
-  let mn = 0, viv = 0;
-  try{ if(typeof minions !== 'undefined') mn = minions.length; }catch(e){}
-  try{ if(typeof players !== 'undefined') viv = players.filter(p=>!p.dead).length; }catch(e){}
-  const jefe = (typeof BOSSFIGHT !== 'undefined' && BOSSFIGHT && BOSSFIGHT.phase && BOSSFIGHT.phase !== 'none') ? BOSSFIGHT.phase : 'no';
-  /* dónde estábamos: MENÚ o PARTIDA. Imprescindible si se empieza a grabar en la home y se sigue
-     grabando al entrar en juego — si no, no se sabe a qué parte pertenece cada frame malo. */
-  let donde = 'partida';
-  try{ if(typeof demo !== 'undefined' && demo) donde = 'menu'; else if(typeof running !== 'undefined' && !running) donde = 'parado'; }catch(e){}
-  return donde + ' stage' + (typeof STAGE !== 'undefined' ? STAGE : '?') + ' jefe:' + jefe + ' minions:' + mn + ' vivos:' + viv;
-}
-function hitchTick(ms, calls, tris){
-  if(!HITCH.on || !(ms > 0) || ms > HITCH.max) return;         // por encima de HITCH.max = pestaña en segundo plano, no cuenta
-  if(HITCH.dts.length < HITCH.tope) HITCH.dts.push(ms);
-  /* ►PROGRAMAS y TEXTURAS del frame. El informe del 30/07 senaló a drawScene() como el que se come los
-     3-4 s, y ahí dentro solo hay dos cosas que cuesten segundos: COMPILAR un programa o SUBIR una
-     textura a la GPU. Anotando cuántos se crearon en ese frame, el informe distingue una de otra en vez
-     de dejarlo en "algo del render". Leerlos es gratis (son contadores que three ya lleva). */
-  const _pg = renderer.info.programs ? renderer.info.programs.length : 0;
-  const _tx = (renderer.info.memory && renderer.info.memory.textures) || 0;
-  const _dp = _pg - (HITCH.lastPg||_pg);
-  /* ►QUÉ programa. Saber que se compilaron 15 no basta: hay que saber CUÁLES, porque la clave dice el
-     tipo de material y sus flags (skinning, mapas, sombra…) y eso señala al sistema culpable. Solo se
-     hace en los frames donde el contador SUBE, así que no cuesta nada en los 6.000 frames normales. */
-  let _nuevos = '';
-  if(_dp > 0 && HITCH.progSet){
-    const lista = [];
-    for(const pr of renderer.info.programs){
-      const k = pr.cacheKey || '';
-      if(!HITCH.progSet.has(k)){ HITCH.progSet.add(k); if(lista.length < 4) lista.push(k.slice(0, 90).replace(/\s+/g,' ')); }
-    }
-    /* ►(31/07): +N programas SIN clave nueva = claves YA VISTAS recompilándose — o sea, un
-       material.dispose() soltó el programa y el siguiente uso lo recompila. Es OTRO culpable
-       (churn de dispose), no un material estrenándose; que el informe lo distinga. */
-    _nuevos = lista.length ? lista.join(' ¦ ') : '(sin clave nueva: recompilación de claves YA VISTAS — churn de dispose, no material nuevo)';
-  }
-  if(ms > 50 && HITCH.peores.length < 40){                      // solo en los frames malos se lee el contexto (es lo único que cuesta)
-    /* delta de HEAP a través del frame malo: una CAÍDA grande = el recolector de basura pasó por aquí */
-    const _hp = performance.memory ? Math.round((performance.memory.usedJSHeapSize - HITCH.lastHeap)/1048576) : 0;
-    HITCH.peores.push({ ms:Math.round(ms), s:((performance.now()-HITCH.t0)/1000).toFixed(1), c:calls|0, t:Math.round((tris|0)/1000),
-                        dp:_dp, dt:_tx - (HITCH.lastTx||_tx), hp:_hp, prog:_nuevos, ctx:hitchCtx() });
-  }
-  if(performance.memory) HITCH.lastHeap = performance.memory.usedJSHeapSize;
-  HITCH.lastPg = _pg; HITCH.lastTx = _tx;
-  if(performance.now() - HITCH.t0 > HITCH.dur) hitchStop();     // corta solo a los 90 s
-}
-/* ►HITCH · QUIÉN se comió el frame. Saber que un frame duró 4 s no sirve de nada si no sabes QUÉ lo
-   causó. Esto envuelve un puñado de funciones sospechosas (las que crean cosas: modelos, segmentos,
-   arenas, minions, jefes) y apunta cualquier llamada que pase de 30 ms. Como una función declarada
-   arriba del script vive también en window, se puede sustituir por la envoltura y los que la llaman
-   pasan por ella. Coste cuando NO se está grabando: una comparación booleana. */
-const HITCH_VIGILAR = ['spawnMinion','spawnMinionAt','spawnCapsule','spawnItem','applyCharModel','applySkin',
-  'getModel','buildSegment','rebuildBelt','buildFighter','buildHeldWeapon','buildHandWeapon','buildBossArena',
-  'applyStageTheme','applyStageMusic','initMinionInstances','gobAttach',
-  'scatterModelDecor','flushGrass','getForestTrees','splitModelPieces','warmupGPU','warmupLigero','drawScene',
-  'updateMinions','updateBelt','updateFighter','updateOcclusion','rebakeAO','applyBakedAO',
-  /* ►PUNTOS CIEGOS (30/07): el informe decía "es JavaScript" pero no cuál, porque NINGUNA de estas
-     estaba vigilada — y son justo las sospechosas de los parones de 4 s. updateCharMixers corre cada
-     frame y es quien reintenta el recoloreado del atlas píxel a píxel; _gobBuildInst clona esqueletos
-     y materiales; procesarDiferidos es la cola nueva. Si algo vuelve a congelar, ahora sale con nombre. */
-  'updateCharMixers','recolorAtlas','_gobBuildInst','warmupSpawnables','applyEnvironment',
-  'procesarDiferidos','_dgolemSandstone','buildCharHammer','updateParts','updateCamera','animateDeco',
-  /* ►PUNTOS CIEGOS 2 (31/07): el congelón de 3,1 s del informe de Toni no lo reclamó NADIE porque
-     estas no estaban vigiladas. El brute (élite) clona el esqueleto del jefe + TODOS sus materiales
-     con needsUpdate, síncrono y en plena partida — sospechoso nº1. (Fuera van 'startBossFight' y
-     'setStage', que no existen: el array los descartaba en silencio.) */
-  'spawnBrute','bruteAttach','bruteTint','carcherAttach','syncHeld','_tintInst',
-  'goToStage2','stageAdvance','precalentarObjeto','subirTexturasDe'];
-function hitchInstrumentar(){
-  for(const n of HITCH_VIGILAR){
-    const f = window[n];
-    if(typeof f !== 'function' || f.__vig) continue;
-    const env = function(){
-      if(!HITCH.on) return f.apply(this, arguments);
-      const a = performance.now();
-      try { return f.apply(this, arguments); }
-      finally {
-        const d = performance.now() - a;
-        if(d > 30){
-          /* tope 60→200, y ADEMÁS el peor caso por función en un mapa que NO se satura.
-             ►LECCIÓN (31/07): con la banda de 33-50 ms, drawScene llenaba las 60 plazas en ~30 s
-             y el congelón de 3,1 s de los 58 s SE DESCARTÓ — el informe salió "sin culpable". */
-          if(HITCH.lentas.length < 200) HITCH.lentas.push({ n, ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) });
-          const w = HITCH.peorPor[n];
-          if(!w || d > w.ms) HITCH.peorPor[n] = { ms:Math.round(d), s:((a-HITCH.t0)/1000).toFixed(1) };
-        }
-      }
-    };
-    env.__vig = true;
-    try{ window[n] = env; }catch(e){}
-  }
-}
-function hitchStart(){
-  HITCH.lentas.length = 0;
-  HITCH.peorPor = {}; HITCH.lts.length = 0;
-  HITCH.lastHeap = performance.memory ? performance.memory.usedJSHeapSize : 0;
-  /* ►GC/LONGTASK (31/07): si un frame malo no lo reclama ninguna función vigilada, estas dos pistas
-     dicen si fue el recolector de basura (el heap CAE de golpe) o una longtask del navegador. */
-  try{
-    if(!HITCH._ltObs && window.PerformanceObserver){
-      HITCH._ltObs = new PerformanceObserver(list=>{ for(const e of list.getEntries()) if(HITCH.lts.length<400) HITCH.lts.push({ t:e.startTime, d:Math.round(e.duration) }); });
-    }
-    if(HITCH._ltObs) HITCH._ltObs.observe({ entryTypes:['longtask'] });
-  }catch(e){}
-  hitchInstrumentar();
-  HITCH.on = true; HITCH.t0 = performance.now(); HITCH.dts.length = 0; HITCH.peores.length = 0;
-  /* foto de los programas que YA existen: lo que aparezca después es lo que se compila en marcha */
-  try{ HITCH.progSet = new Set((renderer.info.programs||[]).map(p=>p.cacheKey||'')); }catch(e){ HITCH.progSet = null; }
-  console.log('%c[tirones] GRABANDO… (vale desde el MENÚ: sigue grabando al entrar en partida). F8 otra vez para el informe, o corta solo a los 150 s', 'background:#420;color:#fd0;padding:2px 6px');
-  if(typeof showBanner === 'function') showBanner('MIDIENDO TIRONES', 2);
-}
-/* Datos de la MÁQUINA: sin esto un informe no sirve para comparar entre equipos. */
-function hitchMaquina(){
-  let gpu = 'desconocida';
-  try{ const gl = renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    if(ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL); }catch(e){}
-  const c = renderer.domElement;
-  return [
-    'navegador: ' + navigator.userAgent,
-    'gpu: ' + gpu,
-    'lienzo: ' + c.width + 'x' + c.height + ' · pixelRatio ' + curRatio.toFixed(2) + ' · devicePixelRatio ' + devicePixelRatio,
-    'calidad: ' + (typeof qMode!=='undefined'?qMode:'?') + ' → tier ' + (typeof effName!=='undefined'?effName:'?'),
-    'nucleos: ' + (navigator.hardwareConcurrency || '?') + ' · memoria js: ' + (performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576)+' MB' : 'n/d')
-  ].join('\n');
-}
-/* El informe se DESCARGA como .txt (además de escribirse en consola): así no hay que copiar nada a
-   mano de la consola, que es un engorro. Cae en la carpeta de Descargas. */
-function hitchDescargar(txt){
-  try{
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([txt], { type:'text/plain' }));
-    a.download = 'tirones-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.txt';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
-  }catch(e){ console.warn('[tirones] no se pudo descargar el informe', e); }
-}
-function hitchStop(){
-  if(!HITCH.on) return;
-  HITCH.on = false;
-  const d = HITCH.dts.slice().sort((a,b)=>a-b), n = d.length;
-  if(n < 30){ console.log('[tirones] muy pocos frames grabados (' + n + '), prueba otra vez'); return; }
-  const q = p => d[Math.min(n-1, Math.floor(n*p))];
-  const seg = (performance.now() - HITCH.t0) / 1000;
-  const p50 = q(0.50), p95 = q(0.95), p99 = q(0.99);
-  const g50 = d.filter(x=>x>50).length, g100 = d.filter(x=>x>100).length;
-  /* Umbral de la mediana en 17 y no en 16: a 60 fps con vsync el frame time es 16,7 ms, así que con 16
-     un resultado PERFECTO suspendía (pasó en la prueba). p99≤33 = el 1% peor no baja de 30 fps. */
-  const veredicto = (p50<=17 && p99<=33 && g100===0) ? 'APRUEBA' : 'SUSPENDE';
-  console.log('%c[tirones] ' + seg.toFixed(0) + ' s · mediana ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps) · p95 ' + p95.toFixed(1)
-    + ' · p99 ' + p99.toFixed(1) + ' · >50ms: ' + g50 + ' · >100ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min · ' + veredicto,
-    'background:#124;color:#8cf;padding:2px 6px');
-  try{ if(HITCH._ltObs) HITCH._ltObs.disconnect(); }catch(e){}
-  const top = HITCH.peores.slice().sort((a,b)=>b.ms-a.ms).slice(0,12);
-  const peoresTxt = top.map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.c + ' calls · ' + x.t + 'k tris · '
-    + '+' + (x.dp||0) + ' programas · +' + (x.dt||0) + ' texturas · heap' + ((x.hp||0)>=0?'+':'') + (x.hp||0) + 'MB · ' + x.ctx
-    + (x.prog ? '\n        programas nuevos: ' + x.prog : '')).join('\n');
-  if(top.length) console.log('[tirones] peores frames:\n' + peoresTxt);
-  /* fichero: resumen + máquina + los peores + el histograma, que es lo que de verdad se lee después */
-  const bandas = [8,16,25,33,50,100,250,1e9], etiq = ['<8','8-16','16-25','25-33','33-50','50-100','100-250','>250'];
-  const hist = bandas.map((b,i)=> d.filter(x=> x<b && x>=(i?bandas[i-1]:0)).length);
-  const txt = [
-    'INFORME DE TIRONES · RUMBLEBOYS',
-    new Date().toString(),
-    '',
-    hitchMaquina(),
-    '',
-    'duracion: ' + seg.toFixed(1) + ' s · frames: ' + n,
-    'mediana: ' + p50.toFixed(1) + ' ms (' + (1000/p50).toFixed(0) + ' fps)',
-    'p95: ' + p95.toFixed(1) + ' ms · p99: ' + p99.toFixed(1) + ' ms',
-    'frames >50 ms: ' + g50 + ' · >100 ms: ' + g100 + ' · ' + (g50/seg*60).toFixed(1) + ' tirones/min',
-    'VEREDICTO: ' + veredicto + '   (objetivo: mediana<=17, p99<=33, cero frames >100)',
-    '',
-    'reparto de frames por tiempo:',
-    etiq.map((e,i)=> '  ' + e.padEnd(8) + ' ms: ' + hist[i]).join('\n'),
-    '',
-    'llamadas LENTAS (>30 ms) — esto dice QUE se comio el frame:',
-    (HITCH.lentas.length ? HITCH.lentas.slice().sort((a,b)=>b.ms-a.ms).slice(0,20).map(x=>'  ' + x.ms + ' ms  a los ' + x.s + ' s  ·  ' + x.n + '()').join('\n') : '  (ninguna)'),
-    '',
-    /* mapa que NO se satura: aunque drawScene llene el top con la banda de 33-50 ms, el peor caso
-       de CADA funcion vigilada queda registrado — asi el proximo "congelon sin culpable" tiene nombre */
-    'peor caso POR FUNCION (no se satura):',
-    (Object.keys(HITCH.peorPor).length ? Object.entries(HITCH.peorPor).sort((a,b)=>b[1].ms-a[1].ms).slice(0,15)
-      .map(([n,w])=>'  ' + w.ms + ' ms  a los ' + w.s + ' s  ·  ' + n + '()').join('\n') : '  (ninguna >30 ms)'),
-    '',
-    'longtasks del navegador: ' + HITCH.lts.length + (HITCH.lts.length ? ' · peor ' + Math.max(...HITCH.lts.map(x=>x.d)) + ' ms' : ''),
-    '',
-    'peores frames (ms · cuando · draw calls · triangulos · contexto):',
-    peoresTxt || '  (ninguno por encima de 50 ms)'
-  ].join('\n');
-  hitchDescargar(txt);
-  if(typeof showBanner === 'function') showBanner('INFORME DESCARGADO', 2.5);
-}
-/* Escucha propia (no toca el manejador de teclas del juego, que lo edita otra sesión) */
-window.addEventListener('keydown', e=>{ if(e.key === 'F8'){ e.preventDefault(); HITCH.on ? hitchStop() : hitchStart(); } });
 
 /* ►PERF: restaura la CALIDAD elegida en una sesión anterior (setQuality ya la guardaba, pero nadie
    la leía al arrancar → siempre volvía a 'auto'). 'auto' sigue siendo el defecto adaptativo. */
@@ -2774,10 +2592,18 @@ function saveRecordRun(info){
 saveGet();   // carga temprana: el resto del arranque (home, selector) ya la encuentra lista
 
 let _shadowTick = 0;
+const _inkV2 = new THREE.Vector2();   // ►INK: scratch del tamaño de buffer
 function drawScene(){ tagInteractiveMask();   // marca cada frame los interactivos (saltadores/boosts/objetos/armas/pasivas) en MASK_LAYER → conservan saturación
   if(gradePass){ gradePass.uniforms.time.value = performance.now()*0.001;   // anima el grano
     gradePass.uniforms.tCharDepth.value = charDepthRT ? charDepthRT.texture : null;   // ►HALFMASK: ahora es el COLOR (alpha=presencia), no el depth — máscara de PERSONAJES → +10% saturación
     gradePass.uniforms.tProtect.value   = maskRT ? maskRT.texture : null; }            // máscara personajes+interactivos → no se les baja la saturación
+  if(inkPass && inkPass.enabled){   // ►INK: fuentes por frame — profundidad según el modo de render y máscara de silueta
+    inkPass.uniforms.tDepth.value = (ssaoPass && ssaoPass.enabled && ssaoPass.normalRenderTarget) ? ssaoPass.normalRenderTarget.depthTexture : (composer && composer.renderTarget2 ? composer.renderTarget2.depthTexture : null);
+    inkPass.uniforms.tSil.value = charDepthRT ? charDepthRT.texture : null;
+    inkPass.uniforms.cameraNear.value = camera.near; inkPass.uniforms.cameraFar.value = camera.far;
+    const _ib = renderer.getDrawingBufferSize(_inkV2);
+    inkPass.uniforms.texel.value.set(1/Math.max(1,_ib.x), 1/Math.max(1,_ib.y));
+  }
   if(_decoTimeUniform) _decoTimeUniform.value = t;                         // mar + banderas animados en GPU (vertex shader)
   skyDome.position.copy(camera.position);                                  // cielo = skybox (centrado en la cámara) → no parallaxea
   applyEnvironment();                                                      // ►ENVMAP: comparar la firma es gratis; solo regenera si cambió el cielo/sol (= cambio de stage)
@@ -5478,27 +5304,6 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
         _vikHammerTpl = gltf.scene; console.log('[char] martillo vikingo listo');
       }, err=>{ console.warn('[char] fallo martillo vikingo', err); });
     }
-    /* AFINADOR EN VIVO del arma/martillo en la mano de P1 (solo DEBUG: requiere ?fit en la URL).
-       Sin el gate, H (tecla de CURA) escalaba la katana ×1.05 por pulsación → katana gigante en partida.
-       Z/X=rot.x · V/B=rot.y · N/M=rot.z · G/H=escala · 7/8=pos.x · 9/0=pos.y · -/+=pos.z · P=imprimir */
-    if(/[?&]fit(=|&|$)/.test(location.search)) addEventListener('keydown', e=>{
-      const h = P1 && (P1._charHeld || P1._katana || P1._staff || P1._shield || P1._bow); if(!h) return; const s=0.1, ps=0.05; let ch=true;   // afina el arma recogida; si no hay, la katana/bastón/escudo/arco de clase
-      switch(e.code){
-        case 'KeyZ': h.rotation.x-=s; break; case 'KeyX': h.rotation.x+=s; break;
-        case 'KeyV': h.rotation.y-=s; break; case 'KeyB': h.rotation.y+=s; break;
-        case 'KeyN': h.rotation.z-=s; break; case 'KeyM': h.rotation.z+=s; break;
-        case 'KeyG': h.scale.multiplyScalar(0.95); break; case 'KeyH': h.scale.multiplyScalar(1.05); break;
-        case 'Digit7': h.position.x-=ps; break; case 'Digit8': h.position.x+=ps; break;
-        case 'Digit9': h.position.y-=ps; break; case 'Digit0': h.position.y+=ps; break;
-        case 'Minus': h.position.z-=ps; break; case 'Equal': h.position.z+=ps; break;
-        case 'BracketLeft': GRIP_CURL-=0.1; FIST_CURL-=0.1; console.log('[grip] GRIP_CURL', GRIP_CURL.toFixed(2)); ch=false; break;   // cerrar/abrir mano (rich + legacy)
-        case 'BracketRight': GRIP_CURL+=0.1; FIST_CURL+=0.1; console.log('[grip] GRIP_CURL', GRIP_CURL.toFixed(2)); ch=false; break;
-        case 'KeyP': break; default: ch=false;
-      }
-      if(ch) console.log('[fit] pos {x:'+h.position.x.toFixed(2)+', y:'+h.position.y.toFixed(2)+', z:'+h.position.z.toFixed(2)+'}'
-        +' rot {x:'+h.rotation.x.toFixed(2)+', y:'+h.rotation.y.toFixed(2)+', z:'+h.rotation.z.toFixed(2)+'}'
-        +' scale '+(h.scale.x*(P1._charScale||1)).toFixed(2));
-    });
   } catch(e){ console.warn('[char] no se pudo cargar el humanoide', e); }
 }
 /* === puntuación / barra de minions / ataque DEFINITIVO === */
@@ -8732,6 +8537,7 @@ function initMinionInstances(){
     const im = new THREE.InstancedMesh(p.geo, p.mat, MINION_CAP);
     im.count = 0; im.frustumCulled = false;                  // matrices a mano → sin culling del batch entero
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    if(typeof registerMinionSil === 'function') registerMinionSil(im);   // ►MINSIL: outline de mapa
     scene.add(im); return im;
   });
 }
@@ -8767,7 +8573,9 @@ initMinionInstances();
    6 piezas del goblin troceado (body/head/brazos/piernas, mismas articulaciones del rig). Mantiene el
    instancing (mismo coste) + la animación de miembros. Fallback silencioso a cajas si algo falla. ===== */
 function rebuildMinionInstances(){
-  if(minstMeshes){ for(const im of minstMeshes){ scene.remove(im); if(im.dispose) im.dispose(); } minstMeshes=null; }
+  if(minstMeshes){ for(const im of minstMeshes){ scene.remove(im); if(im.dispose) im.dispose();
+    const ix = _minSil.indexOf(im); if(ix>=0) _minSil.splice(ix,1);   // ►MINSIL: fuera del registro (init re-registra los nuevos)
+  } minstMeshes=null; }
   initMinionInstances();
 }
 (function loadGoblinMinion(){
@@ -9016,6 +8824,7 @@ function _gobBuildInst(type){                             // crea UNA instancia 
   }
   const weapon = cfg.weapon || null;                     // ►SKELMINIONS: arma por defecto (arco/espada) del minion
   const armed = _gobArmModel(root, weapon);              // intenta armarlo YA (si el arco no cargó → gobAttach reintenta)
+  if(typeof registerMinionSil === 'function') registerMinionSil(root);   // ►MINSIL: outline color del mapa (una vez por instancia; el pool la reutiliza)
   return { root, mixer, acts, mats:(cfg.noTint ? null : mats), baseScale:(sz.y>0.001 ? cfg.h/sz.y : 1), baseYmin:box.min.y, weapon, armed };   // ►WESTERN: null (no []) — gobAttach comprueba if(inst.mats)
 }
 function gobAttach(mn){
@@ -9434,114 +9243,6 @@ function updateMinion(mn, dt){
    El jugador elige cuántos minions quiere; al matarlos reaparecen para mantener ese número. */
 const TRAIN = { on:false, mode:'one', _t:0 };
 
-/* =====================================================================
-   ►STUDIO — MODO TEMPORAL para grabar los vídeos de ataque (pedido de Toni).
-   Clon del ENTRENAMIENTO (no te eliminan, reapareces siempre) + tres cosas:
-     · un CACHO del Stage 1, QUIETO (la cinta apagada; los demás segmentos, fuera)
-     · UN saco INMORTAL e INMÓVIL al que pegar
-     · F1/F2 para cambiar de personaje sin salir al menú
-   Se juega y se graba a mano (Toni). Cuando estén los 60 clips, este modo se puede borrar:
-   toca `MATCH.mode`, el botón #modeStudio y estas funciones. Nada más.
-   ===================================================================== */
-const STUDIO = { on:false, dummy:null, dpos:new THREE.Vector3(), ci:0 };
-const STUDIO_DUMMY_D = 4.0;                 // a cuánto se planta el saco, delante del jugador
-function studioSetup(){
-  chaosLvl = 0; chaosT = 0;                 // sin escalada: el plató no cambia mientras grabas
-  const ch = document.getElementById('chaos'); if(ch) ch.textContent = '';
-  /* 1) el mundo: Stage 1 de verdad (su cielo, su luz, su decorado), montado por el juego */
-  STAGE = 1; _stagePreview = 1; applyStageTheme(1);
-  BELT.on = true; rebuildBelt();            // rebuildBelt sale antes si BELT.on es false → montar y LUEGO apagar
-  /* 2) UN CACHO: se queda el segmento donde caes; los otros 5 fuera (grupo + sus plataformas/pads) */
-  const keep = BELT.segs[0];
-  for(const s of BELT.segs){
-    if(s === keep) continue;
-    if(s.group) scene.remove(s.group);
-    for(const pl of s.plats){ const i = platforms.indexOf(pl); if(i>=0) platforms.splice(i,1); }
-    for(const pd of s.padList){ const i = pads.indexOf(pd); if(i>=0) pads.splice(i,1); }
-  }
-  BELT.segs.length = 0; BELT.segs.push(keep);
-  /* el cacho, AL CENTRO. No es estético: `updateMinion` mata a todo minion con |x| > WALL_X+4
-     ("fuera del mapa"), y el segmento 0 nace a x≈-67 → el saco moría solo y renacía sin parar,
-     dejando cadáveres. Movido al origen, cae dentro del muro y vive. */
-  keep.x = 0; _applySegX(keep);
-  BELT.on = false;                          // ►QUIETO: updateBelt sale antes → el cacho no se mueve
-  /* 3) el jugador, PLANTADO en la losa más grande del cacho.
-     NO safeSpawn: ese te deja CAYENDO del cielo, y entonces al plantar el saco el jugador no está
-     sobre ninguna plataforma → se cogía la primera losa del mapa y el saco nacía a 15 u de distancia. */
-  const p = players[0];
-  const big = platforms.filter(q=>q.solid)
-    .sort((a,b)=> ((b.maxX-b.minX)*(b.maxZ-b.minZ)) - ((a.maxX-a.minX)*(a.maxZ-a.minZ)))[0];
-  if(big){ p.pos.set((big.minX+big.maxX)/2, big.topY, (big.minZ+big.maxZ)/2 - 1.5); }
-  else safeSpawn(p);
-  p.vel.set(0,0,0); p.damage = 0; p.stocks = 99; p.dead = false; p.out = false;
-  p.onGround = true; p.respDrop = false; p.yaw = 0;
-  removePad(p);
-  /* 4) el saco: delante, mirando al jugador. Inmortal e inmóvil lo hace studioPinDummy() cada frame */
-  for(const mn of minions) killMinion(mn); minions.length = 0;
-  studioSpawnDummy();
-  STUDIO.ci = Math.max(0, CHAR_ROSTER.indexOf(p._charKey));
-  showBanner('🎬 STUDIO · F1/F2 personaje · F3 saco', 3.2);
-}
-/* planta el saco delante del jugador, PERO SOBRE SUELO. A ciegas (p.z+4) se quedaba flotando si la
-   plataforma no llegaba hasta ahí — y studioPinDummy lo habría clavado en el aire. Se busca la losa
-   donde estás y se le acerca el punto hasta que caiga dentro; si no cabe, se prueba alrededor. */
-/* ►STUDIO · DESMONTAR. OBLIGATORIO: studioSetup APAGA la cinta y BORRA 5 de los 6 segmentos, y eso
-   es global. Sin esto, al volver al menú el fondo del attract se quedaba con UN cacho congelado (el
-   "vídeo de fondo reventado") y la siguiente partida normal habría salido igual de rota.
-   Se llama desde startDemo() —la vuelta al menú— y desde launchMatch() si el modo NO es studio. */
-function studioTeardown(){
-  if(!STUDIO.on) return;
-  STUDIO.on = false; STUDIO.dummy = null;
-  for(const mn of minions) killMinion(mn); minions.length = 0;
-  BELT.on = true; rebuildBelt();            // rebuildBelt sale antes si BELT.on es false → encender PRIMERO
-}
-function studioSpawnDummy(){
-  const p = players[0];
-  const pl = platforms.find(q => q.solid && p.pos.x>=q.minX-.5 && p.pos.x<=q.maxX+.5 &&
-                                 p.pos.z>=q.minZ-.5 && p.pos.z<=q.maxZ+.5 && Math.abs(p.pos.y-q.topY)<2.5)
-          || platforms.find(q => q.solid);
-  let x = p.pos.x, z = p.pos.z + STUDIO_DUMMY_D, y = p.pos.y;
-  if(pl){
-    y = pl.topY;
-    const M = 0.9;                                  // margen: que no nazca en el mismísimo canto
-    if(z > pl.maxZ-M) z = p.pos.z - STUDIO_DUMMY_D; // no cabe delante → detrás
-    if(z < pl.minZ+M) z = (pl.minZ + pl.maxZ)/2;    // tampoco → al centro de la losa
-    x = Math.min(pl.maxX-M, Math.max(pl.minX+M, x));
-    z = Math.min(pl.maxZ-M, Math.max(pl.minZ+M, z));
-  }
-  STUDIO.dpos.set(x, y, z);
-  STUDIO.dummy = spawnMinionAt(x, z, y, 'small');
-  if(STUDIO.dummy){ STUDIO.dummy.pos.copy(STUDIO.dpos); STUDIO.dummy.onGround = true; }
-}
-/* INMORTAL e INMÓVIL, pero golpeable: los impactos y su FX se ven, y `nearestFoe` lo encuentra
-   (la LLUVIA de la arquera y el CAMPO del mago apuntan al enemigo más cercano: sin saco dispararían
-   a un punto por defecto). Va DESPUÉS de updateMinions: deshace su IA, su empuje y su muerte. */
-function studioPinDummy(){
-  /* ►STUDIO: la R SIEMPRE lista. La definitiva se cierra con `mpow < MPOW_MAX` (y cada clase la
-     resetea a 0 al lanzarla), así que se rellena la barra cada frame: la puedes tirar sin parar y
-     grabar las tomas que necesites sin esperar a cargarla. */
-  const p = players[0];
-  if(p && !p.dead) p.mpow = MPOW_MAX;
-  const d = STUDIO.dummy;
-  if(!d || d.dead){ studioSpawnDummy(); return; }
-  d.pos.copy(STUDIO.dpos); d.vel.set(0,0,0);
-  d.damage = 0; d.hitstun = 0; d.dead = false;
-  d.atkPhase = 'none'; d.atkT = 0; d.cd = 99;    // no ataca: eres tú quien pega
-  d.yaw = Math.PI;                               // mirándote
-}
-/* F1/F2 cambia de personaje EN CALIENTE · F3 recoloca el saco donde estés */
-addEventListener('keydown', e=>{
-  if(!STUDIO.on || !running) return;
-  if(e.code!=='F1' && e.code!=='F2' && e.code!=='F3') return;
-  e.preventDefault();
-  const p = players[0];
-  if(e.code==='F3'){ if(STUDIO.dummy) killMinion(STUDIO.dummy); minions.length=0; studioSpawnDummy(); showBanner('saco recolocado', 1); return; }
-  STUDIO.ci = (STUDIO.ci + (e.code==='F1' ? CHAR_ROSTER.length-1 : 1)) % CHAR_ROSTER.length;
-  const k = CHAR_ROSTER[STUDIO.ci];
-  MATCH.cls = k; p._charKey = k; p._charApplied = false; applySkin(p);
-  clearFX(p); p.weapon = null; p.damage = 0; p.mpow = MPOW_MAX;   // barra llena: la definitiva sale a la primera
-  showBanner((CLASS_PICK.find(c=>c[0]===k)||['',k])[1], 1.2);
-});
 const TRAIN_COUNTS = { none:0, one:1, small:5, large:20 };
 function trainMinions(dt){
   const want = TRAIN_COUNTS[TRAIN.mode] || 0;
@@ -9555,9 +9256,7 @@ function trainMinions(dt){
   } else TRAIN._t = 0;
 }
 function updateMinions(dt){
-  if(STUDIO.on){                     // ►STUDIO: ni horda ni reaparición: solo el saco
-    studioPinDummy();                //   pin ANTES del bucle: le pone la vida a tope, así updateMinion no llega a matarlo
-  } else if(TRAIN.on){
+  if(TRAIN.on){
     trainMinions(dt);
   } else if(!bossActive && STAGE!==6){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío
     minionT-=dt;
@@ -9568,8 +9267,7 @@ function updateMinions(dt){
     }
   }
   for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); minions.splice(i,1); continue; } if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
-  if(STUDIO.on) studioPinDummy();          // ►STUDIO: ANTES de renderMinionInstances → el saco se dibuja ya clavado (si no, parpadea un frame donde lo dejó el empujón)
-  renderMinionInstances();                 // re-empaqueta las matrices instanciadas de los vivos en [0,n)
+  renderMinionInstances();               // re-empaqueta las matrices instanciadas de los vivos en [0,n)
   updateMprojs(dt);
 }
 /* =====================================================================
@@ -13179,6 +12877,7 @@ function bruteAttach(mn){
       o.castShadow=true; o.frustumCulled=false;
     });
     const bs = _bossTpl.baseScale * BRUTE_SCALE_K;
+    if(typeof registerMinionSil === 'function') registerMinionSil(root);   // ►MINSIL: el élite también lleva outline de mapa
     inst = { root, mixer, acts, dur, cur:null, baseScale:bs, baseY:_bossTpl.baseY*BRUTE_SCALE_K };
   }
   bruteTint(inst);
@@ -13448,6 +13147,7 @@ function carcherAttach(mn){
   inst.root.scale.setScalar(inst.baseScale); inst.cur=null; inst.curA=null;
   for(const k in inst.acts){ const a=inst.acts[k]; a.reset(); a.stop(); }
   inst.root.visible=true; scene.add(inst.root);
+  if(!inst._silReg && typeof registerMinionSil === 'function'){ registerMinionSil(inst.root); inst._silReg = true; }   // ►MINSIL (una vez por instancia del pool)
   mn._cinst = inst; _carcherLive++;
 }
 /* ►S3F: recolor de la arquera POR STAGE — el cuerpo multiplica el atlas (mismo truco plan-A):
@@ -14014,11 +13714,6 @@ function resetBossFight(){
   bossCineLock=false; bossActive=false;
   bossAH = ARENA_HALF; bossRZ = RING_Z;   // ►DGOLEM: restaura semilado/anillo por defecto entre partidas
 }
-/* DEBUG: tecla ` (Backquote) → fuerza el portal del jefe al instante (solo en partida real) */
-addEventListener('keydown', e=>{ if(e.code==='Backquote' && running && !gameOver && !demo && !TRAIN.on && BOSSFIGHT.phase==='none'){ e.preventDefault();
-  startBossArena();   // ►PORTAL-BOSS: la cinta para y aparece el portal donde estén los jugadores — se entra jugando
-} });
-
 /* golpe del jugador a los minions (melee de martillo/carga/espada/bate/break) */
 function hitMinions(p){
   const tip = hammerTip(p), kind = p.atk.kind;
@@ -16126,9 +15821,9 @@ function ko(p){
   endBeam(p); endUlt(p); endSpin(p); endShield(p); endCounter(p); endStorm(p); endBastion(p); endZone(p); endFireShield(p); endHealDisc(p);
   p.shieldT = 0; p.parryT = 0; p.rainT = 0;
   p.dead = true;
-  if(!demo && !ETERNO){
+  if(!demo){
     if(p._phoenixCharge){ p._phoenixCharge=false; showCombo(p,'¡RENACER!'); ring(p.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffb347, 30, .7); burst(p.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffd27a, 20, 8, 6, 1.1); }   // ►PERK RENACER: la 1ª muerte por stage NO cuesta vida (carga que se recarga en el tablero)
-    else p.stocks--;   // ►ETERNO: sin perder vidas
+    else p.stocks--;
   }
   if(cineTarget===p){ cineT = 0; cineTarget = null; }
   const bp = p.pos.clone();
@@ -16143,7 +15838,7 @@ function ko(p){
   fighterHide(p.gfx);   // ►LUZFIJA: NO root.visible=false — sacaría sus luces de la cuenta y todo recompilaría
   showBanner(p.isAI ? '¡FUERA!' : '¡TE HAN SACADO!', 1.1);
 
-  if(demo || TRAIN.on || ETERNO){ p.respawnT = 1.1; if(TRAIN.on) p.stocks = 4; return; }   // attract/entrenamiento/►ETERNO: reaparece siempre, no se elimina ni acaba
+  if(demo || TRAIN.on){ p.respawnT = 1.1; if(TRAIN.on) p.stocks = 4; return; }   // attract/entrenamiento: reaparece siempre, no se elimina ni acaba
   if(Math.hypot(p.vel.x, p.vel.y, p.vel.z) > 24) narrateAwe();   // empujón brutal = KO espectacular (asombro, raro)
   if(p.stocks<=0){
     p.out = true;
@@ -19087,30 +18782,80 @@ function updateBouncers(dt){                          // ahora: HOGUERAS que QUE
     }
   }
 }
-/* ►TOOLS · CÁMARA LIBRE (?fly + F6): vuelo de inspección para revisar salas (P0 herramientas).
-   Solo existe con ?fly en la URL (lección katana: NADA de listeners debug sin gate). Controles:
-   WASD mueve en el plano de vista · Q/E gira · R/F pica · Space sube · V baja · Shift ×4.
-   Mientras vuelas, el teclado es de la cámara (readInput devuelve neutro para P1) y
-   updateCamera/demoCamera ceden la cámara (early-return). El HUD enseña coords para que los
-   pantallazos de Toni lleven posición. */
-const FLY_ON = /[?&]fly(=|&|$)/.test(location.search);
-const ETERNO = /[?&](eterno|endless)(=|&|$)/.test(location.search);   // ►ETERNO: partida INFINITA para explorar — nadie se elimina, sin jefe ni fin (combinar con ?fly y F6/F9)
+/* =====================================================================
+   ►EXPLORAR — LA ÚNICA herramienta de desarrollo que queda (limpieza del 1/08/2026).
+   Sirve para pasearse por los mapas ya construidos y corregir assets al detalle.
+
+   Se entra SOLO por URL:  ...rumble_arena_cinta_v4.html?explorar
+   Sin ese parámetro no existe ni el listener: el juego que juega la gente no
+   tiene ni una sola tecla de desarrollo (esa es justo la lección de la katana:
+   la H de CURA escalaba el arma porque un afinador se quedó sin gate).
+
+   Qué monta: el escenario VIVO y VACÍO — la portada ya va sin luchadores
+   (HOME_NO_FIGHTERS), así que basta con esconder el menú y soltar la cámara.
+
+   Controles:
+     WASD  mover (en el plano de la vista)      Space / V   subir / bajar
+     Q/E   girar                                Shift       ×4 de velocidad
+     R/F   picar (mirar arriba/abajo)
+     N/M   mapa anterior / siguiente (los 11, incluidos el 6 y el 9 dormidos)
+     H     esconder el rótulo (para pantallazos limpios)
+     F6    soltar/recuperar la cámara libre (F6 suelto = travelling normal)
+   ===================================================================== */
+const EXPLORAR = /[?&]explorar(=|&|$)/.test(location.search);
 
 const _fly = { on:false, pos:new THREE.Vector3(), yaw:Math.PI, pitch:-0.35 };
 let _flyHud = null;
-if(FLY_ON) addEventListener('keydown', e=>{
-  if(e.code!=='F6') return;
-  _fly.on = !_fly.on;
-  if(_fly.on){
-    _fly.pos.copy(camera.position);
-    const d = camera.getWorldDirection(new THREE.Vector3());
-    _fly.yaw = Math.atan2(d.x, d.z); _fly.pitch = Math.asin(THREE.MathUtils.clamp(d.y,-1,1));
+/* orden de paseo: la ruta de campaña + los dos mapas dormidos (6 EL POZO y 9 CIELO ROTO),
+   que siguen construyéndose aunque no estén en la campaña — para revisar sus assets. */
+const _EXPL_STAGES = [1, 2, 3, 11, 4, 5, 6, 7, 8, 9, 10];
+let _explIdx = 0;
+function _explHud(){
+  if(!_flyHud){
+    _flyHud = document.createElement('div');
+    _flyHud.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;font:12px/1.5 monospace;color:#8ff;background:rgba(0,0,0,.6);padding:5px 10px;border-radius:5px;pointer-events:none;white-space:pre';
+    document.body.appendChild(_flyHud);
   }
-  if(!_flyHud){ _flyHud = document.createElement('div');
-    _flyHud.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;font:12px monospace;color:#8ff;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:4px;pointer-events:none';
-    document.body.appendChild(_flyHud); }
-  _flyHud.style.display = _fly.on ? 'block' : 'none';
-});
+  return _flyHud;
+}
+function _explGo(dir){
+  _explIdx = (_explIdx + dir + _EXPL_STAGES.length) % _EXPL_STAGES.length;
+  const s = _EXPL_STAGES[_explIdx];
+  try{
+    STAGE = s; _stagePreview = s;
+    applyStageTheme(s);
+    rebuildBelt();
+    enableWeather(s >= 2);
+    if(typeof applyStageMusic === 'function') applyStageMusic(s);
+    if(typeof players !== 'undefined' && typeof safeSpawn === 'function') for(const p of players) safeSpawn(p);
+  }catch(err){
+    console.warn('[explorar] el stage ' + s + ' ha fallado al montarse', err);
+  }
+}
+if(EXPLORAR){
+  addEventListener('keydown', e=>{
+    if(e.code === 'F6'){ _fly.on = !_fly.on; e.preventDefault(); return; }
+    if(!_fly.on) return;
+    if(e.code === 'KeyN'){ _explGo(-1); e.preventDefault(); }
+    else if(e.code === 'KeyM'){ _explGo(+1); e.preventDefault(); }
+    else if(e.code === 'KeyH'){ const h = _explHud(); h.style.display = (h.style.display === 'none') ? 'block' : 'none'; e.preventDefault(); }
+  });
+  /* Arranca YA volando: NO se cuelga del evento 'load' — con 95 MB de assets en <script src>
+     ese evento llega larguísimo y hasta entonces te comías la portada (medido en headless).
+     Posición de salida fija (sobre el arranque de la cinta, mirando al centro) en vez de
+     copiar la cámara: al empezar aún está en su sitio por defecto y te dejaba dentro del suelo. */
+  _fly.on = true;
+  _fly.pos.set(0, 16, 42); _fly.yaw = Math.PI; _fly.pitch = -0.28;
+  _explHud();
+  /* la home se pinta DURANTE el arranque (toHome()), y el arranque dura lo que tarden los
+     assets → se insiste medio minuto en vez de esconderla una sola vez. */
+  let _explN = 0;
+  const _explT = setInterval(()=>{
+    const ov = document.getElementById('startOverlay'); if(ov) ov.style.display = 'none';
+    const hd = document.getElementById('hud');          if(hd) hd.style.display = 'none';
+    if(++_explN > 120) clearInterval(_explT);       // 30 s
+  }, 250);
+}
 function _flyTick(dt){
   const sp = (keys['ShiftLeft']||keys['ShiftRight']) ? 60 : 15;
   if(keys['KeyQ']) _fly.yaw += 1.6*dt;  if(keys['KeyE']) _fly.yaw -= 1.6*dt;
@@ -19128,145 +18873,10 @@ function _flyTick(dt){
   _fly.pos.x += mx*sp*dt; _fly.pos.y += my*sp*dt; _fly.pos.z += mz*sp*dt;
   camera.position.copy(_fly.pos);
   camera.lookAt(_fly.pos.x + fx, _fly.pos.y + fy, _fly.pos.z + fz);
-  if(_flyHud) _flyHud.textContent = 'FLY x' + _fly.pos.x.toFixed(1) + ' y' + _fly.pos.y.toFixed(1) + ' z' + _fly.pos.z.toFixed(1) + ' · yaw ' + Math.round(_fly.yaw*180/Math.PI) + '°';
+  if(_flyHud && _flyHud.style.display !== 'none')
+    _flyHud.textContent = 'STAGE ' + STAGE + ' · ' + ((typeof _STAGE_NAMES!=='undefined' && _STAGE_NAMES[STAGE]) || '?') + '   (N/M cambia)\n'
+      + 'x' + _fly.pos.x.toFixed(1) + '  y' + _fly.pos.y.toFixed(1) + '  z' + _fly.pos.z.toFixed(1) + '  ·  yaw ' + Math.round(_fly.yaw*180/Math.PI) + '°';
 }
-/* ►TOOLS · PLANO TOP-DOWN (?plano + F7): blueprint 2D etiquetado de una sala, dibujado desde los
-   REGISTROS de colisión/hazards (no de la escena) → las coords que salen son las LOCALES de los
-   builders (lminX / lx), 1:1 con el código: Toni señala en el plano y el número ya es editable.
-   N/M ciclan sala · S descarga PNG · F7 abre/cierra. make_planos.js llama a drawBlueprint en batch. */
-const PLANO_ON = /[?&]plano(=|&|$)/.test(location.search);
-let _planoIdx = 1, _planoCv = null;
-const _PLANO_COL = { solid:'#8a8f98', wall:'#6a7280', float:'#3fc1c9', sand:'#d8bd7f', blob:'#c9a35c',
-  roll:'#ff9a3d', lift:'#b07fff', pad:'#ffd34d', red:'#ff5040', speed:'#2affc0', jpad:'#7dff9a',
-  bounce:'#ff6a4d', swing:'#ff4d6d', trap:'#ff8a5c', tower:'#7fb4ff' };   // swing = PÉNDULO (no liana: esa mecánica ya no existe)
-function _planoType(pl){
-  if(pl._roll) return 'roll'; if(pl._lift) return 'lift';
-  if(pl._pad) return pl._pad.red ? 'red' : 'pad';
-  if(typeof _s4Speed!=='undefined' && _s4Speed.includes(pl)) return 'speed';
-  if(pl.blob) return 'blob'; if(pl.sand) return 'sand';
-  if(pl.float) return 'float';
-  if((pl.topY - pl.baseY) > 2.6 && (pl.lmaxX-pl.lminX)*(pl.maxZ-pl.minZ) < 90) return 'wall';
-  return 'solid';
-}
-function _planoBuilderName(idx){
-  const tbl = (STAGE===11)?SW_SEG_BUILDERS:(STAGE===10)?S10_SEG_BUILDERS:(STAGE===9)?S9_SEG_BUILDERS:(STAGE===8)?S8_SEG_BUILDERS:(STAGE===7)?S7_SEG_BUILDERS:(STAGE===6)?S6_SEG_BUILDERS:(STAGE===5)?S5_SEG_BUILDERS:(STAGE===4)?S4_SEG_BUILDERS:(STAGE===3)?S3_SEG_BUILDERS:(STAGE===2)?S2_SEG_BUILDERS:_SEG_BUILDERS;
-  const f = tbl[((idx%tbl.length)+tbl.length)%tbl.length];
-  return (f && f.name) || ('builder'+idx);
-}
-function _planoTopGroup(o){ let p=o; while(p && p.parent && p.parent!==scene) p=p.parent; return p; }   // grupo raíz en escena (para asociar props a su segmento)
-const _planoWP = new THREE.Vector3();
-function drawBlueprint(idx, canvas){
-  idx = ((idx%6)+6)%6;
-  const seg = BELT.segs.find(s=>s.idx===idx) || BELT.segs[idx]; if(!seg) return false;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height, LEG = 220;
-  /* bounds LOCALES de la sala */
-  let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9,t0=1e9,t1=-1e9;
-  for(const pl of seg.plats){
-    x0=Math.min(x0,pl.lminX); x1=Math.max(x1,pl.lmaxX);
-    z0=Math.min(z0,pl.minZ);  z1=Math.max(z1,pl.maxZ);
-    t0=Math.min(t0,pl.topY);  t1=Math.max(t1,pl.topY);
-  }
-  if(x0>x1){ x0=-33;x1=33;z0=-24;z1=24;t0=0;t1=1; }
-  x0-=4;x1+=4;z0-=4;z1+=4;
-  const sc = Math.min((W-LEG-50)/(x1-x0), (H-80)/(z1-z0));
-  const X = x => 26 + (x-x0)*sc, Z = z => 56 + (z-z0)*sc;
-  ctx.fillStyle='#10131a'; ctx.fillRect(0,0,W,H);
-  /* rejilla cada 5u con ejes numerados */
-  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px monospace'; ctx.lineWidth=1;
-  for(let g=Math.ceil(x0/5)*5; g<=x1; g+=5){ ctx.beginPath(); ctx.moveTo(X(g),56); ctx.lineTo(X(g),Z(z1)); ctx.stroke(); ctx.fillText(g, X(g)-8, 50); }
-  for(let g=Math.ceil(z0/5)*5; g<=z1; g+=5){ ctx.beginPath(); ctx.moveTo(26,Z(g)); ctx.lineTo(X(x1),Z(g)); ctx.stroke(); ctx.fillText(g, 2, Z(g)+3); }
-  /* plataformas: bajas primero → las altas quedan encima; sombreado por banda de altura */
-  const plats = seg.plats.slice().sort((a,b)=>a.topY-b.topY);
-  for(const pl of plats){
-    const ty=_planoType(pl), col=_PLANO_COL[ty], k=(t1>t0)?(pl.topY-t0)/(t1-t0):1;
-    const rx=X(pl.lminX), rz=Z(pl.minZ), rw=(pl.lmaxX-pl.lminX)*sc, rh=(pl.maxZ-pl.minZ)*sc;
-    ctx.globalAlpha = 0.30 + 0.5*k; ctx.fillStyle = col;
-    if(pl.blob){ ctx.beginPath(); ctx.ellipse(rx+rw/2,rz+rh/2,rw/2,rh/2,0,0,6.283); ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle=col; ctx.stroke(); }
-    else { ctx.fillRect(rx,rz,rw,rh); ctx.globalAlpha=1; ctx.strokeStyle=col; ctx.lineWidth = pl._pad?0.5:1.4; ctx.strokeRect(rx,rz,rw,rh); }
-  }
-  /* etiquetas: elementos mayores (área≥18) o especiales; las losas-trampa se etiquetan por REJILLA */
-  ctx.font='10px monospace';
-  const seenGrids = new Set();
-  for(const pl of plats){
-    const ty=_planoType(pl);
-    if(ty==='pad'||ty==='red'){
-      const g = pl._pad.grid; if(!g||seenGrids.has(g)) continue; seenGrids.add(g);
-      let gx0=1e9,gz0=1e9,n=0,reds=0;
-      for(const c of g.pads){ gx0=Math.min(gx0,c.lminX!==undefined?c.lminX:c.minX); gz0=Math.min(gz0,c.minZ); n++; if(c._pad.red) reds++; }
-      ctx.fillStyle=_PLANO_COL.pad;
-      ctx.fillText('REJILLA-TRAMPA '+n+' losas'+(reds?(' ('+reds+' rojas)'):'')+' y='+(g.pads[0]?g.pads[0].topY.toFixed(1):'?'), X(gx0), Z(gz0)-3);
-      continue;
-    }
-    const area=(pl.lmaxX-pl.lminX)*(pl.maxZ-pl.minZ), special=(ty!=='solid'&&ty!=='wall');
-    if(area<18 && !special) continue;
-    if(ty==='float' && area<8) continue;   // tablones de puente y mini-plataformas: sin etiqueta (ensuciaban el plano)
-    const cx=(pl.lminX+pl.lmaxX)/2, cz=(pl.minZ+pl.maxZ)/2;
-    const name={solid:'suelo',wall:'muro',float:'flotante',sand:'arena',blob:'duna',roll:'RODILLO',lift:'LIFT',speed:'PAD VELOCIDAD'}[ty]||ty;
-    let extra=' y='+pl.topY.toFixed(1);
-    if(pl._lift){ const lf=pl._lift; extra=' y='+(lf.base+lf.topOff-lf.amp).toFixed(1)+'↔'+(lf.base+lf.topOff+lf.amp).toFixed(1); }
-    if(pl._roll) extra=' y='+pl.topY.toFixed(1)+' rueda '+pl._roll.axis+(pl._roll.w>=0?'+':'−');
-    ctx.fillStyle='#e8ecf4';
-    ctx.fillText(name+' ('+cx.toFixed(0)+','+cz.toFixed(0)+')'+extra, X(cx)-26, Z(cz)+3);
-  }
-  /* saltadores del segmento (►LTSTAM: las lianas ya no existen) */
-  ctx.font='10px monospace';
-  for(const pd of seg.padList){ ctx.fillStyle=_PLANO_COL.jpad; ctx.beginPath(); ctx.arc(X(pd.lx),Z(pd.pos.z),5,0,6.283); ctx.fill(); ctx.fillText('PAD',X(pd.lx)+7,Z(pd.pos.z)+3); }
-  /* hogueras/sacos (bouncers): asociación por grupo raíz; coord local = mundo − seg.x */
-  for(const b of bouncers){ if(!b.mesh) continue; if(_planoTopGroup(b.mesh)!==seg.group) continue;
-    b.mesh.getWorldPosition(_planoWP); const lx=_planoWP.x-seg.x, lz=_planoWP.z;
-    ctx.strokeStyle=_PLANO_COL.bounce; ctx.beginPath(); ctx.arc(X(lx),Z(lz),Math.max(4,(b.r||1)*sc),0,6.283); ctx.stroke();
-    ctx.fillStyle=_PLANO_COL.bounce; ctx.fillText(b.kind==='cactus'?'cactus':'hoguera', X(lx)+6, Z(lz)+3);
-  }
-  /* péndulos de pinchos + circuitos de cepos (S5) */
-  if(typeof _s4Swings!=='undefined') for(const sw of _s4Swings){ if(sw.pivot.parent!==seg.group && _planoTopGroup(sw.pivot)!==seg.group) continue;
-    const px=sw.pivot.position.x, pz=sw.pivot.position.z, sweep=Math.sin(sw.amp)*sw.len;
-    ctx.fillStyle=_PLANO_COL.swing; ctx.beginPath(); ctx.arc(X(px),Z(pz),4,0,6.283); ctx.fill();
-    ctx.strokeStyle=_PLANO_COL.swing; ctx.lineWidth=3; ctx.beginPath();
-    if(sw.axis==='x'){ ctx.moveTo(X(px-sweep),Z(pz)); ctx.lineTo(X(px+sweep),Z(pz)); } else { ctx.moveTo(X(px),Z(pz-sweep)); ctx.lineTo(X(px),Z(pz+sweep)); }
-    ctx.stroke(); ctx.lineWidth=1;
-    ctx.fillText('PÉNDULO', X(px)+6, Z(pz)-4);
-  }
-  if(typeof _s4Blades!=='undefined') for(const bl of _s4Blades){ if(bl.holder.parent!==seg.group) continue;   // ►BLADES: sierra deslizante (recorrido en Z)
-    const px=bl.holder.position.x, pz=bl.holder.position.z;
-    ctx.strokeStyle=_PLANO_COL.swing; ctx.lineWidth=3; ctx.beginPath();
-    ctx.moveTo(X(px),Z(pz-bl.span/2)); ctx.lineTo(X(px),Z(pz+bl.span/2)); ctx.stroke(); ctx.lineWidth=1;
-    ctx.fillStyle=_PLANO_COL.swing; ctx.beginPath(); ctx.arc(X(px),Z(pz),3,0,6.283); ctx.fill();
-    ctx.fillText('SIERRA', X(px)+6, Z(pz)+3);
-  }
-  if(typeof _s4Traps!=='undefined') for(const c of _s4Traps){ const par=c.traps[0]&&c.traps[0].m.parent; if(par!==seg.group) continue;
-    ctx.strokeStyle=_PLANO_COL.trap; ctx.setLineDash([5,4]);
-    ctx.strokeRect(X(c.cx-c.w/2), Z(c.cz-c.d/2), c.w*sc, c.d*sc); ctx.setLineDash([]);
-    ctx.fillStyle=_PLANO_COL.trap; ctx.fillText('CIRCUITO ['+c.traps.map(tr=>tr.kind||'cepo').join('+')+'] y='+c.yBase.toFixed(1), X(c.cx-c.w/2), Z(c.cz-c.d/2)-3);
-  }
-  /* torres/emboscadas S2-S4 */
-  if(typeof S2_TOWERS!=='undefined') for(const tw of S2_TOWERS){ if(!tw.anchor||_planoTopGroup(tw.anchor)!==seg.group) continue;
-    tw.anchor.getWorldPosition(_planoWP); const lx=_planoWP.x-seg.x, lz=_planoWP.z;
-    ctx.strokeStyle=_PLANO_COL.tower; ctx.beginPath(); ctx.moveTo(X(lx),Z(lz)-7); ctx.lineTo(X(lx)-6,Z(lz)+5); ctx.lineTo(X(lx)+6,Z(lz)+5); ctx.closePath(); ctx.stroke();
-    ctx.fillStyle=_PLANO_COL.tower; ctx.fillText('torre', X(lx)+8, Z(lz)+3);
-  }
-  /* título + leyenda */
-  ctx.fillStyle='#fff'; ctx.font='bold 15px monospace';
-  ctx.fillText('STAGE '+STAGE+' · sala '+idx+' · '+_planoBuilderName(idx)+'   (coords locales de builder · seg.x='+seg.x.toFixed(1)+')', 22, 24);
-  ctx.font='11px monospace';
-  const items=[['solid','suelo'],['wall','muro'],['float','flotante'],['sand','arena'],['blob','duna(blob)'],['roll','rodillo'],['lift','lift'],['pad','losa-trampa'],['red','losa roja'],['speed','pad velocidad'],['jpad','saltador'],['bounce','hoguera/saco'],['swing','péndulo'],['trap','cepos'],['tower','torre']];
-  let ly=64; for(const [k,label] of items){ ctx.fillStyle=_PLANO_COL[k]; ctx.fillRect(W-LEG,ly-8,12,8); ctx.fillStyle='#cfd6e4'; ctx.fillText(label, W-LEG+18, ly); ly+=16; }
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillText('N/M sala · S png · F7 fin', W-LEG, ly+10);
-  return true;
-}
-if(PLANO_ON) addEventListener('keydown', e=>{
-  if(e.code==='F7'){
-    if(!_planoCv){ _planoCv=document.createElement('canvas'); _planoCv.width=1600; _planoCv.height=1000;
-      _planoCv.style.cssText='position:fixed;inset:0;margin:auto;z-index:98;max-width:96vw;max-height:96vh;background:#10131a;border:1px solid #2a3242;display:none;pointer-events:none';
-      document.body.appendChild(_planoCv); }
-    if(_planoCv.style.display!=='none'){ _planoCv.style.display='none'; return; }
-    _planoCv.style.display='block'; drawBlueprint(_planoIdx,_planoCv); return;
-  }
-  if(!_planoCv || _planoCv.style.display==='none') return;
-  if(e.code==='KeyN'){ _planoIdx=((_planoIdx-1)%6+6)%6; drawBlueprint(_planoIdx,_planoCv); }
-  if(e.code==='KeyM'){ _planoIdx=(_planoIdx+1)%6; drawBlueprint(_planoIdx,_planoCv); }
-  if(e.code==='KeyS'){ const a=document.createElement('a'); a.download='plano_s'+STAGE+'_sala'+_planoIdx+'_'+_planoBuilderName(_planoIdx)+'.png'; a.href=_planoCv.toDataURL('image/png'); a.click(); }
-});
 /* vectores temporales reutilizados por updateCamera (evitan basura/GC por frame) */
 const _camLook = new THREE.Vector3(), _camDesired = new THREE.Vector3(),
       _camFwd = new THREE.Vector3(), _camTmp = new THREE.Vector3();
@@ -30697,31 +30307,11 @@ function goToStage10(){
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
 }
 
-/* ►WEST: nombres largos para el banner de F9, por ID interno (incluye los stages dormidos 6 y 9,
-   que siguen siendo alcanzables con la herramienta aunque no estén en la ruta de campaña). */
-const _F9_STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
+/* Nombres largos de cada mapa por ID interno (incluye los dormidos 6 y 9, que se siguen
+   construyendo aunque no estén en la ruta de campaña). Lo usa el rótulo de ►EXPLORAR. */
+const _STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
 let _stagePreview = 1;
-let MENU_STAGE = 1;    // ►RONDA2: stage ELEGIDO con F9 fuera de partida → la próxima partida EMPIEZA ahí (goToStage2 de la campaña NO lo toca)
-const DEV_F9 = true;   // ►true = F9 alterna stage TAMBIÉN en partida real (herramienta de playtest) · false = "release": F9 solo en menú/demo/entrenamiento (evita el respawn gratis)
-function toggleStagePreview(){
-  if(!DEV_F9 && running && !demo && !TRAIN.on){ if(typeof showBanner==='function') showBanner('F9 bloqueado en partida', 1.2); return; }
-  if(!BELT.on){ if(typeof showBanner==='function') showBanner('Cambio de stage solo en modo cinta', 1.4); return; }
-  if(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none'){ if(typeof showBanner==='function') showBanner('No durante el jefe', 1.4); return; }
-  _stagePreview = (_stagePreview===3) ? 11 : (_stagePreview===11) ? 4 : (_stagePreview===5) ? 7 : (_stagePreview===8) ? 10 : (_stagePreview===10) ? 1 : _stagePreview + 1;   // ►REMOVE-S6/JAPAN/►WEST: ciclo 1→2→3→11(western)→4→5→7→8→10→1 (el 6 POZO y el 9 Cielo Roto, retirados de la rotación)
-  STAGE = _stagePreview;
-  const inMenu = !running || demo;
-  if(inMenu) MENU_STAGE = STAGE;   // ►RONDA2: F9 en el MENÚ fija dónde empieza la próxima partida (en plena partida es solo herramienta DEV)
-  applyStageTheme(STAGE);
-  rebuildBelt();
-  enableWeather(STAGE>=2);
-  if(typeof applyStageMusic==='function') applyStageMusic(STAGE);   // ►F9 también cambia de playlist (JUNGLA/DESIERTO/PIRÁMIDE ↔ principal)
-  if(typeof players !== 'undefined') for(const p of players){ if(typeof safeSpawn==='function') safeSpawn(p); }
-  /* ►WEST: era un array LITERAL indexado por STAGE — con el western en el ID 11 se salía de rango
-     y el banner mostraba "undefined". Ahora es un diccionario por ID, y el número que se pinta es
-     la POSICIÓN en la ruta (stageNum), no el ID interno. */
-  if(typeof showBanner==='function') showBanner('STAGE '+stageNum(STAGE)+' · '+(_F9_STAGE_NAMES[STAGE] || ('S'+STAGE)) + (inMenu ? ' · LA PARTIDA EMPEZARÁ AQUÍ' : ''), 1.8);
-}
-addEventListener('keydown', e=>{ if(e.code==='F9' || e.key==='F9'){ toggleStagePreview(); e.preventDefault(); } });
+let MENU_STAGE = 1;    // stage en el que EMPIEZA la próxima partida (la campaña lo lleva por su cuenta)
 
 /* ---------- bucle ---------- */
 let last = performance.now();
@@ -30822,12 +30412,12 @@ function frame(now){
     }
     /* ►S10WAVE: en la Vía Arcoíris, al entrar a un caos PAR (2/4/6/8) → OLEADA de 3 jefes en la carretera
        (la cinta se congela). El caos 10 queda para el jefe especial (jefe final de abajo). */
-    if(STAGE===10 && CAMPAIGN && !TRAIN.on && !ETERNO && S10WAVE.phase==='none' && !S10WAVE._cleared[chaosLvl] && S10_WAVES[chaosLvl] && BOSSFIGHT.phase==='none') _s10StartWave(chaosLvl);
+    if(STAGE===10 && CAMPAIGN && !TRAIN.on && S10WAVE.phase==='none' && !S10WAVE._cleared[chaosLvl] && S10_WAVES[chaosLvl] && BOSSFIGHT.phase==='none') _s10StartWave(chaosLvl);
     updateS10Wave(rawDt);
     /* ►►► JEFE FINAL (solo en CAMPAÑA): al TERMINAR el último tramo de caos (caos 10 corre sus 25s), se abre el PORTAL del jefe ◄◄◄ */
-    if(CAMPAIGN && !TRAIN.on && !ETERNO && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►ETERNO: nunca llega el jefe · ►PORTAL-BOSS: Japón (S3) también entra por aquí
+    if(CAMPAIGN && !TRAIN.on && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►PORTAL-BOSS: Japón (S3) también entra por aquí
     /* SALVAVIDAS: si la plantilla FBX del jefe no cargó (caché/404), la campaña no puede terminar → 20s de gracia y fin por puntos */
-    else if(CAMPAIGN && !TRAIN.on && !ETERNO && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }   // ►ETERNO: tampoco el fin por puntos
+    else if(CAMPAIGN && !TRAIN.on && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
     updateBossArena(rawDt);
     updateDyingInsts(rawDt);   // ►ROBOTDEATH: mallas sueltas reproduciendo su muerte (trío de oleada S10) — se limpian solas
   }
@@ -30934,7 +30524,6 @@ function demoTick(dt){
   drawScene();
 }
 function startDemo(){
-  studioTeardown();          // ►STUDIO: devuelve el mundo ANTES de montar el attract
   demo = true; running = false; gameOver = false;
   document.getElementById('hud').style.display = 'none';
   chaosLvl = 1; chaosT = 0;
@@ -31180,9 +30769,7 @@ function launchMatch(){
   /* el DEMO (cinemática de la pantalla de inicio) sigue de fondo durante "¿PREPARADOS?";
      la partida real se monta justo en "¡LUCHA!" */
   playIntro(()=>{
-    if(MATCH.mode!=='studio') studioTeardown();                   // ►STUDIO: partida normal tras el studio → devuelve la cinta y los 6 segmentos
-    STUDIO.on = (MATCH.mode==='studio');                          // ►STUDIO
-    TRAIN.on = (MATCH.mode==='training' || STUDIO.on);            // ►STUDIO: clon del entrenamiento (sin eliminación, reaparece siempre)
+    TRAIN.on = (MATCH.mode==='training');
     /* P1 = la CLASE elegida; el resto de clases se reparten en orden (sin duplicar) */
     const order = [MATCH.cls, ...CHAR_ROSTER.filter(k=>k!==MATCH.cls)];
     for(let i=0;i<allPlayers.length;i++){
@@ -31190,7 +30777,7 @@ function launchMatch(){
       if(q._charKey !== nk) q._charApplied = false;   // ►PERF-B: solo invalida el modelo si CAMBIA de clase; si repite la del attract, se REUSA (nos ahorramos el clon del GLB)
       q._charKey = nk; applySkin(q);
     }
-    setRoster((MATCH.mode==='solo'||MATCH.mode==='training'||STUDIO.on) ? 1 : MATCH.humans, TRAIN.on ? 0 : MATCH.cpus);
+    setRoster((MATCH.mode==='solo'||MATCH.mode==='training') ? 1 : MATCH.humans, TRAIN.on ? 0 : MATCH.cpus);
     resetMatch();
     /* ►PERF-B: monta YA (síncrono) los modelos que hayan cambiado de clase, aquí y no repartidos
        por los primeros frames jugables. Mismos modelos/colores → NO cambia nada visual, solo antes. */
@@ -31200,15 +30787,14 @@ function launchMatch(){
         if(_own ? !!_charTpls[q._charKey] : !!_charTpl){ clearCharModel(q); applyCharModel(q); }
       }
     }
-    if(STUDIO.on) studioSetup();                                   // ►STUDIO: un cacho del Stage 1 QUIETO + saco inmortal
-    else if(TRAIN.on){ chaosLvl = 2; document.getElementById('chaos').textContent = ''; showBanner('ENTRENAMIENTO · ESC para opciones', 2.4); }
+    if(TRAIN.on){ chaosLvl = 2; document.getElementById('chaos').textContent = ''; showBanner('ENTRENAMIENTO · ESC para opciones', 2.4); }
     /* ►PERF-C: con los 6 modelos reales + el decorado del stage YA en escena, precompila todos sus
        programas GPU de una tacada (tapado por "¡LUCHA!") en vez de compilar-al-aparecer durante los
        primeros 5-10 s de juego. Tras el warmup, un drawScene() con la cámara real evita el flash del
        encuadre ancho que usa el warmup. (warmupGPU ya iba en try/catch; antes solo corría al cargar). */
     try { warmupLigero('¡LUCHA!'); warmupReveal('¡LUCHA!'); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }   // ►MEDIDO: warmupLigero compila la variante de PANTALLA; warmupReveal añade la variante LINEAR del composer + sube los atlas (el bloqueo de 2-3 s "al aparecer" era eso). Ambos caben tapados por "¡LUCHA!".
     music.volume = .45; running = true;
-    showBanner(STUDIO.on ? '🎬 MODO STUDIO' : (TRAIN.on?'¡A ENTRENAR!':'¡LUCHA!'), 1); tone(330,.18,'square',.15, 200); crowdCheer(.55);
+    showBanner(TRAIN.on?'¡A ENTRENAR!':'¡LUCHA!', 1); tone(330,.18,'square',.15, 200); crowdCheer(.55);
   });
 }
 /* ---- configuración de partida desde el menú (modo / CPUs / humanos / mando) ---- */
@@ -32004,10 +31590,9 @@ function startMatch(){
   document.getElementById('mpCampaign').addEventListener('click', multi('campaign'));
   document.getElementById('mpSurvival').addEventListener('click', multi('survival'));
   document.getElementById('modeTrain').addEventListener('click', ()=>{ MATCH.mode='training'; MATCH.humans=1; MATCH.cpus=0; refreshSetup(); showStep(3); });   // entrenamiento: sin CPUs, directo a elegir personaje
-  document.getElementById('modeStudio').addEventListener('click', ()=>{ MATCH.mode='studio'; MATCH.humans=1; MATCH.cpus=0; refreshSetup(); showStep(3); });   // ►STUDIO: igual que entrenamiento → directo a elegir personaje
   document.getElementById('cpusBack').addEventListener('click', ()=> showStep(1));
   document.getElementById('cpusNext').addEventListener('click', ()=> showStep(3));
-  document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep((MATCH.mode==='training'||MATCH.mode==='studio') ? 1 : 2); });   // en entrenamiento/studio no hay paso de CPUs
+  document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep(MATCH.mode==='training' ? 1 : 2); });   // en entrenamiento no hay paso de CPUs
   document.getElementById('startGameBtn').addEventListener('click', ()=>{
     closeModal();                                                  // saca el carrusel del popup primero
     document.getElementById('startOverlay').style.display = 'none';
@@ -32315,126 +31900,8 @@ function applyPreset(name){
   VISUAL.rim.intensity = p.rim.intensity; VISUAL.side.intensity = p.side.intensity;
   Object.assign(VISUAL.fog, p.fog); Object.assign(VISUAL.ao, p.ao); Object.assign(VISUAL.grassVar, p.grassVar);
   applyVisual(); rebakeAO();
-  if(_visGUI) _visGUI.controllersRecursive().forEach(c=>c.updateDisplay());   // refresca los sliders del panel
 }
 
-/* =====================================================================
-   PANEL DE DEBUG (lil-gui) — toggle con tecla F2 (junto a F3=perfHUD / F4=legibilidad).
-   Oculto por defecto. Si lil-gui no cargó, no rompe nada (guardas defensivas).
-   ===================================================================== */
-let _visGUI = null;
-function setupVisualGUI(){
-  if(_visGUI || typeof lil === 'undefined' || !lil.GUI) return;
-  const gui = new lil.GUI({ title: 'VISUAL · iluminación (F2)' });
-  gui.domElement.style.zIndex = 100000;
-  const upd = ()=>applyVisual();
-  gui.add(_presetState, 'preset', Object.keys(PRESETS)).name('◆ PRESET').onChange(applyPreset);   // A/B instantáneo de looks
-  const fT = gui.addFolder('Tone');
-  fT.add(VISUAL, 'exposure', 0.35, 1.2, 0.01).name('exposición').onChange(upd);
-  /* ►ENVMAP: entorno reflejado (IBL). Es lo que hace que el metal parezca metal. */
-  const fE = gui.addFolder('Entorno reflejado (IBL)');
-  fE.add(VISUAL.env, 'on').name('activado').onChange(upd);
-  fE.add(VISUAL.env, 'intensity', 0, 1, 0.01).name('intensidad').onChange(upd);
-  fE.add(VISUAL.env, 'sun', 0, 2, 0.01).name('reflejo del sol').onChange(upd);
-  /* ►DEPTH: profundidad tonal. Los números van horneados en el shader de la niebla → cada cambio
-     RECOMPILA los materiales visibles (tirón de ~1s). Por eso van con onFinishChange (al soltar). */
-  /* ►RIM: luz de borde. Mismo trato que ►DEPTH — recompila al soltar el slider. */
-  const fRim = gui.addFolder('Luz de borde (volumen)');
-  const upR = ()=>applyRimLight(true);
-  fRim.add(VISUAL.rim2, 'on').name('activada').onChange(upR);
-  fRim.add(VISUAL.rim2, 'strength', 0, 1, 0.01).name('fuerza').onFinishChange(upR);
-  fRim.add(VISUAL.rim2, 'power', 1, 8, 0.1).name('finura del borde').onFinishChange(upR);
-  fRim.addColor(VISUAL.rim2, 'color').name('color').onFinishChange(upR);
-  fRim.open();
-  const fDep = gui.addFolder('Profundidad tonal (aérea)');
-  const upD = ()=>applyDepthTone(true);
-  fDep.add(VISUAL.depth, 'on').name('activada').onChange(upD);
-  fDep.add(VISUAL.depth, 'near', 0, 120, 1).name('empieza a (u.)').onFinishChange(upD);
-  fDep.add(VISUAL.depth, 'far', 60, 260, 1).name('acaba a (u.)').onFinishChange(upD);
-  fDep.add(VISUAL.depth, 'sat',  0, 1,    0.01).name('desaturación').onFinishChange(upD);
-  fDep.add(VISUAL.depth, 'haze', 0, 0.6,  0.01).name('bruma previa').onFinishChange(upD);
-  fDep.add(VISUAL.depth, 'lift', 0, 0.7,  0.01).name('sombras del fondo').onFinishChange(upD);
-  fDep.open();
-  /* ►PARTINST: se lee en cada spawn de burst — sin onChange; los cubos vivos del modo anterior se extinguen solos */
-  const fP = gui.addFolder('Partículas');
-  fP.add(VISUAL, 'partInst').name('burst instanciado (1 draw call)');
-  fP.add(VISUAL, 'maskRetag').name('re-marcar máscara cada frame (debug)');
-  fP.add(VISUAL, 'halfMask').name('contorno a media resolución').onChange(()=>attachComposerDepth());
-  /* ►AO: oclusión de anclaje. on/off re-decide en applyTier (respeta el tier); knobs directos al pase. */
-  const fAO = gui.addFolder('Oclusión de anclaje (SSAO)');
-  const upAO = ()=>{ if(ssaoPass){ ssaoPass.kernelRadius = VISUAL.ao.radius; ssaoPass.minDistance = VISUAL.ao.min; ssaoPass.maxDistance = VISUAL.ao.max; } };
-  fAO.add(VISUAL.ao, 'on').name('activada (tier alto)').onChange(()=>{ effName=''; applyTier(); });
-  fAO.add(VISUAL.ao, 'radius', 0.2, 4, 0.05).name('radio (u. de mundo)').onChange(upAO);
-  fAO.add(VISUAL.ao, 'min', 0.005, 0.3, 0.005).name('umbral cercano (u.)').onChange(upAO);
-  fAO.add(VISUAL.ao, 'max', 0.5, 8, 0.1).name('umbral lejano (u.)').onChange(upAO);
-  fAO.open();
-  /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
-  const fI = gui.addFolder('Impacto direccional');
-  fI.add(VISUAL.impact, 'on').name('activado');
-  fI.add(VISUAL.impact, 'disc', 0, 2, 0.05).name('disco de choque');
-  fI.add(VISUAL.impact, 'spray', 0, 2, 0.05).name('chispas en cono');
-  fI.add(VISUAL.impact, 'streaks', 0, 2, 0.05).name('líneas de velocidad');
-  /* ►WATER: look del mar. ABIERTA por defecto — es la carpeta a mirar ahora mismo. */
-  const upW = ()=>applyWaterLive();
-  const fW = gui.addFolder('Agua');
-  fW.add(VISUAL.water, 'on').name('activada').onChange(upW);
-  fW.add(VISUAL.water, 'foam',  0, 1,    0.01).name('espuma').onChange(upW);
-  fW.add(VISUAL.water, 'deep',  0, 0.7,  0.01).name('volumen del oleaje').onChange(upW);
-  fW.add(VISUAL.water, 'shine', 0, 0.45, 0.01).name('reflejo del agua lisa').onChange(upW);
-  fW.open();
-  const fK = gui.addFolder('Sol (key, cálido + sombra)');
-  fK.addColor(VISUAL.key, 'color').name('color').onChange(upd);
-  fK.add(VISUAL.key, 'intensity', 0, 2.5, 0.01).name('intensidad').onChange(upd);
-  fK.add(VISUAL.key.pos, '0', -80, 80, 1).name('pos x').onChange(upd);
-  fK.add(VISUAL.key.pos, '1', 5, 90, 1).name('altura (y)').onChange(upd);
-  fK.add(VISUAL.key.pos, '2', -80, 80, 1).name('pos z').onChange(upd);
-  fK.add(VISUAL.key, 'normalBias', 0, 0.1, 0.005).name('normalBias').onChange(upd);
-  const fH = gui.addFolder('Hemisférica (relleno)');
-  fH.addColor(VISUAL.hemi, 'sky').name('cielo (frío)').onChange(upd);
-  fH.addColor(VISUAL.hemi, 'ground').name('suelo (cálido)').onChange(upd);
-  fH.add(VISUAL.hemi, 'intensity', 0, 0.8, 0.01).name('intensidad').onChange(upd);
-  const fR = gui.addFolder('Rim + Laterales (frío)');
-  fR.addColor(VISUAL.rim, 'color').name('rim color').onChange(upd);
-  fR.add(VISUAL.rim, 'intensity', 0, 0.8, 0.01).name('rim int').onChange(upd);
-  fR.addColor(VISUAL.side, 'color').name('side color').onChange(upd);
-  fR.add(VISUAL.side, 'intensity', 0, 0.8, 0.01).name('side int').onChange(upd);
-  const fF = gui.addFolder('Niebla');
-  fF.addColor(VISUAL.fog, 'color').name('color').onChange(upd);
-  fF.add(VISUAL.fog, 'near', 20, 120, 1).name('near').onChange(upd);
-  fF.add(VISUAL.fog, 'far', 100, 220, 1).name('far').onChange(upd);
-  const fD = gui.addFolder('DOF (bokeh)');
-  fD.add(VISUAL.dof, 'aperture', 0, 0.04, 0.001).name('aperture').onChange(upd);
-  fD.add(VISUAL.dof, 'maxblur', 0, 0.08, 0.001).name('maxblur').onChange(upd);
-  const fA = gui.addFolder('AO horneado + variación');
-  fA.add(VISUAL.ao, 'strength', 0, 0.85, 0.01).name('fuerza').onChange(rebakeAO);
-  fA.add(VISUAL.ao, 'curve', 0.4, 3.5, 0.05).name('curva').onChange(rebakeAO);
-  fA.add(VISUAL.ao, 'floor', 0, 0.7, 0.01).name('mínimo').onChange(rebakeAO);
-  fA.add(VISUAL.grassVar, 'amount', 0, 0.18, 0.005).name('variación vértice').onChange(rebakeAO);
-  fA.add({ rebake: ()=>rebakeAO() }, 'rebake').name('Re-hornear AO');
-  /* ►S3P: afinado EN VIVO del desierto (backlog S4) — los valores se leen cada frame, sin applyVisual */
-  if(typeof S4!=='undefined' && typeof GUST!=='undefined'){
-    const fS3 = gui.addFolder('S4 · Desierto (arena + rachas)');
-    fS3.add(S4, 'sinkTime',  0.8, 6,    0.1 ).name('hundirse (s)');
-    fS3.add(S4, 'sinkSlow',  0,   0.8,  0.01).name('lentitud máx');
-    fS3.add(S4, 'sinkDepth', 0,   0.6,  0.01).name('entierro (u)');
-    fS3.add(S4, 'dragStart', 0.3, 0.95, 0.01).name('borde: inicio');
-    fS3.add(S4, 'dragSpd',   0,   4,    0.05).name('borde: u/s');
-    fS3.add(S4, 'dragChaos', 0,   0.5,  0.01).name('borde: +caos');
-    fS3.add(S4, 'dragAnchor',0,   1,    0.01).name('ancla hundido');
-    fS3.add(GUST, 'LEAD', 1, 4, 0.1).name('racha: aviso (s)');
-    fS3.add(GUST, 'DUR', 0.5, 3, 0.1).name('racha: dura (s)');
-    fS3.add({ gust: ()=>{ if(GUST.on && GUST.phase==='idle') GUST.cd = 0.01; } }, 'gust').name('⚡ Lanzar racha YA');
-    fS3.close();
-  }
-  fF.close(); fD.close(); fR.close();
-  gui.domElement.style.display = 'none';
-  _visGUI = gui;
-}
-function toggleVisualGUI(){
-  if(!_visGUI) setupVisualGUI();
-  if(_visGUI) _visGUI.domElement.style.display = (_visGUI.domElement.style.display === 'none') ? '' : 'none';
-}
-addEventListener('keydown', e=>{ if(e.code==='F2' || e.key==='F2'){ toggleVisualGUI(); e.preventDefault(); } });
 try { applyPreset(_presetState.preset); } catch(_e){ try { applyVisual(); } catch(_e2){} }   // aplica el preset por defecto al cargar (sin él, sincroniza a secas)
 
 /* ►SAVE · TIRA DE RÉCORDS DE LA PORTADA.
