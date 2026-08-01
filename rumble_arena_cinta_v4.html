@@ -1866,6 +1866,27 @@ try {
       ssaoPass.minDistance = 0.04;      // ►OJO r128: min/maxDistance van en UNIDADES DE VISTA (mundo), no normalizadas — con valores diminutos pasa el micro-ruido y el cielo/niebla lejana salen con BANDAS
       ssaoPass.maxDistance = 3.0;       // por encima de 3u de delta = objetos lejanos entre sí (sin AO) — evita halos isla-mar
       ssaoPass.enabled = false;         // lo enciende applyTier según tier + VISUAL.ao.on
+      /* ►AO-FIX "sombras en el aire" (1/08, reporte de Toni): el pase de NORMALES del SSAO renderiza
+         TODO con material de sobreescritura OPACO — los billboards translúcidos (bruma central que
+         deriva, halos, cortinas de lluvia, escudos) entraban como PLANCHAS sólidas en el buffer y
+         ocluían: manchas oscuras flotando con su forma. Se les excluye SOLO de ese pase (en la
+         imagen siguen intactos). Regla general: transparent o depthWrite=false = fuera del AO. */
+      const _aoOcultos = [];
+      const _esTransp = m => { if(!m) return false; const a = Array.isArray(m)?m:[m];
+        for(const x of a){ if(x && (x.transparent || x.depthWrite===false)) return true; } return false; };
+      const _roAO = ssaoPass.renderOverride.bind(ssaoPass);
+      ssaoPass.renderOverride = function(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha){
+        const esNormales = overrideMaterial === ssaoPass.normalMaterial;
+        if(esNormales){
+          /* matrices de proyección FRESCAS (el fovKick de los golpes cambia el FOV cada pocos frames) */
+          try{ ssaoPass.ssaoMaterial.uniforms['cameraProjectionMatrix'].value.copy(camera.projectionMatrix);
+               ssaoPass.ssaoMaterial.uniforms['cameraInverseProjectionMatrix'].value.copy(camera.projectionMatrixInverse); }catch(e){}
+          _aoOcultos.length = 0;
+          scene.traverse(o=>{ if(o.visible && (o.isMesh || o.isSprite) && _esTransp(o.material)){ o.visible = false; _aoOcultos.push(o); } });
+        }
+        _roAO(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha);
+        if(esNormales){ for(const o of _aoOcultos) o.visible = true; _aoOcultos.length = 0; }
+      };
       composer.addPass(ssaoPass);
     }
     /* ---- CONTORNO (toon) SÓLO EN PERSONAJES JUGABLES por detección de bordes de PROFUNDIDAD ----
