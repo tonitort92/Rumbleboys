@@ -104,71 +104,109 @@ window.addEventListener('load', function(){
   .cbName { color:#fff; font-weight:800; font-size:13px; line-height:1.15; }
   .cbDesc { color:#c2cde4; font-weight:600; font-size:10.5px; line-height:1.25; opacity:.82; margin-top:1px; }
 
-  /* ---------- ►BOTHUD: fila de BOTONES (encima de las cards) ----------
-     Estilo "relleno" tipo tutorial de ataques: glifo de mando de color + tecla + nombre.
-     · Ataques con COOLDOWN (E/Q/F/R): translúcidos al usarse; el color sube de ABAJO a ARRIBA
-       según el enfriamiento hasta quedar al 100% de opacidad, con un pequeño "pop" al estar listos.
-     · UTILIDAD (Saltar/Dash/Escudo/Agarre/Cura): botones fijos, sin relleno. */
-  #atkBar { display:flex; align-items:flex-end; justify-content:center; gap:14px; pointer-events:none;
+  /* ---------- ►CDRING: fila de BOTONES (encima de las cards) — MINIMALISTA ----------
+     Cada acción es un CÍRCULO con un ANILLO de progreso; nada de tarjetas ni rellenos.
+     · El ANILLO es el enfriamiento: conic-gradient recortado a corona por máscara radial, guiado por
+       la variable --p ∈ 0..1 que escribe updateAtkBar() cada frame (0 = recién usado, 1 = listo).
+     · DENTRO del círculo, las DOS indicaciones: TECLA arriba (grande) y BOTÓN DE MANDO abajo (píldora
+       del color del mando). Fuera, bajo el círculo, el nombre en pequeño.
+     · UTILIDAD (Saltar/Dash): mismo círculo con el anillo tenue y fijo (no tienen cooldown). */
+  @property --p { syntax:'<number>'; inherits:false; initial-value:1; }
+  #atkBar { display:flex; align-items:flex-start; justify-content:center; gap:12px; pointer-events:none;
             transition:opacity .22s ease, transform .22s ease; font-family:'Segoe UI',system-ui,sans-serif; }
   #atkBar.hidden { opacity:0; transform:translateY(16px); }
-  .atkGroup { display:flex; gap:7px; align-items:flex-end; }
-  .atkGroup.util { opacity:.9; }
-  .atkSep { align-self:stretch; width:1px; margin:6px 3px; background:rgba(255,255,255,.16); border-radius:1px; }
+  .atkGroup { display:flex; gap:9px; align-items:flex-start; }
+  .atkGroup.util { opacity:.7; }
+  .atkSep { align-self:stretch; width:1px; margin:8px 3px 16px; background:rgba(255,255,255,.14); border-radius:1px; }
 
-  /* botón base (relleno): el color del mando (--pc) tiñe el fondo */
-  .hbtn { position:relative; width:64px; box-sizing:border-box; overflow:hidden;
-          display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 5px 8px; border-radius:13px;
-          border:1.5px solid rgba(255,255,255,.18); backdrop-filter:blur(6px);
-          box-shadow:0 8px 22px rgba(0,0,0,.45);
-          background:linear-gradient(180deg,color-mix(in srgb,var(--pc,#5ec8ff) 34%,rgba(10,14,28,.72)),
-                                            color-mix(in srgb,var(--pc,#5ec8ff) 16%,rgba(8,11,24,.78)));
-          transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
-  .hbtn .hInner { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:3px; width:100%; }
-  /* glifo de mando "relleno" (círculo de su color para A/B/X/Y; pastilla para gatillos/sticks) */
-  .hPad { min-width:24px; height:24px; padding:0 6px; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
-          font:900 12px/1 'Segoe UI',system-ui,sans-serif; color:#0c1020; border-radius:8px;
-          background:var(--pc,#5ec8ff); box-shadow:0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.4); }
-  .hPad.round { width:24px; border-radius:50%; }
-  .hKey { min-width:18px; height:15px; padding:0 4px; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
-          font:900 9px/1 'Segoe UI',system-ui,sans-serif; border-radius:5px; color:#cfeaff;
-          background:rgba(6,9,20,.6); border:1px solid rgba(255,255,255,.22); }
-  .hName { font-size:8.6px; font-weight:800; line-height:1.12; color:#fff; text-align:center; min-height:20px; letter-spacing:.2px;
-           text-shadow:0 1px 3px rgba(0,0,0,.7); max-width:100%; overflow:hidden;
-           display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-  .hLab { position:absolute; top:4px; right:5px; z-index:3; min-width:12px; height:13px; padding:0 3px; box-sizing:border-box;
-          display:flex; align-items:center; justify-content:center; border-radius:7px;
-          font:900 8px/1 'Segoe UI',system-ui,sans-serif; color:#0e1428; background:#ffd84f;
-          box-shadow:0 1px 3px rgba(0,0,0,.5); pointer-events:none; }
+  /* botón = columna: disco (círculo + anillo) y nombre pequeño debajo */
+  .hbtn { position:relative; width:56px; display:flex; flex-direction:column; align-items:center; gap:4px;
+          transition:transform .15s ease; }
+  .hDisc { position:relative; width:54px; height:54px; border-radius:50%; box-sizing:border-box;
+           display:flex; align-items:center; justify-content:center;
+           background:radial-gradient(circle at 50% 36%, rgba(17,23,44,.68), rgba(6,9,20,.76));
+           backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,.45);
+           transition:box-shadow .15s ease; }
+  /* ANILLO de carga: la parte "hecha" en el color del botón; el resto, surco tenue */
+  .hFill { position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:1;
+           background:conic-gradient(from -90deg, var(--pc,#5ec8ff) calc(var(--p,1) * 360deg), rgba(6,10,22,.62) 0);   /* surco OSCURO: el tramo que falta se lee sobre cielo claro */
+           -webkit-mask:radial-gradient(closest-side, #0000 0 85%, #000 86% 100%);
+                   mask:radial-gradient(closest-side, #0000 0 85%, #000 86% 100%);
+           transition:filter .15s ease; }
+  .hInner { position:relative; z-index:2; display:flex; flex-direction:column-reverse; align-items:center; gap:2px; }
+  /* TECLA (teclado/ratón): el dato principal, en blanco y grande */
+  .hKey { font:900 14px/1 'Segoe UI',system-ui,sans-serif; color:#fff; letter-spacing:.3px;
+          text-shadow:0 1px 3px rgba(0,0,0,.85); }
+  /* MANDO: píldora (o círculo en A/B/X/Y) del color del botón, debajo de la tecla */
+  .hPad { min-width:16px; height:14px; padding:0 4px; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+          font:900 9px/1 'Segoe UI',system-ui,sans-serif; color:#0c1020; border-radius:7px;
+          background:var(--pc,#5ec8ff); opacity:.9; }
+  .hPad.round { width:14px; padding:0; border-radius:50%; }
+  .hName { font-size:8.4px; font-weight:800; line-height:1.1; color:rgba(255,255,255,.7); text-align:center;
+           letter-spacing:.2px; text-shadow:0 1px 3px rgba(0,0,0,.75); max-width:100%; overflow:hidden;
+           display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
+  /* contador (segundos que faltan / munición): pastilla discreta en la esquina, sin robar atención */
+  .hLab { position:absolute; z-index:3; right:-3px; top:-1px; min-width:15px; height:14px; padding:0 4px; box-sizing:border-box;
+          display:flex; align-items:center; justify-content:center; border-radius:8px;
+          font:900 9.5px/1 'Segoe UI',system-ui,sans-serif; color:#fff; background:rgba(6,9,20,.88);
+          border:1px solid rgba(255,255,255,.16); box-shadow:0 1px 3px rgba(0,0,0,.5); pointer-events:none; }
   .hLab:empty { display:none; }
 
-  /* ATAQUE con cooldown: relleno vertical (sube de abajo a arriba) + opacidad según carga */
-  .hbtn.cd { background:rgba(9,12,24,.42); }
-  .hbtn.cd .hFill { position:absolute; left:0; right:0; bottom:0; z-index:1; height:0%;
-          background:linear-gradient(180deg,color-mix(in srgb,var(--pc,#5ec8ff) 60%,#fff),var(--pc,#5ec8ff));
-          box-shadow:0 0 12px var(--pc,#5ec8ff); transition:height .1s linear; }
-  .hbtn.cd .hInner { opacity:.4; transition:opacity .12s ease; }         /* atenuado mientras enfría */
-  .hbtn.cd.ready { border-color:color-mix(in srgb,var(--pc,#7affc8) 70%,#fff); }
+  /* ATAQUE con cooldown: el interior se apaga mientras enfría; al estar listo, anillo con brillo */
+  .hbtn.cd .hInner { opacity:.42; transition:opacity .12s ease; }
   .hbtn.cd.ready .hInner { opacity:1; }
-  .hbtn.cd.ready .hFill { box-shadow:0 0 16px var(--pc,#7affc8); }
+  .hbtn.cd.ready .hFill { filter:drop-shadow(0 0 5px var(--pc,#7affc8)); }
+  .hbtn.cd.ready .hDisc { box-shadow:0 4px 16px rgba(0,0,0,.45),
+                          inset 0 0 13px color-mix(in srgb,var(--pc,#7affc8) 24%,transparent); }
   /* pequeño "pop" al quedar lista (se relanza quitando/poniendo la clase por JS) */
-  @keyframes hbtnPop { 0%{ transform:scale(1); } 30%{ transform:scale(1.16); } 60%{ transform:scale(.97); } 100%{ transform:scale(1); } }
-  @keyframes hbtnFlash { 0%{ box-shadow:0 0 0 0 rgba(255,255,255,.9), 0 8px 22px rgba(0,0,0,.45); }
-                         100%{ box-shadow:0 0 0 10px rgba(255,255,255,0), 0 8px 22px rgba(0,0,0,.45); } }
-  .hbtn.cd.pop { animation:hbtnPop .42s ease, hbtnFlash .5s ease-out; }
+  @keyframes hbtnPop { 0%{ transform:scale(1); } 30%{ transform:scale(1.18); } 60%{ transform:scale(.97); } 100%{ transform:scale(1); } }
+  .hbtn.cd.pop { animation:hbtnPop .42s ease; }
 
-  /* UTILIDAD: botón fijo, sin relleno (siempre visible al 100%) */
-  .hbtn.util { background:linear-gradient(180deg,color-mix(in srgb,var(--pc,#8ea6cf) 26%,rgba(10,14,28,.72)),rgba(8,11,24,.8)); }
+  /* UTILIDAD: sin enfriamiento → anillo tenue fijo (mismo lenguaje visual, sin ruido) */
+  .hbtn.util .hFill { background:rgba(255,255,255,.2); }
 
-  /* ULTI (R): al cargarse usa el color del personaje; al llenarse → borde ARCOÍRIS animado */
+  /* ULTI (R): el anillo se llena con el color del personaje; al llenarse → ARCOÍRIS girando */
   @property --ultang { syntax:'<angle>'; inherits:false; initial-value:0deg; }
   @keyframes ultSpin { to { --ultang:360deg; } }
-  @keyframes ultPulse { 0%,100%{ box-shadow:0 0 10px rgba(255,255,255,.25), 0 8px 22px rgba(0,0,0,.45); } 50%{ box-shadow:0 0 22px rgba(255,255,255,.6), 0 8px 22px rgba(0,0,0,.45); } }
-  .hbtn.ultfull { border-color:transparent;
-            background:linear-gradient(rgba(10,14,28,.85),rgba(10,14,28,.85)) padding-box,
-                      conic-gradient(from var(--ultang), #ff3b30,#ffd84f,#3ad06a,#2563eb,#9b2bff,#ff3b30) border-box;
-            animation:ultSpin 2.2s linear infinite, ultPulse 1s ease-in-out infinite; }
+  @keyframes ultPulse { 0%,100%{ box-shadow:0 0 8px rgba(255,255,255,.2), 0 4px 14px rgba(0,0,0,.45); }
+                        50%{ box-shadow:0 0 22px rgba(255,255,255,.5), 0 4px 14px rgba(0,0,0,.45); } }
+  .hbtn.ultfull .hFill { background:conic-gradient(from var(--ultang), #ff3b30,#ffd84f,#3ad06a,#2563eb,#9b2bff,#ff3b30);
+            animation:ultSpin 2.2s linear infinite; filter:drop-shadow(0 0 6px rgba(255,255,255,.55)); }
+  .hbtn.ultfull .hDisc { animation:ultPulse 1s ease-in-out infinite; }
   .hbtn.ultfull .hInner { opacity:1; }
+
+  /* ---------- ►RANKXP: ranking de EXP (lado IZQUIERDO) ----------
+     Una fila por jugador, posicionada en ABSOLUTO y movida con transform → cuando alguien adelanta,
+     las filas se DESLIZAN a su nuevo puesto (no saltan). Los eliminados se apagan en gris pero
+     siguen en la lista y siguen desplazándose si les adelantan. */
+  #rank { position:fixed; left:16px; top:50%; z-index:23; width:184px; pointer-events:none;
+          transform:translateY(-50%) scale(var(--hudScale,1)); transform-origin:left center;
+          transition:opacity .25s ease; font-family:'Segoe UI',system-ui,sans-serif; }
+  #rank.hidden { opacity:0; }
+  .rkRow { position:absolute; left:0; top:0; width:100%; height:28px; box-sizing:border-box;
+           display:flex; align-items:center; gap:7px; padding:0 9px 0 7px; border-radius:999px;
+           background:rgba(8,11,24,.42); border:1px solid rgba(255,255,255,.09); backdrop-filter:blur(5px);
+           box-shadow:0 3px 12px rgba(0,0,0,.35); will-change:transform;
+           transition:transform .5s cubic-bezier(.22,.9,.28,1), opacity .35s ease, filter .35s ease,
+                      background .3s ease, border-color .3s ease; }
+  .rkRow.me { background:rgba(20,28,54,.62); border-color:rgba(255,255,255,.36); }
+  .rkPos { flex:0 0 14px; text-align:center; font:900 11px/1 'Segoe UI',system-ui,sans-serif;
+           font-style:italic; color:#9fb0d0; font-variant-numeric:tabular-nums; }
+  .rkRow.lead .rkPos { color:#ffd84f; }                     /* el líder, en oro */
+  .rkDot { flex:0 0 8px; width:8px; height:8px; border-radius:50%; background:var(--pc,#fff);
+           box-shadow:0 0 6px var(--pc,#fff); }
+  .rkName { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+            font-size:10.5px; font-weight:800; letter-spacing:.3px; color:#e7eeff;
+            text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .rkXP { flex:0 0 auto; text-decoration:none; font:900 12px/1 'Segoe UI',system-ui,sans-serif;
+          font-style:italic; color:#ffd84f; font-variant-numeric:tabular-nums;
+          text-shadow:0 1px 3px rgba(0,0,0,.6); }
+  .rkXP.bump { animation:rkBump .28s ease; }
+  @keyframes rkBump { 0%{ transform:scale(1) } 45%{ transform:scale(1.22) } 100%{ transform:scale(1) } }
+  .rkRow.up { border-color:rgba(122,255,200,.75); box-shadow:0 0 14px rgba(122,255,200,.35), 0 3px 12px rgba(0,0,0,.35); }
+  .rkRow.dead { opacity:.72; filter:saturate(.35); }        /* muerto (reapareciendo): apagado */
+  .rkRow.out  { opacity:.4;  filter:grayscale(1); }         /* eliminado: gris, pero sigue en la lista */
+  @media (prefers-reduced-motion: reduce){ .rkRow{ transition:opacity .2s ease, filter .2s ease } .rkXP.bump{ animation:none } }
 
   .pcard {
     width:98px; padding:6px 9px 7px;
@@ -975,6 +1013,8 @@ window.addEventListener('load', function(){
       </g>
     </svg>
   </div>
+  <!-- ►RANKXP: ranking de EXP acumulada (izquierda). Las filas se deslizan al adelantarse. -->
+  <div id="rank" class="hidden"></div>
   <div id="xpbar"><i></i><b></b></div>
   <div id="musicBtn" title="música">🔊</div>
   <div id="count321"></div>
@@ -5490,6 +5530,59 @@ function buildHUD(){
     }
   }
   renderAtkBar();   // ►BOTHUD: fila de botones (cooldown + utilidad) encima de las cards
+  buildRank();      // ►RANKXP: ranking de EXP de la izquierda (una fila por jugador)
+}
+/* ---------- ►RANKXP · ranking de EXP acumulada (columna izquierda) ----------
+   Cada jugador tiene UNA fila fija en el DOM; su PUESTO es un translateY. Así, cuando uno adelanta
+   a otro, las dos filas se cruzan DESLIZÁNDOSE (transición CSS) en vez de saltar de sitio.
+   El número es scoreTotal(p): el mismo cómputo de EXP que luego cobra la tienda entre stages.
+   Un eliminado NO sale de la lista: se queda en gris y sigue desplazándose si le adelantan. */
+const RANK_ROW_H = 31;          // paso vertical entre filas (28 px de alto + 3 de aire) — cuadra con .rkRow del CSS
+let _rankRows = [];             // fila DOM por jugador, mismo índice que players
+function _rankName(p){ return (CLASS_PICK.find(cc=>cc[0]===p._charKey)||[])[1] || p.label; }
+function buildRank(){
+  const el = document.getElementById('rank'); if(!el) return;
+  el.innerHTML = ''; _rankRows = [];
+  for(let i=0;i<players.length;i++){
+    const p = players[i], col = '#'+p.color.toString(16).padStart(6,'0');
+    const r = document.createElement('div');
+    r.className = 'rkRow'+(p===P1?' me':'');
+    r.style.setProperty('--pc', col);
+    r.innerHTML = '<b class="rkPos">'+(i+1)+'</b><i class="rkDot"></i>'+
+                  '<span class="rkName">'+_rankName(p)+'</span><u class="rkXP">0</u>';
+    r._pos = -1; r._xp = -1; r._st = 'x'; r._nm = _rankName(p);   // _pos=-1: el primer updateRank() SIEMPRE pinta puesto y clase de líder
+    r.style.transform = 'translateY('+(i*RANK_ROW_H)+'px)';   // primer pintado: ya en su sitio (sin deslizar)
+    el.appendChild(r); _rankRows.push(r);
+  }
+  el.style.height = (players.length*RANK_ROW_H)+'px';
+}
+const _rankOrder = [];
+function updateRank(){
+  if(!_rankRows.length) return;
+  _rankOrder.length = 0;
+  for(let i=0;i<players.length;i++) _rankOrder.push(i);
+  _rankOrder.sort((a,b)=>{ const d = scoreTotal(players[b]) - scoreTotal(players[a]); return d!==0 ? d : a-b; });   // empate → orden estable por nº de jugador
+  for(let k=0;k<_rankOrder.length;k++){
+    const i = _rankOrder[k], p = players[i], row = _rankRows[i]; if(!row) continue;
+    if(row._pos !== k){                                        // ha cambiado de puesto → se desliza
+      if(k < row._pos){ row.classList.add('up'); clearTimeout(row._upT); row._upT = setTimeout(()=>row.classList.remove('up'), 750); }   // ha ADELANTADO: destello verde
+      row._pos = k;
+      row.style.transform = 'translateY('+(k*RANK_ROW_H)+'px)';
+      row.firstElementChild.textContent = (k+1);
+      row.classList.toggle('lead', k===0);
+    }
+    const xp = scoreTotal(p);
+    if(row._xp !== xp){
+      const jump = xp - row._xp;                               // ►el goteo del tiempo aguantado (0,5/s) NO merece animación: solo los saltos de verdad
+      row._xp = xp;
+      const nEl = row.lastElementChild; nEl.textContent = xp;
+      if(jump >= 5){ nEl.classList.remove('bump'); void nEl.offsetWidth; nEl.classList.add('bump'); }
+    }
+    const st = p.out ? 'out' : (p.dead ? 'dead' : '');
+    if(row._st !== st){ row._st = st; row.classList.toggle('out', st==='out'); row.classList.toggle('dead', st==='dead'); }
+    const nm = _rankName(p);                                   // el nombre solo cambia al cambiar de clase (entrenamiento)
+    if(row._nm !== nm){ row._nm = nm; row.children[2].textContent = nm; }
+  }
 }
 function setRoster(humans, cpus){
   humans = Math.max(0, Math.min(4, humans|0));
@@ -14498,19 +14591,27 @@ function updateHUD(){
     }
   }
   updateAtkBar(P1);
+  updateRank();     // ►RANKXP: puestos + EXP del ranking de la izquierda
 }
-/* ►BOTHUD · fila de botones del humano (P1): cada ataque con cooldown se rellena de ABAJO a ARRIBA;
-   translúcido mientras enfría, opaco al 100% al estar listo, con un "pop" en el flanco de "listo". */
+/* ►CDRING · fila de botones del humano (P1): el ANILLO de cada círculo se cierra con el enfriamiento
+   (--p ∈ 0..1); el interior está apagado mientras enfría y se enciende con un "pop" al quedar listo. */
 const _atkReady = {};   // estado "listo" previo por slot → dispara el "pop" solo al pasar a listo
 function _popReady(btn, slot, ready){
   const was = !!_atkReady[slot]; _atkReady[slot] = !!ready;
   if(ready && !was && btn){ btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),520); }
 }
+/* escribe el progreso del anillo SOLO si cambió de forma visible (1/200 de vuelta ≈ 1,8°) */
+function _setRing(el, frac){
+  const f = THREE.MathUtils.clamp(frac,0,1);
+  if(el._p === f) return;                                                          // sin cambio
+  if(el._p != null && f !== 0 && f !== 1 && Math.abs(el._p-f) < 0.005) return;     // cambio imperceptible (los extremos siempre se escriben)
+  el._p = f; el.style.setProperty('--p', f.toFixed(3));
+}
 function updateAtkBar(p){
   if(!p) return;
   const set = (slot, frac, ready, lab) => {
     const fill = document.getElementById('atk_'+slot); if(!fill) return;
-    fill.style.height = Math.round(THREE.MathUtils.clamp(frac,0,1)*100)+'%';                                  // sube de abajo a arriba
+    _setRing(fill, frac);                                                                                    // el anillo se cierra en sentido horario
     const btn = document.getElementById('atkb_'+slot);
     if(btn){ btn.classList.toggle('ready', !!ready); _popReady(btn, slot, ready); }
     const l = document.getElementById('atkl_'+slot); if(l && l.textContent!==(lab||'')) l.textContent = lab||'';
@@ -14534,11 +14635,11 @@ function updateAtkBar(p){
     const lab    = active ? Math.ceil(p.shieldT) : ((p.shieldCD||0)>0 ? Math.ceil(p.shieldCD) : '');
     set('shield', frac, ready, lab);
   }
-  /* R = definitiva: relleno vertical en el COLOR del personaje; al llenarse → borde ARCOÍRIS (.ultfull) + pop */
+  /* R = definitiva: el anillo se llena en el COLOR del personaje; al llenarse → ARCOÍRIS (.ultfull) + pop */
   const rFill = document.getElementById('atk_r'), rBtn = document.getElementById('atkb_r');
   if(rFill && rBtn){
     const f = Math.min(1,(p.mpow||0)/MPOW_MAX), full = (p.mpow||0)>=MPOW_MAX;
-    rFill.style.height = Math.round(f*100)+'%';
+    _setRing(rFill, f);
     const cc = (typeof CLASS_COLOR!=='undefined' && p._charKey && CLASS_COLOR[p._charKey]!=null) ? '#'+CLASS_COLOR[p._charKey].toString(16).padStart(6,'0') : '#7affc8';
     rBtn.style.setProperty('--pc', cc);                                              // el relleno usa el color del personaje
     rBtn.classList.toggle('ready', full); rBtn.classList.toggle('ultfull', full);    // lleno = arcoíris (aviso "lista")
@@ -17353,17 +17454,23 @@ function renderAtkBar(){
   const el = document.getElementById('atkBar'); if(!el) return;
   const k  = (typeof P1!=='undefined' && P1 && P1._charKey) || 'voxelhero';
   const mv = CLASS_MOVES[k] || CLASS_MOVES.voxelhero;
-  const cd = s =>                                   // ataque con cooldown: relleno vertical + opacidad
+  /* ►CDRING: círculo con ANILLO de enfriamiento (--p lo escribe updateAtkBar) + tecla y mando DENTRO */
+  const cd = s =>
     '<div class="hbtn cd" id="atkb_'+s.slot+'" style="--pc:'+(PAD_COL[s.pad]||'#5ec8ff')+'">'+
-      '<i class="hFill" id="atk_'+s.slot+'"></i>'+
-      '<span class="hLab" id="atkl_'+s.slot+'"></span>'+
-      '<div class="hInner">'+_padGlyph(s.pad)+'<span class="hKey">'+s.key+'</span>'+
-        '<span class="hName">'+(s.name||mv[s.slot]||s.slot)+'</span></div>'+
+      '<div class="hDisc">'+
+        '<i class="hFill" id="atk_'+s.slot+'"></i>'+
+        '<span class="hLab" id="atkl_'+s.slot+'"></span>'+
+        '<div class="hInner">'+_padGlyph(s.pad)+'<span class="hKey">'+s.key+'</span></div>'+
+      '</div>'+
+      '<span class="hName">'+(s.name||mv[s.slot]||s.slot)+'</span>'+
     '</div>';
-  const ut = u =>                                   // utilidad: botón fijo, sin relleno
+  const ut = u =>                                   // utilidad: mismo círculo, anillo tenue fijo
     '<div class="hbtn util" style="--pc:'+(PAD_COL[u.pad]||'#8ea6cf')+'">'+
-      '<div class="hInner">'+_padGlyph(u.pad)+'<span class="hKey">'+u.key+'</span>'+
-        '<span class="hName">'+u.name+'</span></div>'+
+      '<div class="hDisc">'+
+        '<i class="hFill"></i>'+
+        '<div class="hInner">'+_padGlyph(u.pad)+'<span class="hKey">'+u.key+'</span></div>'+
+      '</div>'+
+      '<span class="hName">'+u.name+'</span>'+
     '</div>';
   let atk='', util='';
   for(const s of ATK_SLOTS) atk  += cd(s);
@@ -17384,6 +17491,9 @@ function pollMoveSheet(){
   const show = _ctrlBarOn && running && !gameOver && !demo;
   if(show && (typeof P1!=='undefined') && P1 && P1._charKey!==_ctrlBarKey){ _ctrlBarKey = P1._charKey; renderAtkBar(); }   // re-pinta la fila de botones al cambiar de clase
   if(ab) ab.classList.toggle('hidden', !show);   // la fila de botones se oculta/muestra con TAB/SELECT
+  /* ►RANKXP: el ranking vive con la PARTIDA (no con TAB: no es una chuleta de controles) */
+  const rk = document.getElementById('rank');
+  if(rk) rk.classList.toggle('hidden', !(running && !gameOver && !demo));
 }
 addEventListener('keydown', e=>{ if(e.code==='Tab' && running && !gameOver && !demo){ _msTab=true; e.preventDefault(); } });
 addEventListener('keyup',   e=>{ if(e.code==='Tab'){ _msTab=false; e.preventDefault(); } });
