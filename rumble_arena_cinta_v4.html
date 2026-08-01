@@ -1281,6 +1281,10 @@ window.addEventListener('load', function(){
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/BokehShader.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/BokehPass.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<!-- ►AO: oclusión ambiental de pantalla (SSAO). Solo tier ALTO + toggle F2. SimplexNoise es su dependencia. -->
+<script src="https://unpkg.com/three@0.128.0/examples/js/math/SimplexNoise.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/SSAOShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/SSAOPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19/dist/lil-gui.umd.min.js"></script>   <!-- panel de debug de iluminación/atmósfera (tecla F2) -->
 <!-- carga de modelos OBJ (r128 globales) + datos incrustados -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
@@ -1371,6 +1375,7 @@ const VOICE_READY_SRC = "data:audio/mpeg;base64,SUQzBAAAAAIUfFRTU0UAAAAOAAADTGF2
 const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
+  ao: { on:true, radius:1.1, min:0.04, max:3.0 },   // ►AO: oclusión de anclaje (SSAO, solo tier alto). TODO en unidades de vista/mundo (gotcha r128)
   halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
@@ -1809,6 +1814,7 @@ for(let i=0;i<FIRE_LIGHTS;i++){ const fl = new THREE.PointLight(0xff8a2e, 0, 12,
    lo usa al construir el pase de contorno (antes estaba más abajo → TDZ y rompía el postproc). */
 let READABILITY_MODE = true;
 let composer = null, bloomPass = null, fxaaPass = null, bokehPass = null, gradePass = null, outlinePass = null;
+let renderPass = null, ssaoPass = null;   // ►AO: el RenderPass se apaga cuando el SSAO (que ya renderiza la escena) está activo
 /* El CONTORNO toon ya no es global: se restringe a los PERSONAJES JUGABLES PRINCIPALES.
    Sus mallas se marcan en OUTLINE_LAYER y el pase detecta bordes sobre un depth que sólo
    contiene esa capa → el resto del juego (escenario, minions, objetos) queda sin contorno. */
@@ -1847,7 +1853,21 @@ try {
   if(window.THREE && THREE.EffectComposer && THREE.UnrealBloomPass && THREE.RenderPass && THREE.ShaderPass){
     composer = new THREE.EffectComposer(renderer);
     composer.setPixelRatio(renderer.getPixelRatio());
-    composer.addPass(new THREE.RenderPass(scene, camera));
+    renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    /* ►AO (1/08): SSAO — la oclusión de ANCLAJE. Oscurece donde las superficies se tocan (juntas de
+       losetas, bases de props, bajo salientes): es lo que hace que el diorama "pese" en vez de
+       flotar. SOLO tier alto (applyTier) + toggle en F2 (VISUAL.ao). El pase renderiza la escena ÉL
+       MISMO (beauty + normales): cuando está activo, el RenderPass normal se APAGA — así el coste
+       neto es +1 render de normales + 2 pases de pantalla, no la escena entera duplicada. */
+    if(THREE.SSAOPass){
+      ssaoPass = new THREE.SSAOPass(scene, camera, innerWidth, innerHeight);
+      ssaoPass.kernelRadius = 1.1;      // radio de la sombra de contacto, en unidades de MUNDO (un luchador = 1,8)
+      ssaoPass.minDistance = 0.04;      // ►OJO r128: min/maxDistance van en UNIDADES DE VISTA (mundo), no normalizadas — con valores diminutos pasa el micro-ruido y el cielo/niebla lejana salen con BANDAS
+      ssaoPass.maxDistance = 3.0;       // por encima de 3u de delta = objetos lejanos entre sí (sin AO) — evita halos isla-mar
+      ssaoPass.enabled = false;         // lo enciende applyTier según tier + VISUAL.ao.on
+      composer.addPass(ssaoPass);
+    }
     /* ---- CONTORNO (toon) SÓLO EN PERSONAJES JUGABLES por detección de bordes de PROFUNDIDAD ----
        Pase pantalla-completa: línea oscura donde hay salto de profundidad (siluetas), pero el
        depth que analiza contiene ÚNICAMENTE a los personajes jugables (capa OUTLINE_LAYER, volcada
@@ -2018,9 +2038,9 @@ function attachComposerDepth(){
    Cada tier controla DOF, bloom, grano/viñeta, sombra y el tope del DRS. qMode 'auto'
    empieza en 'alto' y baja/sube de tier solo según FPS sostenidos. */
 const TIERS = {
-  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel)
-  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
-  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  drsMax: PIXEL_CAP },   // ►sin grano · ►PERF: shadow 4096→2048 (casi imperceptible en cartoon, ¼ del coste + menos tirón al regenerar)
+  bajo:  { dof:false, bloom:false, grain:0,     vignette:0,    shadow:1024, env:false, ssao:false, drsMax: Math.min(PIXEL_CAP, 1.2) },   // ►ENVMAP: sin IBL en equipos justos (el sampleo del entorno cuesta por píxel)
+  medio: { dof:false, bloom:true,  grain:0,     vignette:0.45, shadow:2048, env:true,  ssao:false, drsMax: Math.min(PIXEL_CAP, 1.6) },   // ►sin grano (pedido de Toni)
+  alto:  { dof:false, bloom:true,  grain:0,     vignette:0.55, shadow:2048, env:true,  ssao:true,  drsMax: PIXEL_CAP },   // ►AO solo en alto: la oclusión de anclaje cuesta 1 render de normales + 2 pases de pantalla
 };
 const TIER_ORDER = ['bajo','medio','alto'];
 /* detección de móvil/táctil: arranca conservador para que un móvil malo NO empiece ahogado.
@@ -2066,6 +2086,11 @@ function applyTier(){
   const t = TIERS[name];
   if(bokehPass) bokehPass.enabled = t.dof;
   if(bloomPass) bloomPass.enabled = t.bloom;
+  /* ►AO: el SSAO renderiza la escena él mismo → con él activo se APAGA el RenderPass normal */
+  if(ssaoPass && renderPass){
+    const _aoOn = !!t.ssao && (typeof VISUAL==='undefined' || !VISUAL.ao || VISUAL.ao.on !== false);
+    ssaoPass.enabled = _aoOn; renderPass.enabled = !_aoOn;
+  }
   if(gradePass){ gradePass.uniforms.grain.value = t.grain; gradePass.uniforms.vignette.value = t.vignette; }
   setShadow(t.shadow);
   applyEnvironment();                                                       // ►ENVMAP: el tier decide si hay IBL (bajo = no)
@@ -32143,6 +32168,14 @@ function setupVisualGUI(){
   fP.add(VISUAL, 'partInst').name('burst instanciado (1 draw call)');
   fP.add(VISUAL, 'maskRetag').name('re-marcar máscara cada frame (debug)');
   fP.add(VISUAL, 'halfMask').name('contorno a media resolución').onChange(()=>attachComposerDepth());
+  /* ►AO: oclusión de anclaje. on/off re-decide en applyTier (respeta el tier); knobs directos al pase. */
+  const fAO = gui.addFolder('Oclusión de anclaje (SSAO)');
+  const upAO = ()=>{ if(ssaoPass){ ssaoPass.kernelRadius = VISUAL.ao.radius; ssaoPass.minDistance = VISUAL.ao.min; ssaoPass.maxDistance = VISUAL.ao.max; } };
+  fAO.add(VISUAL.ao, 'on').name('activada (tier alto)').onChange(()=>{ effName=''; applyTier(); });
+  fAO.add(VISUAL.ao, 'radius', 0.2, 4, 0.05).name('radio (u. de mundo)').onChange(upAO);
+  fAO.add(VISUAL.ao, 'min', 0.005, 0.3, 0.005).name('umbral cercano (u.)').onChange(upAO);
+  fAO.add(VISUAL.ao, 'max', 0.5, 8, 0.1).name('umbral lejano (u.)').onChange(upAO);
+  fAO.open();
   /* ►IMPACT: se lee en cada golpe desde impactFX (no necesita onChange). */
   const fI = gui.addFolder('Impacto direccional');
   fI.add(VISUAL.impact, 'on').name('activado');
