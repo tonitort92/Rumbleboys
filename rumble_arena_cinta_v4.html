@@ -2053,6 +2053,10 @@ function setShadow(n){
   shadowSize = n;
   sun.shadow.mapSize.set(n, n);                                            // SOLO el sol (key) castea sombra; el rim no → 1 sola pasada de sombra
   if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map = null; }   // se regenera al siguiente frame al nuevo tamaño
+  /* ►SHADOWFIX (1/08): con autoUpdate=false y el throttle 1-de-2 de drawScene, "al siguiente frame"
+     era MENTIRA la mitad de las veces: si caía en frame impar, un frame entero SIN sombra ninguna
+     (parpadeo al cambiar de tier, que el auto dispara justo durante la carga). Forzar regeneración. */
+  renderer.shadowMap.needsUpdate = true;
 }
 /* aplica el tier efectivo togglando pases (más robusto que reconstruir el composer) */
 function applyTier(){
@@ -2198,7 +2202,7 @@ function precalentarObjeto(root, motivo){
     renderer.setRenderTarget(_warmRT);
     renderer.render(scene, camera);
     renderer.setRenderTarget(rtPrev);
-    renderer.shadowMap.needsUpdate = suPrev;
+    renderer.shadowMap.needsUpdate = true;   // ►SHADOWFIX: el render de arriba dejó el mapa SIN la cinta (persistente por el throttle 1-de-2) → que el próximo frame real lo regenere
     for(const g of ocultos) g.visible = true;
   }catch(e){ console.warn('►PRECALENTAR ' + motivo + ':', e); }
   finally { if(!tenia && root.parent) root.parent.remove(root); root.position.copy(pos); }
@@ -2663,7 +2667,7 @@ function drawScene(){ tagInteractiveMask();   // marca cada frame los interactiv
   if(_decoTimeUniform) _decoTimeUniform.value = t;                         // mar + banderas animados en GPU (vertex shader)
   skyDome.position.copy(camera.position);                                  // cielo = skybox (centrado en la cámara) → no parallaxea
   applyEnvironment();                                                      // ►ENVMAP: comparar la firma es gratis; solo regenera si cambió el cielo/sol (= cambio de stage)
-  renderer.shadowMap.needsUpdate = ((_shadowTick++ & 1) === 0);            // throttle: re-renderiza el shadow map 1 de cada 2 frames (~30Hz)
+  renderer.shadowMap.needsUpdate = renderer.shadowMap.needsUpdate || ((_shadowTick++ & 1) === 0);   // throttle 1-de-2 (~30Hz) — con OR: un force pendiente (►SHADOWFIX tras un warmup) NO se pisa, sobrevive hasta consumirse
   if(composer) composer.render(); else renderer.render(scene, camera); }   // bloom si cargó; si no, render normal
 /* ►BOTHUD: escala del HUD de abajo coherente con el tamaño de pantalla.
    Crece con la pantalla (no se ve diminuto en monitores grandes), con SUELO (no encoge por debajo
@@ -30775,7 +30779,12 @@ function warmupGPU(){
     renderer.setRenderTarget(_warmRT);
     renderer.render(scene, cam0);                // un render real sube los buffers y compila lo que falte
     renderer.setRenderTarget(rtPrev);
-    renderer.shadowMap.autoUpdate = prevAuto; renderer.shadowMap.needsUpdate = prevNeed;
+    /* ►SHADOWFIX (1/08): este render regeneró el shadow map con visibilidad FALSA (luchadores
+       forzados visibles + cinta entera). Como el mapa es PERSISTENTE (autoUpdate=false, throttle
+       1-de-2 en drawScene), los frames reales siguientes lo mostraban tal cual = FLICKERING de
+       sombras cada 2 s durante el menú. Forzar que el próximo frame real lo regenere con la
+       visibilidad verdadera. (El outlinePass ya hacía lo correcto; esto faltaba aquí.) */
+    renderer.shadowMap.autoUpdate = prevAuto; renderer.shadowMap.needsUpdate = true;
     for(const r of ocultos) r.visible = false;
   } catch(e){ console.warn('[warmupGPU] omitido', e); }
 }
