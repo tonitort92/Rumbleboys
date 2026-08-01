@@ -481,11 +481,32 @@ window.addEventListener('load', function(){
                animation: beltArrowPulse 1.05s ease-in-out infinite; }
   #beltArrow.hidden { display:none; }
   @keyframes beltArrowPulse { 0%,100%{ transform:scale(1); opacity:.9; } 50%{ transform:scale(1.14); opacity:1; } }
-  /* tira de boosts/objetos: SEPARADA, pegada bajo la caja del jugador (centro), no dentro de la caja */
-  .boosts { display:flex; flex-wrap:wrap; gap:3px; justify-content:center; max-width:150px; pointer-events:none; }
-  .boosts:empty { display:none; }
-  .boosts span { display:inline-flex; align-items:center; padding:1px 5px; border-radius:7px;
-                 background:rgba(8,11,26,.6); backdrop-filter:blur(4px); font-size:10px; font-weight:800; line-height:1.5; }
+  /* ---------- ►GEAR: lo que LLEVAS, en stickers (lado DERECHO) ----------
+     Sustituye a la tira de texto que colgaba bajo la card. Un sticker por cosa (arma, arcoíris,
+     cápsula, pasivo): icono + contador, del color de su tipo. Aparecen con un "pop" y se van solos. */
+  #gear { position:fixed; right:16px; top:50%; z-index:23; width:130px; pointer-events:none;
+          display:flex; flex-wrap:wrap; justify-content:flex-end; align-content:center; gap:6px;
+          transform:translateY(-50%) scale(var(--hudScale,1)); transform-origin:right center;
+          transition:opacity .25s ease; font-family:'Segoe UI',system-ui,sans-serif; }
+  #gear.hidden { opacity:0; }
+  .gearIt { position:relative; width:38px; height:38px; border-radius:11px; box-sizing:border-box;
+            display:flex; align-items:center; justify-content:center;
+            background:rgba(8,11,24,.5); backdrop-filter:blur(5px);
+            border:1.5px solid color-mix(in srgb, var(--gc,#fff) 55%, transparent);
+            box-shadow:0 3px 12px rgba(0,0,0,.4), inset 0 0 12px color-mix(in srgb, var(--gc,#fff) 20%, transparent); }
+  .gearIt i { font-style:normal; font-size:17px; line-height:1; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  .gearIt b { position:absolute; right:-4px; bottom:-4px; min-width:16px; height:15px; padding:0 3px; box-sizing:border-box;
+              display:flex; align-items:center; justify-content:center; border-radius:8px;
+              font:900 9.5px/1 'Segoe UI',system-ui,sans-serif; color:#fff; background:rgba(6,9,20,.9);
+              border:1px solid color-mix(in srgb, var(--gc,#fff) 45%, rgba(255,255,255,.16));
+              font-variant-numeric:tabular-nums; }
+  .gearIt b:empty { display:none; }
+  .gearIt.tmp { animation:gearTmp 1.15s ease-in-out infinite; }        /* temporal (arcoíris): late = se te acaba */
+  @keyframes gearTmp { 0%,100%{ box-shadow:0 3px 12px rgba(0,0,0,.4), 0 0 0 0 color-mix(in srgb,var(--gc,#fff) 45%,transparent); }
+                       50%{ box-shadow:0 3px 12px rgba(0,0,0,.4), 0 0 13px 2px color-mix(in srgb,var(--gc,#fff) 55%,transparent); } }
+  @keyframes gearPop { 0%{ transform:scale(.35); opacity:0 } 60%{ transform:scale(1.16); opacity:1 } 100%{ transform:scale(1) } }
+  .gearIt.pop { animation:gearPop .4s cubic-bezier(.2,1.4,.4,1); }
+  @media (prefers-reduced-motion: reduce){ .gearIt.pop, .gearIt.tmp { animation:none } }
   #musicBtn { position:fixed; top:12px; right:14px; z-index:40; font-size:21px;
               width:40px; height:40px; display:flex; align-items:center; justify-content:center;
               background:rgba(10,14,28,.55); border:1px solid rgba(255,255,255,.18);
@@ -1015,6 +1036,8 @@ window.addEventListener('load', function(){
   </div>
   <!-- ►RANKXP: ranking de EXP acumulada (izquierda). Las filas se deslizan al adelantarse. -->
   <div id="rank" class="hidden"></div>
+  <!-- ►GEAR: stickers de lo que llevas (derecha): arma, arcoíris, cápsulas y pasivos -->
+  <div id="gear" class="hidden"></div>
   <div id="xpbar"><i></i><b></b></div>
   <div id="musicBtn" title="música">🔊</div>
   <div id="count321"></div>
@@ -5523,7 +5546,7 @@ function buildHUD(){
       const ji = document.createElement('div'); ji.className = 'jumpInd'; ji.id = 'jumpsP1';   // ►JUMPUI: saltos disponibles
       ji.innerHTML = '<span class="jiIco">⏫</span><b class="jiNum">2</b><span class="jiPips"></span>';
       pcol.appendChild(ji);
-      const bs = document.createElement('div'); bs.className = 'boosts'; bs.id = 'boostP'+n; pcol.appendChild(bs);
+      /* ►GEAR: la tira de boosts ya no cuelga de la card — ahora son stickers en el lado derecho */
       c.appendChild(pcol);
     } else {                                           // rivales: misma fila abajo-centro
       c.appendChild(card);
@@ -5531,6 +5554,8 @@ function buildHUD(){
   }
   renderAtkBar();   // ►BOTHUD: fila de botones (cooldown + utilidad) encima de las cards
   buildRank();      // ►RANKXP: ranking de EXP de la izquierda (una fila por jugador)
+  const gr = document.getElementById('gear');           // ►GEAR: partida nueva → ningún sticker heredado
+  if(gr){ gr.innerHTML = ''; gr._sig = null; _gearEls.clear(); }
 }
 /* ---------- ►RANKXP · ranking de EXP acumulada (columna izquierda) ----------
    Cada jugador tiene UNA fila fija en el DOM; su PUESTO es un translateY. Así, cuando uno adelanta
@@ -14554,14 +14579,7 @@ function updateHUD(){
       for(let k=0;k<Math.max(4,p.stocks);k++){ const d=document.createElement('div'); d.className='stock'+(k<p.stocks?'':' lost'); st.appendChild(d); } }   // ►PERKS: pinta pips extra si el perk +2 VIDAS subió stocks por encima de 4
     const nmEl = document.getElementById('nameP'+n);   // refresca el nombre de clase si cambia (quick-switch en entrenamiento)
     if(nmEl){ const nm = (CLASS_PICK.find(cc=>cc[0]===p._charKey)||[])[1] || p.label; if(nmEl._nm!==nm){ nmEl._nm=nm; nmEl.textContent=nm; } }
-    const bel = document.getElementById('boostP'+n);
-    if(bel){ let s='';
-      if(p.weapon) s+=`<span style="color:#${WEAPON_DEFS[p.weapon.kind].col.toString(16).padStart(6,'0')}">${WEAPON_DEFS[p.weapon.kind].label}${p.weapon.ammo}</span>`;
-      if(p.rainbowT>0) s+=`<span style="color:#ff5fd2">🌈${Math.ceil(p.rainbowT)}</span>`;
-      for(const ty of CAP_TYPES){ if(ty.heal) continue; const c=bst(p,ty.k); if(c>0) s+=`<span style="color:#${ty.col.toString(16).padStart(6,'0')}">${ty.ic}×${c}</span>`; }   // ►INTERSTAGE: temporal + comprado
-      for(const pk of PASSIVE_KINDS){ if(hasPas(p,pk)) s+=`<span style="color:#${PASSIVE_DEFS[pk].col.toString(16).padStart(6,'0')}">${PASSIVE_DEFS[pk].label}</span>`; }
-      if(bel._c!==s){ bel._c=s; bel.innerHTML=s; } }
-    const card=document.getElementById('cardP'+n);
+    const card=document.getElementById('cardP'+n);   /* ►GEAR: la tira de texto de boosts que colgaba aquí vive ahora en stickers, a la derecha (updateGear) */
     if(card){ const _op = p.out ? .42 : 1;
       if(card._op !== _op){ card._op = _op; card.style.opacity = _op; } }   // ►PERF2: solo al cambiar
     if(p===P1){                                        // ►JUMPUI: indicador de saltos disponibles del jugador local
@@ -14592,6 +14610,46 @@ function updateHUD(){
   }
   updateAtkBar(P1);
   updateRank();     // ►RANKXP: puestos + EXP del ranking de la izquierda
+  updateGear(P1);   // ►GEAR: stickers de lo que llevas, a la derecha
+}
+/* ---------- ►GEAR · stickers de lo que llevas (columna derecha) ----------
+   Una pegatina por cosa: arma (con munición), arcoíris (con segundos), cápsula de stat (con nivel)
+   y pasivo (sin número). Cada sticker es un nodo ESTABLE: solo se crea al conseguir el objeto (pop)
+   y se borra al perderlo → nada de reconstruir la lista entera cada frame. */
+const _gearEls = new Map();      // clave → nodo del sticker
+function _gearList(p){
+  const L = [];
+  if(p.weapon){ const w = WEAPON_DEFS[p.weapon.kind]; L.push({ k:'w:'+p.weapon.kind, ic:w.label, col:w.col, n:p.weapon.ammo, always:true }); }
+  if(p.rainbowT>0) L.push({ k:'rainbow', ic:'🌈', col:0xff5fd2, n:Math.ceil(p.rainbowT), always:true, tmp:true });
+  for(const ty of CAP_TYPES){ if(ty.heal) continue; const c = bst(p,ty.k); if(c>0) L.push({ k:'c:'+ty.k, ic:ty.ic, col:ty.col, n:c }); }   // ►INTERSTAGE: temporal + comprado
+  for(const pk of PASSIVE_KINDS){ if(hasPas(p,pk)) L.push({ k:'p:'+pk, ic:PASSIVE_DEFS[pk].label, col:PASSIVE_DEFS[pk].col, n:0 }); }
+  return L;
+}
+function updateGear(p){
+  const el = document.getElementById('gear'); if(!el || !p) return;
+  const L = _gearList(p);
+  let sig = ''; for(const g of L) sig += g.k+',';
+  if(el._sig !== sig){                                   // ha cambiado el CONJUNTO: crea/borra/reordena
+    el._sig = sig;
+    const seen = new Set();
+    for(const g of L){
+      seen.add(g.k);
+      let d = _gearEls.get(g.k);
+      if(!d){
+        d = document.createElement('div'); d.className = 'gearIt'+(g.tmp?' tmp':''); d._n = null;
+        d.style.setProperty('--gc', '#'+g.col.toString(16).padStart(6,'0'));
+        d.innerHTML = '<i>'+g.ic+'</i><b></b>';
+        _gearEls.set(g.k, d); el.appendChild(d);
+        d.classList.add('pop'); setTimeout(()=>d.classList.remove('pop'), 420);
+      } else el.appendChild(d);                          // ya existía: appendChild lo re-ordena en su sitio
+    }
+    for(const [k,d] of _gearEls){ if(!seen.has(k)){ d.remove(); _gearEls.delete(k); } }
+  }
+  for(const g of L){                                     // contadores (munición, segundos, nivel de cápsula)
+    const d = _gearEls.get(g.k); if(!d) continue;
+    const txt = (g.always || g.n>1) ? String(g.n) : '';
+    if(d._n !== txt){ d._n = txt; d.lastElementChild.textContent = txt; }
+  }
 }
 /* ►CDRING · fila de botones del humano (P1): el ANILLO de cada círculo se cierra con el enfriamiento
    (--p ∈ 0..1); el interior está apagado mientras enfría y se enciende con un "pop" al quedar listo. */
@@ -17491,9 +17549,12 @@ function pollMoveSheet(){
   const show = _ctrlBarOn && running && !gameOver && !demo;
   if(show && (typeof P1!=='undefined') && P1 && P1._charKey!==_ctrlBarKey){ _ctrlBarKey = P1._charKey; renderAtkBar(); }   // re-pinta la fila de botones al cambiar de clase
   if(ab) ab.classList.toggle('hidden', !show);   // la fila de botones se oculta/muestra con TAB/SELECT
-  /* ►RANKXP: el ranking vive con la PARTIDA (no con TAB: no es una chuleta de controles) */
+  /* ►RANKXP/►GEAR: ranking y stickers viven con la PARTIDA (no con TAB: no son chuletas de controles) */
+  const inMatch = running && !gameOver && !demo;
   const rk = document.getElementById('rank');
-  if(rk) rk.classList.toggle('hidden', !(running && !gameOver && !demo));
+  if(rk) rk.classList.toggle('hidden', !inMatch);
+  const gr = document.getElementById('gear');
+  if(gr) gr.classList.toggle('hidden', !inMatch);
 }
 addEventListener('keydown', e=>{ if(e.code==='Tab' && running && !gameOver && !demo){ _msTab=true; e.preventDefault(); } });
 addEventListener('keyup',   e=>{ if(e.code==='Tab'){ _msTab=false; e.preventDefault(); } });
