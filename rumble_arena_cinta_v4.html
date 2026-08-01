@@ -2506,8 +2506,13 @@ applyTier();   // aplica el tier guardado al cargar
 const SAVE_KEY = 'rb_save';
 const SAVE_V   = 1;
 function _saveBlank(){
+  /* ►TROFEOS: trophies = { <nº de stage>: <veces que te has llevado el trofeo de ese mundo> }.
+     Es la COLECCIÓN de por vida (no de la run): en multi cada mundo que aún no has ganado es una
+     razón concreta para volver, y en solo equivale a "he vencido a los 9 jefes". No hace falta
+     subir SAVE_V: saveGet hace Object.assign(_saveBlank(), o) y un guardado viejo sin `trophies`
+     se queda con el {} del blanco. */
   return { v:SAVE_V, runs:0, wins:0, bestScore:0, bestGrade:'', bestStage:0,
-           bosses:{}, cls:{}, lastRun:null, unlocks:[] };
+           bosses:{}, cls:{}, lastRun:null, unlocks:[], trophies:{} };
 }
 let _SAVE = null;                                  // caché en memoria (única fuente de verdad en caliente)
 function saveGet(){
@@ -2553,6 +2558,13 @@ function saveNoteStage(stage){
     const idx = (typeof CAMPAIGN_STAGES!=='undefined') ? CAMPAIGN_STAGES.indexOf(stage)+1 : 0;
     if(idx > (s.bestStage||0)) s.bestStage = idx;
   });
+}
+/* ►TROFEOS · se apunta el trofeo del mundo. Se llama desde stageAdvance(), que SÓLO se alcanza tras
+   vencer al jefe → la regla "sin jefe no hay trofeo" no necesita comprobarse aquí. Y sólo cuenta si
+   el ganador es P1: el guardado es personal, así que en multi te llevas a casa lo que ganaste tú. */
+function saveNoteTrophy(stage){
+  if(!_TROPHY_WINNER || typeof P1==='undefined' || _TROPHY_WINNER !== P1) return;
+  saveBump(s=>{ if(!s.trophies) s.trophies = {}; s.trophies[stage] = (s.trophies[stage]||0) + 1; });
 }
 /* ►SAVE · jefes derrotados. IDEMPOTENTE por run: stageAdvance() se alcanza desde varias ramas del
    entre-stage (tienda saltada, jugador eliminado, botón CONTINUAR) y aunque hoy son excluyentes, un
@@ -13715,6 +13727,7 @@ function updateBossArena(rawDt){
           BOSSFIGHT.ring.torus.material.emissiveIntensity = 1.9;
           const _mu = BOSSFIGHT.ring.memb && BOSSFIGHT.ring.memb.material.uniforms;
           if(_mu){ _mu.uColA.value.setHex(_pcO[2]); _mu.uColB.value.setHex(_pcO[3]); } }
+        spawnTrophy();   // ►TROFEOS: el jefe ha caído → el trofeo del mundo sale del aro y vuela al líder
         showBanner('¡EL ARO SE ABRE! ¡CRUZADLO!', 3.0); crowdCheer&&crowdCheer(.8,true);
         if(music) fadeMusic(.4, 1.5);
       }
@@ -13788,6 +13801,7 @@ function resetBossFight(){
   if(BOSSFIGHT.addBars) for(const b of BOSSFIGHT.addBars) b.wrap.style.display='none';   // ►ICEADD: oculta las 2 barras de los colosos (persisten en el DOM, se reusan)
   if(BOSSFIGHT.arena){ scene.remove(BOSSFIGHT.arena); BOSSFIGHT.arena=null; }
   if(BOSSFIGHT.ring){ scene.remove(BOSSFIGHT.ring.g); BOSSFIGHT.ring=null; }
+  clearTrophy();                                                                // ►TROFEOS: el cubo muere con la arena (el ganador ya se guardó en stageAdvance)
   removeEntryPortal();                                                          // ►PORTAL-BOSS: portal de entrada + su cuenta atrás fuera
   for(const p of players){ p._bossArena = false; p._bossLanded = false; p._portalOut = false; }   // ►DGOLEM: resetea también el latch de "pisó la arena" · ►PORTALOUT: descongela   // nadie queda "en la arena del cielo"
   if(BOSSFIGHT.aplat){ const idx=platforms.indexOf(BOSSFIGHT.aplat); if(idx>=0) platforms.splice(idx,1); BOSSFIGHT.aplat=null; }   // quita el suelo de colisión de la arena; no persiste entre partidas
@@ -16251,6 +16265,7 @@ function closeStageScores(){
 /* dispatch de stage extraído de la fase 'won' del jefe (mismo orden de campaña) */
 function stageAdvance(){
   saveNoteBoss(STAGE);   // ►SAVE: sólo se llega aquí tras VENCER al jefe del stage → contador de jefes derrotados
+  saveNoteTrophy(STAGE); // ►TROFEOS: y el trofeo de ese mundo, si se lo llevó P1
   if(STAGE===1) goToStage2();
   else if(STAGE===2) goToStage3();
   else if(STAGE===3) goToStage11();      // ►WEST: japón → western (mesetas del cañón)
