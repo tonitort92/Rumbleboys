@@ -1375,15 +1375,15 @@ const VISUAL = {
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
   // SOL (KEY, cálido, con sombra) — la luz que esculpe el mapa
-  key:  { color:0xfff1cf, intensity:1.15, pos:[42, 36, 30], normalBias:0.02 },  // ►FIX S1: sol más suave (era 1.50) → menos contraste
+  key:  { color:0xffe8c0, intensity:1.5, pos:[42, 36, 30], normalBias:0.02 },  // ►LOOK-C (1/08): SOL DOMINANTE y cálido — es la mitad de la receta "render bonito" (la otra: sombras frías)
   // RELLENO HEMISFÉRICO (cielo frío arriba ↔ rebote cálido del suelo abajo)
-  hemi: { sky:0xaad0ff, ground:0x6a5f52, intensity:0.36 },   // ►FIX S1: +relleno (era 0.20) → sombras menos duras, menos contraste
+  hemi: { sky:0x8fc0ff, ground:0x4a4a5e, intensity:0.30 },   // ►LOOK-C: relleno MÁS FRÍO y más bajo → las sombras se enfrían y el sol manda (contraste cálido-frío, elegido en tablero A/B)
   // RIM / contraluz frío (separa siluetas del fondo) — SIN sombra
   rim:  { color:0xb8d8ff, intensity:0.32, pos:[-26, 22, -26] },   // [int 0.10–0.60]
   // RELLENO LATERAL espejado izq/der (esculpe los lados) — SIN sombra
   side: { color:0xffffff, intensity:0.26, pos:[58, 16, 6] },      // [int 0.10–0.60]
   // NIEBLA aérea (color del horizonte) — separa islas cercanas de lejanas
-  fog:  { color:0xcfe2f4, near:72, far:142 },   // [near 40–100][far 120–180] far↓ = más bruma pero +pop-in del belt lejano
+  fog:  { color:0xdfe8f4, near:72, far:142 },   // ►LOOK-C: niebla casada con el nuevo horizonte crema · [near 40–100][far 120–180] far↓ = más bruma pero +pop-in del belt lejano
   // ►DEPTH: PROFUNDIDAD TONAL (perspectiva aérea). La niebla SOLO TIÑE, y además empieza tan lejos
   // (near 72) que el fondo conserva el mismo brillo y saturación que el primer plano = todo en el
   // mismo plano. Esto añade, ANTES de la niebla, desaturación + bruma + levantado de sombras que
@@ -1596,9 +1596,9 @@ for(let i=0;i<8;i++){
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false,
   uniforms: {
-    top: { value: new THREE.Color(0x3f86d6) },   // DÍA zenit: azul cielo intenso
-    hor: { value: new THREE.Color(0xd3e6f7) },   // DÍA horizonte: azul pálido luminoso
-    bot: { value: new THREE.Color(0xc3d9ec) },   // DÍA bajo el horizonte: bruma clara
+    top: { value: new THREE.Color(0x2e6fd0) },   // ►LOOK-C: zenit azul más PROFUNDO (el 0x3f86d6 quedaba lechoso con la niebla)
+    hor: { value: new THREE.Color(0xf6e7c8) },   // ►LOOK-C: horizonte CREMA cálido — el cielo deja de ser vacío blanco
+    bot: { value: new THREE.Color(0x9db8d8) },   // ►LOOK-C: bajo el horizonte, azul bruma con cuerpo
   },
   vertexShader: `varying vec3 vPos;
     void main(){ vPos = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
@@ -1955,7 +1955,7 @@ try {
     }
     /* color-grade (contraste+saturación) + GRANO de película + VIÑETA suave. ►►► AJUSTA grain/vignette ◄◄◄ */
     gradePass = new THREE.ShaderPass({
-      uniforms:{ tDiffuse:{value:null}, tCharDepth:{value:null}, tProtect:{value:null}, contrast:{value:1.18}, saturation:{value:1.22},
+      uniforms:{ tDiffuse:{value:null}, tCharDepth:{value:null}, tProtect:{value:null}, contrast:{value:1.28}, saturation:{value:1.24},   // ►LOOK-C: +contraste (1.18→1.28) — la otra mitad del punch elegido en el tablero
                  satScene:{value:1.0},    // saturación del MAPA = original (sin reducción). ►AJUSTA: <1 lo desatura
                  satChar:{value:1.10},    // PERSONAJES jugables: ×1.10 = +10% de saturación. ►AJUSTA
                  time:{value:0}, grain:{value:0.03}, vignette:{value:0.55} },
