@@ -1436,7 +1436,7 @@ const VOICE_READY_SRC = "data:audio/mpeg;base64,SUQzBAAAAAIUfFRTU0UAAAAOAAADTGF2
 const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
-  ao: { on:true, radius:1.1, min:0.04, max:3.0 },   // ►AO: oclusión de anclaje (SSAO, solo tier alto). TODO en unidades de vista/mundo (gotcha r128)
+  ao: { on:true, radius:1.1, min:0.04, max:0.9 },   // ►AO: oclusión de anclaje (solo CONTACTO: max 0.9 — a 3.0 los flotantes proyectaban manchas sin física)
   ink: { on:true, strength:0.45, umbral:0.30 },     // ►INK: tinta del MUNDO (subida el 1/08 a peticion de Toni)
   minOutline: { on:true },                          // ►MINSIL: outline sutil de minions con el color del mapa
   halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
@@ -1934,7 +1934,7 @@ try {
       ssaoPass = new THREE.SSAOPass(scene, camera, innerWidth, innerHeight);
       ssaoPass.kernelRadius = 1.1;      // radio de la sombra de contacto, en unidades de MUNDO (un luchador = 1,8)
       ssaoPass.minDistance = 0.04;      // ►OJO r128: min/maxDistance van en UNIDADES DE VISTA (mundo), no normalizadas — con valores diminutos pasa el micro-ruido y el cielo/niebla lejana salen con BANDAS
-      ssaoPass.maxDistance = 3.0;       // por encima de 3u de delta = objetos lejanos entre sí (sin AO) — evita halos isla-mar
+      ssaoPass.maxDistance = 0.9;   // ►AO-FIX2 (2/08): a 3.0 un puente flotante 'ocluia' suelo/pared a 2u por debajo = drop-shadows sin fisica (reporte de Toni x2). 0.9 = solo CONTACTO.       // por encima de 3u de delta = objetos lejanos entre sí (sin AO) — evita halos isla-mar
       ssaoPass.enabled = false;         // lo enciende applyTier según tier + VISUAL.ao.on
       /* ►AO-FIX "sombras en el aire" (1/08, reporte de Toni): el pase de NORMALES del SSAO renderiza
          TODO con material de sobreescritura OPACO — los billboards translúcidos (bruma central que
