@@ -6351,6 +6351,9 @@ function narrateStageStart(){
     if(p.locator)    p.locator.visible    = false;
     if(p._stamBar)   p._stamBar.g.visible = false;
   }
+  /* ►REVEALWARM: compila/sube AHORA (ventana muerta de la narración, un solo bloque síncrono
+     invisible) lo que antes se pagaba con un bloqueo de 2-3 s justo cuando APARECÍAN al acabar la voz */
+  try{ warmupReveal('presentación de stage'); }catch(e){}
   clearCues();                   // por si quedaban timers de la cuenta del intro de partida
   if(!musicOn || demo) return;   // mismos frenos que narrate()
   try{
@@ -30780,6 +30783,33 @@ function warmupLigero(motivo){
     if(n > 0) console.log('[warmup ligero] ' + motivo + ': ' + n + ' programas');
   }catch(e){ console.warn('►WARMUP ligero:', e); }
 }
+/* ►REVEALWARM (1/08): el bloqueo de 2-3 s "al aparecer los personajes". La presentación del stage
+   los esconde (fighterHide) mientras narra, y al acabar la voz su PRIMER dibujado real por el
+   camino del composer compila sus programas (variante Linear del render target — warmupLigero solo
+   compila la de pantalla) y sube sus atlas recoloreados: todo junto, justo al aparecer. MEDIDO
+   headless: huecos de 5,4 s + 2,4 s con "+physical map sRGB" y texturas 83→87 en ese instante.
+   Esto hace ese trabajo AL EMPEZAR la ventana muerta de la narración: muestra a los luchadores un
+   instante, un render a RT de 8×8 (invisible), sube sus texturas, y los re-esconde. */
+function warmupReveal(motivo){
+  const shown = [];
+  try{
+    if(typeof players !== 'undefined') for(const p of players){
+      const g = p && p.gfx;
+      if(g && g._ljOff){ fighterShow(g); shown.push(g); }
+      if(g && g.root) subirTexturasDe(g.root);                 // los atlas recoloreados a la GPU YA
+    }
+    const rtPrev = renderer.getRenderTarget();
+    if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
+    const prevNeed = renderer.shadowMap.needsUpdate;
+    renderer.shadowMap.needsUpdate = true;                     // también la variante de sombra skinned
+    renderer.setRenderTarget(_warmRT);
+    renderer.render(scene, camera);                            // RT = variante Linear, la que usa el composer en partida
+    renderer.setRenderTarget(rtPrev);
+    renderer.shadowMap.needsUpdate = true;                     // ►SHADOWFIX: regenera con visibilidad real al siguiente frame
+    console.log('[reveal-warm] ' + (motivo||'') + ': listo (' + shown.length + ' luchadores calentados)');
+  }catch(e){ console.warn('[reveal-warm]', e); }
+  finally { for(const g of shown) fighterHide(g); }
+}
 let _warmRenderDone = false;   // ►HOMECALM: ya hubo al menos UN render completo de calentamiento (sin él nunca se salta)
 function warmupGPU(){
   if(!warmupPermitido()) return;
@@ -30959,7 +30989,7 @@ function launchMatch(){
        programas GPU de una tacada (tapado por "¡LUCHA!") en vez de compilar-al-aparecer durante los
        primeros 5-10 s de juego. Tras el warmup, un drawScene() con la cámara real evita el flash del
        encuadre ancho que usa el warmup. (warmupGPU ya iba en try/catch; antes solo corría al cargar). */
-    try { warmupLigero('¡LUCHA!'); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }   // ►MEDIDO: aquí el warmup COMPLETO era un parón de ~1,1 s (el peor frame de un informe de 150 s). La versión ligera compila lo mismo sin repintar el mundo.
+    try { warmupLigero('¡LUCHA!'); warmupReveal('¡LUCHA!'); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }   // ►MEDIDO: warmupLigero compila la variante de PANTALLA; warmupReveal añade la variante LINEAR del composer + sube los atlas (el bloqueo de 2-3 s "al aparecer" era eso). Ambos caben tapados por "¡LUCHA!".
     music.volume = .45; running = true;
     showBanner(STUDIO.on ? '🎬 MODO STUDIO' : (TRAIN.on?'¡A ENTRENAR!':'¡LUCHA!'), 1); tone(330,.18,'square',.15, 200); crowdCheer(.55);
   });
