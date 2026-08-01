@@ -1437,7 +1437,7 @@ const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
   ao: { on:true, radius:1.1, min:0.04, max:3.0 },   // ►AO: oclusión de anclaje (SSAO, solo tier alto). TODO en unidades de vista/mundo (gotcha r128)
-  ink: { on:true, strength:0.32, umbral:0.35 },     // ►INK: tinta sutil del MUNDO (bordes de profundidad; jugadores/minions fuera)
+  ink: { on:true, strength:0.45, umbral:0.30 },     // ►INK: tinta del MUNDO (subida el 1/08 a peticion de Toni)
   minOutline: { on:true },                          // ►MINSIL: outline sutil de minions con el color del mapa
   halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
@@ -1652,11 +1652,11 @@ const _hazeTex = (function(){ const c=document.createElement('canvas'); c.width=
   x.fillStyle=gr; x.fillRect(0,0,128,128); return new THREE.CanvasTexture(c); })();
 const haze = [];
 for(let i=0;i<8;i++){
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:_hazeTex, color:0xb9c2d8, transparent:true,
-    opacity:0.08, depthWrite:false, fog:false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:_hazeTex, color:0xdde4f0, transparent:true,
+    opacity:0.032, depthWrite:false, fog:false }));   // ►BRUMAFIX (1/08): con el sol/contraste de LOOK-C, a 0.08 y gris-azul leia como 'drop shadows sin sentido' (reporte de Toni) — mas clara y a un tercio
   const sc = 11 + Math.random()*9; s.scale.set(sc, sc*0.5, 1);
   s.position.set((Math.random()-.5)*30, 1.0+Math.random()*2.4, (Math.random()-.5)*18);
-  s.userData = { ph:Math.random()*6.28, bx:s.position.x, op:0.06+Math.random()*0.04 };
+  s.userData = { ph:Math.random()*6.28, bx:s.position.x, op:0.022+Math.random()*0.014 };   // ►BRUMAFIX: pulso acorde
   scene.add(s); haze.push(s);
 }
 
@@ -1989,7 +1989,7 @@ try {
           '    float a=float(i)*0.392699;',                    // 2*PI/16
           '    vec4 s=texture2D(tCharColor, vUv+vec2(cos(a),sin(a))*o);',
           '    if(s.a>0.85){ oc=s.rgb; found=1.0; }',                 // anillo LARGO: solo jugadores (alfa 1)
-          '    vec4 s2=texture2D(tCharColor, vUv+vec2(cos(a),sin(a))*o*0.45);',   // ►MINSIL: anillo CORTO — outline sutil de minions (color del mapa) y tramo interior del de jugadores
+          '    vec4 s2=texture2D(tCharColor, vUv+vec2(cos(a),sin(a))*o*0.55);',   // ►MINSIL: anillo CORTO — outline sutil de minions (color del mapa) y tramo interior del de jugadores
           '    if(s2.a>0.4){ oc=s2.rgb; found=max(found, s2.a>0.85 ? 1.0 : 0.7); }',
           '  }',
           '  gl_FragColor=vec4(mix(col.rgb, oc, found*strength), col.a);',
@@ -2073,7 +2073,7 @@ try {
       inkPass = new THREE.ShaderPass({
         uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null},
                    cameraNear:{value:0.1}, cameraFar:{value:1000}, texel:{value:new THREE.Vector2(1/1280,1/720)},
-                   strength:{value:0.32}, umbral:{value:0.35} },
+                   strength:{value:0.45}, umbral:{value:0.30} },   // ►(1/08) Toni pidio mas presencia
         vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
         fragmentShader:[
           '#include <packing>',
@@ -13395,8 +13395,105 @@ function spawnBossAdd(offX){
   return mn;
 }
 
+/* =====================================================================
+   ►TROFEOS · EL PREMIO DE CADA MUNDO
+   La regla, en una línea: cada mundo reparte UN trofeo y se lo lleva quien más puntos haya hecho
+   en él… y sólo si el jefe cae. Con esto cada número tiene UN trabajo y dejan de pisarse:
+     · puntos  = dinero  → se gastan en la tienda
+     · trofeos = prestigio → se cuentan y se guardan para siempre
+   Como el trofeo mira lo GANADO EN ESTE STAGE (no el saldo), comprar en la tienda nunca te quita
+   opciones a llevártelo.
+
+   Es un CUBO, no una corona: en el canon los villanos son cubos primordiales que quieren reducir
+   el mundo a bloques GRISES, así que el premio es la sustancia del enemigo derrotado. Nace gris
+   al abrirse el aro (su forma muerta) y se ENCIENDE con el color del mundo al posarse sobre el
+   ganador: le devuelves el color al mundo que ellos apagaban, contado sin una línea de texto.
+   El color sale de portalPalette() → cero paleta nueva que mantener.
+
+   Vuelo: mismo idioma de imantación que los objetos del suelo (seguimiento exponencial hacia el
+   jugador, ver updateItems) → persigue al ganador aunque corra. Y puede CAMBIAR DE DUEÑO en pleno
+   vuelo, porque va con el líder ACTUAL: si te adelantan camino del aro, el trofeo te abandona a la
+   vista de todos, y el tramo de vuelta deja de ser una vuelta de honor muerta.
+   ===================================================================== */
+const TROPHY_LIVE_OWNER = true;      // false → el ganador se fija al abrirse el aro y ya no cambia
+const TROPHY_SIZE  = 0.85;
+const TROPHY_HOVER = 2.4;            // altura sobre la cabeza del dueño
+const _TROPHY_GREY = 0x9a9ea6;       // el gris de El Gris: el color al que querían reducir el mundo
+let TROPHY = null;                   // { m, mat, owner, t, lit } · uno por stage, muere con la arena
+let _TROPHY_WINNER = null;           // sobrevive a clearTrophy() → lo lee stageAdvance() para guardar
+
+/* puntos hechos EN ESTE stage — mismo cálculo que closeStageScores (delta desde el cierre anterior) */
+function trophyStagePts(p){ return Math.max(0, scoreTotal(p) - (p._runXPseen||0)); }
+
+/* quién va ganando AHORA MISMO. Sólo vivos: un eliminado no puede reclamarlo (y así el trofeo
+   cambia de manos de forma visible si el líder cae justo antes del aro). */
+function trophyLeader(){
+  let best = null, bp = -1;
+  for(const p of players){
+    if(p.dead || p.out) continue;
+    const pts = trophyStagePts(p);
+    if(pts > bp){ bp = pts; best = p; }
+  }
+  return best;
+}
+
+/* nace EN el aro de salida, en el instante en que se abre (= el jefe ha caído) */
+function spawnTrophy(){
+  if(TROPHY) return;                                    // idempotente: la fase 'opened' puede reentrar
+  const ring = BOSSFIGHT.ring; if(!ring || !ring.g) return;
+  _TROPHY_WINNER = null;                                // el trofeo del stage anterior ya no cuenta
+  const mat = new THREE.MeshStandardMaterial({ color:_TROPHY_GREY, emissive:0x000000,
+                                               roughness:.55, metalness:.15, flatShading:true });
+  const m = new THREE.Mesh(new THREE.BoxGeometry(TROPHY_SIZE, TROPHY_SIZE, TROPHY_SIZE), mat);
+  m.castShadow = true;
+  ring.g.getWorldPosition(m.position);                  // la arena flota a BOSS_ARENA_Y → posición de MUNDO
+  m.position.y += .4;
+  scene.add(m);
+  TROPHY = { m, mat, owner:null, t:0, lit:0 };
+  burst(m.position.clone(), _TROPHY_GREY, 18, 6, 5, 1.0);
+}
+
+const _tropTgt = new THREE.Vector3(), _tropA = new THREE.Color(), _tropB = new THREE.Color();
+function updateTrophy(dt){
+  const T = TROPHY; if(!T) return;
+  T.t += dt;
+  /* dueño: el líder actual (o el fijado al abrirse el aro si TROPHY_LIVE_OWNER=false) */
+  if(TROPHY_LIVE_OWNER || !T.owner){
+    const lead = trophyLeader();
+    if(lead && lead !== T.owner){
+      if(T.owner){ burst(T.m.position.clone(), _TROPHY_GREY, 10, 5, 4, .7); T.lit = 0; }   // se le escapa: se apaga y se va
+      T.owner = lead;
+      _TROPHY_WINNER = lead;
+    }
+  }
+  const o = T.owner;
+  if(o && !o.dead && !o.out){
+    _tropTgt.set(o.pos.x, o.pos.y + TROPHY_HOVER + Math.sin(T.t*2.6)*.12, o.pos.z);
+    const k = Math.min(1, 3.2*dt);                      // seguimiento exponencial: le alcanza aunque corra
+    T.m.position.x += (_tropTgt.x - T.m.position.x)*k;
+    T.m.position.y += (_tropTgt.y - T.m.position.y)*k;
+    T.m.position.z += (_tropTgt.z - T.m.position.z)*k;
+    if(T.m.position.distanceTo(_tropTgt) < 2.5) T.lit = Math.min(1, T.lit + dt*1.6);   // al alcanzarle, se ENCIENDE
+  }
+  /* gris apagado → color vivo del mundo */
+  const pc = portalPalette();
+  _tropA.setHex(_TROPHY_GREY); _tropB.setHex(pc[1]);
+  T.mat.color.copy(_tropA).lerp(_tropB, T.lit);
+  T.mat.emissive.copy(_tropB).multiplyScalar(T.lit*.55);
+  T.m.rotation.y += (.8 + T.lit*1.6)*dt;
+  T.m.rotation.x  = Math.sin(T.t*1.4)*.12;
+}
+
+function clearTrophy(){
+  if(!TROPHY) return;
+  scene.remove(TROPHY.m);
+  try{ TROPHY.m.geometry.dispose(); TROPHY.mat.dispose(); }catch(e){}
+  TROPHY = null;
+}
+
 function updateBossArena(rawDt){
   if(BOSSFIGHT.phase==='none') return;
+  if(TROPHY) updateTrophy(rawDt);   // ►TROFEOS: vive desde que se abre el aro hasta que muere la arena
   if(BOSSFIGHT._floorMovers) _updateForestFloorMovers(rawDt);   // ►S2BOSS: losetas móviles del bosque (suben/bajan)
   if(BOSSFIGHT._iceArena) updateIceArena(rawDt);   // ►ICEARENA: rejillas rompibles + bolas de pincho (autónomo; la cinta/updateStage4 no corre en la pelea)
   if(BOSSFIGHT._floorTraps)  _updateJapanFloorTraps(rawDt);     // ►S3TRAP: losetas-trampa del jefe japonés (parpadean, cambian de color y CAEN)
