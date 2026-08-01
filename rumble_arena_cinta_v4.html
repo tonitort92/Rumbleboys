@@ -2252,6 +2252,11 @@ function warmupSpawnables(){
     /* armas: las de mano y las que caen al suelo */
     if(typeof HELD_DEFS !== 'undefined') for(const k in HELD_DEFS) add(getModel(k, HELD_DEFS));
     if(typeof MODEL_DEFS !== 'undefined') for(const k in MODEL_DEFS) add(getModel(k));
+    /* ►R2.6 (1/08): también la DECORACIÓN con material propio — flower3/campfire (DECOR_DEFS) y el
+       árbol fallback 'forest' son los únicos phong+textura del juego junto al arcoíris (que ya
+       entra por MODEL_DEFS): sin esto debutaban al entrar un segmento nuevo en cámara. */
+    if(typeof DECOR_DEFS !== 'undefined') for(const k in DECOR_DEFS) add(getModel(k, DECOR_DEFS));
+    if(typeof getForestTrees === 'function'){ try{ const f=getForestTrees(); if(f && f.length) add(f[0].clone ? f[0].clone(true) : null); }catch(e){} }
     /* efectos: el cubo del estallido, el anillo del impacto y el halo del suelo. Son materiales
        distintos (el anillo y el halo van transparentes) → programas distintos. */
     if(typeof partGeo !== 'undefined' && typeof burstMat === 'function') add(new THREE.Mesh(partGeo, burstMat(0xffffff)));
@@ -17350,8 +17355,18 @@ function specShoot(p, bomb){             // cae desde el cielo y persigue al obj
   const from=t.pos.clone().add(new THREE.Vector3((Math.random()-.5)*6, 16+Math.random()*4, (Math.random()-.5)*6));
   const dir=t.pos.clone().add(new THREE.Vector3(0,1,0)).sub(from).normalize();
   if(bomb){
-    const m=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),
-      new THREE.MeshStandardMaterial({ color:0x1a1a1a, emissive:0xff5a1a, emissiveIntensity:.8, roughness:.5 }));
+    /* ►R2.6: POOL de bombas (antes: new SphereGeometry + new MeshStandardMaterial por disparo, y
+       killWproj los DISPONÍA — churn de GC + recompilación por dispose en pleno final de partida,
+       que es cuando el espectador dispara). killWproj ya respeta m._pool y recicla sin dispose. */
+    if(!specShoot._bombPool) specShoot._bombPool = [];
+    let m = specShoot._bombPool.pop();
+    if(!m){
+      if(!specShoot._bombGeo){ specShoot._bombGeo = new THREE.SphereGeometry(.22,10,8);
+        specShoot._bombMat = new THREE.MeshStandardMaterial({ color:0x1a1a1a, emissive:0xff5a1a, emissiveIntensity:.8, roughness:.5 }); }
+      m = new THREE.Mesh(specShoot._bombGeo, specShoot._bombMat);
+      m._pool = specShoot._bombPool;
+    }
+    m.visible = true;
     m.position.copy(from); scene.add(m);
     wprojs.push({ m, owner:p, kind:'missile', v:dir.multiplyScalar(16), life:3.2, home:true, foe:t, homeRate:1.5 });
     if(sfx.bazooka) sfx.bazooka();
@@ -30765,6 +30780,7 @@ function warmupLigero(motivo){
     if(n > 0) console.log('[warmup ligero] ' + motivo + ': ' + n + ' programas');
   }catch(e){ console.warn('►WARMUP ligero:', e); }
 }
+let _warmRenderDone = false;   // ►HOMECALM: ya hubo al menos UN render completo de calentamiento (sin él nunca se salta)
 function warmupGPU(){
   if(!warmupPermitido()) return;
   const ocultos = [], mostrados = [];   // ►LUZCONSTANTE: restauración en finally (antes vivía dentro del try y se perdía si algo lanzaba)
@@ -30788,8 +30804,18 @@ function warmupGPU(){
     if(typeof BELT !== 'undefined' && BELT.segs) for(const sg of BELT.segs){
       if(sg.group && !sg.group.visible){ ocultos.push(sg.group); sg.group.visible = true; }
     }
+    const _progAntes = renderer.info.programs ? renderer.info.programs.length : 0;
+    const _texAntes = (renderer.info.memory && renderer.info.memory.textures) || 0;
     subirTexturasDe(scene);                                    // y de paso, TODAS las texturas del escenario a la GPU
     if(renderer.compile) renderer.compile(scene, cam0);
+    /* ►HOMECALM (1/08): el bucle de reposo dispara esto cada 2 s durante ~50 s de menú, y el RENDER
+       de abajo (mundo completo con cámara ancha, aunque vaya a un RT de 8×8) es lo caro — era uno
+       de los "tirones al cargar la home". Si el compile no estrenó NADA (ni programas ni texturas)
+       y ya hicimos un render completo antes, no hay nada que calentar: fuera. */
+    if(_warmRenderDone
+       && (renderer.info.programs ? renderer.info.programs.length : 0) === _progAntes
+       && ((renderer.info.memory && renderer.info.memory.textures) || 0) === _texAntes) return;
+    _warmRenderDone = true;
     const prevAuto = renderer.shadowMap.autoUpdate, prevNeed = renderer.shadowMap.needsUpdate;
     const rtPrev = renderer.getRenderTarget();
     if(!_warmRT) _warmRT = new THREE.WebGLRenderTarget(8, 8);
@@ -31052,6 +31078,11 @@ function refreshSetup(){
       cur = { root, _sharedGeo:true };
       return;
     }
+    /* ►SINBLOQUES (1/08): si el GLB de la clase AÚN no ha parseado, NO enseñar el muñeco de cajas
+       viejo (Toni: "sale un modelo feo de bloques y luego el real, se ve muy raro"). Canvas vacío
+       un instante: _cpOnModelLoaded re-llama a showPuppet en cuanto la plantilla llega. El fallback
+       de cajas se conserva solo si el sistema GLB entero está apagado (DEBUG_MODEL=false). */
+    if(DEBUG_MODEL && window.CHAR_MODELS_B64 && window.CHAR_MODELS_B64[k]){ cur = null; return; }
     const gfx = buildFighter(CLASS_COLOR[k] || 0xffffff);   // OJO: buildFighter hace scene.add(root)
     scene.remove(gfx.root);                                  // lo sacamos de la escena principal del juego
     applySkin({ gfx, _charKey:k, groundRing:null, locator:null, ult:false });
@@ -31676,9 +31707,12 @@ function refreshSetup(){
     const ov = document.getElementById('startOverlay'), md = document.getElementById('setupModal');
     const homeVis = ov && ov.style.display!=='none', modalVis = md && md.style.display!=='none';
     if(!homeVis && !modalVis){ _cpAcc = 0; return; }   // renderiza si el carrusel está visible en la home O dentro del popup
-    const lowSpec = IS_MOBILE || effName==='bajo';     // en equipo capaz: no capa → 60 fps
     _cpAcc += raw;
-    if(lowSpec && _cpAcc < 1/30) return;               // solo salta frames si la máquina va justa
+    /* ►HOMECALM (1/08): el preview a 30 fps SIEMPRE, no solo en equipo justo. Es un 2º contexto
+       WebGL girando junto al attract (que ya cuesta como una partida); un torno de personaje a
+       30 fps es indistinguible y libera medio presupuesto de la home. El dt acumulado conserva
+       la velocidad de giro exacta. */
+    if(_cpAcc < 1/30) return;
     const dt = Math.min(.05, _cpAcc); _cpAcc = 0;
     if(pMixer) pMixer.update(dt);          // anima el preview (idle del rig)
     if(cur) cur.root.rotation.y += dt*0.7; // ►CHARUI: giro suave en reposo. La demo procedural del dock murió: los ataques se ven en VÍDEO REAL en el popover del diagrama
