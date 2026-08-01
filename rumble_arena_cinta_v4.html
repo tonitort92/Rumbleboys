@@ -1900,7 +1900,7 @@ try {
         const _silCache = this._silCache || (this._silCache = {});
         const _swapped = [];
         if(typeof players !== 'undefined') for(const p of players){
-          const root = p && p.gfx && p.gfx.root; if(!root || !root.visible) continue;
+          const root = p && p.gfx && p.gfx.root; if(!root || !root.visible || p.gfx._ljOff) continue;   // ►LUZCONSTANTE: sin el gate _ljOff pagaríamos traverse+swap de 6 rigs por frame en el menú
           const hex = (typeof classColor==='function') ? classColor(p) : (p.color||0xffffff);
           root.traverse(o=>{ if(o.isMesh && o.material && o.material.depthWrite !== false){   // NO toques el escudo/ayudas translúcidas (depthWrite:false) → no forman la silueta
             const key = hex + (o.isSkinnedMesh ? '_s' : '');   // material distinto con/sin skinning
@@ -4610,7 +4610,7 @@ function applyCharModel(p){
   if(THREE.SkeletonUtils) scene = THREE.SkeletonUtils.clone(tpl.scene);
   else if(p===P1)         scene = tpl.scene;             // sin SkeletonUtils, solo P1
   else return;
-  p.gfx.model.visible = false;                 // oculta el muñeco de cajas (deja los joints intactos)
+  setFighterChildVis(p.gfx, p.gfx.model, false);   // oculta el muñeco de cajas (deja los joints intactos) — vía __pv si el luchador está _ljOff (►LUZCONSTANTE)
   /* ELIMINA de verdad el muñeco "Minecraft" (box-rig): con el GLB activo no se usan sus cubos →
      libera su geometría y quítalos del grafo (ahorra memoria + recorridos por frame). Solo llega
      aquí si el GLB se clonó bien, así que el fallback de cajas se conserva cuando NO hay GLB. */
@@ -4641,6 +4641,7 @@ function applyCharModel(p){
       m.needsUpdate = true; });
   }});
   p.gfx.root.add(scene);
+  setFighterChildVis(p.gfx, scene, true);   // ►LUZCONSTANTE: si el luchador está oculto, el GLB nuevo NO puede quedar visible (fantasma)
   p._charScale = sc;
   p._charModel = scene;                 // referencia para animación procedural / anclajes
   p._charBaseY = scene.position.y;       // offset base de los pies (el bob se suma a esto)
@@ -4854,7 +4855,7 @@ function clearCharModel(p){
   if(p._charModel && p.gfx && p.gfx.root) p.gfx.root.remove(p._charModel);
   p._charModel = null; p._mixer = null; p._acts = null; p._faceFx = null;
   p._charHand = null; p._headBone = null; p._charStatic = false; p._richAnim = false; p._charHeld = null;
-  if(p.gfx && p.gfx.model) p.gfx.model.visible = true;   // vuelve a verse el muñeco hasta que aplique el nuevo
+  if(p.gfx && p.gfx.model) setFighterChildVis(p.gfx, p.gfx.model, true);   // vuelve a verse el muñeco hasta que aplique el nuevo (vía __pv si _ljOff, ►LUZCONSTANTE)
   p._charApplied = false;
 }
 /* SAMURÁI (set rico Mixamo): cada estado/habilidad → su clip propio del GLB */
@@ -5065,7 +5066,7 @@ function poseStaticChar(p, dt){
 /* anima TODOS los humanoides cada frame (menú, demo y partida) con la máquina de estados */
 function updateCharMixers(dt){
   for(const p of allPlayers){
-    if(demo && !p.gfx.root.visible) continue;   // ►HOME solo-mapa: no animar (ni reconstruir) esqueletos OCULTOS en la portada → ahorra CPU
+    if(demo && p.gfx._ljOff) continue;   // ►HOME solo-mapa: no animar (ni reconstruir) esqueletos OCULTOS en la portada → ahorra CPU (►LUZCONSTANTE: el gate ya no es root.visible, que ahora queda siempre true)
     /* RE-APLICA el modelo al cambiar de clase (la selección hace _charApplied=false; aquí se reconstruye
        cuando la plantilla de su clase ya cargó). Sin esto, tras elegir personaje sale el muñeco de cajas.
        Espera la plantilla PROPIA si la clase tiene modelo (no pega el fallback antes de tiempo). */
@@ -5406,7 +5407,7 @@ for(const _p of allPlayers){
   _p.groundRing.rotation.x = -Math.PI/2; _p.groundRing.visible = false; scene.add(_p.groundRing);
   _p.locator = new THREE.Mesh(new THREE.ConeGeometry(.34,.6,4), new THREE.MeshBasicMaterial({ color:_p.color }));   // flecha locator (solo humanos)
   _p.locator.rotation.x = Math.PI; _p.locator.visible = false; scene.add(_p.locator);
-  _p.gfx.root.visible = false;
+  fighterHide(_p.gfx);   // ►LUZCONSTANTE: oculto pero con sus luces CONTANDO (numPointLights estable desde el arranque)
 }
 /* GLOW SUAVE en el suelo bajo TU personaje (el que llevas): una luz falsa que siempre lo acompaña.
    Reusa la textura radial de la bruma (_hazeTex). ►AJUSTA: opacity=intensidad · scale=tamaño · color=tono de la luz */
@@ -5447,7 +5448,11 @@ function setRoster(humans, cpus){
   players = allPlayers.slice(0, total);
   for(let i=0;i<allPlayers.length;i++){
     const p = allPlayers[i], active = i < total, human = active && i < humans;
-    p.gfx.root.visible = active;
+    /* ►LUZCONSTANTE (1/08): NUNCA root.visible — cada activación/desactivación movía numPointLights
+       y three recompilaba TODO lo visible (el warmupLigero de 258 ms del ¡LUCHA! era esto). Con
+       fighterHide las luces quedan en la cuenta (intensity=0) → la clave de programa no se mueve
+       entre home, partida y fin: lo que el menú compila VALE en partida. */
+    if(active) fighterShow(p.gfx); else fighterHide(p.gfx);
     p.groundRing.visible = false; p.locator.visible = false;   // se reactivan por frame en updateFighter
     if(active){
       p.isAI = !human;
@@ -13443,7 +13448,7 @@ function disintegratePlayer(p){
     if(p._disCancel) return;
     const k = Math.min(1, (performance.now()-t0)/780);
     root.scale.setScalar(Math.max(0.001, 1-k));
-    if(k<1) requestAnimationFrame(dissolve); else root.visible = false;
+    if(k<1) requestAnimationFrame(dissolve); else fighterHide(p.gfx);   // ►LUZCONSTANTE: era el último root.visible=false de luchador que quedaba (recompilaba todo al cruzar el portal)
   })();
 }
 
@@ -18094,7 +18099,7 @@ function updateFighter(p, dt){
   /* ===== ESTELA de movimiento + realce de IMPACTO =====
      cuanto más rápido vas (o más fuerte sales disparado), más rastro de color dejas */
   const vtot = p.vel.length();
-  if(!p.dead && g.root.visible){
+  if(!p.dead && !g._ljOff){   // ►LUZCONSTANTE: root.visible ya es siempre true; "visible de verdad" = !_ljOff
     if(vtot > 5){
       const inten = Math.min(1, (vtot - 5) / 20);                  // 0..1 (~25 u/s = máximo)
       p._trailT = (p._trailT || 0) - dt;
@@ -18603,6 +18608,15 @@ function fighterShow(g){
     else if(c.__pv!==undefined){ c.visible = c.__pv; c.__pv = undefined; }
   }
   g._blinkOn = true;                  // re-sincroniza el parpadeo de invulnerabilidad (comparte __pv)
+}
+/* ►LUZCONSTANTE (1/08): escribir la visibilidad de un hijo DIRECTO del root respetando fighterHide.
+   Si el luchador está oculto (_ljOff), el estado va al __pv (lo aplicará fighterShow) y el hijo
+   queda invisible — sin esto, colgar el GLB o re-mostrar el muñeco de cajas con el luchador oculto
+   dejaba FANTASMAS (hijo nuevo visible) o DOBLE MODELO al reaparecer (__pv rancio del muñeco). */
+function setFighterChildVis(g, child, vis){
+  if(!child) return;
+  if(g && g._ljOff && !child.isLight){ child.__pv = vis; child.visible = false; }
+  else child.visible = vis;
 }
 
 /* ===== OCLUSIÓN: lo que se cruza entre cámara y jugador se vuelve transparente ===== */
@@ -30696,7 +30710,7 @@ function startDemo(){
   crowdTarget = .08; startCrowd();   // ambiente de público suave en el menú/attract
   STAGE_LOG.length = 0; stageIntroT = 0; ISTAGE.ph = 'none';   // ►INTERSTAGE: el attract no arrastra roadmap ni presentación
   if(HOME_NO_FIGHTERS){   // ►HOME solo-mapa: oculta a los 6 (y limpia su FX) y NO los simula ni construye modelos → portada = escenario
-    for(const q of allPlayers){ clearFX(q); q.gfx.root.visible = false; q.dead = false; q.out = false; }
+    for(const q of allPlayers){ clearFX(q); fighterHide(q.gfx); q.dead = false; q.out = false; }   // ►LUZCONSTANTE: la home ya no saca las luces de la cuenta (era otra recompilación global al volver al menú)
     return;
   }
   for(const p of players){
@@ -30753,13 +30767,17 @@ function warmupLigero(motivo){
 }
 function warmupGPU(){
   if(!warmupPermitido()) return;
+  const ocultos = [], mostrados = [];   // ►LUZCONSTANTE: restauración en finally (antes vivía dentro del try y se perdía si algo lanzaba)
   try {
     const cam0 = camera.clone();                 // cámara "alejada" para meter TODA la decoración en el frustum
     cam0.position.set(0, 60, 90); cam0.fov = 75; cam0.updateProjectionMatrix(); cam0.lookAt(0,0,0);
-    const ocultos = [];
+    /* ►LUZCONSTANTE: los roots ya están SIEMPRE visibles (las luces cuentan); lo oculto son los
+       HIJOS (fighterHide/__pv). Para que el render 8×8 dibuje las mallas y compile también el pase
+       de sombra skinned, se muestran un instante con fighterShow y se re-ocultan en el finally.
+       fighterShow restaura intensity un momento: la intensidad NO entra en la clave de programa. */
     if(typeof allPlayers !== 'undefined') for(const p of allPlayers){
-      const r = p && p.gfx && p.gfx.root;
-      if(r && !r.visible){ ocultos.push(r); r.visible = true; }
+      const g = p && p.gfx;
+      if(g && g._ljOff){ fighterShow(g); mostrados.push(g); }
     }
     /* ►CINTA ENTERA (30/07). Esto es lo que faltaba, y explica el sintoma que describe Toni: "al alejar
        la camara y ver el horizonte con las plataformas generandose". Los segmentos lejanos de la cinta
@@ -30785,8 +30803,11 @@ function warmupGPU(){
        sombras cada 2 s durante el menú. Forzar que el próximo frame real lo regenere con la
        visibilidad verdadera. (El outlinePass ya hacía lo correcto; esto faltaba aquí.) */
     renderer.shadowMap.autoUpdate = prevAuto; renderer.shadowMap.needsUpdate = true;
-    for(const r of ocultos) r.visible = false;
   } catch(e){ console.warn('[warmupGPU] omitido', e); }
+  finally {
+    for(const g of mostrados) fighterHide(g);
+    for(const r of ocultos) r.visible = false;
+  }
 }
 /* ►LOADTIME: el pre-calentado YA NO va aquí. Medido en la máquina de Toni: bloqueaba 2.611 ms de los
    6.137 ms de arranque, o sea que el menú tardaba 2,6 s de más en aparecer para compilar unos shaders
@@ -32236,7 +32257,7 @@ window._net = {
       p.beam = ps.bm ? (p.beam||true) : null;
       p.ult  = ps.ul ? (p.ult||true)  : null;
       p.hitstun = ps.hs||0;
-      if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; p.gfx.root.visible=!p.out; tagOutlineLayer(p.gfx.root); }
+      if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; if(p.out) fighterHide(p.gfx); else fighterShow(p.gfx); tagOutlineLayer(p.gfx.root); }   // ►LUZCONSTANTE (idempotente por _ljOff, 30 Hz sin coste)
     }
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
     if(s.chaos!=null && s.chaos!==chaosLvl){ chaosLvl=s.chaos; const ch=document.getElementById('chaos'); if(ch) ch.textContent='CAOS '+chaosLvl; }
