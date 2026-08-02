@@ -6565,12 +6565,14 @@ function hasPas(p, k){ return !!(p[_PAS_FLAG[k]] || (p.ownPas && p.ownPas[k])); 
 
 function spdMul(p){ return Math.min(1.8,  (.55 + chaosLvl*.06) * (1 + .08*bst(p,'spd')) * clsStat(p,'spd') * (p.buffSpdT>0?(p.buffSpdV||1.2):1)); }   // boost de velocidad temporal (cura)
 /* ►SALTOACUM: el clamp antiguo (1.32) se comía el apilado — con el caos alto, a partir de la 4ª cápsula
-   +SALTO ya no se notaba NADA. Ahora el caos aporta como mucho ×1 y el techo (1.6, el mismo máximo que
-   se alcanzaba antes con el MUELLE retirado) es headroom para los boosts: +7% por nivel, acumulativo,
-   hasta ~8 niveles antes de topar. */
+   +SALTO ya no se notaba NADA. Ahora el caos aporta como mucho ×1 y el tope es EXPLÍCITO Y EN NIVELES
+   (JMP_LV_MAX), no un número opaco: +7% acumulativo por nivel hasta 8 → ×1.56, o sea el DOBLE Y MEDIO
+   de altura (la altura va con el cuadrado de la velocidad). Por encima de eso se vuela la plataforma. */
+const JMP_LV_MAX = 8;   // ►TOPE SALTO: niveles de +SALTO que cuentan (cápsulas ⤒ + tienda juntas). 8 = ×1.56 ≈ 2,4× de altura
 function jmpMul(p){
   const base = Math.min(1, .75 + chaosLvl*.04);                       // suelo del stage por caos (tope ×1)
-  return Math.min(1.6, base * (1 + .07*bst(p,'jmp')))                 // cápsulas ⤒ + niveles de tienda, acumulativos
+  const lv   = Math.min(JMP_LV_MAX, bst(p,'jmp'));                    // cápsulas ⤒ + niveles de tienda, acumulativos hasta el tope
+  return base * (1 + .07*lv)
        * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1);   // ►S10ZEROG: empujón extra fuera del clamp
 }
 function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*bst(p,'dmg')) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p.rainbowT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1); }   // ►PERK BERSERKER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
@@ -7439,6 +7441,7 @@ function updateCapsules(dt){
           p.sc.boosts++;
           p.boost[c.ty.k]++;
           if(c.ty.k==='airj') p.boost.airj = Math.min(p.boost.airj, CAP_AIRJ_MAX);   // ►SALTO EXTRA: cápsulas dan como mucho +3 (→ máx 5 saltos por stage sin tienda); evita HUD con ×99 inservibles
+          if(c.ty.k==='jmp')  p.boost.jmp  = Math.min(p.boost.jmp, Math.max(0, JMP_LV_MAX - ((p.own&&p.own.jmp)||0)));   // ►TOPE SALTO: cuenta cápsulas + tienda; el contador no sube por encima de lo que de verdad hace efecto
           showCombo(p, c.ty.label+' x'+p.boost[c.ty.k]);
           sfx.boost();
         }
@@ -21265,7 +21268,7 @@ function modRollLog(cx, cz, sx){
    TOOLKIT DE DIFICULTAD (Stage 2) — mecánicas nuevas reutilizables.
    Se apoyan en el wall-jump YA existente (collideWalls marca p._wallHit;
    wallJump rebota y RECARGA saltos aéreos) y autoescalan con el caos
-   (airJumps()=1+min(3,chaos>>1); jmpMul sube con el caos hasta ×1 y con las cápsulas ⤒ hasta ×1.6).
+   (airJumps()=1+min(3,chaos>>1); jmpMul sube con el caos hasta ×1 y con las cápsulas ⤒ hasta ×1.56).
    Alcance vertical: caos0 ≈ 5.3u (1+1 saltos); caos8+ >25u.
    =================================================================== */
 
@@ -31874,7 +31877,7 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
     def:'−10% del daño que recibes (se acumula)',
     kb:'+empuje: mandas a los rivales más lejos del borde',
     spd:'+8% de velocidad de carrera (se acumula)',
-    jmp:'+7% de impulso de salto: saltas más ALTO (se acumula hasta +60%)',
+    jmp:'+7% de impulso de salto: saltas más ALTO (se acumula hasta 8 niveles, +56%)',
     airj:'+1 salto aéreo extra este stage (hasta +3 · máx 5 saltos; 7 si compras SALTO EXTRA en la tienda)',
     rate:'−14% de enfriamiento al atacar: pegas más seguido',
     hp:'corazón: cura '+CAP_HEAL+' de daño acumulado',
