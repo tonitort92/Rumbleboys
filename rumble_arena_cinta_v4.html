@@ -1064,7 +1064,9 @@ window.addEventListener('load', function(){
       <button type="button" data-lang="fr">FR</button><span class="langSep">·</span>
       <button type="button" data-lang="de">DE</button>
     </div>
-    <!-- ►PERF: calidad gráfica. Auto = adaptativo (baja sola solo si el PC va justo); las fijas las manda el jugador. -->
+    <!-- ►SOLOALTA (2/08): de momento SOLO hay calidad alta, así que no hay nada que elegir y el
+         selector se queda fuera de la home. Media/Baja se rehacen partiendo de la alta; cuando
+         vuelvan, se descomenta este bloque tal cual.
     <div id="qualityRow" title="Si el juego te va a tirones en un PC modesto, baja la calidad aquí">
       <span id="qualityLbl">CALIDAD</span>
       <button class="qBtn" data-q="auto">Auto</button>
@@ -1072,6 +1074,7 @@ window.addEventListener('load', function(){
       <button class="qBtn" data-q="medio">Media</button>
       <button class="qBtn" data-q="bajo">Baja</button>
     </div>
+    -->
     <!-- ►AIDIFF: nivel de la CPU. No toca su daño ni su vida: cambia cómo de rápido reacciona,
          cuánto esquiva y cuánto usa sus habilidades. DURO se desbloquea ganando una run. -->
     <div id="diffRow" title="Cómo de lista juega la CPU (no le regala daño ni vida)">
@@ -2183,8 +2186,12 @@ const TIER_ORDER = ['bajo','medio','alto'];
    (con vsync a 60 el auto no puede "subir" por falta de headroom medible → el móvil se queda fluido en bajo;
    el escritorio arranca en alto y el auto BAJA si va ahogado, que sí es detectable). */
 const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints>1 && Math.min(innerWidth,innerHeight)<900);
-let qMode   = 'auto';   // ESCALA por dispositivo: móvil malo → bajo fluido; equipo potente → sube a medio/alto (supersampling = menos dentado)
-let autoIdx = IS_MOBILE ? 0 : 2;   // tier inicial en auto: móvil arranca en BAJO; escritorio en ALTO y baja si va justo
+/* ►SOLOALTA (2/08): de momento el juego tiene UNA SOLA calidad, la ALTA. Media/Baja/Auto se
+   rehacen más adelante partiendo de ella; hasta entonces nadie puede bajar de tier — ni el
+   jugador (selector oculto) ni el adaptativo (qMode nunca vale 'auto'). Los TIERS bajo/medio se
+   conservan tal cual para no tener que reinventarlos cuando toque. */
+let qMode   = 'alto';   // FIJO en alto (►SOLOALTA). Para volver al adaptativo: 'auto'
+let autoIdx = 2;        // (inerte mientras qMode no sea 'auto')
 let effName = '';      // tier aplicado ahora ('' fuerza el primer applyTier)
 let shadowSize = 0;
 
@@ -2454,6 +2461,9 @@ function scheduleWarmup(motivo){
   _warmT = setTimeout(()=>warmupShaders(motivo), 400);
 }
 function setQuality(mode){
+  /* ►SOLOALTA: solo existe la calidad alta. Cualquier petición de otra se ignora (y NO se guarda,
+     para que no reviva sola en la próxima sesión cuando volvamos a tener Media/Baja). */
+  mode = 'alto';
   qMode = mode;
   try{ localStorage.setItem('blockout_quality', mode); }catch(e){}
   if(mode==='auto') autoIdx = IS_MOBILE ? 0 : 2;   // auto: móvil arranca en bajo; escritorio en alto y baja si va justo
@@ -2488,9 +2498,11 @@ function perfTick(ftMs){
 }
 
 
-/* ►PERF: restaura la CALIDAD elegida en una sesión anterior (setQuality ya la guardaba, pero nadie
-   la leía al arrancar → siempre volvía a 'auto'). 'auto' sigue siendo el defecto adaptativo. */
-try{ const _sq = localStorage.getItem('blockout_quality'); if(_sq === 'auto' || TIERS[_sq]){ qMode = _sq; if(qMode==='auto') autoIdx = IS_MOBILE?0:2; } }catch(e){}
+/* ►PERF/►SOLOALTA: antes se restauraba aquí la CALIDAD guardada en otra sesión. Mientras solo exista
+   la alta, ese guardado se IGNORA (si no, quien tuviera 'bajo'/'auto' apuntado seguiría jugando en
+   bajo sin poder cambiarlo) y de paso se limpia. Al volver Media/Baja se recupera la línea de antes. */
+try{ if(localStorage.getItem('blockout_quality') !== 'alto') localStorage.setItem('blockout_quality','alto'); }catch(e){}
+qMode = 'alto';
 applyTier();   // aplica el tier guardado al cargar
 
 /* =====================================================================
