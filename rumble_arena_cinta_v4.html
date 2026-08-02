@@ -4198,7 +4198,7 @@ function makePlayer(color, darker, spawnX, isAI){
     atk:{ t:0, phase:'none', didHit:false, kind:'hammer', wind:.1, hit:.12, rec:.2, amp:2.2 },
     charge:null, _atkHeld:false, _atkHoldT:0,
     weapon:null, rainbowT:0, bleedT:0, bleedFrom:null, wpnCD:0,
-    pasSpikes:false, pasElec:false, pasMagnet:false, pasSpring:false, pasMines:false, spikeT:0, mineT:0, magnetT:0,
+    pasSpikes:false, pasElec:false, pasMagnet:false, pasMines:false, spikeT:0, mineT:0, magnetT:0,
     block:false, blockT:9, shieldFlash:0, stun:0, hitFlash:0,
     comboStage:0, comboWindow:0, lastKind:'hammer',
     hitstun:0, hitstopT:0,
@@ -4212,7 +4212,7 @@ function makePlayer(color, darker, spawnX, isAI){
     sc:{ dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 },   // bonus = ►INTERSTAGE: ×1.3 de superviviente acumulado
     boost:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 },              // carril TEMPORAL (cápsulas)
     own:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 },        // ►INTERSTAGE: carril COMPRADO (permanente)
-    ownPas:{ spikes:false, elec:false, magnet:false, spring:false, mines:false },
+    ownPas:{ spikes:false, elec:false, magnet:false, mines:false },
     beam:null, beamGfx:null,
     spin:null, spinCD:0, spinGfx:null, spinBuf:0,
     grabCD:0, shieldT:0, shieldCD:0, shieldTick:0, parryT:0, parryCD:0, counter:null,
@@ -6472,12 +6472,12 @@ function clsStat(p, k){ const s = p && p._charKey && CLASS_STATS[p._charKey]; re
    compra se evaporaba). TODO lector pasa por bst()/hasPas() → cero fontanería nueva aguas abajo.
    OJO: _PAS_FLAG va INLINE y no derivado de PASSIVE_DEFS — ese const vive ~1400 líneas más abajo
    (trampa de TDZ al evaluar el módulo). */
-const _PAS_FLAG = { spikes:'pasSpikes', elec:'pasElec', magnet:'pasMagnet', spring:'pasSpring', mines:'pasMines' };
+const _PAS_FLAG = { spikes:'pasSpikes', elec:'pasElec', magnet:'pasMagnet', mines:'pasMines' };
 function bst(p, k){ return (p.boost[k]||0) + ((p.own && p.own[k])||0); }            // nivel de boost = temporal + comprado
 function hasPas(p, k){ return !!(p[_PAS_FLAG[k]] || (p.ownPas && p.ownPas[k])); }   // ¿tiene el pasivo, por el suelo o comprado?
 
 function spdMul(p){ return Math.min(1.8,  (.55 + chaosLvl*.06) * (1 + .08*bst(p,'spd')) * clsStat(p,'spd') * (p.buffSpdT>0?(p.buffSpdV||1.2):1)); }   // boost de velocidad temporal (cura)
-function jmpMul(p){ return Math.min(1.32, (.75 + chaosLvl*.04) * (1 + .07*bst(p,'jmp'))) * (hasPas(p,'spring')?1.2:1) * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1); }   // muelle: +20% salto · ►S10ZEROG: empujón extra fuera del clamp
+function jmpMul(p){ return Math.min(1.32, (.75 + chaosLvl*.04) * (1 + .07*bst(p,'jmp'))) * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1); }   // ►S10ZEROG: empujón extra fuera del clamp
 function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*bst(p,'dmg')) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p.rainbowT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1); }   // ►PERK BERSERKER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
 function dmgMul(p){   return _dmgBase(p) * clsStat(p,'dmg'); }      // básicos / golpes físicos
 function spellMul(p){ return _dmgBase(p) * clsStat(p,'spell'); }   // HECHIZOS (rayo arcano del mago, etc.)
@@ -6587,8 +6587,8 @@ const CAP_TYPES = [
   { k:'def', col:0x2277ff, label:'+DEFENSA',   ic:'🛡️' },
   { k:'kb',  col:0xff8800, label:'+EMPUJE',    ic:'➡️' },
   { k:'spd', col:0x1ed94a, label:'+VELOCIDAD', ic:'🏃' },
-  { k:'jmp', col:0x00cfff, label:'+SALTO',     ic:'🪽' },
-  { k:'airj',col:0x9b6bff, label:'+SALTO EXTRA', ic:'⏫' },   // ►SALTO EXTRA (cápsula): +1 salto aéreo esta vida, clampado en airJumps a MAX_AIR_JUMPS (4 en total)
+  { k:'jmp', col:0x00cfff, label:'+SALTO',     ic:'⤒' },     // ►MUELLE: hereda el icono del pasivo MUELLE (retirado: era lo mismo que esta cápsula)
+  { k:'airj',col:0x9b6bff, label:'+SALTO EXTRA', ic:'🪽' },   // ►SALTO EXTRA (cápsula): +1 salto aéreo esta vida, clampado en airJumps a MAX_AIR_JUMPS (4 en total)
   { k:'rate',col:0x16e0c8, label:'+CADENCIA',  ic:'⏩' },
   { k:'hp',  col:0xff3399, label:'+SALUD', heal:true, ic:'❤️' },
 ];
@@ -8113,7 +8113,7 @@ const PASSIVE_DEFS = {
   spikes:{ name:'PINCHOS',      col:0xdd3322, label:'✸', flag:'pasSpikes' },
   elec:  { name:'ELECTRICIDAD', col:0xffe23a, label:'⚡', flag:'pasElec'   },
   magnet:{ name:'IMÁN',         col:0xe53935, label:'🧲', flag:'pasMagnet' },
-  spring:{ name:'MUELLE',       col:0x33dd77, label:'⤒', flag:'pasSpring' },
+  /* MUELLE retirado (petición de Toni): era la cápsula +SALTO con otro nombre; su icono ⤒ pasó a esa cápsula */
   mines: { name:'MINAS',        col:0xff6a2a, label:'💣', flag:'pasMines'  },
 };
 const PASSIVE_KINDS = Object.keys(PASSIVE_DEFS);
@@ -8134,8 +8134,6 @@ function _buildPassiveProc(kind){
     const u=new THREE.Mesh(new THREE.TorusGeometry(.32,.13,8,12,Math.PI), std(0xe53935)); u.rotation.z=Math.PI; u.position.y=.1; g.add(u);
     const t1=new THREE.Mesh(new THREE.BoxGeometry(.16,.22,.26), std(0xf2f2f2)); t1.position.set(-.32,-.12,0); g.add(t1);
     const t2=t1.clone(); t2.position.x=.32; g.add(t2);
-  } else if(kind==='spring'){
-    for(let k=0;k<4;k++){ const r=new THREE.Mesh(new THREE.TorusGeometry(.28,.06,7,14), std(0x33dd77)); r.rotation.x=Math.PI/2; r.position.y=-.3+k*.2; g.add(r); }
   } else { /* mines */
     g.add(new THREE.Mesh(new THREE.SphereGeometry(.34,12,10), std(0x33363c,0xff3a1a)));
     for(let k=0;k<8;k++){ const sp=new THREE.Mesh(new THREE.ConeGeometry(.07,.18,4), std(0x55585f));
@@ -16075,7 +16073,7 @@ function respawn(p){
   p.block = false; p.comboStage = 0; p.comboWindow = 0; p.stun = 0; p.hitFlash = 0;
   p.invuln = 2.2;
   p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // pierdes arma/arcoíris al morir
-  p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false; p.magnetT = 0;   // ►INTERSTAGE: ...y los pasivos RECOGIDOS
+  p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false; p.magnetT = 0;   // ►INTERSTAGE: ...y los pasivos RECOGIDOS
   p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };       // ...y los boosts de CÁPSULA. Lo COMPRADO en la tienda (p.own/p.ownPas) NO se toca: sobrevive a la muerte
   fighterShow(p.gfx);   // ►LUZFIJA: reaparece restaurando luces (intensity) y mallas (__pv)
 }
@@ -16174,7 +16172,7 @@ const RUN_PERKS = [
      sube; lo puramente cómodo (velocidad, salto, imán, muelle) baja para que siga siendo accesible. */
   { k:'spd',    ic:'🏃', name:'VELOCIDAD', col:'#5fd0ff', cost:350,  max:5,
     desc:'+8% de velocidad de carrera',  lvl:p=>p.own.spd,            apply:p=>p.own.spd++ },
-  { k:'jmp',    ic:'⤴',  name:'SALTO',     col:'#7affc8', cost:350,  max:5,
+  { k:'jmp',    ic:'⤒',  name:'SALTO',     col:'#7affc8', cost:350,  max:5,
     desc:'+7% de impulso de salto',      lvl:p=>p.own.jmp,            apply:p=>p.own.jmp++ },
   { k:'rate',   ic:'💨', name:'CADENCIA',  col:'#8fe0ff', cost:950,  max:4,
     desc:'−14% de enfriamiento al atacar', lvl:p=>p.own.rate,         apply:p=>p.own.rate++ },
@@ -16192,8 +16190,6 @@ const RUN_PERKS = [
     desc:'ATAQUE PASIVO: hiere a quien te toca', lvl:p=>p.ownPas.spikes?1:0, apply:p=>{ p.ownPas.spikes=true; } },
   { k:'kb',     ic:'💥', name:'EMPUJE',    col:'#ffcf5f', cost:650,  max:4,
     desc:'+empujón: mandas a los rivales más lejos del borde', lvl:p=>p.own.kb, apply:p=>p.own.kb++ },
-  { k:'spring', ic:'⤒',  name:'MUELLE',    col:'#33dd77', cost:550,  max:1, once:true,
-    desc:'rebote extra: saltas más alto y botas en los pads', lvl:p=>p.ownPas.spring?1:0, apply:p=>{ p.ownPas.spring=true; } },
   { k:'elec',   ic:'⚡', name:'ELECTRICIDAD', col:'#ffe23a', cost:1300, max:1, once:true,
     desc:'aura eléctrica: −22% del daño recibido', lvl:p=>p.ownPas.elec?1:0, apply:p=>{ p.ownPas.elec=true; } },
   { k:'mines',  ic:'💣', name:'MINAS',     col:'#ff6a2a', cost:1250, max:1, once:true,
@@ -17827,7 +17823,7 @@ function updateFighter(p, dt){
     }
     /* salto */
     if(!p.isAI && wantJump){
-      if(p.onGround || p.coyote>0){ p.vel.y = JUMP*jmpMul(p); p.jumps = airJumps(p); p.onGround = false; p.coyote=0; p._dj=false; p.sandSink = 0; sfx.jump(); jiggle(p, 5); burst(p.pos.clone(), 0xffffff, 5, 3, 2, .6); if(hasPas(p,'spring')){ ring(p.pos.clone(), 0x33dd77, 12, .3); burst(p.pos.clone(), 0x33dd77, 6, 4, 2, .6); } }   // MUELLE: rebote verde visible · ►S4: saltar te DESENTIERRA
+      if(p.onGround || p.coyote>0){ p.vel.y = JUMP*jmpMul(p); p.jumps = airJumps(p); p.onGround = false; p.coyote=0; p._dj=false; p.sandSink = 0; sfx.jump(); jiggle(p, 5); burst(p.pos.clone(), 0xffffff, 5, 3, 2, .6); }   // ►S4: saltar te DESENTIERRA
       else if(p._wallHit && p.wallJumpCD<=0){ wallJump(p); }   // SALTO DE PARED: rebota contra el muro
       else if(p.jumps>0){ p.vel.y = DJUMP*jmpMul(p); p.jumps--; p._dj=true; p._animKick=(p._animKick||0)+1; sfx.djump(); burst(p.pos.clone().add(new THREE.Vector3(0,.5,0)), p.color, 8, 4, 2, .7); ring(p.pos.clone().add(new THREE.Vector3(0,.4,0)), 0xffffff, 9, .3); }   // doble salto: djump (samurái/barbarian) o re-dispara 'jump' vía _animKick (mago/caballero/arquera sin clip djump)
     }
@@ -30085,7 +30081,7 @@ function stageResetPlayers(){
     p.weapon = null; p.rainbowT = 0; p._rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // el arma/arcoíris no cruzan el portal (como al morir)
     /* carril TEMPORAL a cero: las cápsulas y los pasivos del suelo YA NO cruzan (antes SÍ lo hacían) */
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
-    p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false;
+    p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;
     p.mpow = 0; p.invuln = 1.5; endUlt(p); endBeam(p); clearFX(p);
     if(p._pkPhoenix) p._phoenixCharge = true;            // ►PERK RENACER: 1 revivir por stage
@@ -30664,10 +30660,10 @@ function startDemo(){
   for(const p of players){
     p.isAI = true; p.dead = false; p.out = false; p.stocks = 9; p.invuln = 0; p._rainbowT = 0;
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
-    p.pasSpikes=p.pasElec=p.pasMagnet=p.pasSpring=p.pasMines=false;
+    p.pasSpikes=p.pasElec=p.pasMagnet=p.pasMines=false;
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: el attract no arrastra compras
-    p.ownPas = { spikes:false, elec:false, magnet:false, spring:false, mines:false };
+    p.ownPas = { spikes:false, elec:false, magnet:false, mines:false };
     p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 }; p.mpow = 0; p.lastHitBy = null; p._scSnap = null;   // ►LBREDO: foto del stage fuera también en el attract
     endBeam(p); endUlt(p); endSpin(p); endShield(p); endCounter(p); endStorm(p); endBastion(p); endZone(p); endFireShield(p); endHealDisc(p);
     p.spinCD = 0; p.spinBuf = 0; p.grabCD = 0; p.shieldT = 0; p.shieldCD = 0; p.parryT = 0; p.parryCD = 0; p.suppCD = 0; p.superCD = 0; p.bowCD = 0; p.qCD = 0; p._qMax = 0; p.qAmmo = Q_AMMO; p.qReload = 0; p.healCD = 0; p.buffSpdT = 0; p.buffRateT = 0; p.rainT = 0; p.buffDmgT = 0; p.buffDefT = 0; p.block = false;
@@ -30841,9 +30837,9 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.throwT = 0; endBeam(p);
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: carril COMPRADO a cero (es por RUN)
-    p.ownPas = { spikes:false, elec:false, magnet:false, spring:false, mines:false };
+    p.ownPas = { spikes:false, elec:false, magnet:false, mines:false };
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
-    p.pasSpikes = p.pasElec = p.pasMagnet = p.pasSpring = p.pasMines = false;
+    p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;   // ►INTERSTAGE: timers de pasivo (antes se quedaban colgados)
     p.runXP = 0; p._runXPseen = 0;   // ►SHOP: cartera de EXP por jugador a cero (XP por RUN)
     p._buys = 0; p._buysThisStage = 0;   // ►INTERSTAGE: compras del run (inflan el precio) y del stage (tope)
@@ -31809,7 +31805,6 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
     spikes:'ATAQUE PASIVO: hiere a quien te toca',
     elec:'aura eléctrica: −22% del daño que recibes',
     magnet:'atrae objetos y mejoras de lejos (20 s)',
-    spring:'saltas más alto y botas en los pads (+20%)',
     mines:'ATAQUE PASIVO: sueltas minas al moverte',
   };
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
