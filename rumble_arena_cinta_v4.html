@@ -20206,35 +20206,57 @@ function addStage2Tree(x, z, ty, s, kind){
   m.userData._s2TreeMerge = true; m.userData._lmn = _b.min.x; m.userData._lmx = _b.max.x;
   scene.add(m);
 }
+/* ►S2FIX · SEMIEXTENSIÓN XZ REAL del modelo (medida una vez por clave). Antes el footprint usaba un
+   1.7/1.3 inventado, pero s2_hut mide 4.8 y s2_shed 6.0 → su semiextensión real es ~2.4 y ~3.0: el
+   test validaba un radio MENOR del que ocupa el tejado y la cabaña acababa medio fuera del borde. */
+const _s2PropHalf = {};
+function _s2PropHalfXZ(key, m){
+  let h = _s2PropHalf[key];
+  if(h === undefined){
+    m.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(m), s = new THREE.Vector3(); b.getSize(s);
+    h = _s2PropHalf[key] = Math.max(s.x, s.z) * 0.5 * 0.85;   // 0.85: el alero puede volar un poco sobre el vacío, el cuerpo no
+  }
+  return h;
+}
+/* claves que EXIGEN suelo bajo todo su footprint. ►S2FIX: entran también las RUINAS GRANDES — antes
+   solo se validaba la madera, así que s2Landmark plantaba muros/columnas de piedra en repisas de
+   4,5×4 y sobresalían por los cuatro lados ("este muro aquí suelto que ni cabe"). */
+const _S2_CONSTRUCTIONS = new Set(['s2_shed','s2_hut','s2_tower','s2_arch','s2_cauldron','s2_farmdirt',
+  's2r_arch','s2r_archg','s2r_wallbroken','s2r_walldbl','s2r_wallhalf','s2r_column','s2r_columnstub',
+  's2r_support','s2r_statue','s2r_statuefox']);
+const _S2_ARCHES = new Set(['s2_arch','s2r_arch','s2r_archg']);
 function addPropS2(key, x, z, topY, sc, yaw){
   if(!S2_DECOR_ON) return null;                   // deco OFF → sin props (solo blockout)
   if(_inWall(x, z, topY)) return null;
+  const m = getModel(key, DECOR_DEFS2); if(!m) return null;
+  const _half = _s2PropHalfXZ(key, m);            // ►S2FIX: se mide ANTES de escalar (el cache guarda el tamaño base)
   /* ►RONDA6c (pedido): las CONSTRUCCIONES nunca flotando ni medio fuera de una plataforma —
-     centro Y 4 esquinas del footprint con suelo AL MISMO nivel (las rocas/tocones de los hitos
-     quedan exentos: algunas emergen del agua a propósito). */
-  const _con = (key==='s2_shed'||key==='s2_hut'||key==='s2_tower'||key==='s2_arch'||key==='s2_cauldron'||key==='s2_farmdirt');
-  if(_con){
+     centro Y footprint con suelo AL MISMO nivel (las rocas/tocones de los hitos quedan exentos:
+     algunas emergen del agua a propósito). ►S2FIX: radio real del modelo + las 4 ESQUINAS + el yaw. */
+  if(_S2_CONSTRUCTIONS.has(key)){
     const gy = platformTopAt(x, z);
     if(gy===null || Math.abs(gy-topY) > 0.65) return null;
-    const fr = ((key==='s2_shed'||key==='s2_hut') ? 1.7 : 1.3)*(sc||1);
+    const fr = _half * (sc||1), d = fr*0.7071;
     /* el ARCO es una puerta abierta: solo sus PATAS (extremos del vano, eje x local) pisan suelo */
-    const offs = (key==='s2_arch') ? [[fr,0],[-fr,0]] : [[fr,0],[-fr,0],[0,fr],[0,-fr]];
+    const offs = _S2_ARCHES.has(key) ? [[fr,0],[-fr,0]]
+                                     : [[fr,0],[-fr,0],[0,fr],[0,-fr],[d,d],[d,-d],[-d,d],[-d,-d]];
+    const cy0 = Math.cos(yaw||0), sy0 = Math.sin(yaw||0);
     for(const o of offs){
-      const gg = platformTopAt(x+o[0], z+o[1]);
+      const gg = platformTopAt(x + o[0]*cy0 + o[1]*sy0, z - o[0]*sy0 + o[1]*cy0);   // offsets LOCALES girados por el yaw del prop
       if(gg===null || Math.abs(gg-topY) > 0.65) return null;
     }
   }
-  const m = getModel(key, DECOR_DEFS2); if(!m) return null;
   /* ►R6b (pedido): las construcciones de madera van POR LISTÓN (celda fina + más amplitud, el
      truco de los tablones del puente); el resto conserva la celda ancha. */
-  if(key==='s2_shed' || key==='s2_hut' || key==='s2_tower' || key==='s2_palisade') _s2ToneFor(key, m, 0.16, 0.16, 0.45);   // ►S2POLISH: multitono por LISTÓN con variedad de matiz (madera)
-  else _s2ToneFor(key, m, null, null, (key.indexOf('s2r_')===0 ? 0.8 : 0.85));   // ►S2POLISH: arco/ruinas/caldero/barril con matiz cálido↔frío (antes solo brillo)
+  if(key==='s2_shed' || key==='s2_hut' || key==='s2_tower' || key==='s2_palisade') _s2ToneFor(key, m, S2_PLANK.amt, S2_PLANK.val, S2_PLANK.cell);   // ►S2FIX: listón VERTICAL de verdad (celda anisótropa + amplitud que se lee)
+  else _s2ToneFor(key, m, null, null, 1.6);   // ►S2FIX: celda ANCHA (0.8/0.85 → 1.6) → un sillar/dovela entera cae en la misma celda = manchas de piedra, no confeti
   m.scale.setScalar(sc);
   m.position.set(x, topY + (m.userData.halfH||0)*sc - 0.05, z);
   m.rotation.y = yaw;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
   scene.add(m);
-  _propSpots.push({ x, z, r:1.2*sc });
+  _propSpots.push({ x, z, r: Math.max(1.2, _half)*sc });   // ►S2FIX: radio reservado = el REAL del prop (antes 1.2 fijo → hierba/caminos brotaban dentro de la cabaña)
   return m;
 }
 /* conjunto del centro: cabaña + cobertizo + caldero + barriles agrupados (grandes y proporcionales) */
@@ -20314,7 +20336,7 @@ function addAirBaffle(cx, cz, sx, sz, yBase, h){
     /* ►RONDA6c (pedido): el muro ES el asset Wall_FirstAge estirado por eje a (span × h × grosor),
        con MULTITONO POR LISTÓN (celda fina). La colisión no cambia (rect de abajo). */
     const wm = _wmTry;
-    _s2JitterBaked(wm, 0.26, 0.45);
+    _s2ToneFor('s2_wall', wm, S2_PLANK.amt, S2_PLANK.val, S2_PLANK.cell);   /* ►S2FIX (pedido): el muro era el ÚNICO monocromo — llevaba _s2JitterBaked (solo brillo, sin matiz). Ahora el mismo listón multicolor que atalaya/cabañas. */
     if(!_s2WallDims){ const b = new THREE.Box3().setFromObject(wm), s = new THREE.Vector3(); b.getSize(s);
       _s2WallDims = { x:s.x||1, y:s.y||1, z:s.z||1, minY:b.min.y }; }
     const alongX = sx >= sz, span = Math.max(sx, sz), thick = Math.min(sx, sz);
@@ -20376,23 +20398,9 @@ function addAirBaffle(cx, cz, sx, sz, yBase, h){
   }
 }
 /* (►LTSTAM: addLiana ELIMINADA con el resto de la mecánica de liana — no quedaba ninguna en el mundo.) */
-function _addStage2Baffles(startIdx){
-  const floaters = platforms.slice(startIdx).filter(pl => pl.float && pl.topY>=3 && pl.topY<=9);
-  if(!floaters.length) return;
-  const n = Math.min(3, 1 + (Math.random()*floaters.length|0));
-  for(let i=0;i<n;i++){
-    const pl = floaters[(Math.random()*floaters.length)|0];
-    const pxc = (pl.minX+pl.maxX)/2, pzc = (pl.minZ+pl.maxZ)/2;
-    const off = 4 + Math.random()*2.5, dir = (Math.random()*4)|0;
-    let cx = pxc, cz = pzc, sx, sz;
-    if(dir===0){ cx += off; sx = 0.8; sz = 4.6; }
-    else if(dir===1){ cx -= off; sx = 0.8; sz = 4.6; }
-    else if(dir===2){ cz += off; sx = 4.6; sz = 0.8; }
-    else { cz -= off; sx = 4.6; sz = 0.8; }
-    const yBase = Math.max(2.5, pl.topY - 0.6);
-    addAirBaffle(cx, cz, sx, sz, yBase, 3 + Math.random()*1.6);
-  }
-}
+/* (►S2FIX: _addStage2Baffles ELIMINADA — plantaba muros a 4-6,5u del centro de flotantes pequeños,
+   es decir muros sueltos flotando al lado de una plataforma. No la llamaba nadie; fuera antes de que
+   a alguien le tiente reactivarla.) */
 /* perfil de vegetación de la escena ACTUAL (lo fija cada builder): 'lush'|'med'|'sparse'|'rocky' */
 let _s2VegProfile = 'med';
 function scatterModelDecorStage2(startIdx){
@@ -20466,25 +20474,32 @@ function scatterModelDecorStage2(startIdx){
     for(let p2=0;p2<nPaths;p2++){
       const pl = wide[(Math.random()*wide.length)|0];
       const alongX = (pl.maxX-pl.minX) >= (pl.maxZ-pl.minZ);
-      let x = alongX ? pl.minX+1.5 : THREE.MathUtils.lerp(pl.minX+2.5, pl.maxX-2.5, Math.random());
-      let z = alongX ? THREE.MathUtils.lerp(pl.minZ+2.5, pl.maxZ-2.5, Math.random()) : pl.minZ+1.5;
-      let ang = (alongX ? 0 : Math.PI/2) + (Math.random()-0.5)*0.5;
+      /* ►S2FIX (pedido: "no pongas caminos en diagonal"): antes el rumbo era un RANDOM-WALK sin tope
+         (sesgo inicial de ±0.25 rad + ±0.15 acumulados por paso, 14 pasos) → el camino acababa cruzando
+         la plaza en diagonal o girando en U. Ahora el rumbo es FIJO al eje largo (como los senderos del
+         Stage 3) y el serpenteo es un desplazamiento TRANSVERSAL acotado a ±0.9u. */
+      const ang = alongX ? 0 : Math.PI/2;
+      const a0 = alongX ? pl.minX+1.5 : pl.minZ+1.5;                                            // avance sobre el eje largo
+      const base = alongX ? THREE.MathUtils.lerp(pl.minZ+2.5, pl.maxZ-2.5, Math.random())       // carril transversal
+                          : THREE.MathUtils.lerp(pl.minX+2.5, pl.maxX-2.5, Math.random());
       const span = alongX ? (pl.maxX-pl.minX) : (pl.maxZ-pl.minZ);
       const steps = Math.min(14, Math.round(span/1.25) + 1);
+      let perp = 0;
       for(let i=0;i<steps;i++){
+        perp = Math.max(-0.9, Math.min(0.9, perp + (Math.random()-0.5)*0.5));   // ondulación suave, nunca diagonal
+        const a = a0 + i*1.25;
+        const x = alongX ? a : base + perp, z = alongX ? base + perp : a;
         if(x>pl.minX+0.8 && x<pl.maxX-0.8 && z>pl.minZ+0.8 && z<pl.maxZ-0.8 &&
            !_nearProp(x, z, 0.25) && !_inWall(x, z, pl.topY, 0.6)){   // solo rodea props GRANDES; la hierba menuda no bloquea
           const t = getModel('s2_rockpath', DECOR_DEFS2);
           if(t){
             const f = 1.05 + Math.random()*0.3; t.scale.setScalar(f);
             t.position.set(x, pl.topY + (t.userData.halfH||0)*f + 0.02, z);
-            t.rotation.y = ang + (Math.random()-0.5)*0.35;
+            t.rotation.y = ang + (Math.random()-0.5)*0.35;   // la LOSETA sí gira un poco (variedad), el camino no
             merger.add(t, 0.9 + Math.random()*0.25);
             _pathSpots.push({ x, z, r:0.6 });
           }
         }
-        ang += (Math.random()-0.5)*0.3;              // serpenteo suave
-        x += Math.cos(ang)*1.25; z += Math.sin(ang)*1.25;
       }
     }
   }
@@ -20496,10 +20511,23 @@ function scatterModelDecorStage2(startIdx){
     const nP = 4 + ((Math.random()*3)|0);           // ►RONDA6f: 3-4 → 4-6 por segmento
     for(let i=0;i<nP*5 && geos.length<nP;i++){   // ►RONDA6c: reintentos (con la deco densa el primer tiro casi siempre choca)
       const pl = plats[(Math.random()*plats.length)|0];
-      const x = THREE.MathUtils.lerp(pl.minX+1.6, pl.maxX-1.6, Math.random());
-      const z = THREE.MathUtils.lerp(pl.minZ+1.6, pl.maxZ-1.6, Math.random());
-      if(_nearProp(x, z, 0.9) || _inWall(x, z, pl.topY, 0.8)) continue;
+      /* ►S2FIX (pedido: "hay charcos que se salen de su borde"): el margen era FIJO (1.6) pero el radio
+         con el jitter radial llega a 1.7×1.22 ≈ 2.07 — y el canto de organicSlabGeo va redondeado, así
+         que el margen útil es aún menor. Ahora el radio se sortea PRIMERO y el inset sale de él. */
       const r = 0.9 + Math.random()*0.8;            // ►RONDA6f: charcos un poco más grandes
+      const rEff = r*1.25 + 0.45;                   // radio máximo tras el jitter (×1.22) + holgura del canto redondeado
+      if((pl.maxX-pl.minX) < rEff*2.4 || (pl.maxZ-pl.minZ) < rEff*2.4) continue;   // plataforma demasiado estrecha para este charco
+      const x = THREE.MathUtils.lerp(pl.minX+rEff, pl.maxX-rEff, Math.random());
+      const z = THREE.MathUtils.lerp(pl.minZ+rEff, pl.maxZ-rEff, Math.random());
+      if(_nearProp(x, z, 0.9) || _inWall(x, z, pl.topY, 0.8)) continue;
+      /* y aun así: los 4 extremos del charco deben pisar suelo a la MISMA cota (mata el charco que
+         asoma por el canto o cae en un escalón) */
+      let _edgeOK = true;
+      for(const o of [[rEff,0],[-rEff,0],[0,rEff],[0,-rEff]]){
+        const gy = platformTopAt(x+o[0], z+o[1], 0);
+        if(gy===null || Math.abs(gy-pl.topY) > 0.25){ _edgeOK = false; break; }
+      }
+      if(!_edgeOK) continue;
       const g2 = new THREE.CircleGeometry(r, 9);
       const pos2 = g2.attributes.position;                     // jitter radial: charco, no disco perfecto
       for(let v=1;v<pos2.count;v++){ const k = 0.72 + Math.random()*0.5; pos2.setXY(v, pos2.getX(v)*k, pos2.getY(v)*k); }
@@ -20538,8 +20566,17 @@ function scatterModelDecorStage2(startIdx){
 function _s2TreeEdgeOK(x, z){ return !(Math.abs(x) > 28 || z > 24 || z < -28 || Math.abs(z) < 8.5); }   // ►FIX: RECHAZA el carril de la cinta (|z|<8.5) → árboles solo ALREDEDOR/horizonte, no tapando la vista
 /* planta un árbol de bosque CONCRETO (kind: 'pine'|'willow'|'dead') calculando el suelo */
 const _S2_TREE_KEY = { pine:'s2_pine', pine2:'s2_pine2', pine3:'s2_pine3', pine4:'s2_pine4', pine5:'s2_pine5', willow:'s2_willow' };   // ►CAMP
+/* ►S2FIX · PAD del stage 2: addPad() nunca registra el punto en _propSpots, así que el scatter de
+   árboles, el escombro, los caminos, los charcos y la flora podían nacer JUSTO ENCIMA del saltador
+   ("hay un árbol en medio del pad de salto"). Este envoltorio lo reserva; lo usa solo el S2. */
+function s2Pad(x, z){
+  const n0 = pads.length;
+  addPad(x, z);
+  if(pads.length > n0) _propSpots.push({ x, z, r:2.6 });   // radio real del pad (1.7) + holgura para el chevrón
+}
 function s2Tree(kind, x, z, s){
   if(!_s2TreeEdgeOK(x, z)) return;                  // ►FIX arrastre-cinta: no plantar pegado a la pared
+  if(_nearProp(x, z, 1.6)) return;                  // ►S2FIX: ni encima de un pad, una cabaña o una ruina (antes s2Tree no miraba NADA)
   const ty = platformTopAt(x, z); if(ty===null) return;
   let key = (kind==='pine') ? ['s2_pine','s2_pine2','s2_pine3','s2_pine4','s2_pine5'][(Math.random()*5)|0]   // ►CAMP: variedad de pinos
           : (kind==='willow') ? 's2_willow'
@@ -20660,10 +20697,23 @@ function _s2TonePal(name){
   }
   return p;
 }
+/* ►S2FIX · parámetros del LISTÓN de madera (atalaya, cabañas, cobertizo, empalizada y muro s2_wall):
+   celda fina en X/Z y ENORME en Y → bandas verticales continuas = listones; amplitud que se lee de
+   verdad (0.16 no se veía: la atalaya salía lisa). Un solo sitio para afinarlo. */
+const S2_PLANK = { amt:0.34, val:0.20, cell:[0.42, 8, 0.42] };
 function _s2ToneVariant(geo, name, amt, val, cell){
   amt = (amt!=null)?amt:(name==='wood'?0.15:0.17); val = (val!=null)?val:0.15; cell = cell||0.85;
-  const key = geo;   // (una entrada por geometría; el nombre de paleta no cambia entre usos de la misma geo)
-  let vs = _s2ToneCache.get(key);
+  /* ►S2FIX · celda ANISÓTROPA: `cell` admite [cx,cy,cz]. La celda isótropa de antes cuantizaba también
+     en Y y partía el listón en tacos. Sigue admitiendo un número suelto (retrocompatible). */
+  const cx = cell.length ? (cell[0]||0.85) : cell,
+        cy = cell.length ? (cell[1]||0.85) : cell,
+        cz = cell.length ? (cell[2]||0.85) : cell;
+  /* ►S2FIX · la cache colgaba SOLO de la geometría, ignorando (name, amt, val, cell): el primer prop
+     que usara una geo fijaba el aspecto de todos los que la compartieran. Ahora geo → Map por params. */
+  let byGeo = _s2ToneCache.get(geo);
+  if(!byGeo){ byGeo = new Map(); _s2ToneCache.set(geo, byGeo); }
+  const pKey = name+'|'+amt+'|'+val+'|'+cx+'|'+cy+'|'+cz;
+  let vs = byGeo.get(pKey);
   if(!vs){
     const pal = _s2TonePal(name);
     vs = [];
@@ -20671,20 +20721,32 @@ function _s2ToneVariant(geo, name, amt, val, cell){
       const g = geo.clone();
       const pos = g.attributes.position, col = g.attributes.color;
       if(!col){ vs.push(g); continue; }
-      for(let v=0;v<col.count;v++){
-        const ix=Math.floor(pos.getX(v)/cell), iy=Math.floor(pos.getY(v)/cell), iz=Math.floor(pos.getZ(v)/cell);
-        const t = pal[_hash3(ix,iy,iz,s*7) % pal.length];
-        const j = 1 + ((_hash3(ix,iy,iz,s*19+3)%1000)/1000 - 0.5)*2*val;   // jitter de valor
-        const r=col.getX(v), gg=col.getY(v), b=col.getZ(v);
-        col.setXYZ(v,
-          Math.min(1, (r*(1-amt) + t.r*amt)*j),
-          Math.min(1, (gg*(1-amt) + t.g*amt)*j),
-          Math.min(1, (b*(1-amt) + t.b*amt)*j));
+      const tint = (ix, iy, iz)=>({ t: pal[_hash3(ix,iy,iz,s*7) % pal.length],
+                                    j: 1 + ((_hash3(ix,iy,iz,s*19+3)%1000)/1000 - 0.5)*2*val });   // tinte + jitter de valor
+      const paint = (v, q)=>{ const r=col.getX(v), gg=col.getY(v), b=col.getZ(v);
+        col.setXYZ(v, Math.min(1, (r*(1-amt) + q.t.r*amt)*q.j),
+                      Math.min(1, (gg*(1-amt) + q.t.g*amt)*q.j),
+                      Math.min(1, (b*(1-amt) + q.t.b*amt)*q.j)); };
+      /* ►S2FIX · color por TRIÁNGULO (celda del CENTROIDE), no por vértice: cuantizando por vértice, las
+         caras a caballo de dos celdas INTERPOLABAN entre dos tintes → las "motas triangulares" del arco.
+         Con el centroide cada cara queda plana: manchas, no confeti. Los OBJ del OBJLoader vienen
+         non-indexed; si la geo estuviera indexada se cae al modo por vértice de siempre. */
+      if(!g.index && col.count % 3 === 0){
+        for(let f=0; f<col.count; f+=3){
+          const mx=(pos.getX(f)+pos.getX(f+1)+pos.getX(f+2))/3,
+                my=(pos.getY(f)+pos.getY(f+1)+pos.getY(f+2))/3,
+                mz=(pos.getZ(f)+pos.getZ(f+1)+pos.getZ(f+2))/3;
+          const q = tint(Math.floor(mx/cx), Math.floor(my/cy), Math.floor(mz/cz));
+          paint(f, q); paint(f+1, q); paint(f+2, q);
+        }
+      } else {
+        for(let v=0;v<col.count;v++)
+          paint(v, tint(Math.floor(pos.getX(v)/cx), Math.floor(pos.getY(v)/cy), Math.floor(pos.getZ(v)/cz)));
       }
       col.needsUpdate = true;
       vs.push(g);
     }
-    _s2ToneCache.set(key, vs);
+    byGeo.set(pKey, vs);
   }
   return vs[(Math.random()*vs.length)|0];
 }
@@ -20788,7 +20850,7 @@ function _s2ScatterTrees(n, ruinN){
     if(_nearProp(x, z, 1.7) || _inWall(x, z, pl.topY, 0.8)) continue;
     const key = rk[(Math.random()*rk.length)|0];
     const m = getModel(key, DECOR_DEFS2); if(!m) continue;
-    _s2ToneFor(key, m, null, null, 0.7);                // ►S2POLISH: piedra multitono (arenisca/azul-gris/musgo), no gris plano
+    _s2ToneFor(key, m, null, null, 1.6);                // ►S2FIX: celda ancha como el resto de la piedra (0.7 salpicaba el escombro de motas)
     const s = 0.7 + Math.random()*0.5;
     m.scale.multiplyScalar(s);
     m.position.set(x, pl.topY + (m.userData.halfH||0)*s - 0.28, z);   // semienterrado
@@ -21010,7 +21072,7 @@ function s2Watchtower(x, z, topY){
     if(gg===null || Math.abs(gg-topY) > 0.65) return null;
   }
   const m = getModel('s2_tower', DECOR_DEFS2); if(!m) return null;
-  _s2ToneFor('s2_tower', m, 0.16, 0.16, 0.45);   /* ►S2POLISH: madera multitono (varios pardos), no un solo marrón */
+  _s2ToneFor('s2_tower', m, S2_PLANK.amt, S2_PLANK.val, S2_PLANK.cell);   /* ►S2FIX (pedido): la atalaya salía LISA — 0.16 de amplitud con celda isótropa no se leía. Listón vertical multicolor. */
   m.position.set(x, topY + (m.userData.halfH||0) - 0.05, z);
   m.rotation.y = (Math.random()<0.5 ? 0 : Math.PI/2) + (Math.random()-0.5)*0.2;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
@@ -21076,7 +21138,7 @@ function s2Camp(cx, cz, topY, opts){
       const gy = platformTopAt(px, pz);                            // guarda: ni flotando fuera del borde ni en otra altura
       if(gy===null || Math.abs(gy-topY) > 0.6) continue;
       const m = getModel('s2_palisade', DECOR_DEFS2); if(!m) continue;
-      _s2ToneFor('s2_palisade', m, 0.16, 0.16, 0.45);   /* ►S2POLISH: empalizada de madera multitono */
+      _s2ToneFor('s2_palisade', m, S2_PLANK.amt, S2_PLANK.val, S2_PLANK.cell);   /* ►S2FIX: mismo listón vertical que el resto de la madera */
       m.scale.setScalar(0.9 + Math.random()*0.2);
       m.position.set(px, topY + (m.userData.halfH||0) - 0.05, pz);
       m.rotation.y = ang + Math.PI/2;                              // de cara al centro
@@ -21311,8 +21373,15 @@ function modStairs(cx, cz, opts){
   const rise = opts.rise || 1.7, run = opts.run || 3.1;
   const y0 = opts.y0 != null ? opts.y0 : 1.4;
   const sx = opts.sx || 4.2, sz = opts.sz || 2.6;
-  for(let i=0;i<steps;i++)
-    addFloating(cx + dx*run*i, y0 + rise*i, cz + dz*run*i, sx, sz);
+  for(let i=0;i<steps;i++){
+    const px = cx + dx*run*i, py = y0 + rise*i, pz = cz + dz*run*i;
+    /* ►S2FIX (pedido: "hay un puente flotante pegado a la superficie de una plataforma"): eran los
+       ESCALONES. modStairs plantaba sus `steps` flotantes a ciegas, así que el primero caía dentro de
+       la repisa de salida y el último ATERRIZABA SOBRE el deck al que sube → tablones de madera
+       tumbados en el suelo verde. Ahora el escalón que ya tiene suelo a su altura no se construye. */
+    if(STAGE===2 && _s2AnyFloorAt(px, pz, py-0.9, py+1.2) !== null) continue;
+    addFloating(px, py, pz, sx, sz);
+  }
   return y0 + rise*(steps-1);                    // topY del último escalón
 }
 
@@ -21331,6 +21400,19 @@ function modUpperDeck(cx, cz, opts){
 // PUENTE COLGANTE entre dos plataformas (eje X o Z). Tablones con COMBA = plataformas caminables de UN
 // sentido (`float`, como addFloating; no son muro) contiguas (sin huecos de colisión); barandillas de
 // cuerda que cuelgan + postes en los extremos. La comba es visual; la colisión sigue cada tablón.
+/* ►S2FIX · ¿hay YA suelo (de cualquier tipo) en este punto y a esta altura? platformTopAt() solo mira
+   plataformas `solid`, así que no ve ni los flotantes ni los tablones de OTRO puente — justo lo que
+   hacía falta para detectar "puente tumbado sobre una plataforma" y "puente encima de puente".
+   Los tablones ya construidos viven en `platforms` como float, así que un solo barrido los cubre. */
+function _s2AnyFloorAt(x, z, yLo, yHi){
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(pl._fell || pl._bossNoFloor) continue;
+    if(pl.blob){ if(!_inBlob(pl, x, z, 0)) continue; }
+    else if(!(x>=pl.minX && x<=pl.maxX && z>=pl.minZ && z<=pl.maxZ)) continue;
+    if(pl.topY>=yLo && pl.topY<=yHi) return pl.topY;
+  }
+  return null;
+}
 function addRopeBridge(x1, z1, x2, z2, y, opts){
   opts = opts || {};
   const width = opts.width || 2.6;
@@ -21340,6 +21422,27 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
   if(len < 1) return null;
   const n = Math.max(4, Math.round(len / 1.3));
   const cxM = (x1 + x2) / 2, czM = (z1 + z2) / 2, segL = len / n;
+  /* ►S2FIX (pedido: "un puente flotante pegado a la superficie de una plataforma" / "no pongas puentes
+     flotantes encima de puentes flotantes"): el puente NO tenía ninguna comprobación — la separación era
+     hardcode escena a escena. Ahora se RECORTAN los tablones de los EXTREMOS que caen sobre suelo ya
+     existente (deck, flotante u otro puente). Solo extremos: el centro nunca queda con agujeros. */
+  if(STAGE===2 && !opts._trimmed){
+    const busy = (i)=>{
+      const tc = (i+0.5)/n, py = y - sag*Math.sin(Math.PI*tc);
+      const px = alongX ? (x1 + (x2-x1)*tc) : cxM, pz = alongX ? czM : (z1 + (z2-z1)*tc);
+      return _s2AnyFloorAt(px, pz, py-1.5, py+2.5) !== null;   // suelo a la altura del tablón, o techo a menos de 2,5u
+    };
+    let i0 = 0, i1 = n-1;
+    while(i0 <= i1 && busy(i0)) i0++;
+    while(i1 >= i0 && busy(i1)) i1--;
+    if(i1 - i0 + 1 < 3){ console.warn('[►S2FIX] puente descartado (todo él sobre suelo existente):', x1, z1, '→', x2, z2, 'y', y); return null; }
+    if(i0 > 0 || i1 < n-1){
+      const tA = i0/n, tB = (i1+1)/n;
+      console.warn('[►S2FIX] puente recortado', x1, z1, '→', x2, z2, 'y', y, '· tablones', i0, '..', i1, 'de', n);
+      return addRopeBridge(x1 + (x2-x1)*tA, z1 + (z2-z1)*tA, x1 + (x2-x1)*tB, z1 + (z2-z1)*tB, y,
+                           Object.assign({}, opts, { _trimmed:true }));
+    }
+  }
   const ropeMat  = (M.woodD || M.brick);   // ►LTSTAM: antes tanteaba M_LIANA, que ya era SIEMPRE null (sin lianas) → mismo material de siempre
   const g = new THREE.Group(); g.userData.noOcc = true;
   for(let i=0;i<n;i++){
@@ -21416,7 +21519,7 @@ function buildS2Jungle(){
   s2GapWall(-17, 2, 'z', 5, 4.0); s2GapWall(17, 2, 'z', 5, 4.0);      // ►RONDA2: muros de madera estorbando la salida lateral de la plaza
   s2JumpWalls(0);                                                      // ►RONDA6: muro oeste + subida este
   s2WideFloaters();                                                    // ►S2POLISH: más plataformas en el eje ancho
-  addPad(0, 0); addPad(-25, -11); addPad(25, -11);
+  s2Pad(0, 0); s2Pad(-25, -11); s2Pad(25, -11);
   if(S2_DECOR_ON){
     addPropS2('s2_mushroom', -5, 4, 0, 2.3, 0); addPropS2('s2_mushroom', 6, -5, 0, 2.4, .5);
     addPropS2('s2_mushroom', 14, 15, .3, 2.0, 0); addPropS2('s2_mushroom', -14, -10, .5, 1.8, .7);
@@ -21439,7 +21542,7 @@ function buildS2Clearing(){
   /* ►CAMP: modBounce(0,-6,0,-12) ELIMINADO — la plataforma flotante DETRÁS del spawn (lado cámara)
      invitaba a ir hacia atrás y confundía la dirección de avance. La señal ahora apunta al NORTE:
      ARCO DE PIEDRA grande enmarcando las escaleras de la grada + antorchas flanqueándolo. */
-  addPad(-24, -10); addPad(24, -10); addPad(11, 6);
+  s2Pad(-24, -10); s2Pad(24, -10); s2Pad(11, 6);
   s2GapWall(-17.5, -9, 'z', 5, 4.0); s2GapWall(17.5, -9, 'z', 5, 4.0);   // ►RONDA2: muros en el hueco arena → islas laterales
   s2JumpWalls(1);                                                         // ►RONDA6: subida oeste + muro este
   s2WideFloaters();                                                       // ►S2POLISH: más plataformas en el eje ancho
@@ -21480,7 +21583,7 @@ function buildS2Bridges(){
   addRopeBridge(0, -8.6, 0, -19.4, 0, { width:3.2, sag:1.2 });       // PUENTE COLGANTE (ruta segura) plaza → isla sur · ►RONDA6: arranque en el borde real
   addRopeBridge(-5, -8.6, -5, -19.4, 0, { width:2.6, sag:1.0 });     // ►RONDA4: segundo puente sur (carril oeste)
   addFloating(-22, 1.8, -2, 6, 3); addFloating(22, 2.0, 2, 6, 3);    // conexiones laterales al piso bajo
-  addPad(0, 0); addPad(0, -24); addPad(-9, 3);                       // pad extra para alcanzar el pie de la escalera
+  s2Pad(0, 0); s2Pad(0, -24); s2Pad(-9, 3);                       // pad extra para alcanzar el pie de la escalera
   s2GapWall(-6, -14, 'x', 4, 3.8); s2GapWall(6, -14, 'x', 4, 3.8);   // ►RONDA2: muros flanqueando el puente colgante sur (o cruzas por el puente o los sorteas)
   s2JumpWalls(2);                                                     // ►RONDA6: muro oeste + subida este
   s2WideFloaters();                                                   // ►S2POLISH: más plataformas en el eje ancho
@@ -21509,7 +21612,7 @@ function buildS2Ruins(){
   /* ►CAMP · PROFUNDIDAD: dedo elevado hacia el fondo (eje z) conectado a la atalaya por puente colgante */
   s2Floor(24, 16, 8, 9, 6.5, 'moss');
   addRopeBridge(10.5, 18, 19.5, 18, 6.55, { width:2.4, sag:0.6 });   // ►RONDA6: arranque fuera del deck (sin overlap)
-  addPad(0, 0); addPad(-24, -9); addPad(23, -10);
+  s2Pad(0, 0); s2Pad(-24, -9); s2Pad(23, -10);
   s2GapWall(-17.5, -9, 'z', 5, 4.2); s2GapWall(17.5, -9, 'z', 5, 4.2);   // ►RONDA2: muros en el hueco plaza → islas
   s2JumpWalls(3);                                                         // ►RONDA6: subida oeste + muro este
   s2WideFloaters();                                                       // ►S2POLISH: más plataformas en el eje ancho
@@ -21520,7 +21623,7 @@ function buildS2Ruins(){
     addPropS2('s2_hut', 0, 20, 6.5, 0.95, 0);
     s2Camp(0, 4, 0, { r:6, tower:{ x:5, z:20, topY:6.5 }, palisade:'arc', ambush:true });   // ►RONDA6c: camp alejado de la línea de respawn z=0 (sus HOGUERAS queman+empujan → "me desliza y caigo")
     addTorch(-3, 6, true); addTorch(3, 6, true); addTorch(11, 8, true);
-    s2Tree('dead', -24, -9, 1.0); s2Tree('pine', 23, -10, 1.0);
+    s2Tree('dead', -26.5, -12, 1.0); s2Tree('pine', 25.5, -13, 1.0);   // ►S2FIX: estaban en (-24,-9) y (23,-10), las coordenadas EXACTAS de sus dos pads
     _s2ScatterTrees(90, 12);   // ►RUINS: escombro DENSO (escena de ruinas)
     s2Landmark('head'); _s2GlowShrooms(4);                           // HITO: templo en ruinas + estatua de ciervo
   }
@@ -21545,14 +21648,14 @@ function buildS2PineGrove(){
   modCanopy(0, -13);                                                 // M4 dosel hacia la isla sur
   addRopeBridge(0, -9.2, 0, -20.3, 0, { width:3.0, sag:1.1 });       // PUENTE COLGANTE plaza → isla sur · ►RONDA6: arranque en el borde real
   addRopeBridge(5, -9.2, 5, -20.3, 0, { width:2.6, sag:0.9 });       // ►RONDA4: segundo puente sur (carril este)
-  addPad(0, 0); addPad(0, -24);
+  s2Pad(0, 0); s2Pad(0, -24);
   addFloating(-23, 2.0, 0, 6, 3);                                     // ►F1-CINTA: aproximación OESTE (la escena empezaba en -17.5 → costura de 12.9u desde las Ruinas)
   s2GapWall(-7, -13, 'x', 4, 3.8); s2GapWall(7, -13, 'x', 4, 3.8);   // ►RONDA2: muros flanqueando el puente sur alpino
   s2JumpWalls(4);                                                     // ►RONDA6: muro oeste + subida este
   s2WideFloaters();                                                   // ►S2POLISH: más plataformas en el eje ancho
   if(S2_DECOR_ON){
     s2Tree('pine', -14, -3, 1.3); s2Tree('pine', 14, -3, 1.2); s2Tree('pine', -7, 9, 1.1);
-    s2Tree('pine', 7, -10, 1.15); s2Tree('pine', 0, -25, 1.3);
+    s2Tree('pine', 7, -10, 1.15); s2Tree('pine', -5, -26, 1.3);   // ►S2FIX: (0,-25) caía sobre el pad de (0,-24)
     _s2ScatterTrees(80, 5);   // ►RUINS: +escombro gris
     addRock(-9, 0, 3, 1.7); addRock(9, 0, -3, 1.5); addRock(0, 0, 10, 1.4);
     addTorch(-5, 1, true); addTorch(5, 1, true);
@@ -21575,13 +21678,13 @@ function buildS2Summit(){
   addRopeBridge(-10.5, -8.6, -10.5, -15.6, 0.2, { width:2.4, sag:0.6 });   // ►RONDA4 puentes plaza → meseta… ►RONDA6: separados de la colina (x±8→±10.5)
   addRopeBridge(10.5, -8.6, 10.5, -15.6, 0.2, { width:2.4, sag:0.6 });     // …cruce limpio sin rozar nada
   modBounce(12, 5, 12, 10);                                          // M5 a una aguja
-  addPad(0, 0); addPad(-26, 3); addPad(26, 3); addPad(0, -20);
+  s2Pad(0, 0); s2Pad(-26, 3); s2Pad(26, 3); s2Pad(0, -20);
   s2GapWall(-9, -11, 'z', 4.5, 4.0); s2GapWall(9, -11, 'z', 4.5, 4.0);   // ►RONDA2: muros pinzando el paso a la meseta de salida
   s2JumpWalls(5);                                                         // ►RONDA6: subida oeste + muro este
   s2WideFloaters();                                                       // ►S2POLISH: más plataformas en el eje ancho
   if(S2_DECOR_ON){
     addRock(-10, 0, 4, 2.1); addRock(10, 0, -4, 1.9); addRock(0, 0, -13, 1.7); addRock(-20, 0, 3, 1.8);
-    s2Tree('dead', -14, 6, 1.15); s2Tree('dead', 14, -2, 1.05); s2Tree('dead', 0, -22, 1.25);
+    s2Tree('dead', -14, 6, 1.15); s2Tree('dead', 14, -2, 1.05); s2Tree('dead', -6, -24, 1.25);   // ►S2FIX: (0,-22) caía sobre el pad de (0,-20)
     /* ►CAMP: puesto avanzado en la meseta de salida (pequeño: 1 hoguera + torre, sin empalizada) */
     s2Camp(0, -21, 0.3, { r:7, tower:{ x:7, z:-19 }, palisade:'none', shed:false, fires:1, arch:false });
     _s2ScatterTrees(70, 5);   // ►RUINS: +escombro gris
@@ -21654,13 +21757,19 @@ function _sceneBroadleaf(G, x, z, baseY, h, r, m){
    cortarse en una superficie sólida. Gradiente por vértice sobre el eje Y del cilindro (Y local va de
    −len/2 en la base a +len/2 en la fuente): factor 0 abajo → 1 arriba, con smoothstep en la franja baja
    (FADE) para que la MAYOR parte del haz siga a plena luz. */
+/* ►S2FIX (pedido: "la luz que viene de arriba no debe tener una caída sólida, no se debe ver la caída").
+   Dos bugs encadenados: (1) el cilindro se creaba con heightSegments=1, así que solo había DOS anillos de
+   vértices y el smoothstep de aquí era CÓDIGO MUERTO — salía una rampa lineal sobre todo el haz; (2) esa
+   rampa era máxima justo en el corte SUPERIOR, que además es openEnded → el tubo terminaba de golpe a
+   plena luz. Ahora se desvanece por los DOS extremos y el smoothstep funciona (heightSegments 24). */
 function _fadeBeamBottom(geo, len){
-  const p = geo.attributes.position, n = p.count, FADE = 0.42;   // fracción baja del haz donde ocurre el desvanecido
+  const p = geo.attributes.position, n = p.count;
+  const FADE_B = 0.34, FADE_T = 0.34;                 // fracción baja / alta donde ocurre el desvanecido
+  const ss = (u)=>{ u = u<0?0:(u>1?1:u); return u*u*(3-2*u); };
   const col = new Float32Array(n*3);
   for(let i=0;i<n;i++){
-    const t = (p.getY(i) + len*0.5) / len;           // 0 en la base (toca la plataforma), 1 en la fuente alta
-    let f = t / FADE; if(f>1) f=1; if(f<0) f=0;
-    f = f*f*(3-2*f);                                  // smoothstep → curva suave (no corte lineal duro)
+    const t = (p.getY(i) + len*0.5) / len;            // 0 en la base (toca la plataforma), 1 en la fuente alta
+    const f = ss(t/FADE_B) * ss((1-t)/FADE_T);        // nace de la nada y muere en la nada: no se ve dónde acaba
     col[i*3]=f; col[i*3+1]=f; col[i*3+2]=f;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col,3));
@@ -21687,23 +21796,34 @@ function buildS2Scenery(){
       if(o.material){ o.material = o.material.clone(); o.material.color = _bgTint.clone(); o.material.needsUpdate=true; } } });
     G.add(m); return true;
   }
+  /* ►S2FIX (pedido: "estos árboles siempre se pegan a la cinta … quítalos para que la cinta pase limpia").
+     El bosque de fondo es world-fixed y noOcc: ni el cull "asoma-por-pared" de updateBelt ni la oclusión
+     lo tocan, así que cualquier árbol plantado sobre el recorrido se queda ahí clavado tapando el juego.
+     CORREDOR PROHIBIDO = la caja por la que pasa la cinta, con margen sobre WALL_X (42). */
+  const _corridor = (x, z)=> (Math.abs(x) < 62 && Math.abs(z) < 16);
+  /* El reintento EMPUJA el radio hacia fuera (`t` crece): repetir la misma tirada no servía de nada
+     porque el ángulo lo fija el índice del bucle y apenas varía → el árbol se perdía y el fondo raleaba. */
+  const _bgPlant = (tries, pick, place)=>{
+    for(let t=0;t<tries;t++){ const p = pick(t);
+      if(_corridor(p.x, p.z)) continue;
+      place(p); return true; }
+    return false;
+  };
   /* 1) ANILLO DE HORIZONTE (360°) — modelos grandes (fallback a forma básica si no hay GLB) */
   for(let i=0;i<38;i++){                            // ►RONDA2: 26→38 (bosque de fondo más tupido)
-    const a = (i/38)*Math.PI*2 + rng(-0.06,0.06), rad = rng(92,122);
-    const x = Math.cos(a)*rad, z = Math.sin(a)*rad - 6;
-    if(!_sceneModel(x, rng(-10,-2), z, rng(5,9))) _sceneTree(G, x, z, rng(-12,-4), rng(24,44), rng(5,9), FAR, false);
+    _bgPlant(8, t=>{ const a = (i/38)*Math.PI*2 + rng(-0.06,0.06), rad = rng(92,122) + t*12;
+                     return { x:Math.cos(a)*rad, z:Math.sin(a)*rad - 6 }; },
+             p=>{ if(!_sceneModel(p.x, rng(-10,-2), p.z, rng(5,9))) _sceneTree(G, p.x, p.z, rng(-12,-4), rng(24,44), rng(5,9), FAR, false); });
   }
   /* 2) BANDA MEDIA: profundidad detrás de las plataformas */
   for(let i=0;i<26;i++){                            // ►RONDA2: 18→26
-    const a = (i/26)*Math.PI*2 + rng(-0.08,0.08), rad = rng(54,82);
-    const x = Math.cos(a)*rad, z = Math.sin(a)*rad - 4;
-    if(!_sceneModel(x, rng(-7,-1), z, rng(3.5,6.5))) _sceneTree(G, x, z, rng(-9,-2), rng(20,36), rng(4.5,8), MID, false);
+    _bgPlant(8, t=>{ const a = (i/26)*Math.PI*2 + rng(-0.08,0.08), rad = rng(54,82) + t*12;
+                     return { x:Math.cos(a)*rad, z:Math.sin(a)*rad - 4 }; },
+             p=>{ if(!_sceneModel(p.x, rng(-7,-1), p.z, rng(3.5,6.5))) _sceneTree(G, p.x, p.z, rng(-9,-2), rng(20,36), rng(4.5,8), MID, false); });
   }
-  /* 3) MARCO LATERAL (encuadra los bordes izq/der del plano típico) */
-  for(const sx of [-1,1]) for(let i=0;i<6;i++){     // ►RONDA2: 4→6 por lado
-    const x = sx*rng(44,56), z = rng(-26,22);
-    if(!_sceneModel(x, rng(-5,0), z, rng(3.5,6))) _sceneTree(G, x, z, rng(-6,0), rng(20,30), rng(5,8), NEAR, true);
-  }
+  /* 3) ►S2FIX: MARCO LATERAL ELIMINADO. Eran 12 árboles GRANDES en x=±[44,56] (el muro está en ±42) con
+     z∈[-26,22], o sea justo detrás de la pared y cruzando el carril: la causa exacta de "los árboles se
+     pegan a la cinta". El encuadre lateral lo hace ahora la niebla de base del horizonte (#6c). */
   /* 4) ►RONDA2: dosel de blobs ELIMINADO (parecían copas flotantes sin ser nada — feedback del usuario).
      El cierre superior lo hacen ahora las NUBES DE TORMENTA lilas (4b) + el mar de nubes bajo (4c). */
   const RAY_XS = [-22, -6, 10, 26];                 // las 4 S2_LIGHTS centrales; #7 pone ahí los haces/charcos
@@ -21782,11 +21902,30 @@ function buildS2Scenery(){
     pl.lookAt(0, pl.position.y, 0);
     pl.renderOrder = 1; G.add(pl);
   }
+  /* 6c) ►S2FIX (pedido): NIEBLA EN LA BASE DEL HORIZONTE — tapa el punto donde EMERGEN los troncos del
+     bosque de fondo (antes se veía el corte de cada tronco al nacer de la nada) y, de paso, cierra el
+     lateral que deja libre el marco eliminado en #3. Reutiliza los MISMOS modelos de nube del stage
+     (cloud1/2/3) vía _s2CloudLayer → sigue siendo 1 draw call, sin inventar geometría nueva.
+     Color: el gris-verde de la bruma de #6b, no el lila de las nubes altas. */
+  { const _s2FogBaseMat = _s2CloudLowMat.clone();
+    _s2FogBaseMat.color.setHex(0x9fb4a8); _s2FogBaseMat.emissive.setHex(0x3c4a44);
+    _s2FogBaseMat.emissiveIntensity = 0.22; _s2FogBaseMat.opacity = 0.5;
+    const defs = [];
+    for(let i=0;i<170;i++){                                  // anillo pegado a los troncos (banda media + horizonte)
+      const a = Math.random()*Math.PI*2, rad = rng(46,90);
+      defs.push([Math.cos(a)*rad, rng(-6,1), Math.sin(a)*rad - 5, rng(1.8,3.4)]);
+    }
+    for(let i=0;i<90;i++){                                   // cierre exterior, ya fundido con la niebla del stage
+      const a = Math.random()*Math.PI*2, rad = rng(88,125);
+      defs.push([Math.cos(a)*rad, rng(-5,2), Math.sin(a)*rad - 5, rng(2.4,4.2)]);
+    }
+    _s2CloudLayer(defs, _s2FogBaseMat); }
   /* 7) HACES DE LUZ finos — ►ESCULPIR: de 9 conos gigantes (ruido en todo el frame) a 4 haces
      FINOS alineados con las S2_LIGHTS reales + CHARCO de luz en el suelo donde caen → el haz
      visual y la luz puntual real coinciden (nada de "luz que no ilumina"). Acento, no cortina. */
+  /* ►S2FIX: FrontSide (antes DoubleSide dibujaba la silueta DOS veces → borde el doble de duro) */
   const rayMat = ()=> new THREE.MeshBasicMaterial({ color:0xffe7c2, transparent:true, opacity:0.14,   // ►S2LIGHT+: haz un poco más luminoso (0.10→0.14) → aporta MÁS luz general
-    blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide, vertexColors:true });   // ►S2BEAMFADE: vertexColors → el pie del haz se funde a negro (con blending aditivo = invisible)
+    blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.FrontSide, vertexColors:true });   // ►S2BEAMFADE: vertexColors → los extremos del haz se funden a negro (con blending aditivo = invisible)
   /* ►S2STRAIGHT: haces RECTOS (pedido del usuario — la luz no se curva orgánicamente). Cono recto simple,
      con la FUENTE muy arriba (sobre el dosel) bajando en línea recta hasta las plataformas. Cada haz con
      RADIO distinto. Sin sección elíptica ni curvatura: es un embudo de luz limpio de arriba a abajo. */
@@ -21798,19 +21937,31 @@ function buildS2Scenery(){
     const rBot = rng(0.7, 2.0), rTop = rBot*rng(2.0, 3.2);   // RADIO distinto por haz; se ensancha hacia el cielo
     const tilt = rng(-0.08, 0.08);                     // inclinación RECTA leve (ángulo constante, no curva)
     const fz = 2 + rng(-1.5,1.5);
-    const m2 = rayMat();
-    const rayGeo = new THREE.CylinderGeometry(rTop, rBot, len, 16, 1, true);
-    _fadeBeamBottom(rayGeo, len);                      // ►S2BEAMFADE: gradiente por vértice → el extremo que toca la plataforma se desvanece (no una superficie sólida)
-    const ray = new THREE.Mesh(rayGeo, m2);
-    ray.position.set(lx, (topY+botY)*0.5, fz);
-    ray.rotation.set(tilt, yawR, rng(-0.05,0.05));
-    ray.renderOrder = 3; G.add(ray);
-    S2_SCENERY.rays.push({ m:m2, base:0.085+Math.random()*0.06, ph:Math.random()*6.28 });   // ►S2LIGHT+: base de brillo más alta (haz más presente)
+    /* ►S2FIX · DOS CAPAS concéntricas: el cilindro es una superficie, y una superficie tiene canto. Una
+       envoltura más ancha y mucho más tenue alrededor del núcleo difumina esa silueta — el haz deja de
+       leerse como un objeto sólido. `rot` compartida para que las dos capas sean el MISMO haz.
+       heightSegments 1 → 24: sin anillos intermedios el smoothstep de _fadeBeamBottom no existía. */
+    const rot = [tilt, yawR, rng(-0.05,0.05)];
+    const _shell = (rt, rb, op, ord)=>{
+      const mm = rayMat();
+      const gg = new THREE.CylinderGeometry(rt, rb, len, 16, 24, true);
+      _fadeBeamBottom(gg, len);                        // ►S2BEAMFADE: gradiente por vértice → los dos extremos se desvanecen (no una superficie que se corta)
+      const mesh = new THREE.Mesh(gg, mm);
+      mesh.position.set(lx, (topY+botY)*0.5, fz);
+      mesh.rotation.set(rot[0], rot[1], rot[2]);
+      mesh.renderOrder = ord; G.add(mesh);
+      S2_SCENERY.rays.push({ m:mm, base:op, ph:Math.random()*6.28 });
+      return mesh;
+    };
+    _shell(rTop, rBot, 0.075+Math.random()*0.05, 3);         // núcleo
+    _shell(rTop*2.0, rBot*2.2, 0.030+Math.random()*0.02, 3); // halo difuminador (el que mata el canto)
     /* charco de luz (suelo): disco additivo suave bajo el haz, respira con el mismo pulso; tamaño ∝ radio base */
     const fx = lx + Math.sin(tilt)*len*0.5;            // desplazamiento del pie del haz por la inclinación recta
-    const pm = new THREE.MeshBasicMaterial({ color:0xffdfb0, transparent:true, opacity:0.13,
+    /* ►S2FIX: el charco era un CircleGeometry liso = elipse de borde perfectamente duro en el suelo.
+       Con el degradado radial de _hazeTex (ya existe, blanco→transparente) el borde desaparece. */
+    const pm = new THREE.MeshBasicMaterial({ map:_hazeTex, color:0xffdfb0, transparent:true, opacity:0.13,
       blending:THREE.AdditiveBlending, depthWrite:false, fog:false });
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(rBot*rng(1.8,2.8), 20), pm);
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(rBot*rng(2.4,3.6), 20), pm);   // ►S2FIX: algo mayor — el degradado se apaga en el borde, así que el charco VISIBLE es más pequeño que el disco
     pool.rotation.x = -Math.PI/2; pool.position.set(fx, 0.07, fz);
     pool.scale.set(1, 0.7 + Math.random()*0.5, 1);      // charco ovalado (no círculo perfecto)
     pool.rotation.z = Math.random()*Math.PI;
