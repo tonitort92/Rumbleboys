@@ -3351,13 +3351,17 @@ function addPad(x, z){
     }
   }
   const g = new THREE.Group();
-  /* ►CAMP: en S2 el pad va por FACETAS multitono (naranjas análogos) — nada liso, pero sigue leyendo "interactivo" */
+  /* ►CAMP: en S2 el pad va por FACETAS multitono (naranjas análogos) — nada liso, pero sigue leyendo "interactivo"
+     ►S3FIX: en el S3 (Japón) van MAGENTA por petición de Toni. Solo el S3: los demás stages conservan
+     el naranja, que es el color con el que el jugador tiene aprendido "esto me impulsa". */
+  const _padPalB = (STAGE===3) ? ['#c9227e','#b31c70','#e0308f','#a01865'] : ['#c9761f','#b96a1a','#e08a2e','#a85f18'];
+  const _padPalT = (STAGE===3) ? ['#ff5cb4','#ff77c2','#f04aa6','#ff93d0'] : ['#f5a141','#ffb054','#e8952f','#ffc36b'];
   const base = (STAGE>=2)
-    ? new THREE.Mesh(_paintFacets(new THREE.CylinderGeometry(1.5, 1.7, .5, 8), ['#c9761f','#b96a1a','#e08a2e','#a85f18'], 0.10), _facetMat())
+    ? new THREE.Mesh(_paintFacets(new THREE.CylinderGeometry(1.5, 1.7, .5, 8), _padPalB, 0.10), _facetMat())
     : new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, .5, 8), M.padBase);
   base.position.y = .25;
   const top = (STAGE>=2)
-    ? new THREE.Mesh(_paintFacets(new THREE.CylinderGeometry(1.25, 1.35, .35, 8), ['#f5a141','#ffb054','#e8952f','#ffc36b'], 0.08), _facetMat())
+    ? new THREE.Mesh(_paintFacets(new THREE.CylinderGeometry(1.25, 1.35, .35, 8), _padPalT, 0.08), _facetMat())
     : new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.35, .35, 8), M.pad);
   top.position.y = .62;
   base.castShadow = top.castShadow = true;
@@ -21449,11 +21453,14 @@ function s2Hill(cx, cz, sx, sz, topY, kind='rock'){
    (_S2_CANOPY_PALS[kind], un punto más claros que la copa) en UNA malla por plataforma
    (_facetMat compartido) → 0 draw calls extra. kind 'rock' = escaso (bioma de roca pelada).
    Mismo patrón que la hierba oliva del dressTopSand del S4 (assets EXISTENTES, nada nuevo). */
-function dressTopJungle(g, sx, sz, topY, cx, cz, kind){
+function dressTopJungle(g, sx, sz, topY, cx, cz, kind, opts){
   const clumps = (typeof getGrassPieces==='function') ? getGrassPieces() : null;
   if(!clumps || !clumps.length) return;
-  const pal = _S2_CANOPY_PALS[kind] || _S2_CANOPY_PALS.moss;
-  const area = sx*sz, mul = (kind==='rock') ? 0.3 : 1;
+  opts = opts || {};
+  /* ►S3FIX: `pal` e `inside` son inyectables para poder reutilizar este mismo horneado en el stage 3
+     (mismos clumps del stage 1, tinte magenta, y muestreo restringido a la elipse de la plataforma). */
+  const pal = opts.pal || _S2_CANOPY_PALS[kind] || _S2_CANOPY_PALS.moss;
+  const area = sx*sz, mul = (kind==='rock') ? 0.3 : (opts.dens!=null ? opts.dens : 1);
   const n = Math.round(Math.min(50, Math.max(14, area*0.8)) * mul);   // ►P3: densidad S1-parity (pedido "mucha más grass"); mismo merge = 0 calls
   if(n<=0) return;
   const PA=[], NA=[], CA=[];
@@ -21461,6 +21468,7 @@ function dressTopJungle(g, sx, sz, topY, cx, cz, kind){
   const ix = Math.max(0.5, sx/2-0.8), iz = Math.max(0.5, sz/2-0.8);
   for(let i=0;i<n;i++){
     const lx=(Math.random()*2-1)*ix, lz=(Math.random()*2-1)*iz;
+    if(opts.inside && !opts.inside(lx, lz)) continue;                             // ►S3FIX: forma de la tapa (elipse), no solo el rect
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.9)) continue;                    // ni bajo ni pegado a un muro
     if(typeof pads!=='undefined' && pads.some(pd=>Math.hypot(cx+lx-pd.pos.x, cz+lz-pd.pos.z) < 2.4)) continue;   // saltadores despejados
     const gm = clumps[(Math.random()*clumps.length)|0].children[0];
@@ -22246,7 +22254,7 @@ const WEATHER = { on:false, lines:null, geo:null, vel:null, count:2200,   // ►
                   kind:'rain',                                            // ►S4: 'rain' (S2) | 'sand' (S4 tormenta de arena) | ►P6 'snow' (S7 nevada/ventisca)
                   sandLines:null, sandGeo:null, sandVel:null, sandCount:1600, windT:0,
                   snowLines:null, snowGeo:null, snowVel:null, snowCount:1500,
-                  petalLines:null, petalGeo:null, petalVel:null, petalCount:1100 };   // ►JAPAN: pétalos de sakura a la deriva
+                  petalLines:null, petalGeo:null, petalVel:null, petalCount:2900 };   // ►JAPAN: pétalos de sakura a la deriva · ►S3FIX: 1100→2900 (pedido: "mucho más intensa"). Es UN LineSegments = 1 draw call, así que el coste es de vértices, no de llamadas
 /* RAYOS de tormenta (Stage 2): estado global; el sistema vive tras updateWeather. */
 const LIGHTNING = { on:false, cd:3.5, active:[], LEAD:3.0, R:3.6 };
 function _buildRain(){
@@ -22306,18 +22314,22 @@ function _buildSnow(){
 }
 /* ►JAPAN · PÉTALOS de sakura: segmentitos ROSA cortos y sesgados que caen FLOTANDO con vaivén
    ancho de doble frecuencia (más baile que la nieve, sin ventisca). Mismo patrón que _buildSnow. */
+/* ►S3FIX: el largo del pétalo estaba escrito DOS veces (al crear y al reciclar) y era fácil tocar
+   solo una y que los reciclados volvieran al tamaño viejo. Una sola fuente. Pétalos más grandes
+   (0.16-0.30 → 0.26-0.48) = lluvia mucho más presente sin subir más el número. */
+function SJ_PETAL_LEN(){ return 0.26 + Math.random()*0.22; }
 function _buildPetals(){
   const c = WEATHER.petalCount, pos = new Float32Array(c*6), vel = new Float32Array(c);
   for(let i=0;i<c;i++){
     const x=(Math.random()-0.5)*WEATHER.box.w, y=Math.random()*WEATHER.box.h, z=(Math.random()-0.5)*WEATHER.box.d;
-    const len = 0.16 + Math.random()*0.14;               // pétalo: fleco CORTO y algo SESGADO (no vertical de lluvia)
+    const len = SJ_PETAL_LEN();                          // pétalo: fleco CORTO y algo SESGADO (no vertical de lluvia)
     pos[i*6]=x; pos[i*6+1]=y; pos[i*6+2]=z;
-    pos[i*6+3]=x+0.12+Math.random()*0.08; pos[i*6+4]=y-len; pos[i*6+5]=z+0.05;
-    vel[i] = 1.6 + Math.random()*2.2;                    // caen aún MÁS flotando que la nieve (4.5-9)
+    pos[i*6+3]=x+0.18+Math.random()*0.12; pos[i*6+4]=y-len; pos[i*6+5]=z+0.08;
+    vel[i] = 2.1 + Math.random()*2.8;                    // ►S3FIX: algo más rápidos (1.6-3.8 → 2.1-4.9); siguen flotando más que la nieve
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  const mat = new THREE.LineBasicMaterial({ color:0xff3fc0, transparent:true, opacity:0.9, fog:true, depthWrite:false });   // ►MAGENTAPETALS: pétalos MAGENTA a la deriva (antes rosa sakura 0xffb0cc) — decoran el jardín japonés
+  const mat = new THREE.LineBasicMaterial({ color:0xff3fc0, transparent:true, opacity:0.97, fog:true, depthWrite:false });   // ►MAGENTAPETALS: pétalos MAGENTA a la deriva (antes rosa sakura 0xffb0cc) · ►S3FIX: opacidad 0.9→0.97
   const lines = new THREE.LineSegments(geo, mat);
   lines.frustumCulled = false; lines.renderOrder = 5;
   WEATHER.petalGeo = geo; WEATHER.petalVel = vel; WEATHER.petalLines = lines;
@@ -22337,9 +22349,9 @@ function _updatePetals(dt){
     pos[o+1] -= d; pos[o+4] -= d;
     if(pos[o+1] < botY || pos[o] > cx+hw || pos[o] < cx-hw){
       const nx = cx + (Math.random()-0.5)*WEATHER.box.w, nz = cz + (Math.random()-0.5)*WEATHER.box.d;
-      const len = 0.16 + Math.random()*0.14;
+      const len = SJ_PETAL_LEN();                        // ►S3FIX: misma fuente que al construir (antes era un literal duplicado)
       pos[o]=nx; pos[o+1]=topY - Math.random()*6; pos[o+2]=nz;
-      pos[o+3]=nx+0.12; pos[o+4]=pos[o+1]-len; pos[o+5]=nz+0.05;
+      pos[o+3]=nx+0.18; pos[o+4]=pos[o+1]-len; pos[o+5]=nz+0.08;
     }
   }
   WEATHER.petalGeo.attributes.position.needsUpdate = true;
@@ -22711,30 +22723,50 @@ let SJMATS = null;
 const SJ_PINKS  = ['#e86bad','#df559f','#f07ab8','#d23f90','#e85fa8'];   // top SAKURA multitono MAGENTA intenso
 const SJ_PINKSD = ['#b83d84','#a83277','#c24d95'];                        // lip (pétalo en sombra, magenta oscuro)
 const SJ_EARTH  = ['#8e9298','#7d818a','#9aa0a8','#71757e','#868b93','#959aa1'];    // ►S3GREY: PIEDRA GRIS multitono (antes tierra marrón) — suelo/base de las plataformas del stage 3
-const SJ_MOSSG  = ['#7fa050','#6f9044','#8fae5c','#628238','#79994a'];    // musgo verde-té
-const SJ_STONEG = ['#a8aca0','#8f948a','#b6bab0','#7e837a','#9ba095'];    // piedra gris-verde
+/* ►S3FIX (pedido de Toni: "todas las superficies magenta excepto los campos de trigo"). Los kinds
+   'moss' y 'stone' eran los verdes y grises que se veían entre las plataformas rosas. En vez de
+   tocar las ~25 llamadas de escena, se repintan aquí las paletas — pero cada una con un MATIZ
+   distinto de magenta (frío / saturado / apagado) para que el stage no quede un rosa plano. */
+const SJ_MOSSG  = ['#c2478f','#b13a80','#d0559b','#a33377','#bb4189'];    // ►S3FIX magenta FRÍO (era musgo verde-té)
+const SJ_STONEG = ['#d98ab8','#c977a7','#e59bc5','#bd6a9b','#d081b0'];    // ►S3FIX magenta APAGADO/claro (era piedra gris-verde)
 const SJ_WHEATG = ['#d9b95a','#cba94c','#e6c76c','#bf9d42','#d2b254'];    // trigo dorado
 const SJ_PETALS = ['#ffd7e6','#f7b6cf','#ef9cbf','#fdeef4','#e88fb4'];    // pétalos caídos (horneados)
 const SJ_DECOR_ON = true;
 const SJ_CARPET_TINTS = [0xb5453a, 0xd9a63a, 0x8a4a7f, 0xe8788f];   // ►zabuton voladores: bermellón · oro · ciruela · rosa fuerte
-const SJ_TATAMI = ['#8fa25a','#7d9350','#9bae66','#87975a','#93a75f'];   // ►baldosas TATAMI (paja verde-té multitono)
+/* ►S3FIX: SJ_EARTH se usa para el CUERPO (laterales) de TODAS las plataformas además de para la tapa
+   del kind 'earth'. Los laterales se quedan de piedra gris a propósito (dan lectura de volumen), así
+   que el kind 'earth' necesita su propia paleta magenta en vez de reutilizar SJ_EARTH en la tapa. */
+const SJ_MAGD   = ['#8f2f6b','#7d2860','#a13a79','#6e2255','#953473'];    // ►S3FIX magenta PROFUNDO (tapa del kind 'earth')
+const SJ_TATAMI = ['#e05fa8','#cf4f99','#ee72b6','#c04490','#d95aa1'];   // ►S3FIX baldosas TATAMI en MAGENTA (eran paja verde-té)
 function _buildSJMats(){
   if(SJMATS) return;
   SJMATS = {
     sakura: { top:_s2mat(SJ_PINKS),  lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },
     moss:   { top:_s2mat(SJ_MOSSG),  lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },
     stone:  { top:_s2mat(SJ_STONEG), lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },
-    earth:  { top:_s2mat(SJ_EARTH),  lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },
-    wheat:  { top:_s2mat(SJ_WHEATG), lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },
+    earth:  { top:_s2mat(SJ_MAGD),   lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },   // ►S3FIX: tapa magenta profunda; el `base` sigue siendo la piedra gris
+    wheat:  { top:_s2mat(SJ_WHEATG), lip:_s2mat(SJ_PINKSD,1/16), base:_s2mat(SJ_EARTH,1/12) },   // ►S3FIX: el TRIGO es la única superficie que NO pasa a magenta (petición explícita)
     body:   _s2mat(SJ_EARTH, 1/8),
-    pal:    { sakura:SJ_PINKS, moss:SJ_MOSSG, stone:SJ_STONEG, earth:SJ_EARTH, wheat:SJ_WHEATG },
+    pal:    { sakura:SJ_PINKS, moss:SJ_MOSSG, stone:SJ_STONEG, earth:SJ_MAGD, wheat:SJ_WHEATG },
   };
 }
 /* pétalos caídos + briznas horneados sobre el top (patrón dressTop: TODO en una malla _facetMat
    por plataforma → 0 draw calls extra). En 'wheat' salen ESPIGAS doradas en vez de pétalos. */
-function dressTopSakura(g, sx, sz, topY, cx, cz, kind){
+/* ►S3FIX (pedido: "pon assets del stage 1 y 2, especialmente césped, bushes, plantas etc, píntalos
+   de magenta y puéblalos por las superficies"). Tinte para los clumps de hierba del stage 1 —
+   mismo formato que _S2_CANOPY_PALS (RGB lineal). Varios matices para que no quede un rosa plano. */
+const _SJ_FLORA_PAL = (()=>{
+  const mk = hexes => hexes.map(([h,k])=>{ const c = new THREE.Color(h).multiplyScalar(k).convertSRGBToLinear(); return [c.r, c.g, c.b]; });
+  return mk([['#d94aa0',0.86],['#c33d8f',0.78],['#ee66b6',0.92],['#a83278',0.72],['#e05aa8',0.84]]);
+})();
+function dressTopSakura(g, sx, sz, topY, cx, cz, kind, opts){
   if(!SJ_DECOR_ON) return;
   const wheat = (kind==='wheat');
+  /* ►S3FIX: además de los pétalos, se hornea CÉSPED del stage 1 teñido de magenta en la misma
+     plataforma (dressTopJungle ya hace exactamente eso para el bosque: clumps de getGrassPieces
+     recoloreados por luminancia en UNA malla → 0 draw calls extra). En el trigo NO: es su campo. */
+  if(!wheat && typeof dressTopJungle==='function')
+    dressTopJungle(g, sx, sz, topY, cx, cz, kind, { pal:_SJ_FLORA_PAL, dens:0.85, inside:(opts&&opts.inside) });
   const palP = wheat ? SJ_WHEATG : SJ_PETALS;
   const PA=[], CA=[];
   const cP = new THREE.Color(), n = Math.min(64, Math.max(12, Math.round(sx*sz/6)));
@@ -22749,6 +22781,10 @@ function dressTopSakura(g, sx, sz, topY, cx, cz, kind){
   };
   for(let i=0;i<n;i++){
     const lx = (Math.random()-.5)*(sx-1.6), lz = (Math.random()-.5)*(sz-1.6);
+    /* ►S3FIX (pedido: "hay pétalos fijos encima de plataformas pero se salen de los bordes y se
+       quedan flotando"): la caja de muestreo es un RECTÁNGULO. En las plataformas redondas eso deja
+       la mitad de los pétalos sobre el vacío. `inside` recorta a la forma real de la tapa. */
+    if(opts && opts.inside && !opts.inside(lx, lz)) continue;
     if(cx!=null && typeof _inWall==='function' && _inWall(cx+lx, cz+lz, topY, 0.8)) continue;
     cP.set(palP[(Math.random()*palP.length)|0]).convertSRGBToLinear();
     if(wheat || Math.random()<0.32) put3(lx, topY+0.04, lz, 0.10+Math.random()*0.10, true, cP.multiplyScalar(0.9));   // brizna/espiga de pie
@@ -23453,17 +23489,12 @@ function buildSJScenery(){
   if(SJ_SCENERY.group) return;
   const G = new THREE.Group(); G.userData.noOcc = true;
   const rng = (a,b)=> a + Math.random()*(b-a);
-  /* 1) MAR DE NUBES blanco-rosa bajo el jardín (valle brumoso; patrón capa de nubes S2/S4) */
-  {
-    const mistMat = new THREE.MeshStandardMaterial({ color:0xf6e4ea, emissive:0x9a7080, emissiveIntensity:0.18,
-      roughness:1, metalness:0, transparent:true, opacity:0.55, depthWrite:false, flatShading:true });
+  /* ►S3FIX · el horneado de nubes estaba escrito a mano dentro del bloque 1. Extraído a helper para
+     poder montar VARIAS capas (mar de nubes, nubes entre montañas, niebla de base) sin repetirlo y
+     sin pagar draw calls: cada capa sigue siendo UNA sola malla. */
+  const _sjClouds = (defs, mat, order)=>{
     const PA=[], NA=[];
     const _v = new THREE.Vector3(), _nm = new THREE.Matrix3();
-    const defs = [];
-    for(let i=0;i<240;i++){ const a = Math.random()*Math.PI*2, rad = rng(18,70);
-      defs.push([Math.cos(a)*rad, rng(-12,-8.5), Math.sin(a)*rad - 4, rng(1.1,2.3)]); }
-    for(let i=0;i<140;i++){ const a = Math.random()*Math.PI*2, rad = rng(60,105);
-      defs.push([Math.cos(a)*rad, rng(-13,-9.5), Math.sin(a)*rad - 4, rng(1.3,2.6)]); }
     for(const d of defs){
       const c = (typeof getCloud==='function') ? getCloud(['cloud1','cloud2','cloud3'][(Math.random()*3)|0]) : null;
       if(!c) break;
@@ -23480,27 +23511,38 @@ function buildSJScenery(){
         }
       }});
     }
-    if(PA.length){
-      const mg = new THREE.BufferGeometry();
-      mg.setAttribute('position', new THREE.Float32BufferAttribute(PA,3));
-      mg.setAttribute('normal',   new THREE.Float32BufferAttribute(NA,3));
-      const mesh = new THREE.Mesh(mg, mistMat); mesh.renderOrder = 1; mesh.castShadow = false;
-      G.add(mesh);
-    }
+    if(!PA.length) return null;
+    const mg = new THREE.BufferGeometry();
+    mg.setAttribute('position', new THREE.Float32BufferAttribute(PA,3));
+    mg.setAttribute('normal',   new THREE.Float32BufferAttribute(NA,3));
+    const mesh = new THREE.Mesh(mg, mat); mesh.renderOrder = (order!=null?order:1); mesh.castShadow = false;
+    G.add(mesh); return mesh;
+  };
+  /* 1) MAR DE NUBES blanco-rosa bajo el jardín (valle brumoso; patrón capa de nubes S2/S4) */
+  {
+    const mistMat = new THREE.MeshStandardMaterial({ color:0xf6e4ea, emissive:0x9a7080, emissiveIntensity:0.18,
+      roughness:1, metalness:0, transparent:true, opacity:0.55, depthWrite:false, flatShading:true });
+    const defs = [];
+    for(let i=0;i<240;i++){ const a = Math.random()*Math.PI*2, rad = rng(18,70);
+      defs.push([Math.cos(a)*rad, rng(-12,-8.5), Math.sin(a)*rad - 4, rng(1.1,2.3)]); }
+    for(let i=0;i<140;i++){ const a = Math.random()*Math.PI*2, rad = rng(60,105);
+      defs.push([Math.cos(a)*rad, rng(-13,-9.5), Math.sin(a)*rad - 4, rng(1.3,2.6)]); }
+    _sjClouds(defs, mistMat, 1);
   }
-  /* 2) MONTAÑAS nevadas de horizonte (sj_mountain) — el FUJI grande al fondo -z + cordillera */
+  /* 2) MONTAÑAS nevadas de horizonte (sj_mountain) — el FUJI grande al fondo -z + cordillera
+     ►S3FIX (pedido: "pon muchas más montañas"): de 8 fijas a ~40 repartidas en TRES anillos, y
+     HORNEADAS en una sola malla con _s2MeshMerger. 40 clones sueltos serían 40 draw calls de fondo;
+     así son 1. Los radios se quedan por debajo de VISUAL.fog.far (140): más allá, una montaña es
+     color de niebla puro = geometría invisible (lección del bosque del stage 2). */
   {
     const tpl = (typeof getModel==='function') ? getModel('sj_mountain', DECOR_DEFSJ) : null;
-    const MTS = [
-      { a:4.71, rad:120, s:44 },          // el FUJI (fondo central -z; lejos y contenido — a rad 96/s 58 la niebla lo fundía en una MANCHA)
-      { a:3.60, rad:88,  s:34 },
-      { a:4.15, rad:102, s:42 },
-      { a:5.30, rad:92,  s:38 },
-      { a:5.85, rad:104, s:30 },
-      { a:3.10, rad:110, s:26 },
-      { a:0.30, rad:118, s:28 },
-      { a:2.60, rad:120, s:24 },
-    ];
+    const MTS = [ { a:4.71, rad:120, s:46 } ];         // el FUJI: hito fijo al fondo -z, el resto se sortea alrededor
+    const RINGS = [ { n:11, r0:80,  r1:104, s0:22, s1:38 },    // cordillera cercana
+                    { n:15, r0:100, r1:124, s0:26, s1:46 },    // media
+                    { n:14, r0:118, r1:134, s0:18, s1:32 } ];  // lejana, ya casi disuelta en la niebla
+    for(const R of RINGS) for(let i=0;i<R.n;i++)
+      MTS.push({ a:(i/R.n)*Math.PI*2 + rng(-0.11,0.11), rad:rng(R.r0,R.r1), s:rng(R.s0,R.s1) });
+    const merger = (typeof _s2MeshMerger==='function') ? _s2MeshMerger() : null;
     for(const d of MTS){
       let p;
       if(tpl){ p = tpl.clone(); const k = d.s / DECOR_DEFSJ.sj_mountain.size; p.scale.multiplyScalar(k);
@@ -23509,17 +23551,34 @@ function buildSJScenery(){
         p.position.set(Math.cos(d.a)*d.rad, -16 + d.s*0.45, Math.sin(d.a)*d.rad - 6); }
       p.rotation.y = rng(0, Math.PI*2);
       p.traverse(o=>{ if(o.isMesh) o.castShadow = false; });
-      G.add(p);
+      if(merger && tpl) merger.add(p);                 // horneado (el fallback de conos no lleva vertex-color: va suelto)
+      else G.add(p);
     }
-    /* 2b) toriis GIGANTES de silueta flotando en el mar de nubes (hitos del horizonte) */
-    const tt = (typeof getModel==='function') ? getModel('sj_torii', DECOR_DEFSJ) : null;
-    if(tt) for(const d of [{a:4.35, rad:70, s:2.6}, {a:5.15, rad:76, s:3.1}]){
-      const t2 = tt.clone(); t2.scale.multiplyScalar(d.s);
-      t2.position.set(Math.cos(d.a)*d.rad, -9, Math.sin(d.a)*d.rad - 5);
-      t2.rotation.y = d.a + Math.PI/2;
-      t2.traverse(o=>{ if(o.isMesh) o.castShadow = false; });
-      G.add(t2);
-    }
+    if(merger){ const mm = merger.flush('_sjMountains'); if(mm){ mm.castShadow = false; mm.userData.noOcc = true; G.add(mm); } }   // G.add lo saca de scene (three re-parenta)
+    /* 2b) ►S3FIX: los dos toriis GIGANTES de silueta del horizonte, ELIMINADOS (petición de Toni:
+       "las torii gates de decoración del fondo las quitas, pon solo las montañas"). Las torii
+       JUGABLES (sjToriiGate) no se tocan. */
+  }
+  /* 2c) ►S3FIX (pedido): NUBES ENTRE LAS MONTAÑAS — banda a media altura que rompe la cordillera y
+     le da profundidad. Misma malla horneada = 1 draw call. */
+  {
+    const midMat = new THREE.MeshStandardMaterial({ color:0xf3dbe4, emissive:0x8f6878, emissiveIntensity:0.16,
+      roughness:1, metalness:0, transparent:true, opacity:0.5, depthWrite:false, flatShading:true });
+    const defs = [];
+    for(let i=0;i<150;i++){ const a = Math.random()*Math.PI*2, rad = rng(74,132);
+      defs.push([Math.cos(a)*rad, rng(-6,10), Math.sin(a)*rad - 6, rng(1.6,3.2)]); }
+    _sjClouds(defs, midMat, 1);
+  }
+  /* 2d) ►S3FIX (pedido): NIEBLA EN LA BASE DE LAS MONTAÑAS — tapa el punto donde arrancan del vacío.
+     Color apenas por encima de la niebla del stage (VISUAL.fog.color 0xecc4c8): en gris claro
+     genérico leería como una fila de nubes blancas posadas, no como bruma (lección del stage 2). */
+  {
+    const baseMat = new THREE.MeshStandardMaterial({ color:0xefd0d6, emissive:0x8a6670, emissiveIntensity:0.14,
+      roughness:1, metalness:0, transparent:true, opacity:0.62, depthWrite:false, flatShading:true });
+    const defs = [];
+    for(let i=0;i<190;i++){ const a = Math.random()*Math.PI*2, rad = rng(72,136);
+      defs.push([Math.cos(a)*rad, rng(-15,-7), Math.sin(a)*rad - 6, rng(2.2,4.4)]); }
+    _sjClouds(defs, baseMat, 1);
   }
   /* 3) BRUMA de separación rosa pálido (perspectiva aérea, patrón S2/S4) */
   const hazeMat = ()=> new THREE.MeshBasicMaterial({ color:0xf6dce2, transparent:true, opacity:0.07, depthWrite:false, side:THREE.DoubleSide });
