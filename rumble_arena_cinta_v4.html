@@ -21642,7 +21642,7 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
      flotantes encima de puentes flotantes"): el puente NO tenía ninguna comprobación — la separación era
      hardcode escena a escena. Ahora se RECORTAN los tablones de los EXTREMOS que caen sobre suelo ya
      existente (deck, flotante u otro puente). Solo extremos: el centro nunca queda con agujeros. */
-  if(STAGE===2 && !opts._trimmed){
+  if((STAGE===2 || STAGE===3) && !opts._trimmed){   // ►S3FIX: el recorte también en Japón (el comentario de abajo describía justo lo que pasa allí, pero el guard lo tenía apagado)
     const busy = (i)=>{
       const tc = (i+0.5)/n, py = y - sag*Math.sin(Math.PI*tc);
       const px = alongX ? (x1 + (x2-x1)*tc) : cxM, pz = alongX ? czM : (z1 + (z2-z1)*tc);
@@ -22804,13 +22804,25 @@ function dressTopSakura(g, sx, sz, topY, cx, cz, kind, opts){
    Visual = 2 extrusiones (cuerpo tierra + tapa multitono) con _paintFacets; colisión = 3 RECTS
    escalonados INSCRITOS en el semicírculo (sin voladizos: la franja curva exterior ≈ bisel no pisable,
    como el canto de las losas orgánicas). rot ∈ {0, π/2, π, 3π/2}: la CURVA mira a +z/-x/-z/+x. */
-function _sjMoonShape(r, inset){
-  const s = new THREE.Shape(), rr = r - (inset||0), f = Math.min(0.6, rr*0.18);   // f = filete de las esquinas planas
-  s.moveTo(-rr+f, 0);
-  s.absarc(-rr+f, f, f, -Math.PI/2, Math.PI, true);
-  s.absarc(0, 0, rr, Math.PI - f/rr, f/rr, true);         // arco principal (curva de la media luna)
-  s.absarc(rr-f, f, f, 0, -Math.PI/2, true);
-  s.closePath();
+/* ►S3FIX · DE MEDIA LUNA A ELIPSE (decisión de Toni: "plataformas circulares de contacto para que
+   encaje mejor"). La media luna era el origen de tres defectos a la vez:
+     · los puentes se anclaban en su ARISTA RECTA, porque `(cx,cz)` era el borde, no el centro;
+     · su colisión eran 3 rects inscritos = ~83 % de la tapa dibujada (el resto se veía y no se pisaba);
+     · los pétalos se sembraban en una caja simétrica sobre una pieza que solo existía en media.
+   La elipse va INSCRITA EN EL MISMO bounding box que ocupaba la luna → misma huella (y de hecho la
+   misma área, πr²/2), así que no aparecen solapamientos nuevos por el cambio de forma. Y al ser
+   convexa y sin lados planos, un puente engancha venga por donde venga.
+   `_sjMoonBox(cx,cz,r,rot)` es la ÚNICA fuente de la caja: la usan la geometría, la colisión y el
+   sembrado de pétalos/césped, así que no pueden desincronizarse. */
+function _sjMoonBox(cx, cz, r, rot){
+  if(rot===Math.PI)         return { minX:cx-r,  maxX:cx+r,  minZ:cz-r,  maxZ:cz   };
+  if(rot===Math.PI/2)       return { minX:cx-r,  maxX:cx,    minZ:cz-r,  maxZ:cz+r };
+  if(rot===-Math.PI/2 || rot===Math.PI*1.5) return { minX:cx, maxX:cx+r, minZ:cz-r, maxZ:cz+r };
+  return                           { minX:cx-r,  maxX:cx+r,  minZ:cz,    maxZ:cz+r };   // rot 0
+}
+function _sjMoonShape(rx, rz, inset){
+  const s = new THREE.Shape();
+  s.absellipse(0, 0, Math.max(0.2, rx-(inset||0)), Math.max(0.2, rz-(inset||0)), 0, Math.PI*2, false, 0);
   return s;
 }
 function sjMoon(cx, cz, r, topY, rot, kind){
@@ -22818,29 +22830,32 @@ function sjMoon(cx, cz, r, topY, rot, kind){
   if(!SJMATS) _buildSJMats();
   rot = rot||0; kind = kind||'sakura';
   const MK = SJMATS[kind] || SJMATS.sakura;   // ►S3TILES: misma textura de LOSETAS CUADRADAS multitono que el resto (top magenta/rosa · base gris), no _paintFacets (rayas)
+  const B  = _sjMoonBox(cx, cz, r, rot);                         // ►S3FIX: la MISMA caja para geometría, colisión y sembrado
+  const ex = (B.maxX-B.minX)*0.5, ez = (B.maxZ-B.minZ)*0.5;      // semiejes de la elipse
+  const ox = (B.minX+B.maxX)*0.5 - cx, oz = (B.minZ+B.maxZ)*0.5 - cz;   // centro de la elipse RELATIVO a (cx,cz)
   const g = new THREE.Group();
-  const capG  = new THREE.ExtrudeGeometry(_sjMoonShape(r, 0),    { depth:0.55, bevelEnabled:false });
-  const bodyG = new THREE.ExtrudeGeometry(_sjMoonShape(r, r*0.06), { depth:3.9,  bevelEnabled:false });
+  const capG  = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, 0),        { depth:0.55, bevelEnabled:false, curveSegments:22 });
+  const bodyG = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, r*0.06),   { depth:3.9,  bevelEnabled:false, curveSegments:22 });
   const cap  = new THREE.Mesh(capG,  MK.top);    // cap = celdas de la superficie (SJ_PINKS/etc.) via _s2mat/makeFieldTexture
   const body = new THREE.Mesh(bodyG, MK.base);   // cuerpo = celdas gris SJ_EARTH (no franjas planas)
-  cap.rotation.x  = Math.PI/2; cap.position.y  = topY;          // extrude +z → girado queda [topY-0.55..topY]
-  body.rotation.x = Math.PI/2; body.position.y = topY - 0.5;
+  /* la shape se extruye en +z y se tumba con rotation.x=π/2 → su eje local +y pasa a ser -z de mundo */
+  cap.rotation.x  = Math.PI/2; cap.position.set(ox, topY, oz);
+  body.rotation.x = Math.PI/2; body.position.set(ox, topY - 0.5, oz);
   cap.castShadow = cap.receiveShadow = true; body.castShadow = body.receiveShadow = true;
   g.add(body); g.add(cap);
-  dressTopSakura(g, r*1.6, r*1.1, topY, cx, cz, kind);          // pétalos también en las lunas
-  g.rotation.y = -rot;                                           // shape +y(local z tras giro) = curva; rot gira la pieza entera
+  /* ►S3FIX: pétalos y césped sembrados DENTRO de la elipse (antes: caja simétrica sobre media luna
+     → la mitad caía al vacío, que es lo que Toni marcó como "pétalos que se salen y flotan").
+     Van en un SUBGRUPO centrado en la elipse: dressTopSakura muestrea alrededor de su origen local,
+     y el origen de `g` es (cx,cz), que con rot≠0 NO es el centro de la pieza. */
+  const dressG = new THREE.Group(); dressG.position.set(ox, 0, oz); g.add(dressG);
+  dressTopSakura(dressG, ex*2, ez*2, topY, cx+ox, cz+oz, kind,
+    { inside:(lx, lz)=>{ const u=lx/ex, v=lz/ez; return u*u + v*v <= 0.88; } });   // 0.88 ≈ deja libre el canto biselado
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: losa lunar pisable = oclusor; guard la respeta si es el suelo más bajo
-  /* colisión: 3 rects inscritos (local: flat en z=0, curva hacia +z) rotados a mano (90° exactos) */
-  const R = [[0.90, 0.00, 0.42], [0.62, 0.42, 0.79], [0.32, 0.79, 0.94]];
-  for(const [hw, d0, d1] of R){
-    let minX, maxX, minZ, maxZ;
-    const w = hw*r;
-    if(rot===0){        minX=cx-w; maxX=cx+w; minZ=cz+d0*r; maxZ=cz+d1*r; }
-    else if(rot===Math.PI){ minX=cx-w; maxX=cx+w; minZ=cz-d1*r; maxZ=cz-d0*r; }
-    else if(rot===Math.PI/2){ minX=cx-d1*r; maxX=cx-d0*r; minZ=cz-w; maxZ=cz+w; }
-    else {              minX=cx+d0*r; maxX=cx+d1*r; minZ=cz-w; maxZ=cz+w; }
-    platforms.push({ minX, maxX, minZ, maxZ, topY, baseY:topY-4.4, solid:true, _group:g });
-  }
+  /* ►S3FIX · colisión = UNA plataforma `blob` cuyo AABB es exactamente el de la tapa dibujada.
+     _inBlob deriva la elipse del AABB al vuelo y _applySegX ya scrollea minX/maxX con la cinta, así
+     que no hace falta contabilidad extra. Adiós al 17 % de tapa visible que no se podía pisar. */
+  platforms.push({ minX:B.minX, maxX:B.maxX, minZ:B.minZ, maxZ:B.maxZ,
+                   topY, baseY:topY-4.4, solid:true, blob:true, _group:g });
   return g;
 }
 /* ---- registro de props de JAPÓN ---- */
@@ -23433,28 +23448,56 @@ function sjDeck(cx, y, cz, sx, sz, kind){
 /* ►LATTICE JAPÓN: MUCHAS más plataformas — REPISAS LATERALES pegadas al carril con DOBLE NIVEL
    (una losa encima de otra, como las torres del S2), escalera arriba/abajo/lados, 4 PUENTES COLGANTES
    (holding bridges del S2) y OBSTÁCULOS japoneses extra (gong · daruma · lanzadera · shishi-odoshi). */
+/* ►S3FIX · ANCLA DE PUENTE. Los puentes del S3 se tendían entre las coordenadas NOMINALES de las
+   piezas, y en la media luna esa coordenada era su ARISTA RECTA: medio ancho de puente quedaba sobre
+   el vacío (lo que Toni marcó como "puentes con poco contacto"). Ahora se tienden de CENTRO a CENTRO
+   de las tapas y el recorte de addRopeBridge —ya abierto al S3— los carva hasta el borde exacto de
+   cada una. Así el contacto es correcto sea cual sea la forma y venga el puente por donde venga. */
+function _sjAnchor(x, z){
+  let best = null;
+  for(let i=Math.max(0,_segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(!pl.solid || pl._fell || pl._bossNoFloor) continue;
+    const inside = pl.blob ? _inBlob(pl, x, z, 0.6)
+                           : (x>=pl.minX-0.6 && x<=pl.maxX+0.6 && z>=pl.minZ-0.6 && z<=pl.maxZ+0.6);
+    if(!inside) continue;
+    if(!best || pl.topY > best.topY) best = pl;
+  }
+  if(!best) return { x, z, topY:null };
+  return { x:(best.minX+best.maxX)*0.5, z:(best.minZ+best.maxZ)*0.5, topY:best.topY };
+}
+function sjBridge(x1, z1, x2, z2, yFallback, opts){
+  const a = _sjAnchor(x1, z1), b = _sjAnchor(x2, z2);
+  const y = (a.topY!=null && b.topY!=null) ? Math.max(a.topY, b.topY)
+          : (a.topY!=null ? a.topY : (b.topY!=null ? b.topY : yFallback));   // ►S3FIX: la altura sale del suelo REAL, no de un literal (había puentes flotando 0.19u y otros metidos dentro de la losa)
+  return addRopeBridge(a.x, a.z, b.x, b.z, y, opts);
+}
 function sjLattice(opts){
   opts = opts||{}; const kHi=opts.hi||'sakura', kLo=opts.lo||'moss', kSd=opts.side||'stone';
   /* ►REPISAS LATERALES pegadas al carril (x±18) + DOBLE NIVEL (deck flotante ENCIMA) — ambos flancos */
   for(const s of [-1,1]){
     const rot = s<0 ? Math.PI/2 : 3*Math.PI/2;
-    s3Slab(s*18, 5, 8, 5, 1.0, kSd);            // repisa lateral N (pegada al carril)
-    sjDeck(s*18, 5.8, 5, 6.5, 4, kHi);          // ►DOBLE NIVEL: deck ENCIMA de la repisa N
-    s3Slab(s*18, -5, 8, 5, 1.4, kLo);           // repisa lateral S
-    sjDeck(s*18, 6.2, -5, 6.5, 4, kHi);         // ►DOBLE NIVEL: deck ENCIMA de la repisa S
-    sjMoon(s*13, 0, 2.6, 3.2, rot, kSd);        // peldaño intermedio (subir del carril a los decks)
-    sjMoon(s*24, 0, 3.0, 2.2, rot, kSd);        // media-luna EXTRA más afuera
-    addRopeBridge(s*18, 5, s*18, -5, 1.2, { width:2.6, sag:0.4 });   // PUENTE COLGANTE uniendo las repisas del flanco
+    /* ►S3FIX (pedido: "plataformas pegadas a plataformas que no tienen sentido alguno"): las repisas
+       estaban en x=±18 con 8 de ancho → x ∈ [14,22], y las plazas de las salas llegan hasta x=16 →
+       mordían el borde de la plaza 2u en las SEIS salas, creando ese labio pegado. A ±20.5 despejan
+       la plaza más ancha (32) por medio metro. Los puentes las siguen solos: sjBridge resuelve el
+       ancla por posición, no por coordenada escrita. */
+    s3Slab(s*20.5, 5, 8, 5, 1.0, kSd);          // repisa lateral N
+    sjDeck(s*20.5, 5.8, 5, 6.5, 4, kHi);        // ►DOBLE NIVEL: deck ENCIMA de la repisa N
+    s3Slab(s*20.5, -5, 8, 5, 1.4, kLo);         // repisa lateral S
+    sjDeck(s*20.5, 6.2, -5, 6.5, 4, kHi);       // ►DOBLE NIVEL: deck ENCIMA de la repisa S
+    sjMoon(s*15, 0, 2.6, 3.2, rot, kSd);        // peldaño intermedio (subir del carril a los decks)
+    sjMoon(s*26.5, 0, 3.0, 2.2, rot, kSd);      // media-luna EXTRA más afuera
+    sjBridge(s*20.5, 5, s*20.5, -5, 1.2, { width:2.6, sag:0.4 });   // PUENTE COLGANTE uniendo las repisas del flanco (►S3FIX: por centro de tapa + recorte)
   }
   /* ►ABAJO: decks HUNDIDOS al sur + PUENTE COLGANTE bajo cruzándolos */
   sjMoon(-13, -18, 3.0, -2.6, 0, kLo); sjMoon(13, -18, 3.0, -2.6, 0, kLo);
-  addRopeBridge(-13, -18, 13, -18, -2.5, { width:2.8, sag:0.6 });
+  sjBridge(-13, -18, 13, -18, -2.5, { width:2.8, sag:0.6 });
   /* ►ARRIBA: SEGUNDO PISO central + PUENTE COLGANTE alto que lo cruza */
   sjMoon(-9, 2, 2.8, 7.8, Math.PI, kHi); sjMoon(9, 2, 2.8, 7.8, Math.PI, kHi);
-  addRopeBridge(-9, 2, 9, 2, 7.8, { width:2.8, sag:0.7 });
+  sjBridge(-9, 2, 9, 2, 7.8, { width:2.8, sag:0.7 });
   /* ►MEDIO: PUENTE COLGANTE largo cruzando el norte a media altura */
   sjMoon(-16, 12, 2.8, 3.2, Math.PI, kSd); sjMoon(16, 12, 2.8, 3.2, Math.PI, kSd);
-  addRopeBridge(-16, 12, 16, 12, 3.2, { width:2.8, sag:0.9 });
+  sjBridge(-16, 12, 16, 12, 3.2, { width:2.8, sag:0.9 });
   /* ►OBSTÁCULOS JAPONESES extra (de la lista propia: gong · daruma · lanzadera · shishi-odoshi) */
   sjBell(0, -3, 0, 'z', 0.72, 1.0);                          // ►GONG extra barriendo el carril en z
   sjDaruma(0, 6, 0, 'x', 8, 0.5, 1.2);                       // ►DARUMA extra patrullando en x
