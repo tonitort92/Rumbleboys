@@ -7236,7 +7236,12 @@ function _nearPad(x, z, extra){
 }
 /* ¿(x,z) cae dentro de un MURO sólido que sube por encima de la superficie surfaceY? */
 function _inWall(x, z, surfaceY, margin=0){
-  for(const pl of platforms){ if(!pl.solid) continue;
+  /* ►S3FIX2: barría `platforms` DESDE 0 y era la última que quedaba con ese fallo. En build-time los
+     otros segmentos ya están scrolleados a su X de mundo, así que comparar contra ellos coordenadas
+     LOCALES da falsos positivos: así es como desaparecía la PAGODA de (27,0) — la "pared" que la
+     bloqueaba estaba en otra sala. `_segP0` vale 0 en runtime (ver su declaración), de modo que en
+     partida se siguen mirando todas. */
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i]; if(!pl.solid) continue;
     if(x>pl.minX-margin && x<pl.maxX+margin && z>pl.minZ-margin && z<pl.maxZ+margin && pl.topY > surfaceY+0.6) return true; }
   return false;
 }
@@ -13561,7 +13566,9 @@ function updateCorruptArcher(mn, dt){
 }
 /* disparo de una emboscada: anillo de goblins cayendo alrededor del campamento, a por el intruso */
 function triggerAmbush(A, wx, wz, tgt){
-  if(STAGE>=3 && STAGE<=9){ A.state='fired'; A.t=0; return; }   // ►NOMINIONS38: sin emboscadas de horda en stages 3–8 (la marca 'fired' evita re-disparos)
+  /* ►S3FIX2 (pedido de Toni: "emboscadas frecuentes de varios minions" como mecánica del stage 3).
+     El STAGE 3 sale de la lista de ►NOMINIONS38; 4-9 siguen sin emboscadas. */
+  if(STAGE>=4 && STAGE<=9){ A.state='fired'; A.t=0; return; }   // ►NOMINIONS38: sin emboscadas de horda en stages 4–9 (la marca 'fired' evita re-disparos)
   A.state='fired'; A.t=0;
   const want = Math.min((A.base||8)+chaosLvl, 14, MINION_CAP - minions.length);
   let spawned = 0;
@@ -13572,7 +13579,14 @@ function triggerAmbush(A, wx, wz, tgt){
     const top = platformTopAt(x,z);
     if(top===null || Math.abs(top-A.y)>4) continue;          // solo sobre el suelo del campamento
     const type = (chaosLvl>=3 && spawned===0) ? 'large' : (Math.random()<0.7 ? 'small' : 'shooter');
-    const mn = spawnMinionAt(x, z, top, type);
+    /* ►S3FIX2: el mapeo de skins japonesas (aldeano/ninja/sensei) vive en spawnMinion, NO en
+       spawnMinionAt — llamando directo salían goblins en pleno Japón. Se replica aquí. */
+    let skin = null;
+    if(STAGE===3 && Math.random() < 0.7){
+      const k = ({ small:'villager', shooter:'ninja', large:'sensei' })[type];
+      if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+    }
+    const mn = spawnMinionAt(x, z, top, type, skin);
     if(mn){ mn.target=tgt; mn.retargetT=1.2; spawned++; }
   }
   if(!spawned){ A.state='armed'; return; }                  // sin hueco válido → no quemes el trigger
@@ -13582,7 +13596,7 @@ function triggerAmbush(A, wx, wz, tgt){
 }
 /* corre cada frame (frame(), tras updateFireLights). Emboscadas + spawns de arquera por torre. */
 function updateAmbushes(dt){
-  if((STAGE!==2 && STAGE!==4 && STAGE!==5) || gameOver || (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none')) return;   // ►S3F/S5: emboscadas/arqueras también en desierto y pirámide (pilares)
+  if((STAGE!==2 && STAGE!==3 && STAGE!==4 && STAGE!==5) || gameOver || (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none')) return;   // ►S3F/S5: emboscadas/arqueras también en desierto y pirámide · ►S3FIX2: y en JAPÓN (mecánica propia del stage)
   for(const A of S2_AMBUSHES){
     A.anchor.getWorldPosition(_ambV);
     const wx=_ambV.x, wz=_ambV.z;
@@ -13594,7 +13608,8 @@ function updateAmbushes(dt){
     } else {
       A.t += dt;                                            // re-arma tras AMBUSH_REARM s SIN jugadores cerca
       const near = players.some(p=>!p.dead && !p.out && Math.hypot(p.pos.x-wx, p.pos.z-wz) < A.r+6);
-      if(near) A.t = 0; else if(A.t >= AMBUSH_REARM){ A.state='armed'; A.t=0; }
+      const rearm = (STAGE===3) ? 14 : AMBUSH_REARM;        // ►S3FIX2: en Japón la emboscada es LA mecánica del stage → se re-arma mucho antes (14s vs 40s)
+      if(near) A.t = 0; else if(A.t >= rearm){ A.state='armed'; A.t=0; }
     }
   }
   for(const T of S2_TOWERS){
@@ -22888,9 +22903,11 @@ const DECOR_DEFSJ = {
   sj_mountain: { key:'sj_mountain', size:40 },
 };
 /* colocador con ground-check (espejo de addPropS3) */
+let _sjDbgProps = false;   // ►S3FIX2: ponlo a true en consola para que diga por qué se rechaza cada prop
 function addPropSJ(key, x, z, topY, sc, yaw){
+  const _dbg = _sjDbgProps;
   if(!SJ_DECOR_ON) return null;
-  if(typeof _inWall==='function' && _inWall(x, z, topY)) return null;
+  if(typeof _inWall==='function' && _inWall(x, z, topY)){ if(_dbg) console.warn('[►S3FIX2] '+key+' rechazado por _inWall en', x, z); return null; }
   const gy = platformTopAt(x, z, -TOP_INSET);   // ►S3FIX: margen ESTRICTO (la tapa visible es menor que el AABB) — antes -0.2 dejaba props asomando por el canto
   if(gy===null || Math.abs(gy-topY) > 0.65) return null;
   sc = sc||1;
@@ -22898,8 +22915,19 @@ function addPropSJ(key, x, z, topY, sc, yaw){
      torii o una cabaña podían quedar medio fuera del borde (el mismo defecto que ya se arregló en el
      stage 1 con _footOnTop/_modelFoot: se reutilizan aquí en vez de reinventarlos). */
   const _mf = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFSJ) : null;
-  if(_mf && typeof _footOnTop==='function' && !_footOnTop(x, z, gy, _mf.rad*sc*0.92)) return null;
-  if(typeof _nearPad==='function' && _nearPad(x, z, (_mf ? _mf.rad*sc : 1.1)*0.6)) return null;   // ni encima de un saltador
+  /* ►S3FIX2: sondear con `rad` (el CIRCUNRADIO) fue un error mío y se cargó el torii grande del
+     spawn. `rad` existe para props con YAW ALEATORIO, donde la huella puede barrer en cualquier
+     dirección; aquí el yaw es EXPLÍCITO y además un torii es una puerta PLANA (7 de ancho por 2,4 de
+     fondo) a la que el circunradio le exigía un disco de 7,4 de diámetro. Lo que hay que sostener es
+     su base: el semieje MENOR. */
+  const _fr = _mf ? Math.min(_mf.hx, _mf.hz) : 1.1;
+  if(_mf && typeof _footOnTop==='function' && !_footOnTop(x, z, gy, _fr*sc*0.92)){
+    if(_dbg) console.warn('[►S3FIX2] '+key+' rechazado por HUELLA en', x, z); return null; }
+  /* ►S3FIX2: el test de "ni encima de un saltador" se ha QUITADO de aquí. addPropSJ lo usan tanto los
+     hitos colocados A MANO como el sembrado aleatorio, y las pagodas del nivel están escritas justo
+     sobre un addPad (27,0) → mi guarda las borraba. Si el autor del nivel puso el hito ahí, va ahí;
+     el que tiene que esquivar saltadores es lo que se siembra al azar (sjGrove y scatterModelDecorSJ,
+     que ya lo comprueban por su cuenta). */
   const m = getModel(key, DECOR_DEFSJ); if(!m) return null;
   if(key==='sj_lantern') _sjLightLantern(m);
   m.scale.setScalar(sc);
@@ -22908,6 +22936,7 @@ function addPropSJ(key, x, z, topY, sc, yaw){
   m.position.set(x, gy + (m.userData.halfH||0)*sc - 0.05, z);
   m.rotation.y = yaw||0;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+  m.userData._sjProp = key;                                  // ►S3FIX2: etiqueta para CONTAR props por tipo desde consola (mismo truco que _grassBake)
   scene.add(m);
   /* ►S3FIX: huella de despeje PROPORCIONAL al tamaño del modelo (antes 1.1 fijo: minúscula para un torii
      de 7u o una pagoda de 13u) → el decor disperso (_nearProp) deja de aparecer DENTRO del torii/pagoda. */
@@ -22928,15 +22957,25 @@ function addPropSJ(key, x, z, topY, sc, yaw){
    plataforma del segmento (_segP0). Margen extra XZ/vertical → no basta con tocarse: exige holgura. */
 function _sjResolvePropClashes(fromIdx){
   if(!_sjSegProps.length) return;
-  const MX=1.0, MY=0.8;   // margen de despeje pedido por el usuario
+  /* ►S3FIX2 · el barrido se comía la mitad de la arboleda y casi todos los toriis. Dos motivos:
+     (a) `MX = 1.0` inflaba la huella del prop encima de un `pr.r` que ya es generoso (size×0.42);
+     (b) bastaba con que la plataforma estuviera 0.8 POR ENCIMA de la base del prop, así que una
+     repisa de 1u de alto plantada al lado de un árbol contaba como "lo atraviesa".
+     Ahora se exige que la plataforma MUERDA el cuerpo del prop de verdad: que entre al menos 1.6
+     por encima de su base Y que su parte baja quede por debajo de la copa. Un puente o una losa
+     flotante cruzando un torii siguen retirándolo (que es para lo que se escribió esto). */
+  const MX=0.5, MY=0.8;
   for(const pr of _sjSegProps){
     if(!pr.mesh) continue;
     for(let i=fromIdx;i<platforms.length;i++){ const pl=platforms[i];
       if(!(pl.solid||pl.float)) continue;
-      if(pl.topY <= pr.yBase + 0.8) continue;        // el SUELO donde se apoya el prop (o algo por debajo) → no es obstáculo aéreo
+      if(pl._ofProp === pr.mesh) continue;           // ►S3FIX2: geometría DEL PROPIO prop (aleros de la pagoda) — no puede "atravesarse" a sí mismo
+      if(pl.topY <= pr.yBase + 1.6) continue;        // roza la base o es el suelo de al lado → no es un obstáculo aéreo
+      if(pl.baseY >= pr.yTop - 0.6) continue;        // pasa por encima de la copa sin tocarla
       if(pl.baseY > pr.yTop + MY) continue;          // la plataforma va por ENCIMA de la copa del prop → no lo cruza
       if(pr.x + pr.r + MX < pl.minX || pr.x - pr.r - MX > pl.maxX) continue;   // sin solape en X (con margen)
       if(pr.z + pr.r + MX < pl.minZ || pr.z - pr.r - MX > pl.maxZ) continue;   // sin solape en Z (con margen)
+      if(_sjDbgProps) console.warn('[►S3FIX2] RETIRADO prop en', pr.x.toFixed(1), pr.z.toFixed(1), 'r', pr.r.toFixed(1), '· lo atraviesa plataforma topY', pl.topY.toFixed(1), 'x['+pl.minX.toFixed(1)+','+pl.maxX.toFixed(1)+'] z['+pl.minZ.toFixed(1)+','+pl.maxZ.toFixed(1)+']');
       const par = pr.mesh.parent || scene; par.remove(pr.mesh); pr.mesh=null; break;   // ATRAVIESA → se retira (sin fusión)
     }
   }
@@ -23076,12 +23115,24 @@ function sjPath(x, z, topY, yaw, n){
    asset normalizado: base roja + 4 aleros en fracciones de altura decrecientes). */
 function sjPagoda(cx, cz, topY, size){
   const m = addPropSJ('sj_pagoda', cx, cz, topY, (size||13)/DECOR_DEFSJ.sj_pagoda.size, 0);
-  if(!m) return null;
+  if(!m){ if(_sjDbgProps) console.warn('[►S3FIX2] PAGODA rechazada en', cx, cz, 'topY', topY, '· suelo real', platformTopAt(cx, cz, -TOP_INSET)); return null; }
+  /* ►S3FIX2 · LA PAGODA NO ES DECORACIÓN: sus aleros son plataformas por las que se sube, o sea
+     gameplay. El barrido _sjResolvePropClashes está escrito para que "la decoración CEDA ante el
+     gameplay" y la estaba borrando (por sus propios aleros o por una luna vecina), dejando los
+     tejados pisables y el edificio invisible — de ahí el "ya no veo pagodas". Se saca del registro:
+     lo que hay que apartar es lo que le estorbe, no ella. */
+  if(typeof _sjSegProps!=='undefined')
+    for(let i=_sjSegProps.length-1;i>=0;i--) if(_sjSegProps[i].mesh===m){ _sjSegProps.splice(i,1); break; }
   const H = size||13, W = H*0.62;                              // proporción medida del asset (más alto que ancho)
   const TIERS = [ [0.175, 0.335], [0.335, 0.26], [0.475, 0.215], [0.615, 0.175], [0.745, 0.14] ];   // [fracción de altura, semiancho ×W]
+  /* ►S3FIX2 (por qué "ya no hay pagodas"): estos aleros son plataformas SÓLIDAS que se empujan DESPUÉS
+     de que addPropSJ registrara la pagoda en _sjSegProps. El barrido _sjResolvePropClashes veía
+     entonces que "una plataforma atraviesa el prop"… y la plataforma era la propia pagoda, así que la
+     RETIRABA a sí misma: quedaban los tejados pisables y el modelo invisible. `_ofProp` marca de quién
+     son para que el barrido no cuente a un prop contra su propia geometría. */
   for(const [fy, fw] of TIERS){
     const hw = fw*W;
-    platforms.push({ minX:cx-hw, maxX:cx+hw, minZ:cz-hw, maxZ:cz+hw, topY:topY + fy*H, baseY:topY + fy*H - 0.8, solid:true });
+    platforms.push({ minX:cx-hw, maxX:cx+hw, minZ:cz-hw, maxZ:cz+hw, topY:topY + fy*H, baseY:topY + fy*H - 0.8, solid:true, _ofProp:m });
   }
   return m;
 }
@@ -23098,14 +23149,18 @@ function addSakuraTree(x, z, ty, s){
      colgaba del borde o se fundía con la losa de al lado. Y como no se registraba en _sjSegProps, el
      barrido de solapes (_sjResolvePropClashes) jamás lo retiraba aunque lo cruzara un puente.
      Ahora pasa por los mismos filtros que el resto: huella real, saltador despejado y registro. */
+  /* ►S3FIX2: aquí también me pasé de estricto y tiré ~18 de los 49 árboles escritos (los de las
+     anclas de costura, que son losas de 10×12). De un ÁRBOL lo que tiene que apoyar es el TRONCO;
+     que la copa vuele sobre el borde es natural y además queda bien. Semieje menor × 0.7. */
   const foot = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFSJ) : null;
-  const rad = (foot && foot.rad ? foot.rad : 1.1) * s * 0.88;   // ×0.88: algo de hoja asomando es natural, la copa entera sobre el vacío no
+  const rad = (foot ? Math.min(foot.hx, foot.hz) : 1.1) * s * 0.70;
   if(typeof _footOnTop==='function' && !_footOnTop(x, z, ty, rad)) return;
-  if(typeof _nearPad==='function' && _nearPad(x, z, rad*0.6)) return;
+  if(typeof _nearPad==='function' && _nearPad(x, z, rad*0.8)) return;
   m.scale.multiplyScalar(s);
   m.position.set(x, ty + (m.userData.halfH||0)*s - 0.2, z);
   m.rotation.y = Math.random()*Math.PI*2;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+  m.userData._sjProp = key;                                  // ►S3FIX2: mismo etiquetado que addPropSJ (los árboles NO pasan por ahí) para poder contarlos
   scene.add(m);
   if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:rad });
   if(typeof _sjSegProps!=='undefined')
@@ -23521,6 +23576,96 @@ function sjTiles(cx, cz, cols, rows, y){
   if(!_sjAreaClear(cx, cz, cols*cell*0.5, rows*cell*0.5, y||0)) return null;
   return s4PadGrid(cx, cz, cols, rows, y||0, { tatami:1 });
 }
+/* ►S3FIX2 · SEIS CARRILES DE LOSETAS QUE CAEN sobre el hueco entre dos plataformas sólidas (pedido de
+   Toni). No es una rejilla: son 6 líneas de UNA loseta de ancho, ALINEADAS entre sí y SEPARADAS, para
+   que cada personaje escoja la suya y tenga que cruzar corriendo antes de que se le hunda debajo.
+   `along`:'x' = el hueco se cruza en X y los carriles se reparten en Z (y al revés con 'z'.)
+   Cada carril se comprueba por separado: si uno no cabe, se cae él solo y los otros siguen. */
+/* ►S3FIX2 · EMBOSCADA japonesa (pedido: "de mecánica especial que haya emboscadas a menudo de varios
+   minions"). Reutiliza el sistema del bosque tal cual —S2_AMBUSHES + updateAmbushes + triggerAmbush—
+   que ya sabe armar/disparar/re-armar y soltar 8-14 minions en anillo; aquí solo faltaba el ANCLA,
+   porque hasta ahora solo las creaba s2Camp. El ancla es un Object3D en la escena para que la cinta
+   la arrastre con el segmento. `r` = radio de disparo. */
+function sjAmbush(x, z, topY, r, base){
+  if(typeof S2_AMBUSHES==='undefined') return;
+  if(platformTopAt(x, z) === null) return;                  // sin suelo no hay dónde caer
+  const anchor = new THREE.Object3D(); anchor.position.set(x, topY||0, z); scene.add(anchor);
+  S2_AMBUSHES.push({ anchor, y:topY||0, r:r||9, state:'armed', t:0, base:base||8 });
+}
+/* ►S3FIX2 (pedido: "quiero más árboles en el stage 3" y "casi no veo toriis en las plataformas").
+   Pasada compartida por las 6 salas: corre desde sjLattice, o sea al FINAL del builder, cuando ya
+   existen todas las plataformas de la sala (incluidas las elipses y los decks). Siembra sobre suelo
+   sólido ancho, respeta la elipse en las tapas redondas, deja libre el centro de la plaza (es donde
+   se pelea) y delega la validación de huella en addTree/addPropSJ. */
+function sjGrove(nTrees, nTorii){
+  const cand = [];
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(!pl.solid || pl._fell || pl._pad || pl._ofProp) continue;
+    if((pl.maxX-pl.minX) < 6.5 || (pl.maxZ-pl.minZ) < 5.5) continue;
+    cand.push(pl); }
+  if(!cand.length) return;
+  const pick = ()=>{
+    const pl = cand[(Math.random()*cand.length)|0];
+    const x = THREE.MathUtils.lerp(pl.minX+1.8, pl.maxX-1.8, Math.random());
+    const z = THREE.MathUtils.lerp(pl.minZ+1.8, pl.maxZ-1.8, Math.random());
+    if(pl.blob && typeof _inBlob==='function' && !_inBlob(pl, x, z, -1.4)) return null;
+    if(pl.topY < 0.5 && Math.abs(x) < 9 && Math.abs(z) < 6) return null;   // centro de la plaza: zona de pelea, se deja despejada
+    if(typeof _nearProp==='function' && _nearProp(x, z, 1.7)) return null;
+    if(typeof _nearPad==='function' && _nearPad(x, z, 0.8)) return null;   // esto SÍ se siembra al azar: esquiva saltadores
+    return { pl, x, z };
+  };
+  /* Los TORIIS van PRIMERO a propósito: son grandes, escasos y lo que Toni echaba en falta. Si se
+     siembran después de dos docenas de árboles, ya no queda un solo hueco que pase el _nearProp. */
+  for(let i=0, made=0; i<(nTorii||0)*6 && made<(nTorii||0); i++){
+    const s = pick(); if(!s) continue;
+    /* ►S3FIX2: pasar `pl.topY` fallaba cuando la plataforma elegida no era la MÁS ALTA en ese punto
+       (addPropSJ compara contra el suelo real y descarta si difieren más de 0.65). Se pasa el suelo
+       medido, que es lo que va a encontrar. */
+    const gy = platformTopAt(s.x, s.z, -TOP_INSET); if(gy===null) continue;
+    const alongX = (s.pl.maxX-s.pl.minX) >= (s.pl.maxZ-s.pl.minZ);
+    if(sjToriiGate(s.x, s.z, gy, 0.7 + Math.random()*0.3, alongX ? Math.PI/2 : 0)) made++;
+  }
+  for(let i=0, made=0; i<nTrees*4 && made<nTrees; i++){
+    const s = pick(); if(!s) continue;
+    const n0 = (typeof _propSpots!=='undefined') ? _propSpots.length : 0;
+    addTree(s.x, s.z, 0.85 + Math.random()*0.5);
+    if(typeof _propSpots!=='undefined' && _propSpots.length > n0) made++;   // addSakuraTree registra al colocar → así sabemos si cuajó
+  }
+}
+const SJ_LANES = 6;
+function sjPadLanes(cx, cz, along, span, y, gapMul){
+  const cell = (typeof S5!=='undefined' && S5.cell) ? S5.cell : 2.2;
+  const n = Math.max(3, Math.round(span/cell));            // losetas por carril
+  const sep = cell * (gapMul || 1.9);                      // separación ENTRE carriles (hueco real entre ellos)
+  const off0 = -(SJ_LANES-1)*0.5*sep;
+  let made = 0;
+  /* Un carril que UNE dos plataformas tiene que tocarlas por fuerza, así que no vale preguntar si el
+     tramo entero está libre (mi primer intento: rechazaba los 6 carriles siempre). Lo que se hace es
+     medir el HUECO REAL: desde el centro, avanzar celda a celda hacia cada lado mientras no haya
+     suelo, y montar el carril exactamente sobre ese tramo. Así se adapta solo a cada sala. */
+  for(let i=0;i<SJ_LANES;i++){
+    const o = off0 + i*sep;
+    const lx = (along==='x') ? cx : cx + o;
+    const lz = (along==='x') ? cz + o : cz;
+    const free = (t)=>{
+      const px = (along==='x') ? lx + t : lx, pz = (along==='x') ? lz : lz + t;
+      return _sjAreaClear(px, pz, cell*0.45, cell*0.45, y||0, 1.6);
+    };
+    if(!free(0)) continue;                                   // ni el centro del hueco está libre
+    let a = 0, b = 0;
+    while(a < n && free(-(a+0.5)*cell)) a++;                 // hacia el lado negativo
+    while(b < n && free( (b+0.5)*cell)) b++;                 // y hacia el positivo
+    const cols = a + b;
+    if(cols < 3) continue;                                   // hueco demasiado corto para un carril
+    const mid = (b - a) * 0.5 * cell;                        // centro del tramo libre
+    const gx = (along==='x') ? lx + mid : lx;
+    const gz = (along==='x') ? lz : lz + mid;
+    const g = (along==='x') ? s4PadGrid(gx, gz, cols, 1, y||0, { tatami:1 })
+                            : s4PadGrid(gx, gz, 1, cols, y||0, { tatami:1 });
+    if(g) made++;
+  }
+  return made;
+}
 function sjLattice(opts){
   opts = opts||{}; const kHi=opts.hi||'sakura', kLo=opts.lo||'moss', kSd=opts.side||'stone';
   /* ►REPISAS LATERALES pegadas al carril (x±18) + DOBLE NIVEL (deck flotante ENCIMA) — ambos flancos */
@@ -23536,7 +23681,11 @@ function sjLattice(opts){
     s3Slab(s*20.5, -5, 8, 5, 1.4, kLo);         // repisa lateral S
     sjDeck(s*20.5, 6.2, -5, 6.5, 4, kHi);       // ►DOBLE NIVEL: deck ENCIMA de la repisa S
     sjMoon(s*15, 0, 2.6, 3.2, rot, kSd);        // peldaño intermedio (subir del carril a los decks)
-    sjMoon(s*26.5, 0, 3.0, 2.2, rot, kSd);      // media-luna EXTRA más afuera
+    /* ►S3FIX2: esta luna exterior cae justo sobre las anclas de costura, que es donde las salas
+       ponen sus PAGODAS — y el barrido de solapes retiraba la pagoda por "atravesada". Si ya hay un
+       hito ahí, la luna se aparta: manda la pagoda, que es el hito de la sala. */
+    if(typeof _nearProp!=='function' || !_nearProp(s*26.5, 0, 3.8))
+      sjMoon(s*26.5, 0, 3.0, 2.2, rot, kSd);    // media-luna EXTRA más afuera
     sjBridge(s*20.5, 5, s*20.5, -5, 1.2, { width:2.6, sag:0.4 });   // PUENTE COLGANTE uniendo las repisas del flanco (►S3FIX: por centro de tapa + recorte)
   }
   /* ►ABAJO: decks HUNDIDOS al sur + PUENTE COLGANTE bajo cruzándolos */
@@ -23557,9 +23706,18 @@ function sjLattice(opts){
      —norte y sur de la plaza— que es donde hay vacío entre la plaza y las islas de cada sala: se
      cruzan rápido o te caes. Como cada sala coloca cosas distintas ahí, sjTiles se salta sola la
      rejilla si el sitio está ocupado a esa altura, en vez de montarse encima de una luna. */
-  sjTiles(0,  13.5, 7, 3, 0);
-  sjTiles(0, -13.5, 7, 3, 0);
+  /* ►S3FIX2 (pedido): los dos huecos grandes —norte y sur de la plaza— se cruzan por SEIS CARRILES
+     de losetas que caen, alineados y separados: cada personaje coge el suyo y hay que pasarlo
+     corriendo. Los carriles que no quepan en una sala se caen solos, así que la mecánica aparece
+     "de vez en cuando" según lo que tenga montado cada escena, no siempre. */
+  sjPadLanes(0,  13.5, 'z', 11, 0);
+  sjPadLanes(0, -13.5, 'z', 11, 0);
   for(const s of [-1,1]) sjTiles(s*15.5, 0, 3, 5, 0);        // y los dos huecos laterales, a ras de plaza (bajo las repisas de ±20.5)
+  /* ►S3FIX2 · EMBOSCADAS: cuatro anclas por sala repartidas por la plaza y las repisas. Con el
+     re-armado a 14s y 6 salas en la cinta, saltan a menudo — que es lo pedido. */
+  sjAmbush(-8, 3, 0, 9, 8); sjAmbush(8, -3, 0, 9, 8);
+  for(const s of [-1,1]) sjAmbush(s*20.5, 5, 1.0, 7, 6);
+  sjGrove(26, 4);                                            // ►S3FIX2: más arboleda y toriis en TODAS las salas (pedido)
 }
 /* ---------- TEMA + ESCENOGRAFÍA ---------- */
 function _applySJTheme(){
