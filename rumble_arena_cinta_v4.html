@@ -21770,7 +21770,7 @@ function _sceneBroadleaf(G, x, z, baseY, h, r, m){
    plena luz. Ahora se desvanece por los DOS extremos y el smoothstep funciona (heightSegments 24). */
 function _fadeBeamBottom(geo, len){
   const p = geo.attributes.position, n = p.count;
-  const FADE_B = 0.34, FADE_T = 0.34;                 // fracción baja / alta donde ocurre el desvanecido
+  const FADE_B = 0.26, FADE_T = 0.34;                 // ►S2FIX3: fade de abajo más corto (0.34→0.26) — el haz arranca ya a y=15, así que se le ve CAER dentro del encuadre en vez de aparecer solo muy arriba
   const ss = (u)=>{ u = u<0?0:(u>1?1:u); return u*u*(3-2*u); };
   const col = new Float32Array(n*3);
   for(let i=0;i<n;i++){
@@ -21934,18 +21934,21 @@ function buildS2Scenery(){
     }
     _s2CloudLayer(defs, _s2FogBaseMat); }
   /* 7) HACES DE LUZ finos — ►ESCULPIR: de 9 conos gigantes (ruido en todo el frame) a 4 haces
-     FINOS alineados con las S2_LIGHTS reales + CHARCO de luz en el suelo donde caen → el haz
-     visual y la luz puntual real coinciden (nada de "luz que no ilumina"). Acento, no cortina. */
+     FINOS alineados con las S2_LIGHTS reales. Acento, no cortina.
+     ►S2FIX3 (pedido: "la luz que cae de arriba no debe tener superficie de impacto… la caída es
+     invisible, solo se ve la luz cayendo del cielo pero no cómo impacta"): fuera el CHARCO de luz del
+     suelo (era un disco que remataba el haz = superficie de impacto) y el haz MUERE EN EL AIRE, por
+     encima de la plataforma más alta, en vez de bajar hasta y=1. */
   /* ►S2FIX: FrontSide (antes DoubleSide dibujaba la silueta DOS veces → borde el doble de duro) */
   const rayMat = ()=> new THREE.MeshBasicMaterial({ color:0xffe7c2, transparent:true, opacity:0.14,   // ►S2LIGHT+: haz un poco más luminoso (0.10→0.14) → aporta MÁS luz general
     blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.FrontSide, vertexColors:true });   // ►S2BEAMFADE: vertexColors → los extremos del haz se funden a negro (con blending aditivo = invisible)
   /* ►S2STRAIGHT: haces RECTOS (pedido del usuario — la luz no se curva orgánicamente). Cono recto simple,
-     con la FUENTE muy arriba (sobre el dosel) bajando en línea recta hasta las plataformas. Cada haz con
-     RADIO distinto. Sin sección elíptica ni curvatura: es un embudo de luz limpio de arriba a abajo. */
+     con la FUENTE muy arriba (sobre el dosel) bajando en línea recta. Cada haz con RADIO distinto.
+     Sin sección elíptica ni curvatura: es un embudo de luz limpio de arriba a abajo. */
   RAY_XS.forEach((lx, ri)=>{                           // RAY_XS declarado arriba (#4): huecos del dosel y haces comparten verticales
     const yawR = Math.random()*Math.PI;
     const topY = rng(58, 76);                          // FUENTE muy arriba, por encima del dosel
-    const botY = 1;                                    // llega hasta las plataformas
+    const botY = 15;                                   // ►S2FIX3: el haz se acaba EN EL AIRE (la meseta más alta del stage está a y≈13.7) → nunca cruza ni toca geometría, así que no hay nada que leer como impacto
     const len  = topY - botY;
     const rBot = rng(0.7, 2.0), rTop = rBot*rng(2.0, 3.2);   // RADIO distinto por haz; se ensancha hacia el cielo
     const tilt = rng(-0.08, 0.08);                     // inclinación RECTA leve (ángulo constante, no curva)
@@ -21968,18 +21971,9 @@ function buildS2Scenery(){
     };
     _shell(rTop, rBot, 0.075+Math.random()*0.05, 3);         // núcleo
     _shell(rTop*2.0, rBot*2.2, 0.030+Math.random()*0.02, 3); // halo difuminador (el que mata el canto)
-    /* charco de luz (suelo): disco additivo suave bajo el haz, respira con el mismo pulso; tamaño ∝ radio base */
-    const fx = lx + Math.sin(tilt)*len*0.5;            // desplazamiento del pie del haz por la inclinación recta
-    /* ►S2FIX: el charco era un CircleGeometry liso = elipse de borde perfectamente duro en el suelo.
-       Con el degradado radial de _hazeTex (ya existe, blanco→transparente) el borde desaparece. */
-    const pm = new THREE.MeshBasicMaterial({ map:_hazeTex, color:0xffdfb0, transparent:true, opacity:0.13,
-      blending:THREE.AdditiveBlending, depthWrite:false, fog:false });
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(rBot*rng(2.4,3.6), 20), pm);   // ►S2FIX: algo mayor — el degradado se apaga en el borde, así que el charco VISIBLE es más pequeño que el disco
-    pool.rotation.x = -Math.PI/2; pool.position.set(fx, 0.07, fz);
-    pool.scale.set(1, 0.7 + Math.random()*0.5, 1);      // charco ovalado (no círculo perfecto)
-    pool.rotation.z = Math.random()*Math.PI;
-    pool.renderOrder = 2; G.add(pool);
-    S2_SCENERY.rays.push({ m:pm, base:0.095+Math.random()*0.05, ph:Math.random()*6.28 });
+    /* ►S2FIX3: aquí vivía el CHARCO DE LUZ del suelo (disco aditivo a y=0.07). ELIMINADO: era
+       exactamente la "superficie de impacto" que sobraba — remataba el haz con un círculo y contaba
+       dónde aterrizaba la luz. Ahora el haz solo se ve caer, y desaparece antes de llegar a nada. */
   });
   scene.add(G); S2_SCENERY.group = G;
 }
