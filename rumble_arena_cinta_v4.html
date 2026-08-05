@@ -23505,9 +23505,12 @@ function scatterModelDecorSJ(startIdx){
   drop('sj_lamp', 3, 0.9, 1.1); drop('sj_lantern', 2, 0.7, 0.9);
 }
 /* flancos ANCHOS: media-lunas + apoyos one-way a ambos lados del carril (patrón s4WideFloaters) */
-function sjWideFloaters(){
+function sjWideFloaters(opts){
+  opts = opts || {};
   const r = (a,b)=>a+Math.random()*(b-a);
-  for(const sgn of [-1,1]){
+  /* ►S3FIX3 · sala ABISMO: se salta TODO el relleno flotante de los flancos para dejar el vacío que
+     hay que cruzar por las losetas. Sin esto, las medias lunas de x∈[21,40] tapan el hueco. */
+  if(!opts.chasm) for(const sgn of [-1,1]){
     const rot = sgn<0 ? Math.PI/2 : 3*Math.PI/2;
     const x1 = sgn*r(21,24), z1 = r(-6,6);
     if(_s2WideClear(x1, z1, 3.2, 3.2)) sjMoon(x1, z1, r(3.2,4.2), r(1.5,3.0), rot, 'sakura');
@@ -23518,7 +23521,7 @@ function sjWideFloaters(){
     const x4 = sgn*r(36,40), z4 = r(-5,7);
     if(_s2WideClear(x4, z4, 2.8, 2.6)) sjMoon(x4, z4, r(2.6,3.4), r(0.6,2.2), (Math.random()*4|0)*Math.PI/2, 'stone');
   }
-  sjLattice();   // ►MÁS plataformas arriba/abajo/lados + PUENTES COLGANTES en TODAS las salas
+  sjLattice(opts);   // ►MÁS plataformas arriba/abajo/lados + PUENTES COLGANTES en TODAS las salas
 }
 /* ►losa FINA flotante (one-way, como los tablones): para apilar DOBLE NIVEL sin aplastar el piso de abajo */
 function sjDeck(cx, y, cz, sx, sz, kind){
@@ -23668,8 +23671,9 @@ function sjPadLanes(cx, cz, along, span, y, gapMul){
 }
 function sjLattice(opts){
   opts = opts||{}; const kHi=opts.hi||'sakura', kLo=opts.lo||'moss', kSd=opts.side||'stone';
-  /* ►REPISAS LATERALES pegadas al carril (x±18) + DOBLE NIVEL (deck flotante ENCIMA) — ambos flancos */
-  for(const s of [-1,1]){
+  /* ►REPISAS LATERALES pegadas al carril (x±18) + DOBLE NIVEL (deck flotante ENCIMA) — ambos flancos
+     ►S3FIX3: en la sala ABISMO no se montan: son justo lo que taparía el vacío a cruzar. */
+  if(!opts.chasm) for(const s of [-1,1]){
     const rot = s<0 ? Math.PI/2 : 3*Math.PI/2;
     /* ►S3FIX (pedido: "plataformas pegadas a plataformas que no tienen sentido alguno"): las repisas
        estaban en x=±18 con 8 de ancho → x ∈ [14,22], y las plazas de las salas llegan hasta x=16 →
@@ -23700,23 +23704,20 @@ function sjLattice(opts){
   /* ►OBSTÁCULOS JAPONESES extra (de la lista propia: gong · daruma · lanzadera · shishi-odoshi) */
   sjBell(0, -3, 0, 'z', 0.72, 1.0);                          // ►GONG extra barriendo el carril en z
   sjDaruma(0, 6, 0, 'x', 8, 0.5, 1.2);                       // ►DARUMA extra patrullando en x
-  sjShurikenTurret(-20.5, 5, 1.0, Math.PI/2, 2.6);           // ►LANZADERA en la repisa O (dispara hacia +x) · ►S3FIX: sigue a la repisa movida
-  sjOdoshi(20.5, -5, 1.4, -0.6);                             // ►SHISHI-ODOSHI en la repisa E · ►S3FIX: ídem
-  /* ►S3FIX (pedido): REJILLAS DE LOSETAS grandes EN LOS HUECOS. Van en las dos bocas del carril
-     —norte y sur de la plaza— que es donde hay vacío entre la plaza y las islas de cada sala: se
-     cruzan rápido o te caes. Como cada sala coloca cosas distintas ahí, sjTiles se salta sola la
-     rejilla si el sitio está ocupado a esa altura, en vez de montarse encima de una luna. */
-  /* ►S3FIX2 (pedido): los dos huecos grandes —norte y sur de la plaza— se cruzan por SEIS CARRILES
-     de losetas que caen, alineados y separados: cada personaje coge el suyo y hay que pasarlo
-     corriendo. Los carriles que no quepan en una sala se caen solos, así que la mecánica aparece
-     "de vez en cuando" según lo que tenga montado cada escena, no siempre. */
-  sjPadLanes(0,  13.5, 'z', 11, 0);
-  sjPadLanes(0, -13.5, 'z', 11, 0);
-  for(const s of [-1,1]) sjTiles(s*15.5, 0, 3, 5, 0);        // y los dos huecos laterales, a ras de plaza (bajo las repisas de ±20.5)
+  if(!opts.chasm){
+    sjShurikenTurret(-20.5, 5, 1.0, Math.PI/2, 2.6);          // ►LANZADERA en la repisa O (dispara hacia +x) · ►S3FIX: sigue a la repisa movida
+    sjOdoshi(20.5, -5, 1.4, -0.6);                            // ►SHISHI-ODOSHI en la repisa E · ►S3FIX: ídem
+  }
+  /* ►S3FIX3 (corrección pedida): los carriles de losetas iban en los LATERALES (eje Z) y así no
+     sirven — el jugador avanza en X, empujado por la cinta. Van EN EL EJE DE MARCHA: seis líneas
+     paralelas que corren en X y se reparten en Z, para que cada personaje coja la suya y cruce el
+     vacío corriendo. Los que sobraban en los laterales, fuera. */
+  sjPadLanes( 22, 0, 'x', 16, 0);
+  sjPadLanes(-22, 0, 'x', 16, 0);
   /* ►S3FIX2 · EMBOSCADAS: cuatro anclas por sala repartidas por la plaza y las repisas. Con el
      re-armado a 14s y 6 salas en la cinta, saltan a menudo — que es lo pedido. */
   sjAmbush(-8, 3, 0, 9, 8); sjAmbush(8, -3, 0, 9, 8);
-  for(const s of [-1,1]) sjAmbush(s*20.5, 5, 1.0, 7, 6);
+  if(!opts.chasm) for(const s of [-1,1]) sjAmbush(s*20.5, 5, 1.0, 7, 6);
   sjGrove(26, 4);                                            // ►S3FIX2: más arboleda y toriis en TODAS las salas (pedido)
 }
 /* ---------- TEMA + ESCENOGRAFÍA ---------- */
@@ -23989,7 +23990,12 @@ function buildSJPagoda(){
 /* === idx 4 · BOSQUE DE BAMBÚ: claro del buda entre bambusales === */
 function buildSJBambu(){
   s3Slab(0, 0, 30, 16, 0, 'sakura');                       // claro central (MAGENTA)
-  s3Slab(-27, 0, 10, 12, 0, 'sakura'); s3Slab(27, 0, 10, 12, 0, 'sakura');   // anclas
+  /* ►S3FIX3 · SALA DEL ABISMO (pedido: "que en algun momento se genere muchisimo espacio entre
+     plataformas y que solo sea salvable pasando por las losetas"). Las anclas de costura se van de
+     x=±27 a x=±36, y sjWideFloaters({chasm}) NO rellena los flancos: queda un vacio real de ~16u a
+     cada lado que solo se cruza por los seis carriles de losetas. Es 1 de las 6 salas de la cinta,
+     asi que aparece cada seis tramos. */
+  s3Slab(-36, 0, 10, 12, 0, 'sakura'); s3Slab(36, 0, 10, 12, 0, 'sakura');   // anclas MUY separadas (sala abismo)
   /* BAMBUSALES: MÁS matas altas bordeando (props sin colisión — cortinas visuales) */
   for(const [bx, bz, n] of [[-12, 6, 6], [12, 6, 6], [-13, -6, 5], [13, -6, 5], [-6, 6, 4], [6, 6, 4], [-11, 0, 4], [11, 0, 4]]){   // ►coords SOBRE la losa 30×16
     for(let i=0;i<n;i++){
@@ -24012,15 +24018,15 @@ function buildSJBambu(){
   sjMoon(0, 19, 4.6, 6.0, Math.PI, 'sakura');              // luna ALTA sobre el claro
   sjMoon(-8, -14, 2.6, 4.6, Math.PI, 'sakura'); sjMoon(8, -14, 2.6, 4.6, Math.PI, 'sakura');
   sjMoon(0, -16, 4.4, -4, 0, 'stone');                     // deck bajo
-  addTree(-27, -4, 1.0); addTree(27, 4, 1.0);
-  addTree(-27, 4, 1.05); addTree(27, -4, 1.0); addTree(-5, 5, 0.9); addTree(5, 5, 0.9); addTree(0, -6, 1.0);
+  addTree(-36, -4, 1.0); addTree(36, 4, 1.0);
+  addTree(-36, 4, 1.05); addTree(36, -4, 1.0); addTree(-5, 5, 0.9); addTree(5, 5, 0.9); addTree(0, -6, 1.0);
   addPropSJ('sj_flowers', -5, -4, 0, 1.3, 0); addPropSJ('sj_flower', 4, 4, 0, 1.1, 0); addPropSJ('sj_flowers', -11, 3, 0, 1.25, 0);
   /* ►DENSIDAD: lunas de media altura entre el claro y la luna alta + 2º nivel + repisas al sur */
   sjMoon(-10, 5, 2.6, 3.2, Math.PI, 'sakura'); sjMoon(10, 5, 2.6, 3.2, Math.PI, 'sakura');
   sjMoon(0, 12, 2.6, 7.8, Math.PI, 'sakura');              // catwalk 2º nivel (antes alfombra deslizante)
   s3Slab(-20, -14, 7, 5, 1.4, 'sakura'); s3Slab(20, -14, 7, 5, 1.4, 'sakura');
-  addPad(0, 0); addPad(-27, 0); addPad(27, 0);
-  sjWideFloaters();
+  addPad(0, 0); addPad(-36, 0); addPad(36, 0);
+  sjWideFloaters({ chasm:true });   // ►S3FIX3: sin relleno de flancos → el vacio se cruza por las losetas
 }
 /* === idx 5 · TERRAZAS DE ARCE: bancales que suben + el ÁRBOL MÍSTICO === */
 function buildSJArces(){
