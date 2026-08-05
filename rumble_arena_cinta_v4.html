@@ -23607,20 +23607,26 @@ function sjGrove(nTrees, nTorii){
     if((pl.maxX-pl.minX) < 6.5 || (pl.maxZ-pl.minZ) < 5.5) continue;
     cand.push(pl); }
   if(!cand.length) return;
-  const pick = ()=>{
+  /* ►S3FIX4 (pedido: "evita que las torii gates se solapen con elementos"): el despeje era 1.7 para
+     TODO, que es el de un árbol. Un torii mide 7 de ancho, así que con 1.7 se plantaba pegado a
+     bambúes, faroles y a OTROS toriis — justo lo de la captura. Ahora el despeje lo pide quien
+     siembra: `clr`. */
+  const pick = (clr)=>{
     const pl = cand[(Math.random()*cand.length)|0];
-    const x = THREE.MathUtils.lerp(pl.minX+1.8, pl.maxX-1.8, Math.random());
-    const z = THREE.MathUtils.lerp(pl.minZ+1.8, pl.maxZ-1.8, Math.random());
-    if(pl.blob && typeof _inBlob==='function' && !_inBlob(pl, x, z, -1.4)) return null;
+    const m = (clr||1.7) + 0.4;
+    const x = THREE.MathUtils.lerp(pl.minX+m, pl.maxX-m, Math.random());
+    const z = THREE.MathUtils.lerp(pl.minZ+m, pl.maxZ-m, Math.random());
+    if(pl.maxX-pl.minX < m*2 || pl.maxZ-pl.minZ < m*2) return null;        // plataforma demasiado pequeña para esto
+    if(pl.blob && typeof _inBlob==='function' && !_inBlob(pl, x, z, -(clr||1.4))) return null;
     if(pl.topY < 0.5 && Math.abs(x) < 9 && Math.abs(z) < 6) return null;   // centro de la plaza: zona de pelea, se deja despejada
-    if(typeof _nearProp==='function' && _nearProp(x, z, 1.7)) return null;
+    if(typeof _nearProp==='function' && _nearProp(x, z, clr||1.7)) return null;
     if(typeof _nearPad==='function' && _nearPad(x, z, 0.8)) return null;   // esto SÍ se siembra al azar: esquiva saltadores
     return { pl, x, z };
   };
   /* Los TORIIS van PRIMERO a propósito: son grandes, escasos y lo que Toni echaba en falta. Si se
      siembran después de dos docenas de árboles, ya no queda un solo hueco que pase el _nearProp. */
-  for(let i=0, made=0; i<(nTorii||0)*6 && made<(nTorii||0); i++){
-    const s = pick(); if(!s) continue;
+  for(let i=0, made=0; i<(nTorii||0)*8 && made<(nTorii||0); i++){
+    const s = pick(3.8); if(!s) continue;                    // ►S3FIX4: despeje de TORII (mide 7 de ancho), no de árbol
     /* ►S3FIX2: pasar `pl.topY` fallaba cuando la plataforma elegida no era la MÁS ALTA en ese punto
        (addPropSJ compara contra el suelo real y descarta si difieren más de 0.65). Se pasa el suelo
        medido, que es lo que va a encontrar. */
@@ -23629,7 +23635,7 @@ function sjGrove(nTrees, nTorii){
     if(sjToriiGate(s.x, s.z, gy, 0.7 + Math.random()*0.3, alongX ? Math.PI/2 : 0)) made++;
   }
   for(let i=0, made=0; i<nTrees*4 && made<nTrees; i++){
-    const s = pick(); if(!s) continue;
+    const s = pick(1.9); if(!s) continue;
     const n0 = (typeof _propSpots!=='undefined') ? _propSpots.length : 0;
     addTree(s.x, s.z, 0.85 + Math.random()*0.5);
     if(typeof _propSpots!=='undefined' && _propSpots.length > n0) made++;   // addSakuraTree registra al colocar → así sabemos si cuajó
@@ -23650,14 +23656,21 @@ function sjPadLanes(cx, cz, along, span, y, gapMul){
     const o = off0 + i*sep;
     const lx = (along==='x') ? cx : cx + o;
     const lz = (along==='x') ? cz + o : cz;
+    /* ►S3FIX4 (pedido: "que no se crucen y fusionen con otras plataformas o bloques"): el despeje
+       vertical era de 1.6, así que una media luna a 2.2 de altura NO contaba y el carril se metía
+       justo por debajo. Ahora 3.6, y la celda de sondeo es la celda ENTERA (0.55 en vez de 0.45),
+       para que tampoco se solape de refilón por el canto. */
     const free = (t)=>{
       const px = (along==='x') ? lx + t : lx, pz = (along==='x') ? lz : lz + t;
-      return _sjAreaClear(px, pz, cell*0.45, cell*0.45, y||0, 1.6);
+      return _sjAreaClear(px, pz, cell*0.55, cell*0.55, y||0, 3.6);
     };
     if(!free(0)) continue;                                   // ni el centro del hueco está libre
     let a = 0, b = 0;
-    while(a < n && free(-(a+0.5)*cell)) a++;                 // hacia el lado negativo
-    while(b < n && free( (b+0.5)*cell)) b++;                 // y hacia el positivo
+    /* ►S3FIX4: se validaba el CENTRO de cada celda, pero la celda sobresale media unidad y por ahí
+       mordía la plataforma de enfrente. Ahora se exige libre también el borde EXTERIOR, así que el
+       carril se planta una celda antes de tocar: se cruza igual y no hay fusión. */
+    while(a < n && free(-(a+0.5)*cell) && free(-(a+1.0)*cell)) a++;   // hacia el lado negativo
+    while(b < n && free( (b+0.5)*cell) && free( (b+1.0)*cell)) b++;   // y hacia el positivo
     const cols = a + b;
     if(cols < 3) continue;                                   // hueco demasiado corto para un carril
     const mid = (b - a) * 0.5 * cell;                        // centro del tramo libre
@@ -23712,8 +23725,12 @@ function sjLattice(opts){
      sirven — el jugador avanza en X, empujado por la cinta. Van EN EL EJE DE MARCHA: seis líneas
      paralelas que corren en X y se reparten en Z, para que cada personaje coja la suya y cruce el
      vacío corriendo. Los que sobraban en los laterales, fuera. */
-  sjPadLanes( 22, 0, 'x', 16, 0);
-  sjPadLanes(-22, 0, 'x', 16, 0);
+  /* ►S3FIX4: en la sala del ABISMO el hueco es mucho mayor, así que los carriles arrancan más lejos
+     y con más recorrido para que el camino LLEGUE hasta la otra orilla (sjPadLanes mide el hueco
+     real y se extiende hasta donde haya vacío, así que basta con darle margen). */
+  const _lx = opts.chasm ? 27 : 22, _lspan = opts.chasm ? 30 : 16;
+  sjPadLanes( _lx, 0, 'x', _lspan, 0);
+  sjPadLanes(-_lx, 0, 'x', _lspan, 0);
   /* ►S3FIX2 · EMBOSCADAS: cuatro anclas por sala repartidas por la plaza y las repisas. Con el
      re-armado a 14s y 6 salas en la cinta, saltan a menudo — que es lo pedido. */
   sjAmbush(-8, 3, 0, 9, 8); sjAmbush(8, -3, 0, 9, 8);
@@ -23995,7 +24012,7 @@ function buildSJBambu(){
      x=±27 a x=±36, y sjWideFloaters({chasm}) NO rellena los flancos: queda un vacio real de ~16u a
      cada lado que solo se cruza por los seis carriles de losetas. Es 1 de las 6 salas de la cinta,
      asi que aparece cada seis tramos. */
-  s3Slab(-36, 0, 10, 12, 0, 'sakura'); s3Slab(36, 0, 10, 12, 0, 'sakura');   // anclas MUY separadas (sala abismo)
+  s3Slab(-43, 0, 10, 12, 0, 'sakura'); s3Slab(43, 0, 10, 12, 0, 'sakura');   // ►S3FIX4: anclas AÚN más separadas (±36 → ±43) — el hueco pasa de ~16u a ~23u por lado
   /* BAMBUSALES: MÁS matas altas bordeando (props sin colisión — cortinas visuales) */
   for(const [bx, bz, n] of [[-12, 6, 6], [12, 6, 6], [-13, -6, 5], [13, -6, 5], [-6, 6, 4], [6, 6, 4], [-11, 0, 4], [11, 0, 4]]){   // ►coords SOBRE la losa 30×16
     for(let i=0;i<n;i++){
@@ -24018,14 +24035,14 @@ function buildSJBambu(){
   sjMoon(0, 19, 4.6, 6.0, Math.PI, 'sakura');              // luna ALTA sobre el claro
   sjMoon(-8, -14, 2.6, 4.6, Math.PI, 'sakura'); sjMoon(8, -14, 2.6, 4.6, Math.PI, 'sakura');
   sjMoon(0, -16, 4.4, -4, 0, 'stone');                     // deck bajo
-  addTree(-36, -4, 1.0); addTree(36, 4, 1.0);
-  addTree(-36, 4, 1.05); addTree(36, -4, 1.0); addTree(-5, 5, 0.9); addTree(5, 5, 0.9); addTree(0, -6, 1.0);
+  addTree(-43, -4, 1.0); addTree(43, 4, 1.0);
+  addTree(-43, 4, 1.05); addTree(43, -4, 1.0); addTree(-5, 5, 0.9); addTree(5, 5, 0.9); addTree(0, -6, 1.0);
   addPropSJ('sj_flowers', -5, -4, 0, 1.3, 0); addPropSJ('sj_flower', 4, 4, 0, 1.1, 0); addPropSJ('sj_flowers', -11, 3, 0, 1.25, 0);
   /* ►DENSIDAD: lunas de media altura entre el claro y la luna alta + 2º nivel + repisas al sur */
   sjMoon(-10, 5, 2.6, 3.2, Math.PI, 'sakura'); sjMoon(10, 5, 2.6, 3.2, Math.PI, 'sakura');
   sjMoon(0, 12, 2.6, 7.8, Math.PI, 'sakura');              // catwalk 2º nivel (antes alfombra deslizante)
   s3Slab(-20, -14, 7, 5, 1.4, 'sakura'); s3Slab(20, -14, 7, 5, 1.4, 'sakura');
-  addPad(0, 0); addPad(-36, 0); addPad(36, 0);
+  addPad(0, 0); addPad(-43, 0); addPad(43, 0);
   sjWideFloaters({ chasm:true });   // ►S3FIX3: sin relleno de flancos → el vacio se cruza por las losetas
 }
 /* === idx 5 · TERRAZAS DE ARCE: bancales que suben + el ÁRBOL MÍSTICO === */
