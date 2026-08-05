@@ -19872,7 +19872,13 @@ function applyStageTheme(stage){
     M.pad.emissiveIntensity = 0.7;                                                  // pads naranjas que resaltan en la oscuridad
     for(let i=0;i<_GREENS.length;i++) _GREENS[i].set(S2_GREENS[i % S2_GREENS.length]).convertSRGBToLinear();   // bultos → verde de bosque (lineal, casa con superficie sRGB)
     scene.background.setHex(0x232b26);                                               // ►ESCULPIR: fondo gris-verde oscuro (el marrón 0x201811 leía como "niebla sucia")
-    skyMat.uniforms.top.value.setHex(0x2a333c); skyMat.uniforms.hor.value.setHex(0x4a5a58); skyMat.uniforms.bot.value.setHex(0x37453c);   // CIELO DE TORMENTA gris-azul → los huecos del dosel respiran (antes techo marrón turbio)
+    /* ►S2FIX2 (pedido: "niebla en el horizonte como en el stage 1, donde no se ve la línea del horizonte").
+       El truco del prado no es tener MÁS niebla: es que el color de la niebla y la BANDA BAJA del cielo
+       son prácticamente el mismo (0xdfe8f4 vs 0x9db8d8/0xf6e7c8). Así el mar, que más allá de fog.far es
+       un plano de color de niebla puro, no tiene con qué contrastar y la línea desaparece.
+       Aquí pasaba lo contrario: niebla VERDE (0x3c4736) contra un horizonte GRIS-AZUL (0x4a5a58) → raya.
+       Ahora `bot` = exactamente el color de la niebla y `hor` un pelo más claro: el mar se funde. */
+    skyMat.uniforms.top.value.setHex(0x2a333c); skyMat.uniforms.hor.value.setHex(0x50605a); skyMat.uniforms.bot.value.setHex(0x46554f);   // CIELO DE TORMENTA gris-azul → los huecos del dosel respiran (antes techo marrón turbio)
     /* ►R2: iluminación EQUILIBRADO en los 3 stages (pedido del usuario) — exposición/sol/ambiente/rim/side
        del preset; la NIEBLA y el cielo siguen siendo por-stage (la tormenta conserva su atmósfera) */
     VISUAL.exposure = 0.60;
@@ -19881,7 +19887,7 @@ function applyStageTheme(stage){
     VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.20;
     VISUAL.rim.color = 0xe2f2ff; VISUAL.rim.intensity = 0.32;                        // contraluz frío (color S2 por legibilidad) a intensidad EQUILIBRADO
     VISUAL.side.color = 0xcfe0d8; VISUAL.side.intensity = 0.26;
-    VISUAL.fog.color = 0x3c4736; VISUAL.fog.near = 34; VISUAL.fog.far = 115;          // ►FIX niebla: bruma verde-marrón MÁS CLARA que el fondo (0x232b26) → los lejanos se disuelven en halo, no en negro; far 150→115 = horizonte difuminado y funde la franja de árboles junto al muro (F2 para afinar)
+    VISUAL.fog.color = 0x46554f; VISUAL.fog.near = 34; VISUAL.fog.far = 122;          // ►S2FIX2: el color va CASADO con skyMat.bot (misma cifra) → el mar se funde con el cielo y NO hay línea de horizonte. Eso lo hace el COLOR, no la distancia. · far 115→122 y no más: updateBelt culla los segmentos a min(fog.far,92)+8 = 100u, así que a far 150 un segmento aparecía con solo un 57% de niebla encima = pop-in (y subir el cull costaría 2 segmentos más de draw calls)
     if(typeof seaMat!=='undefined') seaMat.color.setHex(0x2d4a33);                    // agua VERDOSA oscura
     for(const c of cloudOccluders) c.visible = false;   // jungla densa en tormenta: fuera nubes de prado (el dosel llena el techo; el occluder clona su material así que tintarlo no vale)
     for(const c of _WOODCOL) c.multiplyScalar(0.62);                                  // ►ESCULPIR: tablones oscuros pero que LEAN como madera (0.45 era silueta negra)
@@ -21809,17 +21815,22 @@ function buildS2Scenery(){
       place(p); return true; }
     return false;
   };
+  /* ►S2FIX2 (pedido: "aleja del carril los árboles gigantes del fondo, más lejos en el horizonte").
+     Las dos bandas se van hacia atrás y CRECEN para conservar el tamaño aparente. El techo lo pone
+     fog.far (122): más allá, un árbol es color de niebla puro = geometría invisible. Con near 34,
+     la banda media queda al 52-77% de niebla (se ve, brumosa) y el anillo de horizonte al 80-100%
+     (silueta que se disuelve). Backdrop de profundidad, no un muro detrás de la cinta. */
   /* 1) ANILLO DE HORIZONTE (360°) — modelos grandes (fallback a forma básica si no hay GLB) */
   for(let i=0;i<38;i++){                            // ►RONDA2: 26→38 (bosque de fondo más tupido)
-    _bgPlant(8, t=>{ const a = (i/38)*Math.PI*2 + rng(-0.06,0.06), rad = rng(92,122) + t*12;
+    _bgPlant(8, t=>{ const a = (i/38)*Math.PI*2 + rng(-0.06,0.06), rad = rng(104,128) + t*14;   // ►S2FIX2: 92-122 → 104-128 (el tope es fog.far)
                      return { x:Math.cos(a)*rad, z:Math.sin(a)*rad - 6 }; },
-             p=>{ if(!_sceneModel(p.x, rng(-10,-2), p.z, rng(5,9))) _sceneTree(G, p.x, p.z, rng(-12,-4), rng(24,44), rng(5,9), FAR, false); });
+             p=>{ if(!_sceneModel(p.x, rng(-13,-4), p.z, rng(6.5,11))) _sceneTree(G, p.x, p.z, rng(-15,-5), rng(28,52), rng(6.5,11), FAR, false); });
   }
   /* 2) BANDA MEDIA: profundidad detrás de las plataformas */
   for(let i=0;i<26;i++){                            // ►RONDA2: 18→26
-    _bgPlant(8, t=>{ const a = (i/26)*Math.PI*2 + rng(-0.08,0.08), rad = rng(54,82) + t*12;
+    _bgPlant(8, t=>{ const a = (i/26)*Math.PI*2 + rng(-0.08,0.08), rad = rng(80,102) + t*12;    // ►S2FIX2: 54-82 → 80-102 · ESTA era la banda que leía como "árboles pegados a la cinta"
                      return { x:Math.cos(a)*rad, z:Math.sin(a)*rad - 4 }; },
-             p=>{ if(!_sceneModel(p.x, rng(-7,-1), p.z, rng(3.5,6.5))) _sceneTree(G, p.x, p.z, rng(-9,-2), rng(20,36), rng(4.5,8), MID, false); });
+             p=>{ if(!_sceneModel(p.x, rng(-9,-2), p.z, rng(5,8.5))) _sceneTree(G, p.x, p.z, rng(-11,-3), rng(24,42), rng(5.5,10), MID, false); });
   }
   /* 3) ►S2FIX: MARCO LATERAL ELIMINADO. Eran 12 árboles GRANDES en x=±[44,56] (el muro está en ±42) con
      z∈[-26,22], o sea justo detrás de la pared y cruzando el carril: la causa exacta de "los árboles se
@@ -21908,16 +21919,18 @@ function buildS2Scenery(){
      (cloud1/2/3) vía _s2CloudLayer → sigue siendo 1 draw call, sin inventar geometría nueva.
      Color: el gris-verde de la bruma de #6b, no el lila de las nubes altas. */
   { const _s2FogBaseMat = _s2CloudLowMat.clone();
-    _s2FogBaseMat.color.setHex(0x9fb4a8); _s2FogBaseMat.emissive.setHex(0x3c4a44);
-    _s2FogBaseMat.emissiveIntensity = 0.22; _s2FogBaseMat.opacity = 0.5;
+    /* ►S2FIX2: el gris-verde CLARO (0x9fb4a8) leía como una fila de nubes blancas posada en el bosque.
+       Ahora va apenas por encima del color de la niebla del stage (0x46554f) → banda de bruma, no nubes. */
+    _s2FogBaseMat.color.setHex(0x6b7c74); _s2FogBaseMat.emissive.setHex(0x394642);
+    _s2FogBaseMat.emissiveIntensity = 0.18; _s2FogBaseMat.opacity = 0.42;
     const defs = [];
-    for(let i=0;i<170;i++){                                  // anillo pegado a los troncos (banda media + horizonte)
-      const a = Math.random()*Math.PI*2, rad = rng(46,90);
-      defs.push([Math.cos(a)*rad, rng(-6,1), Math.sin(a)*rad - 5, rng(1.8,3.4)]);
+    for(let i=0;i<170;i++){                                  // ►S2FIX2: anillo a la altura de los troncos de la banda media, ya alejada (80-102)
+      const a = Math.random()*Math.PI*2, rad = rng(70,104);
+      defs.push([Math.cos(a)*rad, rng(-8,2), Math.sin(a)*rad - 5, rng(2.4,4.2)]);
     }
-    for(let i=0;i<90;i++){                                   // cierre exterior, ya fundido con la niebla del stage
-      const a = Math.random()*Math.PI*2, rad = rng(88,125);
-      defs.push([Math.cos(a)*rad, rng(-5,2), Math.sin(a)*rad - 5, rng(2.4,4.2)]);
+    for(let i=0;i<110;i++){                                  // cierre exterior: tapa la base del anillo de horizonte (104-128)
+      const a = Math.random()*Math.PI*2, rad = rng(100,140);
+      defs.push([Math.cos(a)*rad, rng(-7,3), Math.sin(a)*rad - 5, rng(3.0,5.2)]);
     }
     _s2CloudLayer(defs, _s2FogBaseMat); }
   /* 7) HACES DE LUZ finos — ►ESCULPIR: de 9 conos gigantes (ruido en todo el frame) a 4 haces
