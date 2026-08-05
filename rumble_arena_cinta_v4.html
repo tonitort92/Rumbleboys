@@ -21493,6 +21493,7 @@ function dressTopJungle(g, sx, sz, topY, cx, cz, kind, opts){
   mg.setAttribute('color',    new THREE.Float32BufferAttribute(CA,3));
   const mesh = new THREE.Mesh(mg, _facetMat());
   mesh.receiveShadow = true;                                                      // sin castShadow (hierba rasante)
+  mesh.userData._grassBake = true;                                                // ►S3FIX: etiqueta para poder AUDITAR su coste en triángulos desde consola
   g.add(mesh);
 }
 
@@ -22766,7 +22767,7 @@ function dressTopSakura(g, sx, sz, topY, cx, cz, kind, opts){
      plataforma (dressTopJungle ya hace exactamente eso para el bosque: clumps de getGrassPieces
      recoloreados por luminancia en UNA malla → 0 draw calls extra). En el trigo NO: es su campo. */
   if(!wheat && typeof dressTopJungle==='function')
-    dressTopJungle(g, sx, sz, topY, cx, cz, kind, { pal:_SJ_FLORA_PAL, dens:0.85, inside:(opts&&opts.inside) });
+    dressTopJungle(g, sx, sz, topY, cx, cz, kind, { pal:_SJ_FLORA_PAL, dens:0.30, inside:(opts&&opts.inside) });   // ►S3FIX: densidad MEDIDA. A 0.85 eran 1,19M triángulos (más que todo el resto del stage junto, y el doble del césped que Toni ya rechazó una vez) y además tapaba la superficie pisable. A 0.30 se puebla y se sigue leyendo dónde pisas.
   const palP = wheat ? SJ_WHEATG : SJ_PETALS;
   const PA=[], CA=[];
   const cP = new THREE.Color(), n = Math.min(64, Math.max(12, Math.round(sx*sz/6)));
@@ -23530,10 +23531,12 @@ function buildSJScenery(){
     _sjClouds(defs, mistMat, 1);
   }
   /* 2) MONTAÑAS nevadas de horizonte (sj_mountain) — el FUJI grande al fondo -z + cordillera
-     ►S3FIX (pedido: "pon muchas más montañas"): de 8 fijas a ~40 repartidas en TRES anillos, y
-     HORNEADAS en una sola malla con _s2MeshMerger. 40 clones sueltos serían 40 draw calls de fondo;
-     así son 1. Los radios se quedan por debajo de VISUAL.fog.far (140): más allá, una montaña es
-     color de niebla puro = geometría invisible (lección del bosque del stage 2). */
+     ►S3FIX (pedido: "pon muchas más montañas"): de 8 fijas a ~40 repartidas en TRES anillos.
+     Van como CLONES, no horneadas: probé a fusionarlas con _s2MeshMerger y salían agujas rosas —
+     el merger solo conserva vertex-colors y este modelo no los trae, así que perdía su material.
+     Medido: las 41 montañas son 26k triángulos en total, o sea que el clon sale barato.
+     Los radios se quedan por debajo de VISUAL.fog.far (140): más allá, una montaña es color de
+     niebla puro = geometría invisible (lección del bosque del stage 2). */
   {
     const tpl = (typeof getModel==='function') ? getModel('sj_mountain', DECOR_DEFSJ) : null;
     const MTS = [ { a:4.71, rad:120, s:46 } ];         // el FUJI: hito fijo al fondo -z, el resto se sortea alrededor
@@ -23542,7 +23545,6 @@ function buildSJScenery(){
                     { n:14, r0:118, r1:134, s0:18, s1:32 } ];  // lejana, ya casi disuelta en la niebla
     for(const R of RINGS) for(let i=0;i<R.n;i++)
       MTS.push({ a:(i/R.n)*Math.PI*2 + rng(-0.11,0.11), rad:rng(R.r0,R.r1), s:rng(R.s0,R.s1) });
-    const merger = (typeof _s2MeshMerger==='function') ? _s2MeshMerger() : null;
     for(const d of MTS){
       let p;
       if(tpl){ p = tpl.clone(); const k = d.s / DECOR_DEFSJ.sj_mountain.size; p.scale.multiplyScalar(k);
@@ -23551,10 +23553,9 @@ function buildSJScenery(){
         p.position.set(Math.cos(d.a)*d.rad, -16 + d.s*0.45, Math.sin(d.a)*d.rad - 6); }
       p.rotation.y = rng(0, Math.PI*2);
       p.traverse(o=>{ if(o.isMesh) o.castShadow = false; });
-      if(merger && tpl) merger.add(p);                 // horneado (el fallback de conos no lleva vertex-color: va suelto)
-      else G.add(p);
+      p.userData._sjMountains = true;                  // etiqueta para auditar su coste desde consola
+      G.add(p);
     }
-    if(merger){ const mm = merger.flush('_sjMountains'); if(mm){ mm.castShadow = false; mm.userData.noOcc = true; G.add(mm); } }   // G.add lo saca de scene (three re-parenta)
     /* 2b) ►S3FIX: los dos toriis GIGANTES de silueta del horizonte, ELIMINADOS (petición de Toni:
        "las torii gates de decoración del fondo las quitas, pon solo las montañas"). Las torii
        JUGABLES (sjToriiGate) no se tocan. */
@@ -23565,8 +23566,8 @@ function buildSJScenery(){
     const midMat = new THREE.MeshStandardMaterial({ color:0xf3dbe4, emissive:0x8f6878, emissiveIntensity:0.16,
       roughness:1, metalness:0, transparent:true, opacity:0.5, depthWrite:false, flatShading:true });
     const defs = [];
-    for(let i=0;i<150;i++){ const a = Math.random()*Math.PI*2, rad = rng(74,132);
-      defs.push([Math.cos(a)*rad, rng(-6,10), Math.sin(a)*rad - 6, rng(1.6,3.2)]); }
+    for(let i=0;i<100;i++){ const a = Math.random()*Math.PI*2, rad = rng(74,132);
+      defs.push([Math.cos(a)*rad, rng(-6,10), Math.sin(a)*rad - 6, rng(1.8,3.4)]); }
     _sjClouds(defs, midMat, 1);
   }
   /* 2d) ►S3FIX (pedido): NIEBLA EN LA BASE DE LAS MONTAÑAS — tapa el punto donde arrancan del vacío.
@@ -23576,8 +23577,8 @@ function buildSJScenery(){
     const baseMat = new THREE.MeshStandardMaterial({ color:0xefd0d6, emissive:0x8a6670, emissiveIntensity:0.14,
       roughness:1, metalness:0, transparent:true, opacity:0.62, depthWrite:false, flatShading:true });
     const defs = [];
-    for(let i=0;i<190;i++){ const a = Math.random()*Math.PI*2, rad = rng(72,136);
-      defs.push([Math.cos(a)*rad, rng(-15,-7), Math.sin(a)*rad - 6, rng(2.2,4.4)]); }
+    for(let i=0;i<130;i++){ const a = Math.random()*Math.PI*2, rad = rng(72,136);
+      defs.push([Math.cos(a)*rad, rng(-15,-7), Math.sin(a)*rad - 6, rng(2.6,4.8)]); }
     _sjClouds(defs, baseMat, 1);
   }
   /* 3) BRUMA de separación rosa pálido (perspectiva aérea, patrón S2/S4) */
