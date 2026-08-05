@@ -20776,7 +20776,10 @@ const _S2_TREE_KEY = { pine:'s2_pine', pine2:'s2_pine2', pine3:'s2_pine3', pine4
 function s2Pad(x, z){
   const n0 = pads.length;
   addPad(x, z);
-  if(pads.length > n0) _propSpots.push({ x, z, r:2.6 });   // radio real del pad (1.7) + holgura para el chevrón
+  /* ►MERGE ►TAPA+►S2FIX: addPad ya NO respeta las coordenadas de entrada — si la base no cabe, busca
+     sitio a un paso. Hay que reservar la posición REAL del pad, no la pedida, o el hueco quedaría
+     marcado donde el saltador ya no está. */
+  if(pads.length > n0){ const p = pads[pads.length-1].pos; _propSpots.push({ x:p.x, z:p.z, r:2.6 }); }   // radio real del pad (1.7) + holgura para el chevrón
 }
 function s2Tree(kind, x, z, s){
   if(!_s2TreeEdgeOK(x, z)) return;                  // ►FIX arrastre-cinta: no plantar pegado a la pared
