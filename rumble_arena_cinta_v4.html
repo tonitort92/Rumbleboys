@@ -19626,7 +19626,10 @@ function buildVariantMaze(){
   addWall(12, -8, 1, 11, 2);   addWall(12, 9, 1, 13, 2);
   addWall(-6, -14, 9, 1, 2);   addWall(7, 17, 1, 10, 2);
   addWall(-20, 3, 8, 1, 2);    addWall(20, -3, 8, 1, 2);
-  addCrate(-6, -2, 1.7, 1.7);  addCrate(8, 12, 1.7, 1.7);  addCrate(8, 12, 1.7, 3.4);   // suelta + pila, apoyadas
+  /* (►TAPA · la caja SUELTA de (-6,-2) ELIMINADA, no recolocada: ahí el suelo del laberinto está a
+     y=2 y la llamada la apoyaba en 0 → quedaba medio enterrada y encajada contra la valla del muro
+     de (0,-2). Pedido de Toni: fuera. Queda solo la pila de (8,12), que sí es escalón.) */
+  addCrate(8, 12, 1.7, 1.7);  addCrate(8, 12, 1.7, 3.4);   // pila, apoyada (escalón para subir)
   addFloating(0, 5.4, 7, 6, 4); addFloating(-15, 4.8, -11, 5, 3.5); addFloating(16, 5.0, -12, 5, 3.5);
   addPad(0, 14); addPad(-28, 0); addPad(28, 0);
   addTree(-32, 0, .9); addTree(32, 0, .85); addTree(-4, -29, 1.0);
