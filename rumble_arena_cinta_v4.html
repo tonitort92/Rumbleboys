@@ -21700,7 +21700,11 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
    solapar plataformas existentes ni tapar el carril. Se llama en cada escena tras montar el suelo. */
 function _s2WideClear(x, z, hw, hd){
   const x0=x-hw, x1=x+hw, z0=z-hd, z1=z+hd;
-  for(const pl of platforms){
+  /* ►S3FIX: barría `platforms` DESDE 0. Las salas ya construidas de otros segmentos están scrolleadas
+     a su X de mundo, así que compararse con ellas en coordenadas LOCALES no significa nada — y hacía
+     que este test rechazara EN SILENCIO plataformas legítimas de las salas 2ª a 6ª. Solo el segmento
+     en construcción (misma regla que _s2AnyFloorAt y que los sembradores). */
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i];
     if(x1 > pl.minX-1 && x0 < pl.maxX+1 && z1 > pl.minZ-1 && z0 < pl.maxZ+1) return false;   // solaparía otra plataforma
   }
   return true;
@@ -22887,11 +22891,17 @@ const DECOR_DEFSJ = {
 function addPropSJ(key, x, z, topY, sc, yaw){
   if(!SJ_DECOR_ON) return null;
   if(typeof _inWall==='function' && _inWall(x, z, topY)) return null;
-  const gy = platformTopAt(x, z, -0.2);
+  const gy = platformTopAt(x, z, -TOP_INSET);   // ►S3FIX: margen ESTRICTO (la tapa visible es menor que el AABB) — antes -0.2 dejaba props asomando por el canto
   if(gy===null || Math.abs(gy-topY) > 0.65) return null;
+  sc = sc||1;
+  /* ►S3FIX: valida la HUELLA, no un punto. Antes bastaba con que el centro pisara suelo, así que un
+     torii o una cabaña podían quedar medio fuera del borde (el mismo defecto que ya se arregló en el
+     stage 1 con _footOnTop/_modelFoot: se reutilizan aquí en vez de reinventarlos). */
+  const _mf = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFSJ) : null;
+  if(_mf && typeof _footOnTop==='function' && !_footOnTop(x, z, gy, _mf.rad*sc*0.92)) return null;
+  if(typeof _nearPad==='function' && _nearPad(x, z, (_mf ? _mf.rad*sc : 1.1)*0.6)) return null;   // ni encima de un saltador
   const m = getModel(key, DECOR_DEFSJ); if(!m) return null;
   if(key==='sj_lantern') _sjLightLantern(m);
-  sc = sc||1;
   m.scale.setScalar(sc);
   /* ►S3FIX: SENTAR el prop sobre el SUELO REAL medido (gy), no sobre el topY pedido: antes usaba topY y la
      tolerancia de ±0.65 dejaba que las patas (p.ej. las columnas del TORII) se hundieran/atravesaran la losa. */
@@ -23083,11 +23093,23 @@ function addSakuraTree(x, z, ty, s){
             : r < 0.90 ? ['sj_maple4','sj_maple5'][(Math.random()*2)|0]
             : ['sj_bamboo','sj_bamboo2'][(Math.random()*2)|0];
   const m = getModel(key, DECOR_DEFSJ); if(!m) return;
+  /* ►S3FIX (pedido: "árboles con plataformas", "mucho solapamiento entre assets"). Este árbol NO
+     validaba NADA: le bastaba con que hubiera suelo en el punto EXACTO del tronco, así que la copa
+     colgaba del borde o se fundía con la losa de al lado. Y como no se registraba en _sjSegProps, el
+     barrido de solapes (_sjResolvePropClashes) jamás lo retiraba aunque lo cruzara un puente.
+     Ahora pasa por los mismos filtros que el resto: huella real, saltador despejado y registro. */
+  const foot = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFSJ) : null;
+  const rad = (foot && foot.rad ? foot.rad : 1.1) * s * 0.88;   // ×0.88: algo de hoja asomando es natural, la copa entera sobre el vacío no
+  if(typeof _footOnTop==='function' && !_footOnTop(x, z, ty, rad)) return;
+  if(typeof _nearPad==='function' && _nearPad(x, z, rad*0.6)) return;
   m.scale.multiplyScalar(s);
   m.position.set(x, ty + (m.userData.halfH||0)*s - 0.2, z);
   m.rotation.y = Math.random()*Math.PI*2;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
   scene.add(m);
+  if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:rad });
+  if(typeof _sjSegProps!=='undefined')
+    _sjSegProps.push({ mesh:m, x, z, r:rad, yBase:ty, yTop:ty + (m.userData.halfH||0)*2*s });
 }
 /* campo de TRIGO: mata de espigas en FILAS ordenadas (como un campo real) sobre una losa dorada */
 function sjWheatField(cx, cz, topY, sx, sz){
@@ -23402,10 +23424,17 @@ function scatterModelDecorSJ(startIdx){
   if(!plats.length) return;
   const spot = (pl)=>({ x:THREE.MathUtils.lerp(pl.minX+0.8, pl.maxX-0.8, Math.random()), z:THREE.MathUtils.lerp(pl.minZ+0.8, pl.maxZ-0.8, Math.random()) });
   const drop = (key, count, scMin, scMax, noShadow)=>{
+    const mf = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFSJ) : null;
     for(let i=0;i<count;i++){
       const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
+      /* ►S3FIX: las plataformas redondas son `blob` — muestrear su AABB tira props a las ESQUINAS,
+         que están fuera de la tapa. Y hasta ahora se validaba un punto, no la huella del prop. */
+      if(pl.blob && typeof _inBlob==='function' && !_inBlob(pl, s.x, s.z, -0.5)) continue;
       if(typeof _inWall==='function' && _inWall(s.x, s.z, pl.topY, 0.5)) continue;
       if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 0.8)) continue;
+      if(typeof _nearPad==='function' && _nearPad(s.x, s.z, 0.6)) continue;         // ►S3FIX: ni flores ni faroles encima de un saltador
+      const fr = (mf && mf.rad ? mf.rad : 0.5) * scMax;
+      if(typeof _footOnTop==='function' && !_footOnTop(s.x, s.z, pl.topY, fr)) continue;   // ►S3FIX: la huella entera sobre la tapa
       const m = getModel(key, DECOR_DEFSJ); if(!m) return;
       if(key==='sj_lantern') _sjLightLantern(m);
       const f = scMin + Math.random()*(scMax-scMin);
@@ -23471,6 +23500,27 @@ function sjBridge(x1, z1, x2, z2, yFallback, opts){
           : (a.topY!=null ? a.topY : (b.topY!=null ? b.topY : yFallback));   // ►S3FIX: la altura sale del suelo REAL, no de un literal (había puentes flotando 0.19u y otros metidos dentro de la losa)
   return addRopeBridge(a.x, a.z, b.x, b.z, y, opts);
 }
+/* ►S3FIX · ¿está libre este rectángulo A ESTA ALTURA? _s2WideClear ignora la altura y por tanto
+   rechaza cualquier sitio que tenga algo arriba o abajo; para las rejillas hace falta mirar solo la
+   banda de altura donde se van a pisar. */
+function _sjAreaClear(cx, cz, hw, hd, y, dy){
+  dy = (dy!=null) ? dy : 2.2;
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(pl._fell) continue;
+    if(Math.abs(pl.topY - y) > dy) continue;
+    if(cx+hw > pl.minX-0.3 && cx-hw < pl.maxX+0.3 && cz+hd > pl.minZ-0.3 && cz-hd < pl.maxZ+0.3) return false;
+  }
+  return true;
+}
+/* ►S3FIX (pedido: "más grids o módulos de pads repartidos para dar continuidad" y "pads grandes en
+   el espacio entre plataformas sólidas para que tengan que pasar rápido para no caer"). Envoltorio de
+   s4PadGrid con el test de sitio que le faltaba: hoy cada celda se empujaba a platforms[] sin mirar
+   nada, y por eso había rejillas con una media luna justo encima. */
+function sjTiles(cx, cz, cols, rows, y){
+  const cell = (typeof S5!=='undefined' && S5.cell) ? S5.cell : 2.2;
+  if(!_sjAreaClear(cx, cz, cols*cell*0.5, rows*cell*0.5, y||0)) return null;
+  return s4PadGrid(cx, cz, cols, rows, y||0, { tatami:1 });
+}
 function sjLattice(opts){
   opts = opts||{}; const kHi=opts.hi||'sakura', kLo=opts.lo||'moss', kSd=opts.side||'stone';
   /* ►REPISAS LATERALES pegadas al carril (x±18) + DOBLE NIVEL (deck flotante ENCIMA) — ambos flancos */
@@ -23501,8 +23551,15 @@ function sjLattice(opts){
   /* ►OBSTÁCULOS JAPONESES extra (de la lista propia: gong · daruma · lanzadera · shishi-odoshi) */
   sjBell(0, -3, 0, 'z', 0.72, 1.0);                          // ►GONG extra barriendo el carril en z
   sjDaruma(0, 6, 0, 'x', 8, 0.5, 1.2);                       // ►DARUMA extra patrullando en x
-  sjShurikenTurret(-18, 5, 1.0, Math.PI/2, 2.6);             // ►LANZADERA en la repisa O (dispara hacia +x)
-  sjOdoshi(18, -5, 1.4, -0.6);                               // ►SHISHI-ODOSHI en la repisa E
+  sjShurikenTurret(-20.5, 5, 1.0, Math.PI/2, 2.6);           // ►LANZADERA en la repisa O (dispara hacia +x) · ►S3FIX: sigue a la repisa movida
+  sjOdoshi(20.5, -5, 1.4, -0.6);                             // ►SHISHI-ODOSHI en la repisa E · ►S3FIX: ídem
+  /* ►S3FIX (pedido): REJILLAS DE LOSETAS grandes EN LOS HUECOS. Van en las dos bocas del carril
+     —norte y sur de la plaza— que es donde hay vacío entre la plaza y las islas de cada sala: se
+     cruzan rápido o te caes. Como cada sala coloca cosas distintas ahí, sjTiles se salta sola la
+     rejilla si el sitio está ocupado a esa altura, en vez de montarse encima de una luna. */
+  sjTiles(0,  13.5, 7, 3, 0);
+  sjTiles(0, -13.5, 7, 3, 0);
+  for(const s of [-1,1]) sjTiles(s*15.5, 0, 3, 5, 0);        // y los dos huecos laterales, a ras de plaza (bajo las repisas de ±20.5)
 }
 /* ---------- TEMA + ESCENOGRAFÍA ---------- */
 function _applySJTheme(){
@@ -23684,7 +23741,7 @@ function buildSJJardin(){
   sjPath(0, 5, 0, Math.PI/2, 5);                           // eje norte (hacia el torii)
   sjPath(4, -3, 0, 0, 4); sjPath(-4, -3, 0, Math.PI, 4);   // brazos E/O
   sjPath(-8, 3, 0, Math.PI/2, 4); sjPath(8, 3, 0, Math.PI/2, 4);   // ejes laterales extra
-  s4PadGrid(0, 14, 5, 3, 0, { tatami:1 });                 // ►TATAMIS: baldosas que TIEMBLAN Y CAEN (dan suelo al gran torii)
+  sjTiles(0, 14, 5, 3, 0);                                 // ►TATAMIS: baldosas que TIEMBLAN Y CAEN (dan suelo al gran torii) · ►S3FIX: con test de sitio
   sjToriiGate(0, 12.5, 0, 1.0, 0);                         // GRAN torii enmarcando el paso al jardín norte
   sjPagoda(-27, 2, 0, 8);                                  // ►PAGODA menor sobre el ancla oeste (tejados saltables)
   addPropSJ('sj_lamp', -2.8, 9, 0, 1.05, 0); addPropSJ('sj_lamp', 2.8, 9, 0, 1.05, 0);   // linternas flanqueando el eje
@@ -23720,7 +23777,7 @@ function buildSJEstanques(){
   addPropSJ('sj_lamp', -9.5, 5.8, 0, 1.0, 0); addPropSJ('sj_lamp', -2.5, 5.8, 0, 1.0, 0);
   sjTaiko(-12, -2, 0);                                      // ►TAIKO junto a los estanques
   sjOdoshi(-9.2, 1.4, 0, 0.6); sjOdoshi(10.4, 0.6, 0, 2.4);   // ►shishi-odoshi flanqueando las charcas
-  s4PadGrid(0, -14, 5, 3, 0, { tatami:1 });                // ►TATAMIS uniendo las repisas del sur
+  sjTiles(0, -14, 5, 3, 0);                                // ►TATAMIS uniendo las repisas del sur · ►S3FIX: con test de sitio
   sjBell(0, 0, 0, 'z', 0.7, 1.05);                         // ►GONG entre las dos charcas (barre en z)
   sjShurikenTurret(-24, 0, 0, Math.PI/2, 3.0);             // ►LANZADERA del ancla oeste (cruza toda la pradera)
   sjPagoda(27, 0, 0, 8);                                   // ►PAGODA menor sobre el ancla este (tejados saltables)
@@ -23789,7 +23846,7 @@ function buildSJBambu(){
   sjTaiko(9, -3, 0);                                        // ►TAIKO del claro: sube a la luna alta del bosque
   sjZenGarden(-8, 2.6, 0, 2.0);                             // ►karesansui del claro del buda
   sjZenGarden(8, -5, 0, 1.7);                               // ►2º karesansui al sur
-  s4PadGrid(0, 13, 5, 3, 0, { tatami:1 });                 // ►TATAMIS hacia la luna alta del bosque
+  sjTiles(0, 13, 5, 3, 0);                                 // ►TATAMIS hacia la luna alta del bosque · ►S3FIX: con test de sitio
   sjDaruma(0, -3, 0, 'x', 9, 0.6, 1.15);                   // ►DARUMA rodando entre los bambusales
   sjShurikenTurret(13, 3, 0, -Math.PI/2, 2.5);             // ►LANZADERA del bosque (dispara hacia -x)
   /* travesía multinivel del bosque (antes alfombras) */
