@@ -2146,12 +2146,13 @@ try {
       inkPass = new THREE.ShaderPass({
         uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null},
                    cameraNear:{value:0.1}, cameraFar:{value:1000}, texel:{value:new THREE.Vector2(1/1280,1/720)},
+                   fogNear:{value:72}, fogFar:{value:142},   // ►TINTANIEBLA: se rellenan de scene.fog (ver applyFogToInk)
                    strength:{value:0.45}, umbral:{value:0.30} },   // ►(1/08) Toni pidio mas presencia
         vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
         fragmentShader:[
           '#include <packing>',
           'uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tSil;',
-          'uniform float cameraNear, cameraFar, strength, umbral; uniform vec2 texel; varying vec2 vUv;',
+          'uniform float cameraNear, cameraFar, strength, umbral, fogNear, fogFar; uniform vec2 texel; varying vec2 vUv;',
           'float vz(vec2 uv){ float d=texture2D(tDepth, uv).x; return -perspectiveDepthToViewZ(d, cameraNear, cameraFar); }',
           'void main(){',
           '  vec4 col=texture2D(tDiffuse, vUv);',
@@ -2161,7 +2162,13 @@ try {
           '  float dx=abs(vz(vUv+vec2(texel.x,0.0))-z), dy=abs(vz(vUv+vec2(0.0,texel.y))-z);',
           '  float edge=max(dx,dy);',
           '  float lim=umbral*(1.0+z*0.06);',                                // umbral crece con la distancia (sin tinta de ruido al fondo)
-          '  float ink=smoothstep(lim, lim*2.2, edge)*strength;',
+          /* ►TINTANIEBLA · la tinta se DISUELVE con la niebla, igual que el objeto que contornea.
+             Antes el único corte era z>cameraFar*0.85 (=255) mientras la niebla del prado se cierra
+             a 142: en toda esa franja la geometría ya era 100% color-niebla y aun así recibía
+             contorno negro a fuerza completa → líneas oscuras flotando en el horizonte sin nada que
+             las justificara, y "pop" cuando el culling de cinta apagaba el segmento entero. */
+          '  float fogT=smoothstep(fogNear, fogFar, z);',
+          '  float ink=smoothstep(lim, lim*2.2, edge)*strength*(1.0-fogT);',
           '  gl_FragColor=vec4(mix(col.rgb, vec3(0.02,0.02,0.05), ink), col.a);',
           '}'].join('\n')
       });
@@ -2712,6 +2719,14 @@ function drawScene(){ tagInteractiveMask();   // marca cada frame los interactiv
     inkPass.uniforms.tDepth.value = (ssaoPass && ssaoPass.enabled && ssaoPass.normalRenderTarget) ? ssaoPass.normalRenderTarget.depthTexture : (composer && composer.renderTarget2 ? composer.renderTarget2.depthTexture : null);
     inkPass.uniforms.tSil.value = charDepthRT ? charDepthRT.texture : null;
     inkPass.uniforms.cameraNear.value = camera.near; inkPass.uniforms.cameraFar.value = camera.far;
+    /* ►TINTANIEBLA: la niebla la cambian el stage, la arena del jefe y el selector de calidad, en
+       muchos sitios distintos → se lee de scene.fog AQUÍ, cada frame (dos asignaciones), y así
+       queda automática en todos los mundos sin tocar nada al crear uno nuevo. Sin niebla, el
+       tramo se manda fuera del alcance de la cámara = tinta intacta. */
+    if(scene.fog && scene.fog.near !== undefined){
+      inkPass.uniforms.fogNear.value = scene.fog.near;
+      inkPass.uniforms.fogFar.value  = scene.fog.far;
+    } else { inkPass.uniforms.fogNear.value = camera.far; inkPass.uniforms.fogFar.value = camera.far*2; }
     const _ib = renderer.getDrawingBufferSize(_inkV2);
     inkPass.uniforms.texel.value.set(1/Math.max(1,_ib.x), 1/Math.max(1,_ib.y));
   }
@@ -2901,6 +2916,68 @@ function organicSlabGeo(sx, sz, depth, radius, bevSize, bevThick){
   return geo;
 }
 
+/* ►TAPA · La cara VISIBLE de una plataforma es MENOR que su AABB. organicSlabGeo la dibuja con
+   bisel (bevSize 0.38) y esquinas redondeadas (radio 1.9), mientras platforms[] guarda el
+   rectángulo ENTERO (sx × sz). Colocar props contra ese rectángulo es lo que los dejaba asomando
+   por el borde, colgando sobre el vacío en las esquinas y "flotando" justo encima del bisel.
+   TOP_INSET = ese bisel + holgura; se usa como margen NEGATIVO en todas las sondas de suelo.
+   OJO: const (no hoista) → tiene que estar ANTES de las llamadas de nivel superior a
+   addFloorBlock/addPad que hay más abajo. */
+const TOP_INSET = 0.42;
+/* ¿cabe ENTERA una huella de radio r apoyada al nivel lvl? Sonda de 8 puntos (4 cardinales a r +
+   4 diagonales a r*0.71): así falla tanto el borde/hueco como el muro o la colina que sube.
+   Es el patrón que ya usaba layStonePath por dentro, ahora compartido por todo el que coloca algo.
+   `segs` (opcional) restringe la búsqueda a las plataformas de ESTE segmento — todos se construyen
+   en x local 0, así que el array global se contamina entre segmentos. */
+function _footOnTop(x, z, lvl, r, segs){
+  const topAt = segs
+    ? (px, pz)=>{ let best = null;
+        for(const p of segs){
+          if(px >= p.minX+TOP_INSET && px <= p.maxX-TOP_INSET && pz >= p.minZ+TOP_INSET && pz <= p.maxZ-TOP_INSET){
+            if(best === null || p.topY > best) best = p.topY; } }
+        return best; }
+    : (px, pz)=> platformTopAt(px, pz, -TOP_INSET);
+  const ok = (px, pz)=>{ const t = topAt(px, pz); return t !== null && Math.abs(t - lvl) <= 0.25; };
+  const d = r*0.71;
+  return ok(x, z)
+      && ok(x+r, z) && ok(x-r, z) && ok(x, z+r) && ok(x, z-r)
+      && ok(x+d, z+d) && ok(x-d, z+d) && ok(x+d, z-d) && ok(x-d, z-d);
+}
+/* ►TAPA · medio-extent REAL de un modelo (no un margen fijo): lo que hay que dejar libre alrededor
+   del punto para que el prop no asome por el borde. Se mide UNA vez sobre la plantilla y se cachea
+   por key; a escala f el radio es max(hx,hz)*f. Es lo que scatterGrassPatches ya hacía a mano para
+   su parche de hierba, generalizado a cualquier prop.
+   (Aquí arriba por el TDZ: addTree y addPad se llaman a nivel superior mucho antes del scatter.) */
+const _footCache = {}, _treeFootCache = {};
+const _fbBox = new THREE.Box3(), _fbSz = new THREE.Vector3();
+function _modelFoot(key, table){
+  const ck = (table === DECOR_DEFS ? 'dec:' : 'mod:') + key;
+  if(_footCache[ck] === undefined){
+    const tpl = getModel(key, table);
+    if(!tpl){ _footCache[ck] = null; }
+    else {
+      _fbBox.setFromObject(tpl); _fbBox.getSize(_fbSz);
+      /* rad = CIRCUNRADIO, no max(hx,hz): a estos props se les da un yaw ALEATORIO, y una huella
+         alargada girada 45° barre más que su lado mayor. Con max() se colaban por el borde justo
+         los que salían girados (medido: ~11% de los parches de hierba). */
+      _footCache[ck] = { hx:_fbSz.x/2, hz:_fbSz.z/2, rad: Math.hypot(_fbSz.x, _fbSz.z)/2,
+                         halfH: tpl.userData.halfH || _fbSz.y/2 };
+    }
+  }
+  return _footCache[ck];
+}
+/* radio de COPA de un árbol (los árboles no pasan por DECOR_DEFS). Medido del modelo, no a ojo:
+   era la ruta que más props dejaba colgando — el sondeo miraba el TRONCO y la copa entera se
+   quedaba fuera, sobre el agua. */
+function _treeFoot(trees, i){
+  const ck = STAGE + ':' + i;
+  if(_treeFootCache[ck] === undefined){
+    _fbBox.setFromObject(trees[i]); _fbBox.getSize(_fbSz);
+    _treeFootCache[ck] = Math.max(_fbSz.x, _fbSz.z)/2;
+  }
+  return _treeFootCache[ck];
+}
+
 /* ---- STAGE 4: losa ORGÁNICA (blob) — elipse + jitter radial SOLO HACIA FUERA ----
    3 armónicos ENTEROS (sin3θ/sin5θ/sin7θ) → el contorno cierra sin costura. El jitter
    j∈[0..J] solo crece hacia fuera ⇒ la ELIPSE BASE queda siempre INSCRITA en el visual
@@ -3088,8 +3165,17 @@ function addWall(cx, cz, sx, sz, h=2){
 /* CAJÓN de madera: sólido, te puedes subir (sirve de escalón) */
 function addCrate(cx, cz, s, topY){
   if(!_CAP && !_ISLAND) return;
-  const _hw=s/2;                               // ►FIX atraviesa muros: comprueba el CENTRO y las 4 ESQUINAS (antes solo el centro → los bordes clipaban)
+  /* ►FIX atraviesa muros: comprueba el CENTRO y las 4 ESQUINAS (antes solo el centro → los bordes
+     clipaban). ►TAPA: además pide HOLGURA (+0.9) — con la esquina justa la caja se quedaba encajada
+     en el pasillo de una unidad que dejan dos vallas, sin sentido jugable. */
+  const _hw = s/2 + 0.9;
   if(_inWall(cx,cz,topY-s) || _inWall(cx-_hw,cz-_hw,topY-s) || _inWall(cx+_hw,cz-_hw,topY-s) || _inWall(cx-_hw,cz+_hw,topY-s) || _inWall(cx+_hw,cz+_hw,topY-s)) return null;
+  /* ►TAPA: y suelo bajo TODA su base (topY-s es su cara de abajo). Sin esto la caja se quedaba
+     medio en el aire cuando la variante no tenía losa en esas coordenadas fijas.
+     Radio = MEDIA ANCHURA (no circunradio): las cajas se APILAN una sobre otra (addArenaExtras,
+     buildVariantMaze) y la de abajo mide exactamente s → con el circunradio la de arriba se caía
+     del filtro y se perdía la pila. */
+  if(!_footOnTop(cx, cz, topY - s, s*0.5)) return null;
   const g = new THREE.Group();
   const m = getModel('crate', DECOR_DEFS);          // visual = modelo OBJ de caja básica
   if(m){
@@ -3239,9 +3325,31 @@ const pads = [];
 /* (►LTSTAM: LIANAS ELIMINADAS — ya no había ninguna en el mundo (modLiana quedó sin llamar), así que
    el columpio (p.swing/tryLianaGrab/addLiana) era código muerto y LT queda solo para agarre/aguante.) */
 const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd166 });
+const PAD_R = 1.7;                             // radio de la base del cilindro del saltador
 function addPad(x, z){
-  if(!_CAP && !_ISLAND) return;
-  if(_inWall(x, z, 0)) return;                 // no pongas jump-pads dentro de un muro
+  if(!_CAP && !_ISLAND) return null;
+  if(_inWall(x, z, 0)) return null;             // no pongas jump-pads dentro de un muro
+  /* ►TAPA · antes la Y iba CLAVADA a 0 y nadie miraba si había suelo debajo: por eso salían
+     saltadores HUNDIDOS en una loma y otros medio colgando del borde (las coords son fijas por
+     variante y el terreno cambia debajo). Ahora:
+       1) se apoya en el suelo REAL (platformTopAt), y
+       2) si su base no cabe entera, se BUSCA un sitio a un paso de distancia.
+     Nunca se descarta el pad: hay ~60 llamadas repartidas por todos los stages y perder uno en
+     silencio podría romper un recorrido. Si no hay nada mejor, se queda donde estaba. */
+  let ty = platformTopAt(x, z, -TOP_INSET);
+  if(ty === null) ty = 0;                       // sin suelo reconocible: comportamiento de siempre
+  if(!_footOnTop(x, z, ty, PAD_R)){
+    const STEP = [0.9, 1.8];
+    let found = false;
+    for(const d of STEP){
+      for(const [ox, oz] of [[d,0],[-d,0],[0,d],[0,-d],[d*0.71,d*0.71],[-d*0.71,d*0.71],[d*0.71,-d*0.71],[-d*0.71,-d*0.71]]){
+        const nx = x+ox, nz = z+oz, nt = platformTopAt(nx, nz, -TOP_INSET);
+        if(nt === null || _inWall(nx, nz, nt) || !_footOnTop(nx, nz, nt, PAD_R)) continue;
+        x = nx; z = nz; ty = nt; found = true; break;
+      }
+      if(found) break;
+    }
+  }
   const g = new THREE.Group();
   /* ►CAMP: en S2 el pad va por FACETAS multitono (naranjas análogos) — nada liso, pero sigue leyendo "interactivo" */
   const base = (STAGE>=2)
@@ -3254,13 +3362,15 @@ function addPad(x, z){
   top.position.y = .62;
   base.castShadow = top.castShadow = true;
   g.add(base, top);
-  g.position.set(x, 0, z);
+  g.position.set(x, ty, z);
   scene.add(g);
   const chev = new THREE.Mesh(new THREE.ConeGeometry(.5,.75,4), chevMat);
-  chev.position.set(x, 2.1, z);
+  chev.position.set(x, ty + 2.1, z);
   scene.add(chev);
-  drifters.push({ m:chev, y:2.1, sp:2.4, ph:pads.length*1.7 });
-  pads.push({ pos:new THREE.Vector3(x,0,z), top, squash:0 });
+  drifters.push({ m:chev, y: ty + 2.1, sp:2.4, ph:pads.length*1.7 });
+  const _pd = { pos:new THREE.Vector3(x, ty, z), top, squash:0 };
+  pads.push(_pd);
+  return _pd;                                   // s7MegaPad lo necesita (antes cogía pads[último], frágil)
 }
 addPad( 11, 11.5);     // plaza sur (clásico)
 addPad( 12.5,-18.5);   // boca este del túnel: te sube a la meseta
@@ -3269,10 +3379,8 @@ addPad(-25.5, 9.5);    // brazo SO: vuelo hacia las colinas
 /* deco: árboles low poly (con raíces, copa irregular y frutos) */
 function addTree(x, z, s=1){
   if(!_CAP && !_ISLAND) return;
-  const ty = platformTopAt(x, z, -0.2);          // ►R2: margen ESTRICTO (el visual redondeado/elipse es menor que el AABB)
+  const ty = platformTopAt(x, z, -TOP_INSET);    // ►R2/►TAPA: margen ESTRICTO (el visual redondeado/elipse es menor que el AABB)
   if(ty===null) return;                          // no plantes árboles flotando sobre el agua/huecos
-  /* exige suelo firme alrededor (no en el borde redondeado) o no lo plantes */
-  if(!overAnyPlatform(x+0.7,z,-0.2) || !overAnyPlatform(x-0.7,z,-0.2) || !overAnyPlatform(x,z+0.7,-0.2) || !overAnyPlatform(x,z-0.7,-0.2)) return;
   if(STAGE===2){ addStage2Tree(x, z, ty, s); return; }   // bosque: pino/sauce/árbol muerto en vez del árbol de prado
   if(STAGE===3){ addSakuraTree(x, z, ty, s); return; }   // ►JAPAN: cerezo rosa / arce de otoño / bambú
   if(STAGE===4){ addStage3Palm(x, z, ty, s); return; }   // desierto: palmera/cactus en vez del árbol de prado
@@ -3280,7 +3388,12 @@ function addTree(x, z, s=1){
   const _nt = getNewTrees();
   if(_nt && _nt.length){
     if(!window._treeLogged){ window._treeLogged = true; console.log('[trees] addTree USANDO árboles NUEVOS:', _nt.length); }
-    const m = _nt[(Math.random()*_nt.length)|0].clone();
+    const ti = (Math.random()*_nt.length)|0;
+    /* ►TAPA · el sondeo era de 4 puntos a 0.7 fijos = el TRONCO. Con eso el árbol pasaba el filtro
+       plantado en el mismísimo borde y la COPA entera quedaba colgando sobre el agua. Ahora la
+       sonda usa el radio real de la copa (×0.85: algo de hoja asomando es natural). */
+    if(!_footOnTop(x, z, ty, _treeFoot(_nt, ti)*s*0.88)) return;
+    const m = _nt[ti].clone();
     m.scale.multiplyScalar(s);                     // s = tamaño relativo (igual que antes), sobre TREE_TARGET_H
     m.position.set(x, ty - 0.35, z);               // base ligeramente enterrada
     m.rotation.y = Math.random()*Math.PI*2;
@@ -3289,6 +3402,7 @@ function addTree(x, z, s=1){
   }
   if(!window._treeLogged2){ window._treeLogged2 = true; console.warn('[trees] addTree usando FALLBACK PROCEDURAL (getNewTrees vacío)'); }
   /* --- fallback procedural (solo si los FBX no cargaron) --- */
+  if(!_footOnTop(x, z, ty, 1.1*s)) return;       // ►TAPA: copa del árbol procedural (radio ~1.1·s)
   const g = new THREE.Group();
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.2*s,.32*s,1.5*s,7), M.trunk);
   trunk.position.y = .75*s; trunk.castShadow = true;
@@ -3326,14 +3440,20 @@ addTree(-15.5, 20.5, .8);
 /* rocas flotando bajo la arena + nubes */
 function addRock(x,y,z,s){
   if(!_CAP && !_ISLAND) return;
-  const ty = platformTopAt(x, z, -0.2);          // ►R2: margen ESTRICTO — sin rocas colgadas del borde redondeado
+  const ty = platformTopAt(x, z, -TOP_INSET);    // ►R2/►TAPA: margen ESTRICTO — sin rocas colgadas del borde redondeado
   if(ty===null) return;                          // sin plataforma debajo → no pongas rocas flotantes
-  /* exige suelo firme alrededor (radio de la roca) → no flota colgando del borde */
-  const rr = s*0.9;
-  if(!overAnyPlatform(x+rr,z,-0.2) || !overAnyPlatform(x-rr,z,-0.2) || !overAnyPlatform(x,z+rr,-0.2) || !overAnyPlatform(x,z-rr,-0.2)) return;
-  let r = getModel(STAGE===2 ? (Math.random()<0.5?'s2_rock':'s2_rock2') : 'rocks2', STAGE===2 ? DECOR_DEFS2 : DECOR_DEFS);   // ROCA = modelo OBJ (stage2: roca de bosque oscura)
+  /* ►TAPA · sonda de 8 puntos (antes 4 cardinales): con solo los cardinales la roca pasaba el
+     filtro puesta en una ESQUINA REDONDEADA, donde las diagonales son las que caen al vacío. Y el
+     radio sale del MODELO (circunradio × su escala), no del s teórico: la roca real es más ancha
+     que el dodecaedro que sustituyó y por eso seguía asomando. */
+  const _rkey = (STAGE===2 ? 'rocks2' : 'rocks2');
+  const _rtab = (STAGE===2 ? DECOR_DEFS2 : DECOR_DEFS);
+  const _rsz0 = (STAGE===2 ? 1.4 : (DECOR_DEFS.rocks2.size || 1.1));
+  const _rfoot = _modelFoot(STAGE===2 ? 's2_rock' : 'rocks2', _rtab);
+  if(!_footOnTop(x, z, ty, _rfoot ? _rfoot.rad*((2*s)/_rsz0) : s*0.9)) return;
+  let r = getModel(STAGE===2 ? (Math.random()<0.5?'s2_rock':'s2_rock2') : 'rocks2', _rtab);   // ROCA = modelo OBJ (stage2: roca de bosque oscura)
   if(r){
-    const _rsz = (STAGE===2 ? 1.4 : (DECOR_DEFS.rocks2.size || 1.1));
+    const _rsz = _rsz0;
     const k = (2*s) / _rsz;   // escala = tan grande como la roca procedural (dodecaedro radio s ≈ Ø 2s)
     r.scale.setScalar(k);
     const hh = (r.userData.halfH||0)*k;
@@ -3429,12 +3549,6 @@ function layStonePath(pl, segSolids){
   /* SOLO contra las plataformas sólidas de ESTE segmento (evita la contaminación del array global:
      el segmento con seg.x=0 solapa las coords LOCALES de los segmentos que se construyen después). */
   const segs = segSolids || platforms.filter(p=>p.solid);
-  /* INSET (margen negativo): el punto debe caer ESTRICTAMENTE dentro de la plataforma → losetas
-     sobre un hueco o sobresaliendo del borde fallan y se saltan (nada semiflotante). */
-  const topAt = (px,pz)=>{ let best=null; for(const p of segs){
-    if(px>=p.minX+0.2&&px<=p.maxX-0.2&&pz>=p.minZ+0.2&&pz<=p.maxZ-0.2){ if(best===null||p.topY>best) best=p.topY; } }
-    return best; };
-  const onGround = (px,pz)=>{ const t=topAt(px,pz); return t!==null && Math.abs(t-lvl)<=0.25; };   // suelo sólido al MISMO nivel (ni muro/colina arriba, ni hueco)
   /* orientación: por defecto el eje largo, pero a veces cruza el otro (variedad) si cabe */
   let horiz = (pl.maxX-pl.minX) >= (pl.maxZ-pl.minZ);
   const crossSpan0 = horiz ? (pl.maxZ-pl.minZ) : (pl.maxX-pl.minX);
@@ -3455,11 +3569,9 @@ function layStonePath(pl, segSolids){
   for(let i=0;i<=tiles;i++){
     const u = start + pathLen*(i/tiles) + (Math.random()-.5)*0.4;
     const x = horiz ? u : cross, z = horiz ? cross : u;
-    /* TODO el footprint debe ser suelo sólido a ESTE nivel (8 puntos: 4 cardinales + 4 esquinas):
+    /* TODO el footprint debe ser suelo sólido a ESTE nivel (sonda de 8 puntos compartida ►TAPA):
        muro/colina arriba, hueco o borde → se salta la loseta (nunca flota ni sobresale) */
-    const Rd = R*0.71;
-    if(!onGround(x,z) || !onGround(x+R,z) || !onGround(x-R,z) || !onGround(x,z+R) || !onGround(x,z-R)
-       || !onGround(x+Rd,z+Rd) || !onGround(x-Rd,z+Rd) || !onGround(x+Rd,z-Rd) || !onGround(x-Rd,z-Rd)) continue;
+    if(!_footOnTop(x, z, lvl, R, segs)) continue;
     const tile = getRockPath(Math.random()<0.5 ? 'rockpathS' : 'rockpathT');
     if(!tile) return;                                         // sin modelo cargado: no dibuja nada
     tile.position.set(x, lvl+0.03, z);                        // apoyada en el SUELO de su plataforma (nunca subida a un muro/colina)
@@ -3604,8 +3716,9 @@ function dressTop(g, sx, sz, topY, cx, cz){
 /* antorchas marcando el agujero central (¡peligro!) */
 function addTorch(x, z, withLight){
   if(!_CAP && !_ISLAND) return;
-  const ty = (typeof platformTopAt==='function') ? platformTopAt(x, z, -0.1) : 0;   // ►R2 fix: antes y=0 fijo → antorchas flotando sobre huecos/decks
+  const ty = (typeof platformTopAt==='function') ? platformTopAt(x, z, -TOP_INSET) : 0;   // ►R2 fix: antes y=0 fijo → antorchas flotando sobre huecos/decks
   if(ty===null) return;
+  if(!_footOnTop(x, z, ty, 0.7)) return;         // ►TAPA: su base (r 0.55) entera sobre la tapa visible
   const g = new THREE.Group();
   /* ►CAMP (F3): en S2 la antorcha va por FACETAS multitono (piedra/corteza) — nada liso */
   const s2t = (STAGE===2);
@@ -3755,8 +3868,9 @@ const flags = [];
 function addFlag(x, z, color, h=3.4){
   if(!_CAP && !_ISLAND) return;
   if(STAGE===2) return;                          // sin banderas de equipo en el bosque oscuro
-  const ty = (typeof platformTopAt==='function') ? platformTopAt(x,z,-0.2) : 0;   // ►R2: margen estricto
+  const ty = (typeof platformTopAt==='function') ? platformTopAt(x,z,-TOP_INSET) : 0;   // ►R2/►TAPA: margen estricto
   if(ty==null) return;   // sin suelo SÓLIDO debajo (hueco que cruza un puente) → no crear la bandera (evita banderas flotando sobre puentes)
+  if(!_footOnTop(x, z, ty, 0.8)) return;         // ►TAPA: peana entera sobre la tapa visible
   /* MODELO Flag: tiñe la TELA (LightRed) del color del equipo; el mástil (Brown) intacto */
   try {
     const data = window.GAME_MODELS && window.GAME_MODELS.flag;
@@ -7106,6 +7220,16 @@ function _nearPath(x, z, extra){
   for(const s of _pathSpots){ const r = s.r + (extra||0); if((x-s.x)*(x-s.x) + (z-s.z)*(z-s.z) < r*r) return true; }
   return false;
 }
+/* ►TAPA · huella de los saltadores: nada de decorado encima de un pad (el idiom que ya usaban
+   scatterDeco y los campos de hierba, como función compartida). */
+function _nearPad(x, z, extra){
+  if(typeof pads === 'undefined') return false;
+  const e = extra || 0;
+  for(const pd of pads){ if(!pd || !pd.pos) continue;
+    const r = 1.9 + e;
+    if((x-pd.pos.x)*(x-pd.pos.x) + (z-pd.pos.z)*(z-pd.pos.z) < r*r) return true; }
+  return false;
+}
 /* ¿(x,z) cae dentro de un MURO sólido que sube por encima de la superficie surfaceY? */
 function _inWall(x, z, surfaceY, margin=0){
   for(const pl of platforms){ if(!pl.solid) continue;
@@ -7126,23 +7250,45 @@ function scatterModelDecor(startIdx){
   const plats = platforms.slice(startIdx).filter(pl =>
     pl.solid && (pl.maxX-pl.minX) >= 2.2 && (pl.maxZ-pl.minZ) >= 2.2);
   if(!plats.length) return;
+  /* huellas de lo SEMBRADO en este segmento. Deliberadamente LOCAL y no _propSpots: ese array
+     global no se limpia entre segmentos y los 6 se construyen en x local 0 → acumular ahí iría
+     dejando cada segmento más pelado que el anterior. */
+  const mine = [];
+  const nearMine = (x, z, r)=>{
+    for(const s of mine){ const d = s.r + r; if((x-s.x)*(x-s.x) + (z-s.z)*(z-s.z) < d*d) return true; }
+    return false;
+  };
+  /* ►TAPA · punto donde el prop cabe ENTERO sobre la cara visible: el margen es su PROPIO
+     medio-extent (no un número fijo) y la huella se valida con la sonda de 8 puntos → nada
+     asomando por el borde, colgando de una esquina redondeada ni flotando sobre el bisel. */
+  const spot = (pl, r)=>{
+    const xLo = pl.minX + r + TOP_INSET, xHi = pl.maxX - r - TOP_INSET;
+    const zLo = pl.minZ + r + TOP_INSET, zHi = pl.maxZ - r - TOP_INSET;
+    if(xHi <= xLo || zHi <= zLo) return null;                  // esta losa no da para este prop
+    for(let tries=0; tries<8; tries++){                        // criterio más estricto que antes → más intentos
+      const x = THREE.MathUtils.lerp(xLo, xHi, Math.random());
+      const z = THREE.MathUtils.lerp(zLo, zHi, Math.random());
+      if(_nearProp(x, z, r) || nearMine(x, z, r) || _nearPad(x, z, r)) continue;
+      if(_inWall(x, z, pl.topY, 0.8)) continue;
+      if(!_footOnTop(x, z, pl.topY, r)) continue;
+      return { x, z };
+    }
+    return null;
+  };
   const drop = (key, count, shadow)=>{
+    const foot = _modelFoot(key, DECOR_DEFS); if(!foot) return;
     for(let i=0;i<count;i++){
       const pl = plats[(Math.random()*plats.length)|0];
-      const m = getModel(key, DECOR_DEFS); if(!m) continue;
       const f = 0.8 + Math.random()*0.5;
+      const r = foot.rad*f;                                  // ►TAPA: circunradio (el yaw es aleatorio)
+      const s = spot(pl, r); if(!s) continue;
+      const m = getModel(key, DECOR_DEFS); if(!m) continue;
       m.scale.setScalar(f);
-      let x, z, ok=false;
-      for(let tries=0; tries<4 && !ok; tries++){    // evita props fijos y muros
-        x = THREE.MathUtils.lerp(pl.minX+0.7, pl.maxX-0.7, Math.random());
-        z = THREE.MathUtils.lerp(pl.minZ+0.7, pl.maxZ-0.7, Math.random());
-        ok = !_nearProp(x, z, 1.0) && !_inWall(x, z, pl.topY, 0.8);
-      }
-      if(!ok) continue;
-      m.position.set(x, pl.topY + (m.userData.halfH||0)*f - 0.05, z);   // apoyado en la superficie
+      m.position.set(s.x, pl.topY + foot.halfH*f - 0.05, s.z);   // apoyado en la superficie
       m.rotation.y = Math.random()*Math.PI*2;
       if(shadow) m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
       scene.add(m);   // dentro de buildSegment, scene.add captura en el grupo del segmento (viaja con la cinta)
+      mine.push({ x:s.x, z:s.z, r:r*0.85 });
     }
   };
   for(const k in DECOR_BUDGET){ if(k==='trees'||k==='gunny') continue; drop(k, DECOR_BUDGET[k], false); }
@@ -7157,43 +7303,41 @@ function scatterModelDecor(startIdx){
     for(let i=0;i<n;i++) if(Math.random() < 0.8) layStonePath(pl, segSolids);
   }
   /* HOGUERAS: obstáculo que QUEMA a jugadores y minions al tocarlo (sustituye a los sacos rebotadores) */
-  for(let i=0;i<(DECOR_BUDGET.gunny||0);i++){
+  const fireFoot = _modelFoot('campfire', DECOR_DEFS);
+  for(let i=0; fireFoot && i<(DECOR_BUDGET.gunny||0); i++){
     const pl = plats[(Math.random()*plats.length)|0];
+    const f = 0.9 + Math.random()*0.4;
+    const r = fireFoot.rad*f;                                // ►TAPA: circunradio (el yaw es aleatorio)
+    const s = spot(pl, r); if(!s) continue;
     const m = getModel('campfire', DECOR_DEFS); if(!m) continue;
-    const f = 0.9 + Math.random()*0.4; m.scale.setScalar(f);
-    let x, z, ok=false;
-    for(let tries=0; tries<4 && !ok; tries++){
-      x = THREE.MathUtils.lerp(pl.minX+0.8, pl.maxX-0.8, Math.random());
-      z = THREE.MathUtils.lerp(pl.minZ+0.8, pl.maxZ-0.8, Math.random());
-      ok = !_nearProp(x, z, 1.0) && !_inWall(x, z, pl.topY, 0.8);
-    }
-    if(!ok) continue;
-    m.position.set(x, pl.topY + (m.userData.halfH||0)*f, z);
+    m.scale.setScalar(f);
+    m.position.set(s.x, pl.topY + fireFoot.halfH*f, s.z);
     m.rotation.y = Math.random()*Math.PI*2;
     scene.add(m);
-    _fires.push({ g:m, lx:x, lz:z, wy:pl.topY+0.7, col:0xff7a22, baseI:1.9 });   // hoguera: candidata a una de las 3 luces reales
+    _fires.push({ g:m, lx:s.x, lz:s.z, wy:pl.topY+0.7, col:0xff7a22, baseI:1.9 });   // hoguera: candidata a una de las 3 luces reales
     bouncers.push({ mesh:m, topY:pl.topY, r:1.4*f });
+    mine.push({ x:s.x, z:s.z, r:r*0.85 });
   }
   /* ÁRBOLES individuales: SOLO en plataformas grandes y a ras de suelo (evita los que "flotan"
      sobre plataformas pequeñas/altas del fondo). Base anclada en y=0 por splitModelPieces. */
   const trees = getForestTrees();
-  const treePlats = plats.filter(pl => pl.topY < 1.5 && (pl.maxX-pl.minX) >= 4 && (pl.maxZ-pl.minZ) >= 4);
+  const treePlats = plats.filter(pl => pl.topY < 1.5 && (pl.maxX-pl.minX) >= 5 && (pl.maxZ-pl.minZ) >= 5);
   if(trees && trees.length && treePlats.length){
     for(let i=0;i<DECOR_BUDGET.trees;i++){
       const pl = treePlats[(Math.random()*treePlats.length)|0];
-      let x, z, ok=false;
-      for(let tries=0; tries<4 && !ok; tries++){
-        x = THREE.MathUtils.lerp(pl.minX+1.0, pl.maxX-1.0, Math.random());
-        z = THREE.MathUtils.lerp(pl.minZ+1.0, pl.maxZ-1.0, Math.random());
-        ok = !_nearProp(x, z, 1.2) && !_inWall(x, z, pl.topY, 0.8);
-      }
-      if(!ok) continue;
-      const m = trees[(Math.random()*trees.length)|0].clone();
-      m.scale.multiplyScalar(0.8 + Math.random()*0.45);     // variación de tamaño
-      m.position.set(x, pl.topY - 0.35, z);                 // base ligeramente enterrada (no flota)
+      const ti = (Math.random()*trees.length)|0;
+      const sc = 0.8 + Math.random()*0.45;                  // variación de tamaño
+      /* ►TAPA: radio de COPA REAL medido del modelo (×0.7: algo de hoja asomando es natural, la
+         copa ENTERA colgando sobre el agua no). Con el 1.3 fijo de antes se validaba el TRONCO. */
+      const r = _treeFoot(trees, ti)*sc*0.88;
+      const s = spot(pl, r); if(!s) continue;
+      const m = trees[ti].clone();
+      m.scale.multiplyScalar(sc);
+      m.position.set(s.x, pl.topY - 0.35, s.z);             // base ligeramente enterrada (no flota)
       m.rotation.y = Math.random()*Math.PI*2;
       scene.add(m);
-      _propSpots.push({ x, z, r:1.0 });                     // huella del árbol → la hierba no se le pega encima
+      _propSpots.push({ x:s.x, z:s.z, r:1.0 });             // huella del árbol → la hierba no se le pega encima
+      mine.push({ x:s.x, z:s.z, r });
     }
   }
 }
@@ -7219,14 +7363,19 @@ function scatterGrassPatches(startIdx){
     for(let i=0;i<n;i++){
       const f = 0.8 + Math.random()*0.4;                       // variación de tamaño
       const hx = baseHX*f, hz = baseHZ*f;
-      const xLo = pl.minX + hx + 0.2, xHi = pl.maxX - hx - 0.2;   // margen interior = medio-extent → ANTI-FLOTADO en bordes
-      const zLo = pl.minZ + hz + 0.2, zHi = pl.maxZ - hz - 0.2;
+      /* ►TAPA · el margen ya era el medio-extent, pero contra el AABB y con solo 0.2 de holgura:
+         en las esquinas REDONDEADAS y sobre el bisel el parche seguía asomando al vacío. Ahora
+         TOP_INSET + la sonda de 8 puntos, igual que el resto de props. */
+      const rr = Math.hypot(hx, hz);                         // ►TAPA: circunradio (el parche sale girado al azar)
+      const xLo = pl.minX + hx + TOP_INSET, xHi = pl.maxX - hx - TOP_INSET;
+      const zLo = pl.minZ + hz + TOP_INSET, zHi = pl.maxZ - hz - TOP_INSET;
       if(xHi <= xLo || zHi <= zLo) continue;                  // no cabe sin asomar → no lo pongas
       let x, z, ok=false;
-      for(let tries=0; tries<5 && !ok; tries++){
+      for(let tries=0; tries<8 && !ok; tries++){
         x = THREE.MathUtils.lerp(xLo, xHi, Math.random());
         z = THREE.MathUtils.lerp(zLo, zHi, Math.random());
-        ok = !_inWall(x, z, pl.topY, 0.8) && !_nearProp(x, z, 0.8) && !_nearPath(x, z, Math.max(hx,hz));   // esquiva muros, props (cajas/cofres/hogueras/árboles) y CAMINOS
+        ok = !_inWall(x, z, pl.topY, 0.8) && !_nearProp(x, z, 0.8) && !_nearPath(x, z, rr)   // esquiva muros, props (cajas/cofres/hogueras/árboles) y CAMINOS
+             && !_nearPad(x, z, rr) && _footOnTop(x, z, pl.topY, rr);
       }
       if(!ok) continue;
       const m = getModel('grasspatch', DECOR_DEFS); if(!m) continue;
@@ -7241,10 +7390,17 @@ function scatterGrassPatches(startIdx){
 
 /* PROP decorativo FIJO apoyado en una plataforma (dentro de buildSegment → viaja con la cinta) */
 function addProp(key, x, z, topY, sc, yaw){
-  if(_inWall(x, z, topY)) return null;          // no metas props dentro de un muro
+  /* ►TAPA · las coords de estos props son FIJAS y el terreno cambia por variante: hay que validar
+     que ahí quepa el prop ENTERO. Margen de muro 0.9 (con 0 se colaban en pasillos de una unidad,
+     tipo la caja encajada entre vallas) y sonda de 8 puntos con su medio-extent real. */
+  if(_inWall(x, z, topY, 0.9)) return null;     // ni dentro de un muro ni pegado a él
+  const foot = _modelFoot(key, DECOR_DEFS); if(!foot) return null;
+  const r = foot.rad*sc;                                     // ►TAPA: circunradio
+  if(!_footOnTop(x, z, topY, r)) return null;   // medio salido del borde / sobre el vacío: no lo pongas
+  if(_nearPad(x, z, r)) return null;            // ni encima de un saltador
   const m = getModel(key, DECOR_DEFS); if(!m) return null;
   m.scale.setScalar(sc);
-  m.position.set(x, topY + (m.userData.halfH||0)*sc - 0.05, z);   // base apoyada en la superficie
+  m.position.set(x, topY + foot.halfH*sc - 0.05, z);   // base apoyada en la superficie
   m.rotation.y = yaw;
   if(key==='crate'){                                              // ►FIX cajas oscuras (addProp): mismo tinte claro que addCrate (el OBJ salía muy oscuro)
     const _tone = [0xcaa877, 0xd8bd8a, 0xc2a26c, 0xceb07c, 0xbe9c66][(Math.random()*5)|0];
@@ -7269,7 +7425,9 @@ function addCenterProps(topY){
   addProp('chest',     -11.6, 6.2, topY, 1.0, -0.5);    // cofre cerrado, al lado (escena de tesoro)
   addProp('backpack',   -8.9, 7.7, topY, 1.0, -0.6);
   addProp('crate',      -7.5, 6.9, topY, 1.0,  0.9);
-  addProp('tent',        8.5, 7.0, topY, 1.0,  0.4);
+  /* (►TAPA · la CARPA fija de (8.5, 7.0) fuera: pedido de Toni, quedaba plantada encima del bloque
+     central. El prado sigue teniendo carpas por el presupuesto aleatorio —DECOR_BUDGET.tent—, que
+     ahora sí valida que quepan enteras.) */
   addProp('fruitcrate',  6.6, 6.4, topY, 1.0,  1.4);    // un par de cajones de fruta sueltos
   addProp('fruitcrate',  7.4, 8.0, topY, 0.9, -0.3);
 }
@@ -7323,6 +7481,20 @@ function makeHalo(col, x, y, z){
   return h;
 }
 function freeHalo(h){ h.visible = false; _haloPool.push(h); }
+/* ►BAMBOLEO · lo que reposa sobre un TABLÓN FLOTANTE tiene que subir y bajar CON él. animateDeco
+   mueve el tablón y su topY a la vez (la física va bien), pero la Y del objeto se horneaba UNA sola
+   vez al aparecer → se enterraba medio ciclo y levitaba el otro medio. Se sigue por topY y NO
+   reparentando: el pickup vive en la raíz de la escena y el tablón en el grupo del segmento, así que
+   colgarlo del tablón rompería el desplazamiento de cinta que hacen updateItems/updateCapsules. */
+function _followFloat(o){
+  const pl = o.pl;
+  if(!pl || !pl.float || !pl.float.position) return;
+  const d = pl.topY - o.y0;
+  if(!d) return;
+  o.y0 += d;
+  o.m.position.y += d;
+  if(o.halo) o.halo.position.y += d;
+}
 /* ►PERF2: plantillas de modelos PROCEDURALES (boosts/armas/pasivos sin OBJ): se construyen una vez
    y se CLONAN (geometrías/materiales compartidos → sin new/dispose por spawn). */
 const _procTplCache = {};
@@ -7346,7 +7518,7 @@ function spawnCapsule(at){
     }
     return null;
   };
-  let x, z, baseY;
+  let x, z, baseY, onPl = null;
   if(at){
     x = at.x; z = at.z; baseY = at.topY;                    // ►ELITE: punto forzado (sin losa ni pity)
   } else {
@@ -7364,6 +7536,7 @@ function spawnCapsule(at){
     x = THREE.MathUtils.lerp(pl.minX+.9, pl.maxX-.9, Math.random());
     z = THREE.MathUtils.lerp(pl.minZ+.9, pl.maxZ-.9, Math.random());
     baseY = pl.topY;
+    onPl = pl;                                              // ►BAMBOLEO: si es un tablón flotante, hay que seguirlo
   }
   const ty = inBossArena() ? CAP_TYPES.find(t=>t.heal)      // ►BOSSDROP: en la arena del jefe solo corazón de salud
                            : CAP_TYPES[Math.floor(Math.random()*CAP_TYPES.length)];
@@ -7373,7 +7546,7 @@ function spawnCapsule(at){
   /* CÍRCULO DE COLOR en el suelo: marca dónde va a caer y dónde reposa (►PERF2: pool) */
   const halo = makeHalo(ty.col, x, baseY+.06, z);
   scene.add(m, halo);
-  capsules.push({ m, halo, ty, y0:baseY, st:'fall', t:0, life:26 });
+  capsules.push({ m, halo, ty, y0:baseY, pl:onPl, st:'fall', t:0, life:26 });
   sfx.capIn();
 }
 function killCapsule(i){
@@ -7395,6 +7568,7 @@ function updateCapsules(dt){
   for(let i=capsules.length-1;i>=0;i--){
     const c = capsules[i];
     c.t += dt;
+    _followFloat(c);                            // ►BAMBOLEO: sobre un tablón flotante, sube y baja con él
     if(BELT.on){                                // viaja con la cinta: se queda sobre su plataforma (no flota)
       const dx = BELT.vel*dt;
       c.m.position.x += dx; c.halo.position.x += dx;
@@ -7751,7 +7925,7 @@ function dropSpot(){
     if((c.maxX-c.minX)>=2.4 && (c.maxZ-c.minZ)>=2.4){ pl=c; break; } }
   if(!pl) return null;
   return { x:THREE.MathUtils.lerp(pl.minX+.9, pl.maxX-.9, Math.random()),
-           z:THREE.MathUtils.lerp(pl.minZ+.9, pl.maxZ-.9, Math.random()), y0:pl.topY };
+           z:THREE.MathUtils.lerp(pl.minZ+.9, pl.maxZ-.9, Math.random()), y0:pl.topY, pl };   // ►BAMBOLEO: pl → seguir el tablón si flota
 }
 function spawnItem(){
   const sp = dropSpot(); if(!sp) return;
@@ -7766,7 +7940,7 @@ function spawnItem(){
   model.traverse(o=>{ if(o.isMesh) o.castShadow = false; });   // pickup flotante: sin sombra
   const halo = makeHalo(col, sp.x, sp.y0+.06, sp.z);           // ►PERF2: pool
   scene.add(model, halo);
-  items.push({ m:model, halo, cat, kind, col, y0:sp.y0, st:'fall', t:0, life:32 });
+  items.push({ m:model, halo, cat, kind, col, y0:sp.y0, pl:sp.pl, st:'fall', t:0, life:32 });
   sfx.capIn();
 }
 function killItem(i){
@@ -7817,6 +7991,7 @@ function updateItems(dt){
   for(let i=items.length-1;i>=0;i--){
     const it = items[i];
     it.t += dt;
+    if(it.st!=='toss') _followFloat(it);          // ►BAMBOLEO: sobre un tablón flotante, sube y baja con él (el arma tirada tiene física propia)
     if(BELT.on){ const dx=BELT.vel*dt; it.m.position.x+=dx; it.halo.position.x+=dx;
       if(it.m.position.x>BELT.exitX){ it.m.position.x-=BELT._span; it.halo.position.x-=BELT._span; } }
     if(it.st==='toss'){                              // ►WPNDROP: arma tirada volando; NO se recoge, REVIENTA
@@ -18176,11 +18351,14 @@ function updateFighter(p, dt){
     // saltadores
     for(const pd of pads){
       if(pd._bossNoFloor) continue;   // saltador en segmento enmascarado por la arena → no rebota (sin muelle invisible)
-      if(Math.hypot(p.pos.x-pd.pos.x, p.pos.z-pd.pos.z) < 1.5 && p.pos.y<=0.85 && p.pos.y>=-0.2 && p.vel.y<=0){
+      /* ►TAPA · ventana de Y RELATIVA al pad (antes era absoluta y por eso el pad solo valía a y=0,
+         ver el driver propio del megapad de S7). Con pd.pos.y=0 es idéntico a como estaba. */
+      const _pdy = p.pos.y - pd.pos.y;
+      if(Math.hypot(p.pos.x-pd.pos.x, p.pos.z-pd.pos.z) < 1.5 && _pdy<=0.85 && _pdy>=-0.2 && p.vel.y<=0){
         p.vel.y = pd.boost || 18.5; p.onGround=false; p.jumps = airJumps()+1;   // ►FÁBRICA: pd.boost = MEGAPAD-pistón (lanza ALTÍSIMO)
         pd.squash = 1; sfx.pad(); jiggle(p, 14);
-        burst(new THREE.Vector3(pd.pos.x, .9, pd.pos.z), 0xffb056, 12, 5, 6);
-        ring(new THREE.Vector3(pd.pos.x, .95, pd.pos.z), 0xff9b3d, 13, .35);
+        burst(new THREE.Vector3(pd.pos.x, pd.pos.y+.9, pd.pos.z), 0xffb056, 12, 5, 6);
+        ring(new THREE.Vector3(pd.pos.x, pd.pos.y+.95, pd.pos.z), 0xff9b3d, 13, .35);
         break;
       }
     }
@@ -19448,7 +19626,10 @@ function buildVariantMaze(){
   addWall(12, -8, 1, 11, 2);   addWall(12, 9, 1, 13, 2);
   addWall(-6, -14, 9, 1, 2);   addWall(7, 17, 1, 10, 2);
   addWall(-20, 3, 8, 1, 2);    addWall(20, -3, 8, 1, 2);
-  addCrate(-6, -2, 1.7, 1.7);  addCrate(8, 12, 1.7, 1.7);  addCrate(8, 12, 1.7, 3.4);   // suelta + pila, apoyadas
+  /* (►TAPA · la caja SUELTA de (-6,-2) ELIMINADA, no recolocada: ahí el suelo del laberinto está a
+     y=2 y la llamada la apoyaba en 0 → quedaba medio enterrada y encajada contra la valla del muro
+     de (0,-2). Pedido de Toni: fuera. Queda solo la pila de (8,12), que sí es escalón.) */
+  addCrate(8, 12, 1.7, 1.7);  addCrate(8, 12, 1.7, 3.4);   // pila, apoyada (escalón para subir)
   addFloating(0, 5.4, 7, 6, 4); addFloating(-15, 4.8, -11, 5, 3.5); addFloating(16, 5.0, -12, 5, 3.5);
   addPad(0, 14); addPad(-28, 0); addPad(28, 0);
   addTree(-32, 0, .9); addTree(32, 0, .85); addTree(-4, -29, 1.0);
@@ -19709,7 +19890,24 @@ function addBoundaryWall(sign){
   const mat = new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false });   // panel MUY tenue (antes 0.12): límite visible sin look de cristal
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(depth, height), mat);
   panel.rotation.y = Math.PI/2; panel.position.set(x, cy, cz); g.add(panel);
-  const lineMat = new THREE.MeshBasicMaterial({ color:0xaee7ff, transparent:true, opacity:0.5, depthWrite:false });
+  const lineMat = new THREE.MeshBasicMaterial({ color:0xaee7ff, transparent:true, opacity:0.38, depthWrite:false });
+  /* ►LIMITE · las 11 barras van de y=-8 a y=40, pero el panel al que pertenecen es casi invisible
+     (opacity 0.05): a media distancia se leían como LÍNEAS SUELTAS colgando del cielo y cruzando el
+     horizonte — el "no sé qué son estas rayas" del prado. Se desvanecen por ALTURA DE MUNDO:
+     nítidas en la zona de juego (donde el límite hay que verlo) y ya nada donde solo hay cielo o
+     mar. Se toca el material, no la geometría, así que la pared sigue siendo la misma. */
+  lineMat.onBeforeCompile = (sh)=>{
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vWallY;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWallY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vWallY;')
+      .replace('#include <dithering_fragment>',
+               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(3.0, 10.0, vWallY)) * smoothstep(-7.0, -2.5, vWallY);');
+  };
+  /* three cachea el programa por una clave que NO mira el texto del shader: sin esto, cualquier
+     otro MeshBasicMaterial equivalente reusaría este programa (o al revés). Ver la ficha ►DEPTH. */
+  lineMat.customProgramCacheKey = ()=> 'boundaryBarsFade';
   for(let i=0;i<=10;i++){
     const zz = zMin + depth*(i/10);
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, height, 0.12), lineMat);
@@ -28965,9 +29163,8 @@ function _s7RandDir(){ return Math.random()<0.5 ? 1 : -1; }
 function _s7RandSpd(){ return 5.5 + Math.random()*3; }
 /* MEGAPAD-PISTÓN: saltador que te lanza ALTÍSIMO (pd.boost) con cuerpo de pistón */
 function s7MegaPad(x, z, topY, boost){
-  addPad(x, z);
-  const pd = pads[pads.length-1];
-  if(pd){ pd.boost = boost || 32; if(pd.pos) pd.pos.y = 0; }
+  const pd = addPad(x, z);
+  if(pd){ pd.boost = boost || 32; if(pd.pos) pd.pos.y = 0; }   // el pistón tiene su cuerpo propio a y=0
   const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 1.0, 10),
     new THREE.MeshStandardMaterial({ color:0x3a4048, roughness:0.5, metalness:0.5 }));
   body.position.set(x, (topY||0)+0.5, z); body.castShadow = true; scene.add(body);
