@@ -31948,6 +31948,10 @@ function frame(now){
   let dt = Math.min(.033, ftMs/1000);
   last = now;
   perfTick(ftMs);                           // resolución dinámica + auto-tier + HUD de métricas
+  /* ►DESCENSO (prototipo, solo con ?descenso en la URL): escena y cámara PROPIAS,
+     render directo sin composer. Se queda con el frame entero → aislamiento total:
+     no puede romper nada del juego porque no comparte estado con él. */
+  if(window.DESC && DESC.on){ DESC.tick(dt); DESC.render(); return; }
   updateCharMixers(dt);   // PRUEBA: el/los humanoides GLB animan SIEMPRE (menú, demo y partida)
   if(_fly.on) _flyTick(dt);   // ►TOOLS ?fly: el vuelo vive AQUÍ (frame corre siempre → puedes inspeccionar en menú, demo, partida Y con la partida terminada)
   if(window._net && _net.role==='client'){ _net.clientFrame(dt); return; }   // ONLINE cliente: no simula, solo aplica snapshots y renderiza
@@ -34128,5 +34132,11 @@ window.__I18N_DYN=[{"es":"mundo {0} · sin ganar","t":["world {0} · not won","m
   })();
 })();
 </script>
+
+<!-- ►DESCENSO · PROTOTIPO (carrera de transición entre stages). Va AQUÍ, al final,
+     porque necesita leer `renderer` y `keys`, que son const del ámbito léxico del
+     script de arriba (accesibles por nombre, pero NO en window). Sin ?descenso en
+     la URL el fichero sale en su primera línea y no hace nada. -->
+<script src="descenso.js?v=1"></script>
 </body>
 </html>
