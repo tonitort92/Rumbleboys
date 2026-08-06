@@ -23577,6 +23577,39 @@ function _sjAnchor(x, z){
   if(!best) return { x, z, topY:null };
   return { x:(best.minX+best.maxX)*0.5, z:(best.minZ+best.maxZ)*0.5, topY:best.topY };
 }
+/* ►S5FIX · ancla POR PROXIMIDAD, para la pirámide. `_sjAnchor` exige que el punto caiga DENTRO de una
+   plataforma; en el stage 5 los puentes se escribieron con coordenadas que no corresponden a nada (de
+   9, ninguno tenía los dos extremos apoyados; varios volaban enteros sobre la lava). Aquí se busca el
+   suelo MÁS CERCANO dentro de un radio y se devuelve el punto de su borde que mira al otro extremo:
+   así el puente se pega a lo que hay de verdad en vez de a lo que decía el literal.
+   Incluye los hexágonos (no son `solid`) porque son justo a lo que deben coserse. */
+function _s5Anchor(x, z, towardX, towardZ, maxR){
+  let best = null, bestD = Infinity;
+  for(let i=Math.max(0,_segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(pl._bossNoFloor || pl._pad) continue;
+    if(!(pl.solid || pl.blob || pl._hex)) continue;
+    const cx = (pl.minX+pl.maxX)*0.5, cz = (pl.minZ+pl.maxZ)*0.5;
+    const hx = (pl.maxX-pl.minX)*0.5, hz = (pl.maxZ-pl.minZ)*0.5;
+    const dx = Math.max(0, Math.abs(x-cx)-hx), dz = Math.max(0, Math.abs(z-cz)-hz);
+    const d = Math.hypot(dx, dz);
+    if(d < bestD){ bestD = d; best = pl; }
+  }
+  if(!best || bestD > (maxR||9)) return { x, z, topY:null };
+  const cx = (best.minX+best.maxX)*0.5, cz = (best.minZ+best.maxZ)*0.5;
+  const hx = (best.maxX-best.minX)*0.5, hz = (best.maxZ-best.minZ)*0.5;
+  /* punto del borde encarado al otro extremo, metido 0.35 hacia dentro para que el tablón apoye */
+  let ux = (towardX!=null?towardX:cx) - cx, uz = (towardZ!=null?towardZ:cz) - cz;
+  const ul = Math.hypot(ux, uz) || 1; ux/=ul; uz/=ul;
+  return { x: cx + ux*Math.max(0, hx-0.35), z: cz + uz*Math.max(0, hz-0.35), topY: best.topY };
+}
+function s5Bridge(x1, z1, x2, z2, yFallback, opts){
+  const a = _s5Anchor(x1, z1, x2, z2), b = _s5Anchor(x2, z2, x1, z1);
+  if(a.topY==null || b.topY==null){                                  // sin nada a lo que agarrarse: NO se construye
+    console.warn('[►S5FIX] puente descartado (un extremo sin suelo):', x1, z1, '→', x2, z2);
+    return null;
+  }
+  return addRopeBridge(a.x, a.z, b.x, b.z, Math.max(a.topY, b.topY), opts);
+}
 function sjBridge(x1, z1, x2, z2, yFallback, opts){
   const a = _sjAnchor(x1, z1), b = _sjAnchor(x2, z2);
   const y = (a.topY!=null && b.topY!=null) ? Math.max(a.topY, b.topY)
@@ -27589,6 +27622,7 @@ const _s4Bombs = [];
 let _s4BombTimer = 2.2;
 let _s4BeepCD = 0;                                  // ►#7: estrangula el pitido de cuenta atrás (no spam con 9 bombas)
 const _S4_BOMB_RED = new THREE.Color(0xff2a12);
+const S5_BOMB_FUSE = 3.0;   // ►S5FIX: segundos que la bomba espera POSADA antes de estallar (pedido de Toni)
 const _S4_BOMB_ARM = 0.45;                          // progreso de caída donde la bomba se ARMA (antes: color normal; después: rojo + pitido + chispas)
 function _s4BombBoom(wx, wy, wz){
   const R = 3.4;
@@ -27636,17 +27670,33 @@ function updateS4Bombs(dt){
   const G = 26;
   _s4BeepCD = Math.max(0, _s4BeepCD - dt);
   for(let i=_s4Bombs.length-1;i>=0;i--){ const b=_s4Bombs[i];
-    b.vy -= G*dt; b.y += b.vy*dt; b.m.position.y = b.y;
-    b.m.rotation.x += dt*3.2; b.m.rotation.z += dt*2.1;
-    const prog = THREE.MathUtils.clamp((b.y0 - b.y)/Math.max(1,(b.y0 - b.groundY)), 0, 1);   // 0 arriba … 1 impacto
+    /* ►S5FIX (pedido: "las bombas no deben explotar solo caer; primero caen y luego tardan 3 segundos
+       en explotar, dándole tiempo al jugador a esquivarlas antes de que se tornen rojas"). Antes
+       reventaban al TOCAR el suelo, así que no había nada que esquivar: donde caía, explotaba.
+       Ahora aterrizan, se quedan quietas 3 s y ahí es donde empieza el aviso rojo. */
+    if(!b.landed){
+      b.vy -= G*dt; b.y += b.vy*dt;
+      /* el suelo se medía UNA vez al nacer, y con losas-trampa y hexágonos que caen (y la cinta
+         moviendo las plataformas en X) la bomba "aterrizaba" en el aire. Se remide en la caída. */
+      const gy = platformTopAt(b.x, b.z);
+      if(gy !== null) b.groundY = gy;
+      if(b.y <= b.groundY + 0.3){ b.landed = true; b.y = b.groundY + 0.3; b.vy = 0; b.fuse = S5_BOMB_FUSE; }
+    } else {
+      b.fuse -= dt;
+    }
+    b.m.position.y = b.y;
+    if(!b.landed){ b.m.rotation.x += dt*3.2; b.m.rotation.z += dt*2.1; }   // posada = quieta, para que se lea "está ahí, apártate"
+    /* `prog` pasa a ser el progreso de la MECHA, no el de la caída: en vuelo la bomba va con su color
+       normal (aún no es una amenaza) y toda la cuenta atrás roja ocurre ya en el suelo. */
+    const prog = b.landed ? THREE.MathUtils.clamp(1 - b.fuse/S5_BOMB_FUSE, 0, 1) : 0;
     /* ►#7: cuenta atrás clásica. Fase 1 (prog<ARM): color NORMAL. Fase 2: se pone ROJA y parpadea
        cada vez más rápido, con PITIDO acelerando y CHISPAS en la mecha (parte superior) → el jugador
        la nota antes de que explote. */
     if(b.mat && b.mat.emissive){
-      if(prog < _S4_BOMB_ARM){
+      if(!b.landed){
         b.mat.emissive.copy(b.baseEmiss); b.mat.emissiveIntensity = b.baseInt;           // aún inofensiva de aspecto
       } else {
-        const k = (prog - _S4_BOMB_ARM)/(1 - _S4_BOMB_ARM);                               // 0..1 dentro de la fase armada
+        const k = prog;                                                                   // ►S5FIX: 0..1 sobre la MECHA de 3s ya en el suelo (antes: sobre el tramo final de la caída)
         b.blink += dt*(6 + k*24);                                                         // frecuencia de parpadeo acelera
         const pulse = 0.5 + 0.5*Math.sin(b.blink);
         b.mat.emissive.copy(_S4_BOMB_RED).multiplyScalar(0.35 + pulse*1.3);
@@ -27660,7 +27710,7 @@ function updateS4Bombs(dt){
       }
     }
     if(b.sh){ const s=0.55+prog*0.95; b.sh.scale.set(s,s,s); b.sh.material.opacity = 0.18 + prog*0.34; }
-    if(b.y <= b.groundY + 0.3){
+    if(b.landed && b.fuse <= 0){
       _s4BombBoom(b.x, b.groundY, b.z);
       scene.remove(b.m); if(b.sh) scene.remove(b.sh);
       _s4Bombs.splice(i,1);
@@ -27991,7 +28041,11 @@ function buildS4GridHall(){
   s3Slab(-26, 0, 12, 18, 0, 'dune');                      // andén O
   s3Slab(26, 0, 12, 18, 0, 'dune');                       // andén E
   s4PadGrid(0, 0, 13, 6, 0);                              // ►rejilla ENORME (x≈-14..14) sobre el vacío (►P1: FUERA semillas rojas — pedido)
-  s4SpikeBall(0, 2, 9.0, 'z', 0.85, 6.5, 0.9);           // ►péndulo de pinchos ondeando sobre la rejilla
+  s4SpikeBall(0, 2, 9.0, 'z', 0.85, 6.5, 0.9);
+  /* S5FIX (pedido: mas bolas de pinchos por la zona de arriba para molestar a los que mas alto
+     vuelan). Las seis que habia barrian TODAS la banda y~2, o sea solo las rejillas a cota 0: la
+     altura de la bola es anchorY - len, asi que subiendo el ancla y dejando el brazo sube el barrido. */
+  s4SpikeBall(0, -19, 15.5, 'x', 0.9, 6.5, 0.85, 2.0, 1.15);   // ALTA: sobre el racimo de hexagonos (y~9)           // ►péndulo de pinchos ondeando sobre la rejilla
   s4Blade(-8, 0, 3.6, 8, 2.6);                            // ►BLADES: sierra deslizante flanqueando la rejilla O (barre Z, cruzas en X)
   s4Blade(8, 0, 3.6, 8, -2.4, 1.8);                       // ►BLADES: sierra flanco E, desfasada y en sentido contrario
   s4Cylinder(-17.2, 0, 7, 2.0, -2.6, 'z', 1.0);          // ►S4FIX: TRONCO-PUENTE andén O ↔ rejilla (cruzas en X, la rodadura te arrastra en Z) · ►S4RIDE: yBase −R → la CIMA queda a la altura de paso de antes
@@ -28014,8 +28068,8 @@ function buildS4GridHall(){
   /* ►ROCKS · RACIMO HEXAGONAL sobre la banda sur: 9 losas a dos alturas → la ruta ALTA alternativa
      a la rejilla. Pisas una y tienes 1,5 s: hay que ir encadenando saltos, no pararse a mirar. */
   s5HexField(0, -19, 6.2, [[-12,0,0],[-6,-3.5,0.7],[-6,3.2,-0.5],[0,0,1.2],[0,-6,0.3],[6,3.2,0.6],[6,-3.4,-0.4],[12,0,1.0],[18,-2,1.6]]);
-  addRopeBridge(-26, 15, -12, 15, 5.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO andén O → hexágonos (la ruta segura de entrada al racimo)
-  addRopeBridge(12, -19, 26, -19, 6.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO hexágonos → andén E (la salida)
+  s5Bridge(-26, 15, -12, 15, 5.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO andén O → hexágonos (la ruta segura de entrada al racimo)
+  s5Bridge(12, -19, 26, -19, 6.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO hexágonos → andén E (la salida)
   /* ►ROCKS · BOTÓN + PEÑASCO DE LAVA: el botón está en el andén E; la bola cae sobre la GRAN REJILLA
      y desde ahí rueda a donde la física quiera (o se queda quieta si nadie la toca). */
   s5Button(24, -6, 0.02, s5Rock(6, 0, 15.5, { R:1.8, dmg:24 }));
@@ -28038,7 +28092,7 @@ function buildS4Spawn(){
   /* ►ROCKS · racimo de INICIACIÓN (sala de respiro, filosofía Mario: enseña la mecánica en pequeño y
      sin castigo — hay suelo firme al lado). Fuera de la franja de respawn (x[-16,16] z[-8,8]). */
   s5HexField(-24, -17, 4.4, [[0,0,0],[6,-2.5,0.5],[12,1.5,1.0],[18,-1,1.5]]);
-  addRopeBridge(-6, -17, 6, -17, 5.9, { width:2.6, sag:0.4 });              // ►ROCKS: puente FIJO al final del racimo (el descanso)
+  s5Bridge(-6, -17, 6, -17, 5.9, { width:2.6, sag:0.4 });              // ►ROCKS: puente FIJO al final del racimo (el descanso)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
 }
@@ -28049,6 +28103,7 @@ function buildS4Chasm(){
   s3Slab(27, 0, 10, 14, 0, 'dune');
   s4PadGrid(-14, 0, 5, 4, 0);                             // rejilla O→centro
   s4PadGrid(14, 0, 5, 4, 0);                              // rejilla centro→E
+  s4SpikeBall(0, 0, 17.0, 'z', 0.85, 6.0, 1.0, 0.9, 1.2);      // S5FIX ALTA: barrido sobre el hub (y~11)
   s4SpikeBall(-14, 0, 8.0, 'x', 0.95, 6, 1.7, 1.1, 0.7); // ►péndulo rejilla O — ►P1: variante PEQUEÑA-RÁPIDA
   s4SpikeBall(14, 0, 8.0, 'x', 0.95, 6, 0.8, 2.3, 1.4);  // ►péndulo rejilla E — ►P1: variante GRANDE-LENTA (desfasada)
   s4Blade(-9, 0, 3.2, 8, 2.7);                           // ►BLADES: sierra en el salto islote O → centro (barre Z, desfasada del péndulo de x−14)
@@ -28077,8 +28132,8 @@ function buildS4Chasm(){
      el jugador elige camino (y se lo va rompiendo). Es la alternativa aérea a las rejillas. */
   s5HexField(0, -20, 5.6, [[-16,0,0],[-10,-3,0.6],[-10,3,-0.4],[-4,0,1.0],[-4,-5.5,0.2],[2,3,1.4],[2,-3,0.5],[8,0,1.8],[14,-3,2.2],[14,3.5,1.2]]);
   s5HexField(0, 21, 7.0, [[-14,0,0],[-8,-3.2,0.5],[-2,0,1.0],[-2,4,0.2],[4,-3,1.3],[10,0,1.7],[16,2.5,2.0]]);
-  addRopeBridge(-27, -20, -16, -20, 5.4, { width:2.4, sag:0.45 });          // ►ROCKS: puentes FIJOS que enganchan losa ↔ racimo (los dos extremos "sujetos")
-  addRopeBridge(14, -20, 27, -20, 7.8, { width:2.4, sag:0.5 });
+  s5Bridge(-27, -20, -16, -20, 5.4, { width:2.4, sag:0.45 });          // ►ROCKS: puentes FIJOS que enganchan losa ↔ racimo (los dos extremos "sujetos")
+  s5Bridge(14, -20, 27, -20, 7.8, { width:2.4, sag:0.5 });
   s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
@@ -28089,6 +28144,7 @@ function buildS4Archers(){
   s3Slab(30, 2, 8, 20, 3.0, 'dune');                      // repisa E ELEVADA
   s3Slab(-19, 2, 6, 6, 1.5, 'dune'); s3Slab(19, 2, 6, 6, 1.5, 'dune');   // ►S4FIX: PELDAÑOS plaza→repisas (las repisas estaban a 15u de la plaza = inalcanzables)
   s4PadGrid(0, 19, 9, 4, 0);                              // rejilla al norte (expuesto a las flechas)
+  s4SpikeBall(0, 15, 19.0, 'z', 0.8, 6.0, 1.1, 0.4, 1.3);      // S5FIX ALTA: sobre el balcon (y~13)
   s4SpikeBall(0, 19, 8.5, 'x', 0.9, 6.5, 0.95, 1.3, 1.25);   // ►péndulo cruzando la galería de flechas — ►P1: GRANDE (algo más lento)
   s4Blade(0, 9, 3.6, 9, 2.4);                            // ►BLADES: sierra en el paso plaza → rejilla norte (bajo el fuego de las arqueras)
   s3Watchtower(-30, 6, 3.4, false); s3Watchtower(30, -2, 3.4, false);   // arqueras en las repisas
@@ -28096,7 +28152,7 @@ function buildS4Archers(){
   addFloating(12, 5.6, 10, 4.2, 3, { yaw:-0.25, move:{axis:'y', amp:2.2, w:0.66} });
   s3Fence(0, 6.8, 'x', 10, 0, 1.15);                      // ►S4FIX: muro-cobertura SOBRE la plaza (z9.5 estaba fuera → no aparecía)
   s4SpeedPad(0, -13, 11, 6, 0, 'z');                      // ►PAD de VELOCIDAD (corres más) al sur…
-  s4TrapCircuit(0, -13, 9, 5, 0.15, 3, 6, ['beartrap','spike','beartrap']);   // ►S4FIX: sin bombas plantadas (ahora caen del cielo) — cepos + pinchos
+  s4TrapCircuit(0, -13, 9, 5, 0.15, 3, 6, ['beartrap','beartrap','beartrap']);   /* S5FIX (pedido): fuera el modelo ROJO ('spike'), solo cepo de oso */   // ►S4FIX: sin bombas plantadas (ahora caen del cielo) — cepos + pinchos
   addFloating(-14, 4.4, -14, 4, 3); addFloating(14, 4.4, -14, 4, 3);          // ►P4a: apoyos aéreos one-way flanqueando el circuito (escape vertical del peligro)
   /* ►2º NIVEL de arqueras (repisas MUY altas) + nivel bajo + alfombra rápida + runas
      ►S4FIX: fuera el balcón norte (su cuerpo colgaba SOBRE la rejilla → lo atravesabas al saltar);
@@ -28111,7 +28167,7 @@ function buildS4Archers(){
   /* ►ROCKS · racimo BAJO EL FUEGO: cruzar los hexágonos mientras las arqueras disparan — pararse a
      esperar el flote no es opción, la losa cede a los 1,5 s. Puente fijo de reenganche a la repisa E. */
   s5HexField(0, 30, 5.0, [[-14,0,0],[-8,-3,0.6],[-8,3.4,-0.3],[-2,0,1.1],[4,-3.2,1.5],[4,3.4,0.7],[10,0,2.0],[16,-2,2.4]]);
-  addRopeBridge(16, 30, 28, 30, 7.4, { width:2.4, sag:0.45 });
+  s5Bridge(16, 30, 28, 30, 7.4, { width:2.4, sag:0.45 });
   s5Button(0, -18, 0.17, s5Rock(0, 19, 14.5, { R:1.7, dmg:24 }));           // ►ROCKS: el botón está DENTRO del circuito de cepos (arriesgas para soltar la bola sobre la rejilla N)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
@@ -28123,13 +28179,14 @@ function buildS4Cross(){
   s3Slab(-28, 0, 8, 12, 0, 'dune'); s3Slab(28, 0, 8, 12, 0, 'dune');
   s4PadGrid(0, 15, 5, 4, 0);                              // brazo N (rejilla) (►P1: FUERA semillas rojas)
   s4PadGrid(-17, 0, 5, 4, 0);                             // brazo O (rejilla)
+  s4SpikeBall(0, -21, 16.0, 'x', 0.9, 6.5, 0.9, 1.6, 1.1);     // S5FIX ALTA: sobre el racimo SO (y~9.5)
   s4SpikeBall(0, 15, 8.0, 'z', 0.8, 6, 1.6, 0.7, 0.7);   // ►péndulo sobre el brazo N — ►P1: PEQUEÑA-RÁPIDA
   s4Blade(-9, 0, 3.4, 8, 2.6);                           // ►BLADES: sierra en el salto hub → brazo O (rejilla)
   addFloating(15, 4.2, 0, 5, 4, { move:{axis:'z', amp:6, w:0.5} });          // ►S4FIX: patrulla E más baja/ancha y a medio camino (a x17/y5.2 el hueco hub→alfombra era insalvable)
   s4Lift(0, -15, 4.6, 4, 1, 3.2, 1.6);                    // brazo S = ►ASCENSOR de roca (rápido)
   s3Fence(0, 27.6, 'x', 10, 0, 1.15); s3Fence(0, -27.6, 'x', 10, 0, 1.15);   // ►S4FIX: barandillas en los EXTREMOS de la cruz (los baffles diagonales flotantes fuera)
   addPad(0, 0); addPad(0, 24); addPad(0, -24);
-  s4TrapCircuit(0, 0, 9, 9, 0.15, 4, 5.2, ['ball','spike','ball','spike']);   // ►P2: el HUB es una rotonda de peligro — bolas rodantes + pinchos alternados (patrón par, legible)
+  s4TrapCircuit(0, 0, 9, 9, 0.15, 4, 5.2, ['ball','beartrap','ball','beartrap']);   /* S5FIX: idem, el rojo fuera */   // ►P2: el HUB es una rotonda de peligro — bolas rodantes + pinchos alternados (patrón par, legible)
   s4RopeBridge(0, 5.8, 0, 10.4, 0.15, { width:2.6, sag:0.3 });                // ►P2: puente CORTO cruzando el foso hub→rejilla N — la INTRO de la mecánica del derrumbe (Mario: enseñar en pequeño)
   s3Slab(-14, -14, 3.5, 3, 0.6, 'dune'); s3Slab(14, 14, 3.5, 3, 0.6, 'dune'); // ►P4a: peldaños en las DIAGONALES vacías del cruce (las otras dos ya tienen nivel bajo a y-4)
   s3Watchtower(28, 14, 4.6, false);
@@ -28144,8 +28201,8 @@ function buildS4Cross(){
      se atreva (la ruta por el hub pasa por la rotonda de bolas y pinchos). */
   s5HexField(-20, -20, 5.0, [[0,0,0],[5.5,-3,0.5],[5.5,3.2,-0.3],[11,0,1.0],[16,-2.6,1.4]]);
   s5HexField(20, 20, 5.6, [[0,0,0],[-5.5,3,0.5],[-5.5,-3.2,-0.3],[-11,0,1.0],[-16,2.6,1.4]]);
-  addRopeBridge(-14, 24, -6, 24, 4.6, { width:2.4, sag:0.4 });              // ►ROCKS: puentes FIJOS que cosen brazo N ↔ diagonales
-  addRopeBridge(6, -24, 14, -24, 4.6, { width:2.4, sag:0.4 });
+  s5Bridge(-14, 24, -6, 24, 4.6, { width:2.4, sag:0.4 });              // ►ROCKS: puentes FIJOS que cosen brazo N ↔ diagonales
+  s5Bridge(6, -24, 14, -24, 4.6, { width:2.4, sag:0.4 });
   s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
@@ -28156,6 +28213,7 @@ function buildS4Vault(){
   s4PadGrid(-13, -6, 5, 4, 0.2);                          // rejilla O
   s4PadGrid(13, 6, 5, 4, 0.2);                            // rejilla E
   s4PadGrid(0, 15, 7, 3, 0);                              // rejilla N (►P1: FUERA semillas rojas)
+  s4SpikeBall(0, -22, 15.0, 'z', 0.85, 6.0, 0.95, 2.4, 1.2);   // S5FIX ALTA: sobre el racimo de la camara (y~9)
   s4SpikeBall(0, 15, 7.5, 'x', 0.85, 5.5, 0.75, 0.5, 1.3);   // ►péndulo sobre la rejilla N — ►P1: GRANDE-LENTA
   s4Blade(-8, -3, 3.2, 7, 2.7, 0, 1.7);                  // ►BLADES: sierra en el paso cámara → rejilla O
   s4Blade(8, 3, 3.2, 7, -2.7, 1.6, 1.7);                 // ►BLADES: sierra en el paso cámara → rejilla E (sentido contrario)
@@ -28165,7 +28223,7 @@ function buildS4Vault(){
   addFloating(0, 7.4, -14, 4.2, 2.8, { move:{axis:'y', amp:3.4, w:0.78} });
   s3Fence(-6.4, 0, 'z', 8, 0, 1.15); s3Fence(6.4, 0, 'z', 8, 0, 1.15);   // ►S4FIX: barandillas E/O de la cámara (antes medio fuera de la losa → no aparecían); sáltalas para bajar al nivel de lava
   addPad(0, 0);
-  s4TrapCircuit(0, 0, 11, 7, 0.15, 3, 5.6, ['spike','beartrap','spike']);   // ►S4FIX: sin bombas plantadas (caen del cielo) — pinchos + cepo
+  s4TrapCircuit(0, 0, 11, 7, 0.15, 3, 5.6, ['beartrap','beartrap','beartrap']);   /* S5FIX: idem, el rojo fuera */   // ►S4FIX: sin bombas plantadas (caen del cielo) — pinchos + cepo
   addFloating(-6, 4.4, -13, 3.5, 2.6); addFloating(6, 4.4, 13, 3.5, 2.6);   // ►P4a: apoyos aéreos one-way en los huecos cámara↔rejillas (escape vertical; sala apretada → solo 2)
   s3Watchtower(-26, -12, 3.0, false); s3Watchtower(26, 12, 3.0, false);
   /* ►MULTINIVEL apretado */
@@ -28178,7 +28236,7 @@ function buildS4Vault(){
   /* ►ROCKS · sala técnica = el racimo MÁS APRETADO (saltos cortos, sin margen para dudar) + puente
      fijo de vuelta a la cámara. */
   s5HexField(0, -22, 5.2, [[-15,0,0],[-10,-3,0.5],[-10,3,-0.4],[-5,0,0.9],[0,-3.2,1.3],[0,3.2,0.5],[5,0,1.6],[10,-2.8,2.0],[15,1.5,2.3]]);
-  addRopeBridge(-26, -22, -15, -22, 5.2, { width:2.4, sag:0.45 });
+  s5Bridge(-26, -22, -15, -22, 5.2, { width:2.4, sag:0.45 });
   s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
