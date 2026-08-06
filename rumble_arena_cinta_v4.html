@@ -6506,13 +6506,13 @@ let stageIntroT = 0, _stageIntroDur = STAGE_INTRO_T, _siLastCount = -1, _siCamA0
    Texto en ESPAÑOL (fuente); la capa ►I18N lo traduce en vivo al idioma elegido. Solo los stages con
    peligro propio; 1/6/9 no llevan aviso. */
 const STAGE_CAUTION = {
-  2:'¡CUIDADO: RAYOS!',
-  3:'¡CUIDADO: NUEVOS MINIONS!',
-  11:'¡CUIDADO: BARRILES DE PÓLVORA Y MUCHO VACÍO!',   // ►WEST (añadir los trenes cuando entren)
-  4:'¡CUIDADO: RÁFAGAS DE VIENTO Y ARENA QUE TE FRENA!',
-  5:'¡CUIDADO: MUCHAS TRAMPAS!',
+  2:'¡CUIDADO: CAEN RAYOS DEL CIELO!',
+  3:'¡CUIDADO: EMBOSCADAS Y OBSTÁCULOS!',
+  11:'¡CUIDADO: BARRILES EXPLOSIVOS Y MUCHO VACÍO!',   // ►WEST: añadir "Y ESTAMPIDAS" cuando entren los animales en desbandada
+  4:'¡CUIDADO: TE HUNDES EN LA ARENA Y HAY RÁFAGAS DE VIENTO!',
+  5:'¡CUIDADO: BOLAS DE FUEGO Y MUCHAS TRAMPAS!',
   7:'¡CUIDADO: SUELO RESBALADIZO!',
-  8:'¡CUIDADO: DEMASIADA TECNOLOGÍA!',
+  8:'¡CUIDADO: TERREMOTOS AL DESPEGAR LOS COHETES!',
   10:'¡CUIDADO: MENOS GRAVEDAD!',
 };
 let _cautionTimer = null;
@@ -14867,6 +14867,7 @@ const C_DMG =[6,8,11,17],       C_KB =[.32,.38,.52,1.42];
 const C_LUNGE=[0, 2.0, 4.0, 2.5];              // embiste hacia el rival al impactar cada golpe (u/s) — moderado, no se desplaza tanto
 const GB_WIND=.24, GB_HIT=.12, GB_REC=.36;     // rompe-guardias: lento y castigable
 const ACC = 24, FRICTION = 17;                 // arranque progresivo / frenada (derrape contenido)
+const S7_SLIP = 0.5;                           // ►S7SLIP: cuánto RESBALA el suelo del stage 7 (0 = seco · 1 = losa de hielo pura). 0.5 = "slidy sin pasarse" (pedido de Toni); súbelo para más patinazo
 const KB_AIR_DRAG = 2.2;                        // ►rozamiento horizontal MIENTRAS te empujan por el AIRE (en hitstun): mata el "flotar a velocidad constante". ↑ = frena antes (knockback más seco, menos ring-out) · ↓ = vuela más lejos
 const DI_ACC = 24, DI_MINSPD = 2.0;            // DERIVA aérea: cuánto puedes curvar la trayectoria al salir despedido (sin acelerar)
 const BLAST_XZ = 44, BLAST_DOWN = -13, BLAST_UP = 58;
@@ -17941,7 +17942,10 @@ function updateFighter(p, dt){
   /* --- ►LTSTAM · AGUANTE: MISMA barra para colgarse de un borde y para cargar a un rival --- */
   const _stamUse = !!p.hang || !!p.holding;
   if(_stamUse){
-    p.stam = Math.max(0, p.stam - dt);
+    /* ►S8QUAKE: durante la sacudida los dedos NO aguantan — colgado de un borde el aguante se va
+       S8Q.GRIP× más rápido (cargar a un rival no se toca: el temblor es del SUELO/borde). */
+    const _qGrip = (p.hang && typeof S8Q!=='undefined' && S8Q.k > 0.3) ? S8Q.GRIP : 1;
+    p.stam = Math.max(0, p.stam - dt*_qGrip);
     if(p.stam<=0 && !p.stamLock){                              // AGOTADO: te suelta y bloquea la barra
       p.stamLock = true;
       if(p.hang){ p.hang=null; p.hangCD=.45; p.vel.y=-2; sfx.hangOut(); }   // caes SIN poder reengancharte
@@ -18106,21 +18110,36 @@ function updateFighter(p, dt){
     const _sm = (p._sandPl && p._sandPl.sandMul) || 1;   // ►DGOLEM: la arena de la ARENA del jefe frena MÁS (slowMul del spec)
     const sink3 = (S4_SAND_ON && p.onGround && p._sandPl) ? (1 - Math.min(0.85, S4.sinkSlow*_sm*(p.sandSink||0))) : 1;   // ►S4: enterrado en arena = más lento (saltar lo resetea); clamp evita frenado total
     const ctl = (p.onGround ? RUN : AIRCTL) * sink3 * (p.block ? SHIELD_SPD : 1) * (p.spin ? .45 : 1) * (p.holding ? HOLD_SPD : 1) * spdMul(p);   // ►LTGRAB: cargando a alguien vas más lento
-    const icy = (p.onGround && p._icePl);   // ►P6 · HIELO: PATINAS — agarre (ACC) y frenada (FRICTION) mínimos; saltar entre plataformas es más seguro que correr
+    /* ►P6 · HIELO: PATINAS — agarre (ACC) y frenada (FRICTION) reducidos; saltar entre plataformas
+       es más seguro que correr. GRADUADO (►S7SLIP, pedido de Toni "resbaloso pero sin pasarse"):
+         slip 1   = losa de HIELO explícita (pl.ice) → patinazo total, como hasta ahora
+         slip .5  = TODO el suelo del stage 7 (cumbres nevadas): nieve pisada, derrapa pero controlas
+       Los dos multiplicadores se interpolan desde 1 (seco) hasta el valor de hielo puro. */
+    const slip = (!p.onGround) ? 0 : (p._icePl ? 1 : (STAGE===7 ? S7_SLIP : 0));
+    const slipAcc = 1 - 0.78*slip, slipFri = 1 - 0.90*slip;
     if(p.dashT<=0){
       if(move.lengthSq()>0.01){
-        const a = (p.onGround ? ACC*(icy?0.22:1) : ACC*.5)*dt;
+        const a = (p.onGround ? ACC*slipAcc : ACC*.5)*dt;
         p.vel.x += THREE.MathUtils.clamp(move.x*ctl - p.vel.x, -a, a);
         p.vel.z += THREE.MathUtils.clamp(move.z*ctl - p.vel.z, -a, a);
       } else if(p.onGround){
         const sp = Math.hypot(p.vel.x, p.vel.z);
         if(sp>0.01){
-          const ns = Math.max(0, sp - FRICTION*(icy?0.10:1)*dt);
+          const ns = Math.max(0, sp - FRICTION*slipFri*dt);
           p.vel.x *= ns/sp; p.vel.z *= ns/sp;
         }
       } else {
         p.vel.x *= 1-1.1*dt; p.vel.z *= 1-1.1*dt;
       }
+    }
+    /* ►S8QUAKE: con la plataforma temblando el rumbo se DESVÍA solo — vas recto y te vas de lado.
+       Dos senos de frecuencias distintas y fase propia por jugador (nadie derrapa igual). Solo con
+       los pies en el suelo: en el aire mandas tú (por eso saltar es la respuesta al temblor). */
+    if(p.onGround && typeof S8Q!=='undefined' && S8Q.k > 0.3 && p.hitstun<=0 && p.stun<=0){
+      if(p._qph===undefined) p._qph = Math.random()*6.283;
+      const w = S8Q.WOB*S8Q.k*dt;
+      p.vel.x += Math.sin(_s8qT*3.1 + p._qph)*w;
+      p.vel.z += Math.cos(_s8qT*2.3 + p._qph*1.7)*w;
     }
     if(move.lengthSq()>0.01 && p.dashT<=0 && !p.spin){   // durante el GIRO no reorientamos: que siga girando aunque te muevas
       const ty = Math.atan2(move.x, move.z);
@@ -20099,10 +20118,18 @@ function applyStageTheme(stage){
     skyMat.uniforms.top.value.setHex(0x2a333c); skyMat.uniforms.hor.value.setHex(0x50605a); skyMat.uniforms.bot.value.setHex(0x46554f);   // CIELO DE TORMENTA gris-azul → los huecos del dosel respiran (antes techo marrón turbio)
     /* ►R2: iluminación EQUILIBRADO en los 3 stages (pedido del usuario) — exposición/sol/ambiente/rim/side
        del preset; la NIEBLA y el cielo siguen siendo por-stage (la tormenta conserva su atmósfera) */
-    VISUAL.exposure = 0.60;
-    VISUAL.key.color = 0xfff1cf; VISUAL.key.intensity = 1.50;
+    /* ►S2LUZ (pedido: "que no se generen sombras tan durísimas"). El comentario de arriba dice que el
+       S2 va con la iluminación del preset EQUILIBRADO, pero los valores NO eran los del preset: sol
+       1.50 contra 1.15 y relleno 0.20 contra 0.36. O sea un ratio sol/relleno de 7.5 aquí frente a
+       3.2 en el prado — más del doble de contraste, y de ahí el corte durísimo que cruzaba las
+       plataformas. Ojo: `shadow.radius` NO sirve para suavizar (es inerte con PCFSoftShadowMap, ya
+       verificado en el shader de r128), así que lo único que ablanda la sombra es subir el RELLENO.
+       Medido con A/B en la misma toma: con relleno 0.52 el stage se aplana y pierde el volumen de los
+       cantos, así que 0.40 es el punto donde la sombra deja de cortar sin volverse plano. */
+    VISUAL.exposure = 0.64;
+    VISUAL.key.color = 0xfff1cf; VISUAL.key.intensity = 1.15;
     VISUAL.key.pos = [42, 36, 30];
-    VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.20;
+    VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.40;
     VISUAL.rim.color = 0xe2f2ff; VISUAL.rim.intensity = 0.32;                        // contraluz frío (color S2 por legibilidad) a intensidad EQUILIBRADO
     VISUAL.side.color = 0xcfe0d8; VISUAL.side.intensity = 0.26;
     VISUAL.fog.color = 0x46554f; VISUAL.fog.near = 34; VISUAL.fog.far = 122;          // ►S2FIX2: el color va CASADO con skyMat.bot (misma cifra) → el mar se funde con el cielo y NO hay línea de horizonte. Eso lo hace el COLOR, no la distancia. · far 115→122 y no más: updateBelt culla los segmentos a min(fog.far,92)+8 = 100u, así que a far 150 un segmento aparecía con solo un 57% de niebla encima = pop-in (y subir el cull costaría 2 segmentos más de draw calls)
@@ -22266,6 +22293,7 @@ function rebuildBelt(){
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
+  if(typeof _s5Fires!=='undefined') _s5Fires.length = 0;                    // ►FIREBALL: chimeneas de fuego de la lava (S5)
   if(typeof _sjKoi!=='undefined'){ _sjKoi.length = 0; _sjLanternsAnim.length = 0; _sjTaikos.length = 0; _sjOdoshi.length = 0; _sjMotes.length = 0; _sjPonds.length = 0; }   // ►JAPAN: koi/chōchin/taikos/shishi-odoshi/luciérnagas/estanques del jardín
   if(typeof _sjBells!=='undefined'){ _sjBells.length = 0; _sjDarumas.length = 0; _sjTurrets.length = 0; for(const st of _sjStars) (st.parent||scene).remove(st.m); _sjStars.length = 0; }   // ►JAPAN: bonshō/darumas/lanzaderas/shurikens vivos
   if(typeof _s4Rollers!=='undefined'){ _s4Rollers.length=0; _s4Lifts.length=0; _s4Speed.length=0; _s4Traps.length=0; }   // ►PASS2: cilindros/ascensores/velocidad/cepos
@@ -27083,6 +27111,120 @@ function s4Blade(cx, cz, yBase, span, w, ph, size){
   _s4Blades.push({ holder, carriage, span, w, ph, R });
   return _s4Blades[_s4Blades.length-1];
 }
+/* ►FIREBALL · BOLAS DE FUEGO DEL MAR DE LAVA (STAGE 5) ------------------------------------------
+   El clásico de los castillos de Mario: por los HUECOS entre plataforma y plataforma sube una
+   chimenea de roca desde la lava y de su boca SALTAN bolas de fuego. Tres tipos:
+     · 'vert'  sube recta y vuelve a caer (la de toda la vida)
+     · 'arc'   sale inclinada y describe una PARÁBOLA que cruza el hueco de lado a lado
+     · 'multi' abanico de 3-5 bolas escalonadas en el tiempo → la trayectoria dura MUCHO más
+   QUITAN BASTANTE (S5F.DMG) pero **NO EMPUJAN** (pedido de Toni): el castigo es la vida, no el KO
+   — así no te tiran al vacío en mitad de un salto largo. Telegrafiadas: la boca se pone al rojo
+   vivo y burbujea S5F.WARN antes de disparar (regla 4 del stage: todo peligro se avisa).
+   Gravedad PROPIA (-20, mucho más floja que la del jugador) para que se lean en el aire.
+   SIN LUCES NUEVAS: el nº de luces está en la clave de programa de TODOS los materiales (ver
+   memoria warmup-gpu-gotchas) — el fuego se vende con emisivo + bloom + chispas.
+   Viven en el segmento (scene.add durante el builder → seg.group) y scrollean con la cinta. */
+const _s5Fires = [];
+const S5F = { Y0:-9.5, LAVA:-15, G:-20, DMG:20, CD:0.85, WARN:0.8 };
+let _s5FireGeo = null, _s5FireMat = null, _s5FireMouthMat = null, _s5FireStackMat = null;
+function _s5FireAssets(){
+  if(_s5FireGeo) return;
+  _s5FireGeo = new THREE.IcosahedronGeometry(1, 1);                                   // radio 1 → cada bola escala
+  _s5FireMat = new THREE.MeshStandardMaterial({ color:0xff9a20, emissive:0xff4a00, emissiveIntensity:2.8, roughness:0.5, metalness:0 });
+  _s5FireMouthMat = new THREE.MeshStandardMaterial({ color:0x2a0d03, emissive:0xff5a10, emissiveIntensity:1.2, roughness:0.9 });
+  _s5FireStackMat = new THREE.MeshStandardMaterial({ color:0x241004, roughness:0.98, metalness:0.0, emissive:0x4a1200, emissiveIntensity:0.5, side:THREE.DoubleSide });
+}
+function s5Fire(cx, cz, opt){
+  if(!_CAP && !_ISLAND) return null;
+  opt = opt || {};
+  _s5FireAssets();
+  const kind = opt.kind || 'vert', size = opt.size || 1;
+  const holder = new THREE.Group(); holder.position.set(cx, S5F.Y0, cz); holder.userData.noOcc = true;
+  /* CHIMENEA: cono de roca que sube DESDE la lava hasta la boca → la bola no nace del aire */
+  const stackH = S5F.Y0 - S5F.LAVA;
+  const stack = new THREE.Mesh(new THREE.CylinderGeometry(1.25*size, 2.4*size, stackH, 8, 1, true), _s5FireStackMat);
+  stack.position.y = -stackH/2; stack.userData.noOcc = true; holder.add(stack);
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(1.35*size, 0.32*size, 6, 14), _s5FireMouthMat.clone());
+  mouth.rotation.x = Math.PI/2; mouth.userData.noOcc = true; holder.add(mouth);
+  const n = (kind==='multi') ? (opt.n || 4) : 1, r = size * (kind==='multi' ? 0.72 : 1);
+  const balls = [];
+  for(let i=0;i<n;i++){
+    const m = new THREE.Mesh(_s5FireGeo, _s5FireMat);
+    m.scale.setScalar(r); m.visible = false; m.userData.noOcc = true; holder.add(m);
+    balls.push({ m, r, live:false, delay:0, x:0, y:0, z:0, vx:0, vy:0, vz:0 });
+  }
+  scene.add(holder);
+  const f = { holder, mouth, balls, kind, size,
+              h: (opt.h!==undefined ? opt.h : 14),          // altura de salto sobre la boca (apex ≈ Y0+h)
+              dx: opt.dx || 0, dz: opt.dz || 0,             // deriva horizontal ('arc' cruza el hueco)
+              every: opt.every || 4.2,
+              st:'idle', t: (opt.ph!==undefined ? opt.ph : Math.random()*(opt.every||4.2)) };
+  _s5Fires.push(f);
+  return f;
+}
+function _s5UpdateFires(dt){
+  for(const p of players) if(!p.dead) p._fireCD = Math.max(0, (p._fireCD||0) - dt);
+  for(const f of _s5Fires){
+    const segX = (f.holder.parent && f.holder.parent.position) ? f.holder.parent.position.x : 0;
+    const ax = segX + f.holder.position.x, az = f.holder.position.z;
+    if(f.st==='idle'){
+      f.t -= dt;
+      if(f.t<=0){ f.st='warn'; f.t = S5F.WARN; }
+    } else if(f.st==='warn'){
+      f.t -= dt;
+      const k = 1 - Math.max(0, f.t)/S5F.WARN;
+      f.mouth.material.emissiveIntensity = 1.2 + 3.4*k;                                  // la boca se pone al rojo vivo
+      if(Math.random() < dt*12 && typeof burst==='function')
+        burst(_s4fx.set(ax + (Math.random()-0.5)*2*f.size, S5F.Y0 + 0.3, az + (Math.random()-0.5)*2*f.size), 0xff7a20, 2, 2.4, 2, .5);
+      if(f.t<=0){
+        f.st = 'fly';
+        const v0 = Math.sqrt(2*(-S5F.G)*f.h);
+        for(let i=0;i<f.balls.length;i++){
+          const b = f.balls[i], nb = f.balls.length;
+          const kk = nb>1 ? (i/(nb-1) - 0.5) : 0;                                        // -0.5..0.5 = abanico
+          b.live = true; b.delay = i * (f.kind==='multi' ? 0.34 : 0);                    // escalonadas → la tanda dura más
+          b.x = 0; b.y = 0; b.z = 0;
+          b.vx = f.dx * (1 + kk*0.55); b.vz = f.dz * (1 + kk*0.55);
+          b.vy = v0 * (1 - Math.abs(kk)*0.16);                                           // ni todas suben igual
+          b.m.visible = false; b.m.position.set(0,0,0);
+        }
+        if(typeof sfx!=='undefined' && sfx.crack) sfx.crack();
+        if(typeof burst==='function') burst(_s4fx.set(ax, S5F.Y0+0.5, az), 0xff6a10, 14, 8, 6, .9);
+      }
+    } else {
+      let any = false;
+      for(const b of f.balls){
+        if(!b.live) continue;
+        any = true;
+        if(b.delay>0){ b.delay -= dt; continue; }
+        b.m.visible = true;
+        b.vy += S5F.G*dt;
+        b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt;
+        b.m.position.set(b.x, b.y, b.z);
+        b.m.rotation.x += dt*4.5; b.m.rotation.y += dt*3.2;
+        const wx = ax + b.x, wy = S5F.Y0 + b.y, wz = az + b.z;
+        if(b.y <= 0 && b.vy < 0){                                                        // vuelve a la boca: se apaga
+          b.live = false; b.m.visible = false;
+          if(typeof burst==='function') burst(_s4fx.set(wx, wy, wz), 0xff5a10, 8, 5, 4, .7);
+          continue;
+        }
+        if(Math.random() < dt*12 && typeof burst==='function') burst(_s4fx.set(wx, wy, wz), 0xffb040, 1, 1.2, 2.2, .45);
+        const R = b.r + 0.85;
+        for(const p of players){
+          if(p.dead || p.out || p.invuln>0 || (p._fireCD||0)>0) continue;
+          if(Math.abs((p.pos.y + 1.0) - wy) > R + 0.6) continue;
+          if(Math.hypot(p.pos.x - wx, p.pos.z - wz) > R + 0.35) continue;
+          p.damage += S5F.DMG*defMul(p); p.hitFlash = .22; p._fireCD = S5F.CD;
+          p.hitstun = Math.max(p.hitstun, .16);                                          // te frena un instante… pero NO te empuja (pedido)
+          if(typeof jiggle==='function') jiggle(p, 7);
+          if(typeof burst==='function') burst(_s4fx.set(p.pos.x, p.pos.y+1, p.pos.z), 0xff8a20, 12, 6, 6, .8);
+          shake = Math.max(shake, .22); if(typeof sfx!=='undefined' && sfx.hit) sfx.hit(16);
+        }
+      }
+      if(!any){ f.st = 'idle'; f.t = f.every*(0.8 + Math.random()*0.45); f.mouth.material.emissiveIntensity = 1.2; }
+    }
+  }
+}
 /* =====================================================================
    ►PASS 2 · más peligros: CILINDROS que ruedan, ASCENSORES de roca, PADS
    de velocidad + CEPOS en circuito cerrado, y losas ROJAS de contagio.
@@ -28261,6 +28403,7 @@ function updateStage4(dt){
   }
   if(typeof _s4UpdateHazards==='function') _s4UpdateHazards(dt);   // ►PASS2: cilindros + ascensores + pads de velocidad + cepos
   if(STAGE===5 && typeof updateS4Bombs==='function') updateS4Bombs(dt);   // ►S4FIX: bombas cayendo del cielo (solo pirámide)
+  if(STAGE===5 && _s5Fires.length) _s5UpdateFires(dt);                    // ►FIREBALL: bolas de fuego saltando de la lava por los huecos
   if(_s4Bridges.length) _s4UpdateBridges(dt);                      // ►P2: puentes colgantes que vibran y se derrumban
   if(_s5Hexes.length) _s5UpdateHexes(dt);                          // ►ROCKS: losas hexagonales flotantes (flote → 1,5 s → caen → 3 s → vuelven)
   if(_s5Rocks.length || _s5Buttons.length) _s5UpdateRocks(dt);     // ►ROCKS: botones + peñascos FÍSICOS (lava S5 / nieve S7)
@@ -28328,6 +28471,11 @@ function buildS4GridHall(){
      recorrido de los pendulos para que no se crucen con ellos. */
   s5Rock(-18, -8, 10.5, { R:1.5, dmg:20 }); s5Rock(20, 10, 18.0, { R:1.9, dmg:20 }); s5Rock(-6, 14, 13.0, { R:1.3, dmg:20 });
     s5Button(24, -6, 0.02, s5Rock(6, 0, 15.5, { R:1.8, dmg:24 }));
+  /* ►FIREBALL: los DOS huecos andén↔rejilla (x±17, la rejilla llega a ±14.3 y el andén empieza en
+     ±20) + un arco que cruza la banda sur hacia la rejilla → cruzar por abajo ya no es gratis. */
+  s5Fire(-17, 9,  { kind:'vert', h:15, every:3.9 });
+  s5Fire( 17, -9, { kind:'vert', h:15, every:4.3, ph:1.9 });
+  s5Fire(0, -12,  { kind:'arc', dz:6.5, h:12, every:5.2, ph:2.6 });
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 1 · SALA DE ENTRADA (SPAWN, respiro): suelo firme + rejilla suave al norte === */
@@ -28347,6 +28495,9 @@ function buildS4Spawn(){
   /* ►ROCKS · racimo de INICIACIÓN (sala de respiro, filosofía Mario: enseña la mecánica en pequeño y
      sin castigo — hay suelo firme al lado). Fuera de la franja de respawn (x[-16,16] z[-8,8]). */
   s5HexField(-24, -17, 4.4, [[0,0,0],[6,-2.5,0.5],[12,1.5,1.0],[18,-1,1.5]]);
+  /* ►FIREBALL · sala de INICIACIÓN (filosofía Mario, como la sierra lenta de arriba): UNA sola
+     chimenea, lenta y a la vista desde el spawn, en el vacío sur — enseña la mecánica sin castigo. */
+  s5Fire(0, -14, { kind:'vert', h:13, every:4.6 });
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
@@ -28390,7 +28541,13 @@ function buildS4Chasm(){
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(16, -6, 9.5, { R:1.4, dmg:20 }); s5Rock(-20, 12, 17.0, { R:1.8, dmg:20 }); s5Rock(8, 16, 12.0, { R:1.5, dmg:20 });
-    s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
+    s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));
+  /* ►FIREBALL · el ABISMO es LA sala de las bolas de fuego (es todo hueco): dos ARCOS que barren en
+     Z por encima de las dos rejillas + una TANDA MÚLTIPLE al sur del islote (dura mucho más: si la
+     ves salir, ya no cruzas — toca esperar a que se apague la última). */
+  s5Fire(-14, 11,  { kind:'arc', dz:-7, h:13, every:4.8 });
+  s5Fire( 14, -11, { kind:'arc', dz:7,  h:13, every:5.1, ph:2.4 });
+  s5Fire(0, -13,   { kind:'multi', n:4, h:14, every:6.4, ph:3.2 });            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 3 · GALERÍA DE ARQUERAS: repisas laterales que disparan mientras cruzas la rejilla === */
@@ -28425,6 +28582,10 @@ function buildS4Archers(){
   s5HexField(0, 30, 5.0, [[-14,0,0],[-8,-3,0.6],[-8,3.4,-0.3],[-2,0,1.1],[4,-3.2,1.5],[4,3.4,0.7],[10,0,2.0],[16,-2,2.4]]);
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(-16, 4, 11.0, { R:1.5, dmg:20 }); s5Rock(18, -10, 16.5, { R:1.7, dmg:20 }); s5Rock(6, 26, 13.5, { R:1.4, dmg:20 });
+  /* ►FIREBALL: la galería ya está MUY cargada (arqueras + cepos + sierra) → solo dos, en los vacíos
+     laterales por los que se rodea la plaza (la ruta "cómoda" de flanqueo deja de serlo). */
+  s5Fire(-16, -11, { kind:'vert', h:14, every:4.4 });
+  s5Fire( 16,  11, { kind:'multi', n:3, h:13, every:6.0, ph:2.2 });
     s5Button(0, -18, 0.17, s5Rock(0, 19, 14.5, { R:1.7, dmg:24 }));           // ►ROCKS: el botón está DENTRO del circuito de cepos (arriesgas para soltar la bola sobre la rejilla N)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
@@ -28461,6 +28622,12 @@ function buildS4Cross(){
   s5Bridge(-14, 24, -6, 24, 4.6, { width:2.4, sag:0.4 });              // ►ROCKS: puentes FIJOS que cosen brazo N ↔ diagonales
   s5Bridge(6, -24, 14, -24, 4.6, { width:2.4, sag:0.4 });
   s5Rock(-22, -6, 10.0, { R:1.6, dmg:20 }); s5Rock(22, 6, 17.5, { R:1.8, dmg:20 }); s5Rock(-8, -18, 12.5, { R:1.4, dmg:20 });
+  /* ►FIREBALL: el salto hub → brazo E (x 6..24, el único de los cuatro sin rejilla ni ascensor) y
+     dos arcos en las diagonales muertas. La chimenea del brazo E va a x=10 para NO cruzarse con la
+     alfombra que patrulla en x=15. */
+  s5Fire(10, 0,    { kind:'vert', h:13, every:4.0 });
+  s5Fire(-16, 15,  { kind:'arc', dx:6,  h:12, every:5.4, ph:1.6 });
+  s5Fire( 16, -15, { kind:'arc', dx:-6, h:12, every:5.4, ph:3.4 });
     s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
@@ -28496,6 +28663,10 @@ function buildS4Vault(){
   s5HexField(0, -22, 5.2, [[-15,0,0],[-10,-3,0.5],[-10,3,-0.4],[-5,0,0.9],[0,-3.2,1.3],[0,3.2,0.5],[5,0,1.6],[10,-2.8,2.0],[15,1.5,2.3]]);
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(-20, 8, 11.5, { R:1.5, dmg:20 }); s5Rock(14, -14, 16.0, { R:1.7, dmg:20 }); s5Rock(-4, 18, 13.0, { R:1.4, dmg:20 });
+  /* ►FIREBALL · sala técnica = ritmo apretado: tanda MÚLTIPLE en el vacío sur (cierra el paso un
+     buen rato) + una recta rápida en el hueco E (bajo la rejilla del 13). */
+  s5Fire(0, -12,  { kind:'multi', n:5, h:13, every:6.8 });
+  s5Fire(13, -7,  { kind:'vert', h:14, every:3.6, ph:1.2 });
     s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
@@ -30142,6 +30313,58 @@ function _s7Throne(cx, cz, topY){
 /* candelabro = péndulo de cristal (reusa s4SpikeBall con hielo, anclaje ALTO de salón) */
 function _s7Chandelier(cx, cz, y, axis, w, size){ s4SpikeBall(cx, cz, y, axis||'x', 0.8, 6.5, w||0.9, Math.random()*6.28, size||1.15, true); }
 
+/* ►S8QUAKE · SACUDIDAS DE LA FÁBRICA (STAGE 8) -------------------------------------------------
+   Cada S8Q.EVERY s despega un cohete del puerto espacial y TIEMBLA TODO EL MAPA. Tres tiempos:
+     · 'warn'  (S8Q.WARN s) vibración FLOJA — es el aviso: da tiempo a bajarte de un borde o a
+                            plantarte en el centro de la losa antes de que llegue lo gordo
+     · 'quake' (S8Q.DUR s)  sacudida de verdad:
+                              — colgado de un borde el aguante se va S8Q.GRIP× más rápido
+                                (3 s de agarre pasan a menos de 1)
+                              — pisando plataforma el rumbo se DESVÍA solo (bandazos laterales de
+                                frecuencia distinta por jugador): ir recto exige corregir
+     · 'idle'  cuenta atrás a la siguiente
+   NO hace daño ni empuja al vacío por sí sola: descoloca. El cohete de fondo (S8_SCENERY.launch)
+   se lanza en el mismo instante → la sacudida tiene una CAUSA visible en el horizonte.
+   Vive fuera de updateStage7 a propósito: se tickea desde frame() para que no se quede congelada
+   a medias si la cinta deja de correr (jefe, presentación de stage…). */
+const S8Q = { st:'idle', t:12, k:0, EVERY:30, WARN:1.6, DUR:2.4, GRIP:3.2, WOB:11 };
+let _s8qT = 0;
+function _s8ResetQuake(){ S8Q.st='idle'; S8Q.t = S8Q.EVERY; S8Q.k = 0; }
+function _s8UpdateQuake(dt){
+  /* fuera del stage 8 (o en el jefe) el sistema queda MUDO y con k=0: los efectos en updateFighter
+     cuelgan de S8Q.k, así que apagarlo aquí los apaga todos de golpe. */
+  if(STAGE!==8 || (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') || (typeof stageIntroT!=='undefined' && stageIntroT>0) || demo){
+    if(S8Q.k!==0 || S8Q.st!=='idle') _s8ResetQuake();
+    return;
+  }
+  _s8qT += dt;
+  if(S8Q.st==='idle'){
+    S8Q.k = 0; S8Q.t -= dt;
+    if(S8Q.t<=0){
+      S8Q.st = 'warn'; S8Q.t = S8Q.WARN;
+      const LA = (typeof S8_SCENERY!=='undefined') ? S8_SCENERY.launch : null;
+      if(LA && LA.st==='wait') LA.t = 0;                       // el cohete sale AHORA: causa visible del temblor
+      try{ tone(40, 1.6, 'sine', .30, -8); tone(66, 1.2, 'square', .10, -20); }catch(e){}   // retumbo grave que crece
+    }
+  } else if(S8Q.st==='warn'){
+    S8Q.t -= dt;
+    S8Q.k = 0.16;                                              // vibración de AVISO (no afecta a agarre ni a rumbo)
+    shake = Math.max(shake, 0.09 + 0.05*Math.abs(Math.sin(_s8qT*26)));
+    if(S8Q.t<=0){
+      S8Q.st = 'quake'; S8Q.t = S8Q.DUR;
+      if(typeof showBanner==='function') showBanner('¡DESPEGUE! ¡TIEMBLA TODO!', 1.6);
+      try{ if(sfx.thunder) sfx.thunder(); }catch(e){}
+      shake = Math.max(shake, .55); fovKick = Math.max(fovKick, .35);
+    }
+  } else {
+    S8Q.t -= dt;
+    const e = Math.max(0, S8Q.t/S8Q.DUR);                      // se va apagando hacia el final
+    S8Q.k = 0.35 + 0.65*e;
+    shake = Math.max(shake, 0.40*S8Q.k);
+    fovKick = Math.max(fovKick, 0.10*S8Q.k);
+    if(S8Q.t<=0) _s8ResetQuake();
+  }
+}
 /* ---- DRIVER: ciclo de carámbanos (destello 1s → CAE → se clava/rompe → reaparece) ---- */
 function updateStage7(dt){
   for(const ic of _s7Icicles){
@@ -31777,6 +32000,7 @@ function frame(now){
   if(STAGE===2 && WEATHER.on && (BOSSFIGHT.phase==='none' || BOSSFIGHT.phase==='fight' || BOSSFIGHT.phase==='dying')) updateLightning(dt);   // STAGE 2: RAYOS de tormenta — en la cinta Y TAMBIÉN en la arena del jefe (tormenta intensa)
   if(STAGE===4 && typeof updateGust==='function' && ((WEATHER.on && BOSSFIGHT.phase==='none') || BOSSFIGHT.phase==='fight')) updateGust(dt);   // S4: RACHAS de viento en la cinta · ►DGOLEM: TAMBIÉN durante el combate del gólem (arena de arena)
   if(STAGE===4 && typeof updateSandfall==='function') updateSandfall(dt);        // STAGE 4: arena cayendo de los bordes (visual, corre también con jefe)
+  if(typeof _s8UpdateQuake==='function') _s8UpdateQuake(dt);                     // ►S8QUAKE: sacudidas por despegue de cohete (STAGE 8; la propia función se apaga fuera)
   updateHUD();
   pollMoveSheet();   // chuleta de controles: mantén SELECT (mando) o TAB
   if(window._net && _net.role==='host') _net.hostSend();   // ONLINE host: difunde el estado al rival
