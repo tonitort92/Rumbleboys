@@ -21340,14 +21340,23 @@ function s2Watchtower(x, z, topY){
    goblins al acercarse. Colocar SIEMPRE fuera de la franja de respawn (z≥10 o sobre un deck). */
 function s3Watchtower(x, z, topY, withAmbush){
   if(!S4_DECOR_ON) return null;
+  /* S5FIX2 (pedido: "en todos los stages las atalayas no hacen contacto del todo con el suelo, parece
+     que floten"). El bucle MEDIA el suelo real (gg) y luego TIRABA el dato: la Y del modelo y la del
+     deck salian del topY que se pasa por argumento, y la tolerancia es de 0.65 — o sea que cualquier
+     llamada cuyo topY no cuadre exactamente con la cima real dejaba el pilar suspendido esa
+     diferencia (la del stage 5 pedia 3.4 sobre una repisa a 3.0: flotaba 0.4 clavado). Ahora se
+     APOYA en el suelo medido. */
+  let gy = null;
   for(const o of [[0,0],[1.2,0],[-1.2,0],[0,1.2],[0,-1.2]]){       // ni flotando ni asomando del borde
     const gg = platformTopAt(x+o[0], z+o[1]);
     if(gg===null || Math.abs(gg-topY) > 0.65) return null;
+    if(gy===null || gg > gy) gy = gg;                              // se apoya en el punto MAS ALTO de su base
   }
+  topY = gy;                                                        // a partir de aqui manda el suelo REAL
   const m = getModel('s3_pillar', DECOR_DEFS3); if(!m) return null;
   if(typeof _s2JitterBaked==='function') _s2JitterBaked(m, 0.22, 0.4);
   const H = (m.userData.halfH||3.7)*2;
-  m.position.set(x, topY + (m.userData.halfH||3.7) - 0.05, z);
+  m.position.set(x, topY + (m.userData.halfH||3.7) - 0.12, z);      // -0.12: un pelin enterrado, para que no se vea junta
   m.rotation.y = Math.random()*Math.PI*2;
   m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
   scene.add(m);
@@ -24727,7 +24736,11 @@ function scatterModelDecorStage3(startIdx){
    cálidas; NADA de plantas/árboles (estamos DENTRO de la pirámide). Reusa DECOR_DEFS3. */
 function scatterModelDecorStage4(startIdx){
   if(!S4_DECOR_ON || !_modelAvailable()) return;
-  const plats = platforms.slice(startIdx).filter(pl => pl.solid && !pl.float && !pl._pad && (pl.maxX-pl.minX)>=4 && (pl.maxZ-pl.minZ)>=4);
+    /* S5FIX2 (pedido: "existen rocas flotando en el aire que se cruzan con las plataformas que suben y
+     bajan"). Los ascensores s4Lift miden 4x4 y se registran como solid sin float ni _pad, o sea que
+     PASABAN este filtro: la roca se congelaba a la cota de reposo del ascensor (se cuelga del grupo
+     del segmento, no del ascensor) y el bloque la atravesaba en cada ciclo. Se excluyen. */
+const plats = platforms.slice(startIdx).filter(pl => pl.solid && !pl.float && !pl._pad && !pl._lift && (pl.maxX-pl.minX)>=4 && (pl.maxZ-pl.minZ)>=4);
   if(!plats.length) return;
   const spot = (pl)=>({ x:THREE.MathUtils.lerp(pl.minX+1.0, pl.maxX-1.0, Math.random()), z:THREE.MathUtils.lerp(pl.minZ+1.0, pl.maxZ-1.0, Math.random()) });
   const drop = (key, count, scMin, scMax)=>{
@@ -24735,6 +24748,7 @@ function scatterModelDecorStage4(startIdx){
       const pl = plats[(Math.random()*plats.length)|0], s = spot(pl);
       if(_inWall(s.x, s.z, pl.topY, 0.5)) continue;
       if(typeof _nearProp==='function' && _nearProp(s.x, s.z, 0.9)) continue;
+      if(typeof _nearPad==='function' && _nearPad(s.x, s.z, 1.0)) continue;   // S5FIX2 (pedido): ni una roca encima de un saltador — era el unico scatter que no lo miraba
       const m = getModel(key, DECOR_DEFS3); if(!m) return;   // sin modelos → blockout limpio
       const f = scMin + Math.random()*(scMax-scMin);
       m.scale.setScalar(f);
@@ -26452,7 +26466,10 @@ function _s4GlyphTex(){
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0,0,px,px);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const cols = 6, rows = 6, cw = px/cols, ch = px/rows, NT = 10;
+  /* ►S5FIX2 (pedido: "intenta que los símbolos sean tipo egipcio"). A 6×6 celdas y proyectados en el
+     cilindro grande, los glifos salían minúsculos y se leían como ruido tipo "código", no como
+     jeroglíficos. A 4×4 cada símbolo ocupa más del doble de superficie y se reconoce la silueta. */
+  const cols = 4, rows = 4, cw = px/cols, ch = px/rows, NT = 10;
   const draw = (k, s)=>{
     if(k===0){ ctx.beginPath(); ctx.arc(0,0,s*0.7,0,6.283); ctx.stroke(); ctx.beginPath(); ctx.arc(0,0,s*0.2,0,6.283); ctx.fill(); ctx.beginPath(); ctx.moveTo(s*0.6,s*0.4); ctx.lineTo(s*1.05,s*0.9); ctx.stroke(); }              // ojo de Horus
     else if(k===1){ ctx.beginPath(); ctx.moveTo(-s,0); ctx.lineTo(0,-s*0.7); ctx.lineTo(s,0); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-s,s*0.55); ctx.lineTo(0,-s*0.1); ctx.lineTo(s,s*0.55); ctx.stroke(); }                        // ave
@@ -26564,13 +26581,54 @@ function buildS4Chamber(){
        fog:false → los glifos brillan nítidos a esa distancia; la base negra funde con el cielo/niebla.
        El área sigue delimitada por los muros translúcidos (_boundaryWalls), así que abrir el fondo no
        abre el nivel. */
-    const H = 82, yMid = -16 + H/2;
-    const wb = mkWall(300, H); wb.material.fog = false; wb.position.set(0, yMid, -132); G.add(wb);   // horizonte trasero
-    const wf = mkWall(300, H); wf.material.fog = false; wf.position.set(0, yMid,  132); wf.rotation.y = Math.PI; G.add(wf);   // horizonte opuesto (cara a cámara → glifos hacia dentro)
-    /* ►FIX (pedido): GLIFOS también en los EXTREMOS por donde ENTRA/SALE la cinta (±X) — proyección
-       limpia (plano emisivo, sin colisión), no muro sólido. Ahora la cámara pisa una cámara con glifos a los 4 lados. */
-    const wl = mkWall(300, H); wl.material.fog = false; wl.position.set(-132, yMid, 0); wl.rotation.y =  Math.PI/2; G.add(wl);   // extremo −X (entrada de la cinta)
-    const wr = mkWall(300, H); wr.material.fog = false; wr.position.set( 132, yMid, 0); wr.rotation.y = -Math.PI/2; G.add(wr);   // extremo +X (salida)
+    /* S5FIX2 (pedido de Toni: "el horizonte lo has hecho como una caja que encierra la cinta y ahi van
+       los glifos, y no me gusta; prefiero que el degradado de la lava CONTINUE con el fondo del cielo
+       oscuro, como si estuvieramos en la piramide o una cueva, y que en ese cielo proyectes los
+       simbolos"). Fuera los CUATRO planos de 300x82 (eran literalmente las caras de una caja de
+       264x264, y con fog:false se recortaban nitidos contra el cielo = la caja se veia).
+       Ahora es UN CILINDRO abierto visto por dentro (BackSide), sin esquinas, con:
+         · degradado por VERTICE: abajo el tono de la lava, arriba casi negro → la lava no termina en
+           una arista, se va hacia la oscuridad de la cueva;
+         · los glifos en el emissiveMap, DESVANECIDOS abajo (van con el mismo degradado) para que solo
+           se lean en la parte alta, que es "el cielo" de la camara;
+         · fog:true → la distancia lo funde con la niebla del stage, que es lo que da continuidad. */
+    /* S5FIX2 · R por DEBAJO de fog.far (128) daria un cilindro medio comido por la niebla, y a 150
+       era niebla PLANA: los glifos desaparecian. Se hace como el horizonte del stage 2: fog OFF y la
+       continuidad se consigue por COLOR — el pie del cilindro lleva el tono de la lava, asi que no hay
+       arista donde acabe. Y H bien alto para que el borde de arriba no entre nunca en encuadre. */
+    const R = 128, H = 190, yBot = -24;
+    const cgeo = new THREE.CylinderGeometry(R, R, H, 56, 12, true);
+    const cpos = cgeo.attributes.position, ccol = new Float32Array(cpos.count*3);
+    const _cLo = new THREE.Color(0x43160a).convertSRGBToLinear();   // pie: el tono de la lava (0x300f04) subido un punto → funde sin junta
+    const _cHi = new THREE.Color(0x18110c).convertSRGBToLinear();   // techo: casi negro, casado con el top del domo de cielo (0x1c130a)
+    const _ct = new THREE.Color();
+    for(let i=0;i<cpos.count;i++){
+      const t = THREE.MathUtils.clamp((cpos.getY(i) + H/2) / H, 0, 1);   // 0 abajo … 1 arriba
+      _ct.copy(_cLo).lerp(_cHi, Math.pow(t, 0.55));
+      ccol[i*3]=_ct.r; ccol[i*3+1]=_ct.g; ccol[i*3+2]=_ct.b;
+    }
+    cgeo.setAttribute('color', new THREE.BufferAttribute(ccol,3));
+    const cm = mat(0xffffff, { roughness:1, metalness:0, side:THREE.BackSide, emissive:0xffc860, emissiveIntensity:1.15 });
+    cm.vertexColors = true; cm.fog = false;   // ver arriba: la continuidad la da el degradado, no la niebla
+    cm.emissiveMap = glyph.clone();
+    cm.emissiveMap.wrapS = cm.emissiveMap.wrapT = THREE.RepeatWrapping;
+    cm.emissiveMap.magFilter = THREE.LinearFilter;
+    cm.emissiveMap.repeat.set(20, 5);
+    cm.emissiveMap.needsUpdate = true; cm.needsUpdate = true;
+    /* el emisivo tambien se apaga hacia abajo: sin esto los glifos flotarian SOBRE la lava */
+    cm.onBeforeCompile = (sh)=>{
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>',       `#include <common>\nvarying float vGlyphT;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvGlyphT = clamp((position.y + ${(H/2).toFixed(1)}) / ${H.toFixed(1)}, 0.0, 1.0);`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>',               `#include <common>\nvarying float vGlyphT;`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance *= smoothstep(0.21, 0.62, vGlyphT);`);
+    };
+    cm.customProgramCacheKey = ()=> 's5dome';   // ►DEPTH gotcha: sin clave propia three reutiliza el programa de otro material y el parche no se compila
+    const dome = new THREE.Mesh(cgeo, cm);
+    dome.position.set(0, yBot + H/2, -4);
+    dome.userData.noOcc = true; dome.renderOrder = -1;
+    G.add(dome); S5_SCENERY.wallMats.push(cm);
   }
   /* 3) LUZ de relleno CÁLIDA desde abajo (la lava emisiva no ilumina otras mallas) */
   {
@@ -26636,7 +26694,7 @@ function updateS5Scenery(dt){
     S5_SCENERY.smokeGeo.attributes.position.needsUpdate = true;
   }
   if(S5_SCENERY.wallMats) for(let i=0;i<S5_SCENERY.wallMats.length;i++){   // ►glifos "brillando distinto" (flicker sutil por muro)
-    S5_SCENERY.wallMats[i].emissiveIntensity = 1.6 * (0.8 + 0.2*Math.sin(_s4LavaT*(1.6+i*0.7) + i*2.3));
+    S5_SCENERY.wallMats[i].emissiveIntensity = 1.15 * (0.82 + 0.18*Math.sin(_s4LavaT*(1.6+i*0.7) + i*2.3));   // S5FIX2: el flicker parte del nuevo valor base
   }
   /* ►P1: PARPADEO ASIMÉTRICO por-glifo — cada ~0.3-0.5s se REDIBUJAN unas pocas celdas del canvas
      compartido con brillo/tamaño nuevos (paint de _s4GlyphTex) → glifos que se encienden/apagan
@@ -28069,10 +28127,14 @@ function buildS4GridHall(){
      a la rejilla. Pisas una y tienes 1,5 s: hay que ir encadenando saltos, no pararse a mirar. */
   s5HexField(0, -19, 6.2, [[-12,0,0],[-6,-3.5,0.7],[-6,3.2,-0.5],[0,0,1.2],[0,-6,0.3],[6,3.2,0.6],[6,-3.4,-0.4],[12,0,1.0],[18,-2,1.6]]);
   s5Bridge(-26, 15, -12, 15, 5.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO andén O → hexágonos (la ruta segura de entrada al racimo)
-  s5Bridge(12, -19, 26, -19, 6.4, { width:2.4, sag:0.45 });            // ►ROCKS: puente FIJO hexágonos → andén E (la salida)
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   /* ►ROCKS · BOTÓN + PEÑASCO DE LAVA: el botón está en el andén E; la bola cae sobre la GRAN REJILLA
      y desde ahí rueda a donde la física quiera (o se queda quieta si nadie la toca). */
-  s5Button(24, -6, 0.02, s5Rock(6, 0, 15.5, { R:1.8, dmg:24 }));
+  /* S5FIX2 (pedido): mas BOLAS NARANJAS estaticas a distintas alturas, para estorbar a quien vuela
+     alto. Son s5Rock sin boton: se quedan colgadas en su cuna indefinidamente. Colocadas lejos del
+     recorrido de los pendulos para que no se crucen con ellos. */
+  s5Rock(-18, -8, 10.5, { R:1.5, dmg:20 }); s5Rock(20, 10, 18.0, { R:1.9, dmg:20 }); s5Rock(-6, 14, 13.0, { R:1.3, dmg:20 });
+    s5Button(24, -6, 0.02, s5Rock(6, 0, 15.5, { R:1.8, dmg:24 }));
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 1 · SALA DE ENTRADA (SPAWN, respiro): suelo firme + rejilla suave al norte === */
@@ -28092,7 +28154,7 @@ function buildS4Spawn(){
   /* ►ROCKS · racimo de INICIACIÓN (sala de respiro, filosofía Mario: enseña la mecánica en pequeño y
      sin castigo — hay suelo firme al lado). Fuera de la franja de respawn (x[-16,16] z[-8,8]). */
   s5HexField(-24, -17, 4.4, [[0,0,0],[6,-2.5,0.5],[12,1.5,1.0],[18,-1,1.5]]);
-  s5Bridge(-6, -17, 6, -17, 5.9, { width:2.6, sag:0.4 });              // ►ROCKS: puente FIJO al final del racimo (el descanso)
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
 }
@@ -28103,7 +28165,7 @@ function buildS4Chasm(){
   s3Slab(27, 0, 10, 14, 0, 'dune');
   s4PadGrid(-14, 0, 5, 4, 0);                             // rejilla O→centro
   s4PadGrid(14, 0, 5, 4, 0);                              // rejilla centro→E
-  s4SpikeBall(0, 0, 17.0, 'z', 0.85, 6.0, 1.0, 0.9, 1.2);      // S5FIX ALTA: barrido sobre el hub (y~11)
+  s4SpikeBall(-11, 6, 17.0, 'z', 0.85, 6.0, 1.0, 0.9, 1.2);    // S5FIX2: apartado de (0,0) — ahi cuelga el penasco naranja y la bola lo atravesaba
   s4SpikeBall(-14, 0, 8.0, 'x', 0.95, 6, 1.7, 1.1, 0.7); // ►péndulo rejilla O — ►P1: variante PEQUEÑA-RÁPIDA
   s4SpikeBall(14, 0, 8.0, 'x', 0.95, 6, 0.8, 2.3, 1.4);  // ►péndulo rejilla E — ►P1: variante GRANDE-LENTA (desfasada)
   s4Blade(-9, 0, 3.2, 8, 2.7);                           // ►BLADES: sierra en el salto islote O → centro (barre Z, desfasada del péndulo de x−14)
@@ -28132,9 +28194,10 @@ function buildS4Chasm(){
      el jugador elige camino (y se lo va rompiendo). Es la alternativa aérea a las rejillas. */
   s5HexField(0, -20, 5.6, [[-16,0,0],[-10,-3,0.6],[-10,3,-0.4],[-4,0,1.0],[-4,-5.5,0.2],[2,3,1.4],[2,-3,0.5],[8,0,1.8],[14,-3,2.2],[14,3.5,1.2]]);
   s5HexField(0, 21, 7.0, [[-14,0,0],[-8,-3.2,0.5],[-2,0,1.0],[-2,4,0.2],[4,-3,1.3],[10,0,1.7],[16,2.5,2.0]]);
-  s5Bridge(-27, -20, -16, -20, 5.4, { width:2.4, sag:0.45 });          // ►ROCKS: puentes FIJOS que enganchan losa ↔ racimo (los dos extremos "sujetos")
-  s5Bridge(14, -20, 27, -20, 7.8, { width:2.4, sag:0.5 });
-  s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
+  s5Rock(16, -6, 9.5, { R:1.4, dmg:20 }); s5Rock(-20, 12, 17.0, { R:1.8, dmg:20 }); s5Rock(8, 16, 12.0, { R:1.5, dmg:20 });
+    s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 3 · GALERÍA DE ARQUERAS: repisas laterales que disparan mientras cruzas la rejilla === */
@@ -28144,7 +28207,7 @@ function buildS4Archers(){
   s3Slab(30, 2, 8, 20, 3.0, 'dune');                      // repisa E ELEVADA
   s3Slab(-19, 2, 6, 6, 1.5, 'dune'); s3Slab(19, 2, 6, 6, 1.5, 'dune');   // ►S4FIX: PELDAÑOS plaza→repisas (las repisas estaban a 15u de la plaza = inalcanzables)
   s4PadGrid(0, 19, 9, 4, 0);                              // rejilla al norte (expuesto a las flechas)
-  s4SpikeBall(0, 15, 19.0, 'z', 0.8, 6.0, 1.1, 0.4, 1.3);      // S5FIX ALTA: sobre el balcon (y~13)
+  s4SpikeBall(-12, 8, 19.0, 'z', 0.8, 6.0, 1.1, 0.4, 1.3);     // S5FIX2: apartado del penasco de (0,19)
   s4SpikeBall(0, 19, 8.5, 'x', 0.9, 6.5, 0.95, 1.3, 1.25);   // ►péndulo cruzando la galería de flechas — ►P1: GRANDE (algo más lento)
   s4Blade(0, 9, 3.6, 9, 2.4);                            // ►BLADES: sierra en el paso plaza → rejilla norte (bajo el fuego de las arqueras)
   s3Watchtower(-30, 6, 3.4, false); s3Watchtower(30, -2, 3.4, false);   // arqueras en las repisas
@@ -28167,8 +28230,9 @@ function buildS4Archers(){
   /* ►ROCKS · racimo BAJO EL FUEGO: cruzar los hexágonos mientras las arqueras disparan — pararse a
      esperar el flote no es opción, la losa cede a los 1,5 s. Puente fijo de reenganche a la repisa E. */
   s5HexField(0, 30, 5.0, [[-14,0,0],[-8,-3,0.6],[-8,3.4,-0.3],[-2,0,1.1],[4,-3.2,1.5],[4,3.4,0.7],[10,0,2.0],[16,-2,2.4]]);
-  s5Bridge(16, 30, 28, 30, 7.4, { width:2.4, sag:0.45 });
-  s5Button(0, -18, 0.17, s5Rock(0, 19, 14.5, { R:1.7, dmg:24 }));           // ►ROCKS: el botón está DENTRO del circuito de cepos (arriesgas para soltar la bola sobre la rejilla N)
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
+  s5Rock(-16, 4, 11.0, { R:1.5, dmg:20 }); s5Rock(18, -10, 16.5, { R:1.7, dmg:20 }); s5Rock(6, 26, 13.5, { R:1.4, dmg:20 });
+    s5Button(0, -18, 0.17, s5Rock(0, 19, 14.5, { R:1.7, dmg:24 }));           // ►ROCKS: el botón está DENTRO del circuito de cepos (arriesgas para soltar la bola sobre la rejilla N)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
 }
@@ -28203,7 +28267,8 @@ function buildS4Cross(){
   s5HexField(20, 20, 5.6, [[0,0,0],[-5.5,3,0.5],[-5.5,-3.2,-0.3],[-11,0,1.0],[-16,2.6,1.4]]);
   s5Bridge(-14, 24, -6, 24, 4.6, { width:2.4, sag:0.4 });              // ►ROCKS: puentes FIJOS que cosen brazo N ↔ diagonales
   s5Bridge(6, -24, 14, -24, 4.6, { width:2.4, sag:0.4 });
-  s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
+  s5Rock(-22, -6, 10.0, { R:1.6, dmg:20 }); s5Rock(22, 6, 17.5, { R:1.8, dmg:20 }); s5Rock(-8, -18, 12.5, { R:1.4, dmg:20 });
+    s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 5 · CÁMARA TÉCNICA: pasarelas + rejillas + alfombras (más apretado) === */
@@ -28236,8 +28301,9 @@ function buildS4Vault(){
   /* ►ROCKS · sala técnica = el racimo MÁS APRETADO (saltos cortos, sin margen para dudar) + puente
      fijo de vuelta a la cámara. */
   s5HexField(0, -22, 5.2, [[-15,0,0],[-10,-3,0.5],[-10,3,-0.4],[-5,0,0.9],[0,-3.2,1.3],[0,3.2,0.5],[5,0,1.6],[10,-2.8,2.0],[15,1.5,2.3]]);
-  s5Bridge(-26, -22, -15, -22, 5.2, { width:2.4, sag:0.45 });
-  s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
+  /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
+  s5Rock(-20, 8, 11.5, { R:1.5, dmg:20 }); s5Rock(14, -14, 16.0, { R:1.7, dmg:20 }); s5Rock(-4, 18, 13.0, { R:1.4, dmg:20 });
+    s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 const S5_SEG_BUILDERS = [ buildS4GridHall, buildS4Spawn, buildS4Chasm, buildS4Archers, buildS4Cross, buildS4Vault ];   // idx1 = escena de spawn (x=0), como en S2/S4
