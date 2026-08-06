@@ -22307,7 +22307,7 @@ const WEATHER = { on:false, lines:null, geo:null, vel:null, count:2200,   // ►
                   box:{ w:92, h:48, d:92 }, flash:0, flashCD:6, bgBase:null,
                   kind:'rain',                                            // ►S4: 'rain' (S2) | 'sand' (S4 tormenta de arena) | ►P6 'snow' (S7 nevada/ventisca)
                   sandLines:null, sandGeo:null, sandVel:null, sandCount:1600, windT:0,
-                  snowLines:null, snowGeo:null, snowVel:null, snowCount:1500,
+                  snowLines:null, snowGeo:null, snowVel:null, snowCount:3200,
                   petalLines:null, petalGeo:null, petalVel:null, petalCount:2900 };   // ►JAPAN: pétalos de sakura a la deriva · ►S3FIX: 1100→2900 (pedido: "mucho más intensa"). Es UN LineSegments = 1 draw call, así que el coste es de vértices, no de llamadas
 /* RAYOS de tormenta (Stage 2): estado global; el sistema vive tras updateWeather. */
 const LIGHTNING = { on:false, cd:3.5, active:[], LEAD:3.0, R:3.6 };
@@ -22353,7 +22353,7 @@ function _buildSnow(){
   const c = WEATHER.snowCount, pos = new Float32Array(c*6), vel = new Float32Array(c);
   for(let i=0;i<c;i++){
     const x=(Math.random()-0.5)*WEATHER.box.w, y=Math.random()*WEATHER.box.h, z=(Math.random()-0.5)*WEATHER.box.d;
-    const len = 0.22 + Math.random()*0.22;               // copo corto (lee como punto alargado)
+    const len = 0.30 + Math.random()*0.30;               // copo corto (lee como punto alargado)
     pos[i*6]=x; pos[i*6+1]=y; pos[i*6+2]=z;
     pos[i*6+3]=x+0.05; pos[i*6+4]=y-len; pos[i*6+5]=z;
     vel[i] = 4.5 + Math.random()*4.5;                    // cae FLOTANDO (vs 26-40 de la lluvia)
@@ -22424,7 +22424,7 @@ function _updateSnowWeather(dt){
     pos[o] += sway; pos[o+3] += sway;
     pos[o+1] -= d; pos[o+4] -= d;
     if(pos[o+1] < botY || pos[o] > cx+hw || pos[o] < cx-hw){
-      const len = 0.22 + Math.random()*0.22;
+      const len = 0.30 + Math.random()*0.30;
       const nx = cx + (Math.random()-0.5)*WEATHER.box.w, nz = cz + (Math.random()-0.5)*WEATHER.box.d;
       const ny = topY - Math.random()*6;
       pos[o]=nx; pos[o+1]=ny; pos[o+2]=nz;
@@ -28582,6 +28582,12 @@ function _applyS7Theme(){
   if(typeof setCritterStage==='function') setCritterStage(4);
   if(typeof enableS5Scenery==='function') enableS5Scenery(false);
   if(typeof enableS6Scenery==='function') enableS6Scenery(false);
+  /* S7FIX (pedido: "evita este tipo de renderizado de los elementos de fondo"): el detector de bordes
+     del inkPass mide diferencia de PROFUNDIDAD a 1 texel, SIN normales, asi que no distingue una silueta
+     real de una superficie rasante — y aqui las montanas son conos/OBJ facetados y los tempanos una malla
+     de icosaedros con flatShading: de ahi las bandas horizontales y el patron de espiga. Mismo ajuste que
+     el western. Se aplica solo, porque applyVisual() corre al final de applyStageTheme. */
+  VISUAL.ink.strength = 0.24; VISUAL.ink.umbral = 0.58; VISUAL.ink.limGrow = 0.12;
   enableS7Scenery(true);
 }
 
@@ -28623,8 +28629,10 @@ function buildS7Scenery(){
   /* ►S6WATER (pedido): las nubes bajan a una BRUMA MARINA — banda pegada al agua, DEBAJO del circuito
      de plataformas y muy por debajo de las cimas (antes cubrían hasta cerca del juego). */
   const S7_WL = -5;                                 // LÍNEA DEL AGUA (5u por debajo de las plataformas ~0)
-  mkSea(150, -9, -4.5, cmA);        // manta de bruma sobre el mar
-  mkSea(90,  -7, -3,   cmB);        // volutas
+  /* S7FIX (pedido): manta de bruma ELIMINADA — ocupaba y -9..-3, o sea justo la franja del agua (-5) y
+     de las puntas de hielo (-3.8), y no se sabia si era nube o hielo. */
+  // mkSea(150, -9, -4.5, cmA);        // manta de bruma sobre el mar
+  // mkSea(90,  -7, -3,   cmB);   // S7FIX: idem, volutas fuera        // volutas
   /* ►S6WATER: SUPERFICIE DE AGUA — mar ártico translúcido. Los témpanos y las montañas EMERGEN de aquí
      (antes flotaban en el vacío azul); lo que quede por encima del agua se lee como hielo a flote. */
   { const wm = new THREE.MeshStandardMaterial({ color:0x3a78a8, roughness:0.5, metalness:0.2, transparent:true, opacity:0.66, depthWrite:false });
@@ -28669,13 +28677,17 @@ function buildS7Scenery(){
     /* ►S6FIX (pedido): las montañas SOLO horizonte — nunca chocando con la cinta. Los picos que
        antes caían cerca del carril (z pequeño positivo: 20/30/45) se alejan al fondo (|z| grande). */
     const PKS = [[70,-115,52],[130,-70,44],[-120,-60,48],[20,-140,60],[-160,-95,42],[165,-85,46],[-70,-125,55],[125,-130,40]];
-    let i = 0; for(const d of PKS) mkPeak(d[0], d[1], d[2], i++, -14);
+    /* S7FIX (pedido: "montanas y hielo estan a diferentes alturas, deben estar en la misma; usa una base
+       de agua artica para apoyar los modelos"). El hielo YA se referenciaba al agua (S7_WL+1.2) pero las
+       montanas usaban bases fijas de -14 y -26, o sea 9 y 21 unidades POR DEBAJO de la linea de agua.
+       Ahora las dos familias se apoyan en la MISMA cota, la del agua. */
+    let i = 0; for(const d of PKS) mkPeak(d[0], d[1], d[2], i++, S7_WL - 1.2);
     /* 4) CORDILLERA del ABISMO: el "suelo" donde mueres — picos semihundidos cuyas puntas asoman
        entre el mar de nubes (-19..-11); nunca alcanzan la zona jugable (cimas ≤ -8). ►S6FIX: |x|/|z|
        SIEMPRE lejos de la banda de juego (nada en el centro donde va la cinta). */
     for(let k=0;k<10;k++){
       const x = (Math.random()<0.5?-1:1)*(100+Math.random()*120), z = (Math.random()<0.5?-1:1)*(65+Math.random()*95), h = 11 + Math.random()*7;
-      mkPeak(x, z, h, i++, -26);
+      mkPeak(x, z, h, i++, S7_WL - 1.2);   // S7FIX: misma cota que el anillo de horizonte y que el hielo
     } }
   /* ►#9 ÁRTICO: MAR DE HIELO — grandes fragmentos angulares (témpanos) por el suelo del abismo,
      mezclados con el mar de nubes, SIEMPRE lejos del carril. Malla fusionada + flatShading = facetado
@@ -28724,7 +28736,7 @@ function _s6BuildFlakes(){
                      .sort((a,b) => b.geometry.attributes.position.count - a.geometry.attributes.position.count)
                      .slice(0, 4);
   const mat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.9, side:THREE.DoubleSide, depthWrite:false, fog:true });
-  const PER = 12;                                                // 4 diseños × 12 = ~48 copos visibles
+  const PER = 30;   // S7FIX (pedido): mas copos 3D — 4 disenos x 30                                                // 4 diseños × 12 = ~48 copos visibles
   for(const src of srcs){
     const geo = src.geometry.clone();
     const s = src.scale.x || 1;
@@ -28858,7 +28870,10 @@ function _s6DeadTrees(){
 const _s6Glowed = {};   // emissive UNA vez por clave (getModel comparte material entre clones)
 function scatterModelDecorStage6(startIdx){
   if(!_modelAvailable()) return;
-  const all = platforms.slice(startIdx).filter(pl => pl.solid && !pl.float && !pl._pad && !pl.ice);
+  /* S7FIX (pedido: "popula las plataformas con muchos mas assets"): el pool excluia pl.ice — y las
+     losas de hielo son casi TODAS las del stage, asi que se quedaban peladas. Ahora entran; lo que se
+     sigue excluyendo son las rejillas trampa y los flotantes. */
+  const all = platforms.slice(startIdx).filter(pl => pl.solid && !pl.float && !pl._pad);
   const big   = all.filter(pl => (pl.maxX-pl.minX)>=9);                            // mesetas/refugios/claros: árboles y props con bulto
   const small = all.filter(pl => (pl.maxX-pl.minX)>=5 && (pl.maxX-pl.minX)<9);     // blobs de salto: solo acentos rasantes al borde
   if(!all.length) return;
@@ -28910,13 +28925,14 @@ function scatterModelDecorStage6(startIdx){
       _propSpots.push({ x:s.x, z:s.z, r:0.8 });
     }
   }
-  drop('s6_pine',    4, 0.85, 1.25, big,   0.5,  0.82);   // pinos al BORDE de las plataformas grandes (el centro queda jugable)
-  drop('s6_snowman', 1, 0.9,  1.1,  big,   0.35, 0.6);    // encanto: muñeco y trineo sueltos
-  drop('s6_sled',    1, 0.9,  1.1,  big,   0.35, 0.6);
-  drop('s6_bush',    3, 0.8,  1.3,  big,   0.3,  0.8);
-  drop('s6_bush',    2, 0.7,  1.0,  small, 0.6,  0.85);   // acento rasante al borde de blobs de salto
-  drop('s6_crystal', 2, 0.8,  1.3,  big,   0.4,  0.8);
-  drop('s6_crystal2',2, 0.8,  1.3,  small, 0.6,  0.85);
+  drop('s6_pine',    9, 0.85, 1.30, big,   0.45, 0.84);   // pinos al BORDE de las plataformas grandes (el centro queda jugable)
+  drop('s6_snowman', 2, 0.9,  1.15, big,   0.35, 0.62);    // encanto: muñeco y trineo sueltos
+  drop('s6_sled',    2, 0.9,  1.15, big,   0.35, 0.62);
+  drop('s6_igloo',   2, 0.9,  1.15, big,   0.30, 0.58);   // S7FIX: iglus tambien fuera de los refugios
+  drop('s6_bush',    7, 0.8,  1.35, big,   0.3,  0.82);
+  drop('s6_bush',    5, 0.7,  1.05, small, 0.55, 0.86);   // acento rasante al borde de blobs de salto
+  drop('s6_crystal', 6, 0.8,  1.35, big,   0.4,  0.82);
+  drop('s6_crystal2',5, 0.8,  1.35, small, 0.55, 0.86);
 }
 /* 6 escenas — MUCHÍSIMOS blobs pequeños (pedido), gaps ≤6 (la cinta ×1.6 aprieta) */
 function buildS6Campo(){                    // idx0 · campo de saltos
@@ -28943,7 +28959,7 @@ function buildS6Crestas(){                  // idx2 · dos crestas + puente de h
   _s6Blob(-19, 3, 2.6, 1.1);                                      // ►GAP-FIX: peldaño entre (-24,0) y el blob móvil (-14,6) (antes hueco ~5.8 en hielo)
   _s6Meseta(14, 5, 1.2, 5.4);                                     // ►S6R: el COLCHÓN si la racha te tira del puente
   _s6MovingBlob(-14, 6, 2.8, 1.0, {axis:'y', amp:1.0, w:0.45});   // ►S6M: blob-rescate que sube y baja bajo el flanco del puente
-  s4SpikeBall(0, 0, 9.0, 'z', 0.85, 6, 1.6, 1.0, 0.7, true);
+  s4SpikeBall(0, 0, 12.2, 'z', 0.85, 6, 1.6, 1.0, 0.7, true);   /* S7FIX (pedido): cruzaba el puente de hielo (topY 2.6): la bola quedaba a 3.0 con radio 0.7 */
   addPad(-27, -13); addPad(27, 13);
   s2GapWall(-10, 7, 'z', 4, 3.4); s2GapWall(10, -7, 'z', 4, 3.4); // muros bloqueantes (roca helada vía M.brick)
   _s6Blob(33.5, 6, 2.8, 0.8);                                     // ►F1-CINTA: peldaño de COSTURA este → Glaciar (antes hueco ~10-15u en diagonal)
@@ -28971,7 +28987,7 @@ function buildS6Escalera(){                 // idx4 · subida en arco hasta el m
   addFloating(-6, 3.2, -2, 4.5, 3);
   addFloating(8, 5.4, 12, 4.5, 3); _s6Drift({axis:'x', amp:3, w:0.4});   // ►S6M: el tablón alto PATRULLA
 
-  s4SpikeBall(4, -2, 11, 'x', 0.9, 7.5, 1.1, 0.2, 1.0, true);
+  s4SpikeBall(4, -2, 14.5, 'x', 0.9, 7.5, 1.1, 0.2, 1.0, true);   /* S7FIX: su barrido atravesaba el blob de (10,-2) topY 5 */
   addPad(-28, -4);
   _s6Blob(33.5, 0, 2.8, 0.8);                                     // ►F1-CINTA: peldaño de COSTURA este → Cumbre (antes hueco ~14u)
 }
@@ -28982,7 +28998,7 @@ function buildS6Cumbre(){                   // idx5 · la cumbre: anillo alreded
   for(let i=0;i<8;i++){ const a=(i+0.5)/8*6.283; _s6Blob(Math.cos(a)*21, Math.sin(a)*15, 2.8, 0.6); }
   _s6Meseta(0, 19, 0.8, 5.4);                                     // ►S6R: descanso grande al N del anillo exterior
   s4PadGrid(0, -16, 4, 3, 0.8, {ice:true});
-  s4SpikeBall(0, 0, 13, 'z', 0.9, 6.5, 0.85, 1.3, 1.3, true);     // grande-lenta orbitando el pico
+  s4SpikeBall(0, 0, 16.5, 'z', 0.9, 6.5, 0.85, 1.3, 1.3, true);   /* S7FIX: cruzaba el pico central (topY 6) */     // grande-lenta orbitando el pico
   addPad(0, 0);
   s2GapWall(-16, 0, 'z', 4, 3.4); s2GapWall(16, 0, 'z', 4, 3.4);
   _s6Blob(-28, 0, 2.8, 0.6);                                      // ►F1-CINTA: aproximación OESTE (el anillo solo llegaba a ±22 → hueco con la Escalera)
