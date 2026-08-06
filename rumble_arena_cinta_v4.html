@@ -22293,7 +22293,7 @@ function rebuildBelt(){
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
   if(typeof _s4Swings!=='undefined') _s4Swings.length = 0;                  // ►S5: las bolas de pinchos (péndulos) también
   if(typeof _s4Blades!=='undefined') _s4Blades.length = 0;                  // ►BLADES: sierras deslizantes
-  if(typeof _s5Fires!=='undefined') _s5Fires.length = 0;                    // ►FIREBALL: chimeneas de fuego de la lava (S5)
+  if(typeof _s5Fires!=='undefined'){ _s5Fires.length = 0; _s5FireSkipped = 0; }   // ►FIREBALL: chimeneas de fuego de la lava (S5) — y el contador de descartes de la guarda
   if(typeof _sjKoi!=='undefined'){ _sjKoi.length = 0; _sjLanternsAnim.length = 0; _sjTaikos.length = 0; _sjOdoshi.length = 0; _sjMotes.length = 0; _sjPonds.length = 0; }   // ►JAPAN: koi/chōchin/taikos/shishi-odoshi/luciérnagas/estanques del jardín
   if(typeof _sjBells!=='undefined'){ _sjBells.length = 0; _sjDarumas.length = 0; _sjTurrets.length = 0; for(const st of _sjStars) (st.parent||scene).remove(st.m); _sjStars.length = 0; }   // ►JAPAN: bonshō/darumas/lanzaderas/shurikens vivos
   if(typeof _s4Rollers!=='undefined'){ _s4Rollers.length=0; _s4Lifts.length=0; _s4Speed.length=0; _s4Traps.length=0; }   // ►PASS2: cilindros/ascensores/velocidad/cepos
@@ -27134,11 +27134,38 @@ function _s5FireAssets(){
   _s5FireMouthMat = new THREE.MeshStandardMaterial({ color:0x2a0d03, emissive:0xff5a10, emissiveIntensity:1.2, roughness:0.9 });
   _s5FireStackMat = new THREE.MeshStandardMaterial({ color:0x241004, roughness:0.98, metalness:0.0, emissive:0x4a1200, emissiveIntensity:0.5, side:THREE.DoubleSide });
 }
+/* ►FIREBALL · guarda de COLOCACIÓN: la parábola tiene que ir por AIRE LIBRE — una bola atravesando
+   una losa canta muchísimo. Se muestrea contra las losas de ESTE segmento (las random de
+   s4WideFloaters incluidas, por eso las llamadas van al FINAL del builder) y, si roza, se prueban
+   unos pocos desplazamientos cortos. Si ninguno vale NO se coloca, pero se CUENTA: un descarte
+   silencioso convierte "no lo veo" en "no está" (lección de [[guardas-borran-nivel-a-mano]]). */
+let _s5FireSkipped = 0;
+const _S5F_NUDGE = [[0,0],[0,3],[0,-3],[3,0],[-3,0],[0,6],[0,-6],[6,0],[-6,0],[4,4],[-4,-4],[4,-4],[-4,4]];
+function _s5FireBlocked(ax, az, h, dx, dz){
+  const v0 = Math.sqrt(2*(-S5F.G)*h), T = 2*v0/(-S5F.G);
+  for(let t=0; t<=T; t+=0.05){
+    const y = S5F.Y0 + v0*t + 0.5*S5F.G*t*t;
+    const x = ax + dx*t, z = az + dz*t;
+    for(let i=(_segP0||0); i<platforms.length; i++){
+      const pl = platforms[i];
+      if(!(pl.solid || pl.float)) continue;
+      if(x < pl.minX-0.9 || x > pl.maxX+0.9 || z < pl.minZ-0.9 || z > pl.maxZ+0.9) continue;
+      if(y > pl.topY-3.0 && y < pl.topY+1.2) return true;   // cruza el cuerpo o la cara de la losa
+    }
+  }
+  return false;
+}
 function s5Fire(cx, cz, opt){
   if(!_CAP && !_ISLAND) return null;
   opt = opt || {};
   _s5FireAssets();
   const kind = opt.kind || 'vert', size = opt.size || 1;
+  const _h = (opt.h!==undefined ? opt.h : 14), _dx = opt.dx || 0, _dz = opt.dz || 0;
+  let ok = false;
+  for(const [ox, oz] of _S5F_NUDGE){
+    if(!_s5FireBlocked(cx+ox, cz+oz, _h, _dx, _dz)){ cx += ox; cz += oz; ok = true; break; }
+  }
+  if(!ok){ _s5FireSkipped++; return null; }
   const holder = new THREE.Group(); holder.position.set(cx, S5F.Y0, cz); holder.userData.noOcc = true;
   /* CHIMENEA: cono de roca que sube DESDE la lava hasta la boca → la bola no nace del aire */
   const stackH = S5F.Y0 - S5F.LAVA;
@@ -28471,12 +28498,14 @@ function buildS4GridHall(){
      recorrido de los pendulos para que no se crucen con ellos. */
   s5Rock(-18, -8, 10.5, { R:1.5, dmg:20 }); s5Rock(20, 10, 18.0, { R:1.9, dmg:20 }); s5Rock(-6, 14, 13.0, { R:1.3, dmg:20 });
     s5Button(24, -6, 0.02, s5Rock(6, 0, 15.5, { R:1.8, dmg:24 }));
-  /* ►FIREBALL: los DOS huecos andén↔rejilla (x±17, la rejilla llega a ±14.3 y el andén empieza en
-     ±20) + un arco que cruza la banda sur hacia la rejilla → cruzar por abajo ya no es gratis. */
-  s5Fire(-17, 9,  { kind:'vert', h:15, every:3.9 });
-  s5Fire( 17, -9, { kind:'vert', h:15, every:4.3, ph:1.9 });
-  s5Fire(0, -12,  { kind:'arc', dz:6.5, h:12, every:5.2, ph:2.6 });
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
+  /* ►FIREBALL: los DOS huecos andén↔rejilla (x±17: la rejilla llega a ±14.3 y el andén empieza en
+     ±20) + un arco corto que sube por la banda sur y cae en el borde de la rejilla. VAN AL FINAL
+     del builder a propósito: la guarda de colocación mira las losas YA creadas, s4WideFloaters
+     incluidas (que son aleatorias). */
+  s5Fire(-17, 6,  { kind:'vert', h:15, every:3.9 });
+  s5Fire( 17, -6, { kind:'vert', h:15, every:4.3, ph:1.9 });
+  s5Fire(0, -12,  { kind:'arc', dz:3.0, h:12, every:5.2, ph:2.6 });
 }
 /* === idx 1 · SALA DE ENTRADA (SPAWN, respiro): suelo firme + rejilla suave al norte === */
 function buildS4Spawn(){
@@ -28495,12 +28524,12 @@ function buildS4Spawn(){
   /* ►ROCKS · racimo de INICIACIÓN (sala de respiro, filosofía Mario: enseña la mecánica en pequeño y
      sin castigo — hay suelo firme al lado). Fuera de la franja de respawn (x[-16,16] z[-8,8]). */
   s5HexField(-24, -17, 4.4, [[0,0,0],[6,-2.5,0.5],[12,1.5,1.0],[18,-1,1.5]]);
-  /* ►FIREBALL · sala de INICIACIÓN (filosofía Mario, como la sierra lenta de arriba): UNA sola
-     chimenea, lenta y a la vista desde el spawn, en el vacío sur — enseña la mecánica sin castigo. */
-  s5Fire(0, -14, { kind:'vert', h:13, every:4.6 });
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
+  /* ►FIREBALL · sala de INICIACIÓN (filosofía Mario, como la sierra lenta de arriba): UNA sola
+     chimenea, lenta y a la vista desde el spawn, en el vacío sur — enseña la mecánica sin castigo. */
+  s5Fire(0, -14, { kind:'vert', h:13, every:4.6 });
 }
 /* === idx 2 · ABISMO: plataformas separadas unidas por alfombras móviles + rejillas cortas === */
 function buildS4Chasm(){
@@ -28542,13 +28571,15 @@ function buildS4Chasm(){
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(16, -6, 9.5, { R:1.4, dmg:20 }); s5Rock(-20, 12, 17.0, { R:1.8, dmg:20 }); s5Rock(8, 16, 12.0, { R:1.5, dmg:20 });
     s5Button(-27, 5, 0.02, s5Rock(0, 0, 14.0, { R:1.9, dmg:24 }));
-  /* ►FIREBALL · el ABISMO es LA sala de las bolas de fuego (es todo hueco): dos ARCOS que barren en
-     Z por encima de las dos rejillas + una TANDA MÚLTIPLE al sur del islote (dura mucho más: si la
-     ves salir, ya no cruzas — toca esperar a que se apague la última). */
-  s5Fire(-14, 11,  { kind:'arc', dz:-7, h:13, every:4.8 });
-  s5Fire( 14, -11, { kind:'arc', dz:7,  h:13, every:5.1, ph:2.4 });
-  s5Fire(0, -13,   { kind:'multi', n:4, h:14, every:6.4, ph:3.2 });            // ►ROCKS: botón en la losa O → el peñasco cae sobre el islote central y rueda por el abismo
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
+  /* ►FIREBALL · el ABISMO es LA sala de las bolas de fuego (es casi todo hueco): dos rectas en los
+     flancos de las rejillas + una TANDA MÚLTIPLE al sur del islote (dura mucho más: si la ves
+     salir, ya no cruzas — toca esperar a que se apague la última) + un arco rasante por la banda
+     sur. Nada de arcos LARGOS sobre las rejillas: la parábola acababa atravesando las losas. */
+  s5Fire(-14, -8, { kind:'vert', h:13, every:4.8 });
+  s5Fire( 14,  8, { kind:'vert', h:13, every:5.1, ph:2.4 });
+  s5Fire(0, -13,  { kind:'multi', n:4, h:14, every:6.4, ph:3.2 });
+  s5Fire(-22, -13, { kind:'arc', dx:6, h:12, every:5.6, ph:1.4 });
 }
 /* === idx 3 · GALERÍA DE ARQUERAS: repisas laterales que disparan mientras cruzas la rejilla === */
 function buildS4Archers(){
@@ -28582,13 +28613,13 @@ function buildS4Archers(){
   s5HexField(0, 30, 5.0, [[-14,0,0],[-8,-3,0.6],[-8,3.4,-0.3],[-2,0,1.1],[4,-3.2,1.5],[4,3.4,0.7],[10,0,2.0],[16,-2,2.4]]);
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(-16, 4, 11.0, { R:1.5, dmg:20 }); s5Rock(18, -10, 16.5, { R:1.7, dmg:20 }); s5Rock(6, 26, 13.5, { R:1.4, dmg:20 });
-  /* ►FIREBALL: la galería ya está MUY cargada (arqueras + cepos + sierra) → solo dos, en los vacíos
-     laterales por los que se rodea la plaza (la ruta "cómoda" de flanqueo deja de serlo). */
-  s5Fire(-16, -11, { kind:'vert', h:14, every:4.4 });
-  s5Fire( 16,  11, { kind:'multi', n:3, h:13, every:6.0, ph:2.2 });
     s5Button(0, -18, 0.17, s5Rock(0, 19, 14.5, { R:1.7, dmg:24 }));           // ►ROCKS: el botón está DENTRO del circuito de cepos (arriesgas para soltar la bola sobre la rejilla N)
   s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   addPad(0, 0);
+  /* ►FIREBALL: la galería ya está MUY cargada (arqueras + cepos + sierra) → solo dos, en los vacíos
+     laterales por los que se rodea la plaza (la ruta "cómoda" de flanqueo deja de serlo). */
+  s5Fire(-23, -10, { kind:'vert', h:14, every:4.4 });
+  s5Fire( 16,  11, { kind:'multi', n:3, h:13, every:6.0, ph:2.2 });
 }
 /* === idx 4 · CRUCE: hub central con 4 brazos (rejilla / alfombra / salto) === */
 function buildS4Cross(){
@@ -28622,14 +28653,14 @@ function buildS4Cross(){
   s5Bridge(-14, 24, -6, 24, 4.6, { width:2.4, sag:0.4 });              // ►ROCKS: puentes FIJOS que cosen brazo N ↔ diagonales
   s5Bridge(6, -24, 14, -24, 4.6, { width:2.4, sag:0.4 });
   s5Rock(-22, -6, 10.0, { R:1.6, dmg:20 }); s5Rock(22, 6, 17.5, { R:1.8, dmg:20 }); s5Rock(-8, -18, 12.5, { R:1.4, dmg:20 });
+    s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
+  s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   /* ►FIREBALL: el salto hub → brazo E (x 6..24, el único de los cuatro sin rejilla ni ascensor) y
      dos arcos en las diagonales muertas. La chimenea del brazo E va a x=10 para NO cruzarse con la
      alfombra que patrulla en x=15. */
   s5Fire(10, 0,    { kind:'vert', h:13, every:4.0 });
   s5Fire(-16, 15,  { kind:'arc', dx:6,  h:12, every:5.4, ph:1.6 });
   s5Fire( 16, -15, { kind:'arc', dx:-6, h:12, every:5.4, ph:3.4 });
-    s5Button(0, 24, 0.02, s5Rock(0, 0, 15.0, { R:2.0, dmg:26 }));            // ►ROCKS: el peñasco MÁS GRANDE cae en el hub (rotonda) y se lía a rodar por los 4 brazos
-  s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 /* === idx 5 · CÁMARA TÉCNICA: pasarelas + rejillas + alfombras (más apretado) === */
 function buildS4Vault(){
@@ -28663,12 +28694,12 @@ function buildS4Vault(){
   s5HexField(0, -22, 5.2, [[-15,0,0],[-10,-3,0.5],[-10,3,-0.4],[-5,0,0.9],[0,-3.2,1.3],[0,3.2,0.5],[5,0,1.6],[10,-2.8,2.0],[15,1.5,2.3]]);
   /* S5FIX2 (pedido): puente ELIMINADO — estaba en la zona de los pads hexagonales. */
   s5Rock(-20, 8, 11.5, { R:1.5, dmg:20 }); s5Rock(14, -14, 16.0, { R:1.7, dmg:20 }); s5Rock(-4, 18, 13.0, { R:1.4, dmg:20 });
+    s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
+  s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
   /* ►FIREBALL · sala técnica = ritmo apretado: tanda MÚLTIPLE en el vacío sur (cierra el paso un
      buen rato) + una recta rápida en el hueco E (bajo la rejilla del 13). */
   s5Fire(0, -12,  { kind:'multi', n:5, h:13, every:6.8 });
   s5Fire(13, -7,  { kind:'vert', h:14, every:3.6, ph:1.2 });
-    s5Button(26, 10, 1.52, s5Rock(0, 0, 13.5, { R:1.75, dmg:24 }));           // ►ROCKS: botón en la losa E → el peñasco cae justo en la cámara central (sala apretada = pánico)
-  s4WideFloaters();                                                          // ►S4FIX: más plataformas a lo ancho
 }
 const S5_SEG_BUILDERS = [ buildS4GridHall, buildS4Spawn, buildS4Chasm, buildS4Archers, buildS4Cross, buildS4Vault ];   // idx1 = escena de spawn (x=0), como en S2/S4
 
