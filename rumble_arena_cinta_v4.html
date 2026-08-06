@@ -21632,7 +21632,10 @@ function modStairs(cx, cz, opts){
        ESCALONES. modStairs plantaba sus `steps` flotantes a ciegas, así que el primero caía dentro de
        la repisa de salida y el último ATERRIZABA SOBRE el deck al que sube → tablones de madera
        tumbados en el suelo verde. Ahora el escalón que ya tiene suelo a su altura no se construye. */
-    if(STAGE===2 && _s2AnyFloorAt(px, pz, py-0.9, py+1.2) !== null) continue;
+    /* ►S4FIX: este guard ("el escalón que ya tiene suelo a su altura no se construye") se escribió
+       para el bosque y se quedó gateado al stage 2. En el desierto CADA escalón es una alfombra, y
+       los terceros escalones caían dentro de los decks → "alfombras fusionadas con plataformas". */
+    if((STAGE===2 || STAGE===3 || STAGE===4 || STAGE===11) && _s2AnyFloorAt(px, pz, py-0.9, py+1.2) !== null) continue;
     addFloating(px, py, pz, sx, sz);
   }
   return y0 + rise*(steps-1);                    // topY del último escalón
@@ -21679,7 +21682,7 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
      flotantes encima de puentes flotantes"): el puente NO tenía ninguna comprobación — la separación era
      hardcode escena a escena. Ahora se RECORTAN los tablones de los EXTREMOS que caen sobre suelo ya
      existente (deck, flotante u otro puente). Solo extremos: el centro nunca queda con agujeros. */
-  if((STAGE===2 || STAGE===3 || STAGE===11) && !opts._trimmed){   // ►S3FIX: el recorte también en Japón · ►SWFIX: y en el WESTERN (pedido: "hay puentes flotantes fusionados con plataformas")
+  if((STAGE===2 || STAGE===3 || STAGE===4 || STAGE===11) && !opts._trimmed){   // ►S3FIX: Japón · ►SWFIX: western · ►S4FIX: y el DESIERTO (6 de sus 8 puentes tenían un extremo DENTRO del AABB de la plataforma y 4 quedaban por debajo de su cota)
     const busy = (i)=>{
       const tc = (i+0.5)/n, py = y - sag*Math.sin(Math.PI*tc);
       const px = alongX ? (x1 + (x2-x1)*tc) : cxM, pz = alongX ? czM : (z1 + (z2-z1)*tc);
@@ -24147,7 +24150,13 @@ function dressTopSand(g, sx, sz, topY, cx, cz, blob, kind){
   const put=(lx, lz, r, ys, xs, zs)=>{
     /* ►S3F fix: mantener el domo ENTERO dentro del footprint — antes el centro se muestreaba cerca
        del borde y la esfera aplanada (extensión ≈ r*xs) sobresalía ~1u. Empuja el centro adentro. */
-    const hx = r*xs*0.9, hz = r*zs*0.9;
+    /* ►S4FIX (pedido: "estas líneas afiladas de tierra deben desaparecer"): el semiancho se calculaba
+       ANTES de girar la pieza, pero justo debajo se le da un yaw ALEATORIO. Una cresta de rizado mide
+       hasta 3.2 de largo por 0.5 de ancho: girada 90° se salía ~2.6u por el lado corto, donde solo se
+       habían reservado 0.55 → esas cuñas afiladas asomando por el canto. Se reserva el semiancho
+       MAYOR en los dos ejes, que es lo único que cubre cualquier giro. */
+    const _hMax = r*Math.max(xs, zs)*0.9;
+    const hx = _hMax, hz = _hMax;
     if(blob){ const mm = Math.hypot((Math.abs(lx)+hx)/Math.max(0.6,blob.rx), (Math.abs(lz)+hz)/Math.max(0.6,blob.rz)); if(mm>1){ lx/=mm; lz/=mm; } }
     else { const mx = Math.max(0, sx/2-hx-0.55), mz = Math.max(0, sz/2-hz-0.55);   // ►S3FIX: +margen → la arena no asoma por el borde biselado
            lx = THREE.MathUtils.clamp(lx, -mx, mx); lz = THREE.MathUtils.clamp(lz, -mz, mz); }
@@ -24222,12 +24231,19 @@ function dressTopSand(g, sx, sz, topY, cx, cz, blob, kind){
     const nG = Math.max(10, Math.min(34, Math.round(area/12)));                      // ►P3: hierba oliva ↑↑ (cobertura S1-parity)
     for(let i=0;i<nG;i++){
       const pt = sample(); let lx = pt.x, lz = pt.z;
-      if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.9)) continue;
-      if(blob && Math.hypot(lx, lz) < 2.2) continue;
-      if(typeof pads!=='undefined' && pads.some(pd=>Math.hypot(cx+lx-pd.pos.x, cz+lz-pd.pos.z) < 2.4)) continue;
       const gm = _grassClumps[(Math.random()*_grassClumps.length)|0].children[0];
       const geo = gm.geometry; if(!geo.attributes.color) continue;
       const f = gm.scale.x*(0.65+Math.random()*0.7);
+      /* ►S4FIX: este bloque era el ÚNICO de dressTopSand sin recorte al footprint (put y putGeo sí lo
+         hacen). Las briznas son finas y puntiagudas y el clump se escala hasta ×1.35, así que volaban
+         por encima del bisel: son las "líneas afiladas" amarillo-oliva del borde. */
+      { const hg = 0.9*f;
+        if(blob){ const mm = Math.hypot((Math.abs(lx)+hg)/Math.max(0.6,blob.rx), (Math.abs(lz)+hg)/Math.max(0.6,blob.rz)); if(mm>1){ lx/=mm; lz/=mm; } }
+        else { const mx = Math.max(0, sx/2-hg-0.55), mz = Math.max(0, sz/2-hg-0.55);
+               lx = THREE.MathUtils.clamp(lx, -mx, mx); lz = THREE.MathUtils.clamp(lz, -mz, mz); } }
+      if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.9)) continue;
+      if(blob && Math.hypot(lx, lz) < 2.2) continue;
+      if(typeof pads!=='undefined' && pads.some(pd=>Math.hypot(cx+lx-pd.pos.x, cz+lz-pd.pos.z) < 2.4)) continue;
       _q.setFromEuler(_e.set(0, Math.random()*Math.PI*2, 0));
       _m.compose(_v.set(lx, topY-0.02, lz), _q, _s.set(f,f,f));
       _nm.getNormalMatrix(_m);
@@ -24349,7 +24365,10 @@ function _carpetClampSlide(pl){
   const MARGIN = 0.45;
   let clearP = s.amp, clearM = s.amp;
   for(const q of platforms){
-    if(q===pl || q.float) continue;                                   // solo estáticos (no perseguir otra alfombra móvil)
+    /* ►S4FIX: `q.float` es truthy en TODAS las alfombras (también las fijas) y en todos los tablones
+       de puente, así que una alfombra en patrulla los atravesaba a todos. Lo que hay que excluir es
+       solo lo que SE MUEVE (perseguir a otra patrulla no converge), no todo lo que flota. */
+    if(q===pl || q._slide || q._orbit) continue;
     if(!(q.solid || q.blob)) continue;
     if(Math.abs((q.topY!=null?q.topY:0) - pl.topY) > 1.6) continue;    // mismo plano (no romper pasos de otro nivel)
     if(s.axis==='x'){
@@ -24404,7 +24423,10 @@ function addFloatingCarpet(cx, y, cz, sx, sz, opts){
   const m = (typeof getModel==='function' && typeof DECOR_DEFS3!=='undefined') ? getModel('s3_carpet', DECOR_DEFS3) : null;
   if(m){
     const bb = new THREE.Box3().setFromObject(m), msz = new THREE.Vector3(); bb.getSize(msz);
-    m.scale.multiplyScalar(Math.max(sx/(msz.x||1), sz/(msz.z||1)));
+    /* ►S4FIX: escalaba con Math.max, así que una alfombra pedida de 3×4.6 se dibujaba de 4.6×4.6 —
+       y como el rect de colisión se mide del RENDER (más abajo), el layout espaciaba por 3×4.6 pero
+       la huella real era mucho mayor. Escala por eje: el paño mide lo que se pidió. */
+    m.scale.set(sx/(msz.x||1), m.scale.y, sz/(msz.z||1));
     const hWorld = (msz.y||1) * m.scale.y;
     if(hWorld > 0.55) m.scale.y *= 0.55/hWorld;    // APLANA el vuelo esculpido del modelo → el visual casa con la colisión plana (topY)
     m.position.y = 0.06; m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
@@ -24655,6 +24677,11 @@ function scatterModelDecorStage3(startIdx){
       m.rotation.y = Math.random()*Math.PI*2;
       m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
       scene.add(m);
+      /* ►S4FIX (pedido: "fusión de piedras con valla" y "muchos assets fusionados"): este sembrador
+         consultaba _nearProp pero NUNCA registraba lo que plantaba — su gemelo del stage 5 sí lo hace.
+         Resultado: sus ~55 rocas y plantas eran invisibles entre sí y se apilaban unas sobre otras. */
+      const _fr = Math.max(0.8, ((DECOR_DEFS3[key] && DECOR_DEFS3[key].size) || 1) * 0.40) * f;
+      if(typeof _propSpots!=='undefined') _propSpots.push({ x:s.x, z:s.z, r:_fr });
     }
   };
   drop('s3_aloe', 13, 0.8, 1.3); drop('s3_agave', 12, 0.8, 1.3);   // ►P3: +2 c/u más (clones sueltos → moderado, el grueso va horneado)
@@ -24860,6 +24887,14 @@ function s3Fence(cx, cz, along, len, yBase, h){
   cap.position.y = h - 0.30; cap.castShadow = cap.receiveShadow = true; g.add(cap);
   g.position.set(cx, yBase, cz); scene.add(g);
   platforms.push({ minX:cx-ex, maxX:cx+ex, minZ:cz-ez, maxZ:cz+ez, topY:yBase+h, baseY:yBase, solid:true });
+  /* ►S4FIX (pedido: "fusión de piedras con valla"): la valla no registraba NADA, así que todo lo que
+     se siembra después (rocas, plantas, palmeras) no la veía y aterrizaba dentro. Se registra su
+     tramo como una fila de puntos, que es lo que entiende _nearProp. */
+  if(typeof _propSpots!=='undefined'){
+    const n = Math.max(2, Math.round((alongX?ex:ez)*2/1.6));
+    for(let i=0;i<=n;i++){ const t = (i/n)*2-1;
+      _propSpots.push({ x: cx + (alongX ? t*ex : 0), z: cz + (alongX ? 0 : t*ez), r: 1.0 }); }
+  }
 }
 
 /* ►S3D · CINTA 2: carril ALTO continuo (y≈9) — 3 losas gruesas de arenisca por escena que
