@@ -2147,12 +2147,12 @@ try {
         uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null},
                    cameraNear:{value:0.1}, cameraFar:{value:1000}, texel:{value:new THREE.Vector2(1/1280,1/720)},
                    fogNear:{value:72}, fogFar:{value:142},   // ►TINTANIEBLA: se rellenan de scene.fog (ver applyFogToInk)
-                   strength:{value:0.45}, umbral:{value:0.30} },   // ►(1/08) Toni pidio mas presencia
+                   strength:{value:0.45}, umbral:{value:0.30}, limGrow:{value:0.06} },   // ►(1/08) Toni pidio mas presencia · ►SWFIX: limGrow = cuánto sube el umbral con la distancia (era una constante en el shader)
         vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
         fragmentShader:[
           '#include <packing>',
           'uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tSil;',
-          'uniform float cameraNear, cameraFar, strength, umbral, fogNear, fogFar; uniform vec2 texel; varying vec2 vUv;',
+          'uniform float cameraNear, cameraFar, strength, umbral, fogNear, fogFar, limGrow; uniform vec2 texel; varying vec2 vUv;',
           'float vz(vec2 uv){ float d=texture2D(tDepth, uv).x; return -perspectiveDepthToViewZ(d, cameraNear, cameraFar); }',
           'void main(){',
           '  vec4 col=texture2D(tDiffuse, vUv);',
@@ -2161,7 +2161,7 @@ try {
           '  if(z>cameraFar*0.85){ gl_FragColor=col; return; }',             // cielo/fondo lejano: sin tinta
           '  float dx=abs(vz(vUv+vec2(texel.x,0.0))-z), dy=abs(vz(vUv+vec2(0.0,texel.y))-z);',
           '  float edge=max(dx,dy);',
-          '  float lim=umbral*(1.0+z*0.06);',                                // umbral crece con la distancia (sin tinta de ruido al fondo)
+          '  float lim=umbral*(1.0+z*limGrow);',                             // umbral crece con la distancia (sin tinta de ruido al fondo) · ►SWFIX: la pendiente es un uniform
           /* ►TINTANIEBLA · la tinta se DISUELVE con la niebla, igual que el objeto que contornea.
              Antes el único corte era z>cameraFar*0.85 (=255) mientras la niebla del prado se cierra
              a 142: en toda esa franja la geometría ya era 100% color-niebla y aun así recibía
@@ -20239,10 +20239,22 @@ function _applySWTheme(){
   VISUAL.hemi.sky = 0xffb488; VISUAL.hemi.ground = 0x6b3f2c; VISUAL.hemi.intensity = 0.34;
   VISUAL.rim.color = 0x9fc4ff; VISUAL.rim.intensity = 0.38;                          // contraluz FRÍO: separa al luchador del cielo naranja
   VISUAL.side.color = 0xffc999; VISUAL.side.intensity = 0.28;
+  /* ►SWFIX (pedido: "las montañas rocosas tienen estas líneas raras del efecto outline"). El
+     detector de bordes del inkPass es una diferencia de PROFUNDIDAD a 1 texel, sin normales: no
+     distingue una silueta real de una superficie muy rasante. Las mesetas son cilindros de 6
+     segmentos con flatShading, así que cada faceta produce un salto de profundidad y salían esas
+     bandas horizontales. Aquí la tinta va a la mitad de fuerza, con el doble de umbral y subiendo
+     más rápido con la distancia → las siluetas de verdad siguen entintadas, el rayado se va. */
+  VISUAL.ink.strength = 0.28; VISUAL.ink.umbral = 0.52; VISUAL.ink.limGrow = 0.11;   // punto medio: pediste REDUCIR el rayado, no quitar el contorno
   VISUAL.fog.color = 0xd9834e; VISUAL.fog.near = 44; VISUAL.fog.far = 122;           // calima rojiza; ≥ fondo en luz → halo, no negro (lección S2)
   for(const c of cloudOccluders) c.visible = false;                                  // sin nubes de prado
   if(typeof sea!=='undefined') sea.visible = false;                                  // debajo hay CAÑÓN, no mar
-  for(const c of _WOODCOL) c.set('#b0805a');                                         // madera reseca de tablón (ABSOLUTO, nada de multiplicadores acumulables)
+  /* ►SWFIX (pedido: "los puentes flotantes no son multitono como en otros stages"). _WOODCOL son
+     los SEIS tonos con los que coloredPlank pinta las bandas de cada tablón de addFloating… y aquí
+     se aplastaban los seis al MISMO color, así que el tablón salía perfectamente liso. Ahora seis
+     tonos de madera reseca al sol (siguen siendo ABSOLUTOS, nada de multiplicadores acumulables). */
+  { const _swWood = ['#b0805a','#a2724c','#c08f66','#96683f','#bb8a5f','#8e6339'];
+    for(let i=0;i<_WOODCOL.length;i++) _WOODCOL[i].set(_swWood[i % _swWood.length]); }
   if(M.woodD){ M.woodD.color.set('#8a5f42'); M.woodD.needsUpdate = true; }
   _buildS3Mats();                                                                    // reutiliza 'rose' + 'redrock' (mesas de roca roja) — ya multitono
   enableSWScenery(true);                                                             // Gran Cañón envolvente
@@ -20305,7 +20317,17 @@ function buildSWScenery(){
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col,3));
     geo.computeVertexNormals();
-    const floor = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0, flatShading:true }));
+    /* ►SWFIX (pedido: "que el suelo del fondo parezca arena durita, no algo borroso; un desierto de
+       arena rojiza como lo tenemos de arena dura"). El plano mide 620u con 80×80 quads = 7,75u por
+       quad, así que el color por vértice se interpola en degradados enormes y lee como una mancha.
+       Se le pone encima la MISMA textura de celdas multitono que usan las plataformas del stage
+       (makeFieldTexture), repetida a lo largo del plano: eso da el grano de arena dura, y el
+       vertex-color sigue mandando en la variación grande (sombra ↔ sol). */
+    const _swSandTex = makeFieldTexture(['#c07a4e','#b06c42','#cf8a5c','#a35f38','#c58256','#9c5a34'], 1/3);
+    _swSandTex.encoding = THREE.sRGBEncoding;
+    _swSandTex.wrapS = _swSandTex.wrapT = THREE.RepeatWrapping;
+    _swSandTex.repeat.set(26, 26);          // ≈ 24u por baldosa: grano visible sin que llegue a moiré
+    const floor = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map:_swSandTex, vertexColors:true, roughness:1, metalness:0, flatShading:true }));
     floor.rotation.x = -Math.PI/2; floor.position.y = -24;
     G.add(floor);
   }
@@ -25233,9 +25255,19 @@ function addPropW(key, x, z, topY, sc, yaw){
      su atlas original (1024², 23/43 KB) — así que w_cabin y w_logcabin vuelven a ir texturizadas
      (ver `std:true` en _parseRaw). No entran aquí: el multitono y el realce solo tocan mallas con
      atributo de color, y una malla texturizada no lo tiene → los dos pasos son no-op por sí solos. */
+  /* ►SWFIX (pedido: "el saloon es super plano, tiles horizontales que simulen madera multitono en
+     forma de listones" · "esta cabin es super oscura y no parece madera"). Dos cambios:
+       · CELDA ANISÓTROPA [6, 0.38, 6]: fina en Y y enorme en X/Z → las bandas de tono salen
+         HORIZONTALES y continuas, o sea LISTONES, que es lo que pidió. Con la celda cúbica de 0.50
+         de antes salía un moteado que a esta distancia se promedia a color plano.
+       · Amplitud 0.20 → 0.38: con 51 tonos todos entre luminancia 0.003 y 0.458, el 20% no movía
+         nada. Y el realce sube según lo OSCURO que venga el asset: el shed (lum 0.10) y el cottage
+         (lum 0.18) necesitan mucho más que el saloon o el granero, y con un 1.45 para todos se
+         quedaban negros. */
   if(_solido){
-    if(typeof _s2ToneFor==='function') _s2ToneFor(key, m, 0.20, 0.18, 0.50);
-    _wLiftColors(m, 1.45);
+    if(typeof _s2ToneFor==='function') _s2ToneFor(key, m, 0.38, 0.22, [6, 0.38, 6]);
+    const _dark = (key==='w_shed' || key==='w_cottage' || key==='w_warehouse' || key==='w_silo');
+    _wLiftColors(m, _dark ? 2.35 : 1.75);
   }
   m.traverse(o=>{ if(o.isMesh){ o.castShadow = true; if(_solido && o.material) o.material.side = THREE.FrontSide; } });
   scene.add(m);
@@ -32847,6 +32879,15 @@ setInterval(()=>{ try{ procesarDiferidos(); }catch(e){} }, 250);
    ===================================================================== */
 function applyVisual(){
   renderer.toneMappingExposure = VISUAL.exposure;                 // exposición (uniforme → en vivo)
+  /* ►SWFIX · VISUAL.ink existía desde siempre y NADIE lo leía: los valores reales eran los
+     hardcodeados al crear el inkPass, así que no había forma de suavizar la tinta por stage.
+     Ahora sí. (El western lo necesita: sus mesetas facetadas disparaban el detector de bordes.) */
+  if(inkPass && VISUAL.ink){
+    inkPass.uniforms.strength.value = VISUAL.ink.strength;
+    inkPass.uniforms.umbral.value   = VISUAL.ink.umbral;
+    if(inkPass.uniforms.limGrow) inkPass.uniforms.limGrow.value = (VISUAL.ink.limGrow!=null ? VISUAL.ink.limGrow : 0.06);
+    inkPass.enabled = VISUAL.ink.on !== false;
+  }
   // SOL (key)
   sun.color.set(VISUAL.key.color); sun.intensity = VISUAL.key.intensity;
   sun.position.set(VISUAL.key.pos[0], VISUAL.key.pos[1], VISUAL.key.pos[2]);
