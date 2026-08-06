@@ -21379,7 +21379,12 @@ function s3Watchtower(x, z, topY, withAmbush){
      diferencia (la del stage 5 pedia 3.4 sobre una repisa a 3.0: flotaba 0.4 clavado). Ahora se
      APOYA en el suelo medido. */
   let gy = null;
-  for(const o of [[0,0],[1.2,0],[-1.2,0],[0,1.2],[0,-1.2]]){       // ni flotando ni asomando del borde
+  /* S5FIX3 (pedido: "la atalaya de piedra se fusiona con una plataforma"): sondeaba a 1.2 fijo, pero
+     s3_pillar mide 7.5 y su base es bastante mas ancha que eso — plantada cerca del canto, el cuerpo
+     entraba dentro de la losa vecina. Se sondea con su huella REAL. */
+  const _wtf = (typeof _modelFoot==='function') ? _modelFoot('s3_pillar', DECOR_DEFS3) : null;
+  const _wr = _wtf ? Math.max(1.2, Math.min(_wtf.hx, _wtf.hz)) : 1.2;
+  for(const o of [[0,0],[_wr,0],[-_wr,0],[0,_wr],[0,-_wr],[_wr*0.71,_wr*0.71],[-_wr*0.71,_wr*0.71],[_wr*0.71,-_wr*0.71],[-_wr*0.71,-_wr*0.71]]){   // ni flotando ni asomando del borde
     const gg = platformTopAt(x+o[0], z+o[1]);
     if(gg===null || Math.abs(gg-topY) > 0.65) return null;
     if(gy===null || gg > gy) gy = gg;                              // se apoya en el punto MAS ALTO de su base
@@ -26817,38 +26822,42 @@ function buildS4Chamber(){
        era niebla PLANA: los glifos desaparecian. Se hace como el horizonte del stage 2: fog OFF y la
        continuidad se consigue por COLOR — el pie del cilindro lleva el tono de la lava, asi que no hay
        arista donde acabe. Y H bien alto para que el borde de arriba no entre nunca en encuadre. */
-    const R = 128, H = 190, yBot = -24;
+    /* S5FIX3 (pedido de Toni: "yo queria que fuera un fondo real como el resto, como si fuera el cielo
+       con los glifos proyectados, sin estamparlos en un fondo solido"). Mi version anterior seguia
+       siendo una SUPERFICIE OPACA con los glifos pintados encima — el degradado por vertice tapaba lo
+       que hubiera detras. Ahora el cilindro NO pinta fondo: es una capa ADITIVA y transparente. Con
+       blending aditivo el negro de la textura no suma nada, asi que solo se ven los GLIFOS flotando, y
+       por detras se ve el cielo/niebla de verdad del stage, como en los demas escenarios.
+       depthWrite:false + renderOrder para que no recorte nada. */
+    const R = 118, H = 190, yBot = -26;
     const cgeo = new THREE.CylinderGeometry(R, R, H, 56, 12, true);
-    const cpos = cgeo.attributes.position, ccol = new Float32Array(cpos.count*3);
-    const _cLo = new THREE.Color(0x43160a).convertSRGBToLinear();   // pie: el tono de la lava (0x300f04) subido un punto → funde sin junta
-    const _cHi = new THREE.Color(0x18110c).convertSRGBToLinear();   // techo: casi negro, casado con el top del domo de cielo (0x1c130a)
-    const _ct = new THREE.Color();
-    for(let i=0;i<cpos.count;i++){
-      const t = THREE.MathUtils.clamp((cpos.getY(i) + H/2) / H, 0, 1);   // 0 abajo … 1 arriba
-      _ct.copy(_cLo).lerp(_cHi, Math.pow(t, 0.55));
-      ccol[i*3]=_ct.r; ccol[i*3+1]=_ct.g; ccol[i*3+2]=_ct.b;
-    }
-    cgeo.setAttribute('color', new THREE.BufferAttribute(ccol,3));
-    const cm = mat(0xffffff, { roughness:1, metalness:0, side:THREE.BackSide, emissive:0xffc860, emissiveIntensity:1.15 });
-    cm.vertexColors = true; cm.fog = false;   // ver arriba: la continuidad la da el degradado, no la niebla
-    cm.emissiveMap = glyph.clone();
-    cm.emissiveMap.wrapS = cm.emissiveMap.wrapT = THREE.RepeatWrapping;
-    cm.emissiveMap.magFilter = THREE.LinearFilter;
-    cm.emissiveMap.repeat.set(20, 5);
-    cm.emissiveMap.needsUpdate = true; cm.needsUpdate = true;
-    /* el emisivo tambien se apaga hacia abajo: sin esto los glifos flotarian SOBRE la lava */
+    const cm = new THREE.MeshBasicMaterial({
+      map: glyph.clone(), color: 0xffc860,
+      transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.BackSide, fog: false });
+    cm.map.wrapS = cm.map.wrapT = THREE.RepeatWrapping;
+    cm.map.magFilter = THREE.LinearFilter;
+    cm.map.repeat.set(20, 6);
+    cm.map.needsUpdate = true; cm.needsUpdate = true;
+    /* los glifos se apagan hacia ABAJO (si no, flotarian sobre la lava) y hacia ARRIBA del todo, para
+       que la banda muera sin corte. Bajada respecto a la version anterior: empiezan casi en el
+       horizonte, que es donde Toni los quiere ver. */
     cm.onBeforeCompile = (sh)=>{
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>',       `#include <common>\nvarying float vGlyphT;`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvGlyphT = clamp((position.y + ${(H/2).toFixed(1)}) / ${H.toFixed(1)}, 0.0, 1.0);`);
+        .replace('#include <common>',       `#include <common>
+varying float vGlyphT;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vGlyphT = clamp((position.y + ${(H/2).toFixed(1)}) / ${H.toFixed(1)}, 0.0, 1.0);`);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>',               `#include <common>\nvarying float vGlyphT;`)
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance *= smoothstep(0.21, 0.62, vGlyphT);`);
+        .replace('#include <common>',    `#include <common>
+varying float vGlyphT;`)
+        .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+gl_FragColor.rgb *= smoothstep(0.11, 0.19, vGlyphT) * (1.0 - smoothstep(0.62, 0.95, vGlyphT));`);
     };
-    cm.customProgramCacheKey = ()=> 's5dome';   // ►DEPTH gotcha: sin clave propia three reutiliza el programa de otro material y el parche no se compila
+    cm.customProgramCacheKey = ()=> 's5glyphs';   // ►DEPTH gotcha: sin clave propia three reutiliza el programa de otro material y el parche no se compila
     const dome = new THREE.Mesh(cgeo, cm);
     dome.position.set(0, yBot + H/2, -4);
-    dome.userData.noOcc = true; dome.renderOrder = -1;
+    dome.userData.noOcc = true; dome.renderOrder = 2;
     G.add(dome); S5_SCENERY.wallMats.push(cm);
   }
   /* 3) LUZ de relleno CÁLIDA desde abajo (la lava emisiva no ilumina otras mallas) */
@@ -26915,7 +26924,11 @@ function updateS5Scenery(dt){
     S5_SCENERY.smokeGeo.attributes.position.needsUpdate = true;
   }
   if(S5_SCENERY.wallMats) for(let i=0;i<S5_SCENERY.wallMats.length;i++){   // ►glifos "brillando distinto" (flicker sutil por muro)
-    S5_SCENERY.wallMats[i].emissiveIntensity = 1.15 * (0.82 + 0.18*Math.sin(_s4LavaT*(1.6+i*0.7) + i*2.3));   // S5FIX2: el flicker parte del nuevo valor base
+    /* S5FIX3: la capa de glifos ya no es un material emisivo sino uno BASICO aditivo → el flicker va
+       sobre la opacidad, que es lo que ahora controla su brillo. */
+    const _wm = S5_SCENERY.wallMats[i];
+    if(_wm.emissiveIntensity !== undefined && _wm.emissive) _wm.emissiveIntensity = 1.15 * (0.82 + 0.18*Math.sin(_s4LavaT*(1.6+i*0.7) + i*2.3));
+    else _wm.opacity = 0.55 * (0.80 + 0.20*Math.sin(_s4LavaT*(1.6+i*0.7) + i*2.3));   // S5FIX2: el flicker parte del nuevo valor base
   }
   /* ►P1: PARPADEO ASIMÉTRICO por-glifo — cada ~0.3-0.5s se REDIBUJAN unas pocas celdas del canvas
      compartido con brillo/tamaño nuevos (paint de _s4GlyphTex) → glifos que se encienden/apagan
@@ -27560,7 +27573,21 @@ function _s5HexGeos(){
     _s5HexGeoPool.push(_s5PaintHexTop(_paintFacets(new THREE.CylinderGeometry(R, R*0.86, S5_HEX.h, 6, 1), S5_HEX_PAL, 0.3)));
 }
 /* (cx,cz,y) = centro/cima de la losa. opts.ph = fase del flote (deja que el racimo respire desfasado). */
+/* S5FIX3 (pedido: "esta plataforma hexagonal se fusiona con la plataforma dura"): s5HexField coloca por
+   lista de coordenadas literales, sin comprobar nada, y varios hexagonos caian DENTRO de una losa
+   solida. Si el sitio ya esta ocupado a esa altura, el hexagono no se monta. */
+function _s5HexClear(cx, cz, y){
+  const R = (typeof S5_HEX!=='undefined' && S5_HEX.R) ? S5_HEX.R*0.72 : 1.8;
+  for(let i=Math.max(0,_segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(pl._fell || pl._hex) continue;
+    if(!(pl.solid || pl.blob)) continue;
+    if(Math.abs((pl.topY!=null?pl.topY:0) - y) > 3.0) continue;
+    if(cx+R > pl.minX-0.4 && cx-R < pl.maxX+0.4 && cz+R > pl.minZ-0.4 && cz-R < pl.maxZ+0.4) return false;
+  }
+  return true;
+}
 function s5HexPad(cx, cz, y, opts){
+  if(!_s5HexClear(cx, cz, y)) return null;
   if(!_CAP && !_ISLAND) return null;
   opts = opts || {};
   _s5HexGeos();
@@ -27588,7 +27615,8 @@ function s5HexField(cx, cz, y, spec){
   spec = spec || [];
   const out = [];
   for(const s of spec){   // s = [dx, dz, dy]
-    out.push(s5HexPad(cx + s[0], cz + s[1], y + (s[2]||0), { ph: Math.random()*6.28 }));
+    const h = s5HexPad(cx + s[0], cz + s[1], y + (s[2]||0), { ph: Math.random()*6.28 });
+    if(h) out.push(h);     // S5FIX3: s5HexPad puede devolver null si el sitio esta ocupado
   }
   return out;
 }
