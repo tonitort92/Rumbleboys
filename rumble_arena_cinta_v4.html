@@ -1434,6 +1434,7 @@ window.addEventListener('load', function(){
 <script src="stage2_models.js?v=7"></script> <!-- STAGE 2: props de bosque (Synty) OBJ color-plano en GAME_MODELS (s2_*) -->
 <script src="stage3_models.js?v=2"></script>
 <script src="stage4_models.js?v=1"></script>
+<script src="stage5_models.js?v=1"></script>   <!-- STAGE 5: tesoro, vasijas, sarcofagos, pilares, losetas (OBJ+MTL plano, como los demas packs) -->
 <script src="stage6_models.js?v=1"></script> <!-- STAGE 7: props de nieve (pinos/árboles secos/iglú/cristales/muñeco/trineo/picos) OBJ color-plano (s6_*) — generado por build_stage6_assets.js --> <!-- STAGE 5: losa-parche (rejilla) + cepo (circuito) --> <!-- STAGE 4: props de desierto (cactus/palmeras/rocas/alfombras) OBJ color-plano en GAME_MODELS (s3_*) — generado por build_stage3_assets.js -->
 <script src="stage7_models.js?v=1"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
 <script src="stage2_ruins_models.js?v=1"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
@@ -20939,6 +20940,10 @@ function _s2TonePal(name){
   if(!p){
     const hexes = name==='wood'
       ? ['#a9764a','#8a5330','#c19a5b','#6f6248','#93623a']    // madera: cálido, rojizo, dorado, gris-pardo, tostado
+      /* ►S5DECOR: OCRE de barro cocido — para las vasijas, el pilar, las losetas y la base de Anubis
+         del interior de la pirámide (pedido de Toni: "todos con el mismo multicolor ocre"). */
+      : name==='ochre'
+      ? ['#c08a45','#a97236','#d6a25c','#8f5c28','#b98039','#9c6a30']
       : ['#b39a76','#8894a6','#7d8a63','#a7a596','#9a8a72'];   // piedra: arenisca, azul-gris, musgo, pálido, tierra
     p = hexes.map(h=> new THREE.Color(h).convertSRGBToLinear());
     _S2_TONE_PALS[name] = p;
@@ -24766,6 +24771,165 @@ const plats = platforms.slice(startIdx).filter(pl => pl.solid && !pl.float && !p
   for(const pl of big){ const cx=(pl.minX+pl.maxX)/2, cz=(pl.minZ+pl.maxZ)/2;
     if(typeof addTorch==='function'){ addTorch(cx-3.2, cz+3.2, false); addTorch(cx+3.2, cz-3.2, false); }
   }
+  if(STAGE===5 && typeof _s5Treasure==='function') _s5Treasure(plats);   // ►S5DECOR: tesoro, vasijas, sarcófagos, pilares, tumbas y caminos
+}
+/* =====================================================================
+   ►S5DECOR · POBLADO DEL INTERIOR DE LA PIRÁMIDE (petición de Toni, con assets nuevos).
+   Reglas que pidió, y cómo se cumplen:
+     · el TESORO (cofre, monedas, lingotes) va cerca de bordes y esquinas SIN sobrepasarlos ni
+       flotar → se sortea un punto sobre el borde y se mete hacia dentro lo que mida su huella,
+       y aun así se valida con _footOnTop (9 sondas) antes de colocar;
+     · CRISTALES en algunos bordes, teñidos de ocre amarillento;
+     · ANUBIS con la BASE ocre y los símbolos de las manos con su color → se retiñen solo los
+       vértices oscuros (la base) y se dejan los claros (los cetros);
+     · las TRES vasijas comparten el mismo multitono ocre (_s2ToneFor con la paleta 'ochre');
+     · el PILAR va al CENTRO de la plataforma;
+     · NUNCA sobre los pads hexagonales ni sobre las rejillas: el pool ya filtra `solid` (los
+       hexágonos no lo son) y `_pad`.
+   ===================================================================== */
+function _s5Ochre(m, amt, val, cell){        // multitono ocre de barro cocido, mismo motor que la madera del bosque
+  if(typeof _s2ToneBaked==='function') _s2ToneBaked(m, 'ochre', amt!=null?amt:0.42, val!=null?val:0.22, cell||[0.5,0.5,0.5]);
+  return m;
+}
+/* ►S5DECOR · ANUBIS: la BASE a ocre y los SÍMBOLOS de las manos con su color (pedido de Toni).
+   Filtrar por LUMINANCIA no valía —la piedra del cuerpo salió clara del horneado, no negra—, así que
+   el discriminante es la SATURACIÓN: el cuerpo es gris (saturación ~0) y los cetros llevan color. */
+function _s5OchreDarkOnly(m, thr){
+  const oc = new THREE.Color('#b07c38').convertSRGBToLinear(); thr = thr!=null?thr:0.16;
+  m.traverse(o=>{ if(!o.isMesh || !o.geometry || !o.geometry.attributes.color) return;
+    const a = o.geometry.attributes.color, arr = new Float32Array(a.array.length);
+    for(let i=0;i<arr.length;i+=3){
+      const r=a.array[i], g=a.array[i+1], b=a.array[i+2];
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      const sat = mx>0.0001 ? (mx-mn)/mx : 0;
+      if(sat < thr){ const k = 0.5 + mx*1.15; arr[i]=Math.min(1,oc.r*k); arr[i+1]=Math.min(1,oc.g*k); arr[i+2]=Math.min(1,oc.b*k); }
+      else { arr[i]=r; arr[i+1]=g; arr[i+2]=b; }
+    }
+    /* ►gotcha del VAO: hay que SUSTITUIR el atributo, no mutarlo (ver prop-ao-attempt-and-vao-gotcha) */
+    o.geometry = o.geometry.clone();
+    o.geometry.setAttribute('color', new THREE.BufferAttribute(arr, a.itemSize));
+  });
+  return m;
+}
+/* ►S5DECOR · muchos de estos FBX no traen COLOR en su material (Quaternius/Kay Lousberg los mandan
+   con atlas externo), así que al hornearlos salieron casi blancos. Este tinte base les da su color
+   antes del multitono: es un multiplicador sobre los vertex-colors, así que conserva el sombreado. */
+const _S5_TINTS = {
+  s5_chest:   '#d8a52e', s5_coins:  '#f0c33c', s5_bars:   '#e8b830',
+  s5_coffin1: '#c79a4e', s5_coffin2:'#caa057',
+  s5_grave:   '#b09a78', s5_tile:   '#c79552', s5_pillar: '#c79552',
+  s5_crys1:   '#e0b23a', s5_crys2:  '#e0b23a',
+};
+function _s5BaseTint(m, hex){
+  const c = new THREE.Color(hex).convertSRGBToLinear();
+  m.traverse(o=>{ if(!o.isMesh || !o.geometry || !o.geometry.attributes.color) return;
+    const a = o.geometry.attributes.color, arr = new Float32Array(a.array.length);
+    for(let i=0;i<arr.length;i+=3){
+      const L = 0.30*a.array[i] + 0.59*a.array[i+1] + 0.11*a.array[i+2];   // conserva el sombreado horneado
+      const k = 0.45 + L*1.1;
+      arr[i]=Math.min(1,c.r*k); arr[i+1]=Math.min(1,c.g*k); arr[i+2]=Math.min(1,c.b*k);
+    }
+    o.geometry = o.geometry.clone();                                        // ►gotcha del VAO: sustituir, no mutar
+    o.geometry.setAttribute('color', new THREE.BufferAttribute(arr, a.itemSize));
+  });
+  return m;
+}
+function _s5Place(key, x, z, topY, sc, yaw, tint){
+  const mf = (typeof _modelFoot==='function') ? _modelFoot(key, DECOR_DEFS5) : null;
+  const fr = (mf ? Math.min(mf.hx, mf.hz) : 0.7) * sc;
+  if(typeof _footOnTop==='function' && !_footOnTop(x, z, topY, fr*0.95)) return null;   // la huella ENTERA sobre la tapa: nada asomando ni flotando
+  if(typeof _nearProp==='function' && _nearProp(x, z, fr*1.1)) return null;
+  if(typeof _nearPad==='function' && _nearPad(x, z, fr)) return null;
+  const m = getModel(key, DECOR_DEFS5); if(!m) return null;
+  if(_S5_TINTS[key]) _s5BaseTint(m, _S5_TINTS[key]);      // color base primero, multitono después
+  if(tint === 'ochre') _s5Ochre(m);
+  else if(tint === 'anubis') _s5OchreDarkOnly(m);
+  else if(tint === 'crystal') _s5Ochre(m, 0.62, 0.18, [0.35,0.35,0.35]);   // cristal amarillo-ocre, bien saturado
+  m.scale.setScalar(sc);
+  m.position.set(x, topY + (m.userData.halfH||0)*sc - 0.04, z);
+  m.rotation.y = (yaw!=null) ? yaw : Math.random()*Math.PI*2;
+  m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+  scene.add(m);
+  if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:Math.max(0.9, fr) });
+  return m;
+}
+/* punto pegado al BORDE (o a una esquina) de la plataforma, ya metido hacia dentro `inset` unidades */
+function _s5EdgeSpot(pl, inset, corner){
+  const hx = (pl.maxX-pl.minX)*0.5 - inset, hz = (pl.maxZ-pl.minZ)*0.5 - inset;
+  if(hx <= 0.4 || hz <= 0.4) return null;
+  const cx = (pl.minX+pl.maxX)*0.5, cz = (pl.minZ+pl.maxZ)*0.5;
+  if(corner){ const sx = Math.random()<0.5?-1:1, sz = Math.random()<0.5?-1:1;
+    return { x: cx + sx*hx*(0.86+Math.random()*0.14), z: cz + sz*hz*(0.86+Math.random()*0.14) }; }
+  const s = Math.random()<0.5?-1:1;
+  return (Math.random()<0.5)
+    ? { x: cx + s*hx*(0.88+Math.random()*0.12), z: cz + (Math.random()*2-1)*hz*0.8 }
+    : { x: cx + (Math.random()*2-1)*hx*0.8,     z: cz + s*hz*(0.88+Math.random()*0.12) };
+}
+function _s5Treasure(plats){
+  if(!plats || !plats.length) return;
+  /* solo losas anchas y a ras: nada de repisas estrechas ni de rejillas */
+  const pool = plats.filter(pl => (pl.maxX-pl.minX)>=6 && (pl.maxZ-pl.minZ)>=5 && !pl._pad && !pl._hex && !pl._lift);
+  if(!pool.length) return;
+  const pick = ()=> pool[(Math.random()*pool.length)|0];
+  /* --- 1) TESORO en bordes y esquinas (cofre · monedas · lingotes) --- */
+  const oro = [['s5_chest',0.95,1.25], ['s5_coins',0.9,1.3], ['s5_bars',0.9,1.3]];
+  for(let i=0, hecho=0; i<34 && hecho<9; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 1.5, Math.random()<0.6); if(!sp) continue;
+    const d = oro[(Math.random()*oro.length)|0];
+    if(_s5Place(d[0], sp.x, sp.z, pl.topY, d[1]+Math.random()*(d[2]-d[1]))) hecho++;
+  }
+  /* --- 2) CRISTALES ocre en bordes --- */
+  for(let i=0, hecho=0; i<20 && hecho<5; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 1.3, Math.random()<0.5); if(!sp) continue;
+    const k = Math.random()<0.5 ? 's5_crys1' : 's5_crys2';
+    if(_s5Place(k, sp.x, sp.z, pl.topY, 0.8+Math.random()*0.6, null, 'crystal')) hecho++;
+  }
+  /* --- 3) ANUBIS (base ocre, cetros con su color) --- */
+  for(let i=0, hecho=0; i<10 && hecho<2; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 3.0, false); if(!sp) continue;
+    const cx=(pl.minX+pl.maxX)*0.5, cz=(pl.minZ+pl.maxZ)*0.5;
+    if(_s5Place('s5_anubis', sp.x, sp.z, pl.topY, 0.85+Math.random()*0.25, Math.atan2(cx-sp.x, cz-sp.z), 'anubis')) hecho++;   // mirando al centro
+  }
+  /* --- 4) VASIJAS: las tres con el MISMO multitono ocre --- */
+  const vas = ['s5_vase1','s5_vase2','s5_vase3'];
+  for(let i=0, hecho=0; i<28 && hecho<8; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 1.4, Math.random()<0.5); if(!sp) continue;
+    if(_s5Place(vas[(Math.random()*vas.length)|0], sp.x, sp.z, pl.topY, 0.85+Math.random()*0.5, null, 'ochre')) hecho++;
+  }
+  /* --- 5) SARCÓFAGOS --- */
+  for(let i=0, hecho=0; i<16 && hecho<4; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 2.4, false); if(!sp) continue;
+    const k = Math.random()<0.5 ? 's5_coffin1' : 's5_coffin2';
+    if(_s5Place(k, sp.x, sp.z, pl.topY, 0.9+Math.random()*0.3)) hecho++;
+  }
+  /* --- 6) PILAR al CENTRO de algunas plataformas (ocre) --- */
+  for(let i=0, hecho=0; i<12 && hecho<3; i++){
+    const pl = pick();
+    const cx=(pl.minX+pl.maxX)*0.5, cz=(pl.minZ+pl.maxZ)*0.5;
+    if(_s5Place('s5_pillar', cx, cz, pl.topY, 0.9+Math.random()*0.35, null, 'ochre')) hecho++;
+  }
+  /* --- 7) TUMBAS --- */
+  for(let i=0, hecho=0; i<14 && hecho<4; i++){
+    const pl = pick(), sp = _s5EdgeSpot(pl, 1.6, Math.random()<0.5); if(!sp) continue;
+    if(_s5Place('s5_grave', sp.x, sp.z, pl.topY, 0.9+Math.random()*0.4)) hecho++;
+  }
+  /* --- 8) CAMINOS de losetas ocre: rectos por el eje largo, nunca en diagonal (lección del stage 2) --- */
+  for(let i=0, hecho=0; i<10 && hecho<3; i++){
+    const pl = pick();
+    const alongX = (pl.maxX-pl.minX) >= (pl.maxZ-pl.minZ);
+    const span = (alongX ? (pl.maxX-pl.minX) : (pl.maxZ-pl.minZ)) - 3.0;
+    if(span < 5) continue;
+    const cx=(pl.minX+pl.maxX)*0.5, cz=(pl.minZ+pl.maxZ)*0.5;
+    const base = (alongX ? cz : cx) + (Math.random()*2-1)*((alongX ? (pl.maxZ-pl.minZ) : (pl.maxX-pl.minX))*0.5 - 2.2);
+    const n = Math.max(3, Math.round(span/2.0));
+    let puestas = 0;
+    for(let t=0;t<n;t++){
+      const a = (alongX ? pl.minX : pl.minZ) + 1.5 + t*(span/(n-1||1));
+      const x = alongX ? a : base, z = alongX ? base : a;
+      if(_s5Place('s5_tile', x, z, pl.topY, 0.95, alongX ? 0 : Math.PI/2, 'ochre')) puestas++;
+    }
+    if(puestas >= 3) hecho++;
+  }
 }
 function addCenterProps3(topY){                    // conjunto central: campamento de CARAVANA
   addPropS3('s3_package', -8.5, 6.0, topY, 1.1,  0.3);
@@ -26444,6 +26608,24 @@ function _applyS5Theme(){
 }
 
 /* ---- modelos S5 (losa-parche + cepo del Pass 2) ---- */
+/* ►S5DECOR · props NUEVOS del interior de la pirámide (stage5_models.js). `size` = la dimensión MAYOR
+   del modelo tras normalizar, que es lo que usa _normalize/_modelFoot. */
+const DECOR_DEFS5 = {
+  s5_chest:   { key:'s5_chest',   size:2.2 },   // cofre de oro
+  s5_coins:   { key:'s5_coins',   size:1.6 },   // montón de monedas
+  s5_bars:    { key:'s5_bars',    size:1.5 },   // lingotes
+  s5_crys1:   { key:'s5_crys1',   size:1.9 },   // cristal (se tiñe a ocre)
+  s5_crys2:   { key:'s5_crys2',   size:2.3 },   // cristal variante
+  s5_anubis:  { key:'s5_anubis',  size:5.2 },   // estatua de Anubis
+  s5_vase1:   { key:'s5_vase1',   size:1.9 },   // vasija
+  s5_vase2:   { key:'s5_vase2',   size:2.6 },   // vasija alta
+  s5_vase3:   { key:'s5_vase3',   size:2.2 },   // ánfora
+  s5_coffin1: { key:'s5_coffin1', size:3.4 },   // sarcófago liso
+  s5_coffin2: { key:'s5_coffin2', size:3.4 },   // sarcófago decorado
+  s5_pillar:  { key:'s5_pillar',  size:5.0 },   // pilar (va al CENTRO de la plataforma)
+  s5_grave:   { key:'s5_grave',   size:2.0 },   // tumba
+  s5_tile:    { key:'s5_tile',    size:2.2 },   // loseta de suelo (caminos)
+};
 const DECOR_DEFS4 = {
   s4_patch:     { key:'s4_patch',     size:S5.cell },   // normalizada al lado de celda
   s4_beartrap:  { key:'s4_beartrap',  size:2.4 },       // Pass 2
