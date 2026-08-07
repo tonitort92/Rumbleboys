@@ -198,7 +198,7 @@ const K = {
      Nada de "velocidad máxima": sale de gravedad-en-el-plano contra
      rozamiento. A 11° son ~54 u/s y a 42° pasa de 100. */
   grav:       52,
-  dragC:      0.0062,  // rozamiento aerodinámico (∝ v²). Calibrado para que la
+  dragC:      0.0043,  // rozamiento aerodinámico (∝ v²). Calibrado para que la
                        // velocidad de equilibrio salga 45/56/63/68/58 u/s por
                        // zona (verde/azul/roja/negra/fuera): ver la cabecera.
   dragAir:    0.85,    // el MISMO rozamiento vale en el aire. Sin esto la
@@ -215,9 +215,11 @@ const K = {
   gripLowV:   10,      // por debajo de esta velocidad el canto NO agarra: parado
                        // y cruzado se derrapa ladera abajo, como en la realidad
   gripLowMin: 0.22,
-  fallTurn:   1.1,     // rad/s con que el morro cae hacia la máxima pendiente a
+  fallTurn:   0.75,    // rad/s con que el morro cae hacia la máxima pendiente a
                        // poca velocidad. Sin esto, cruzarse a 0 km/h es un
                        // callejón sin salida: medido, la IA se plantó 200 s.
+                       // Solo por debajo de fallTurnV: por encima mandas tú.
+  fallTurnV:  18,
   /* ►ARCADE — EL CAMBIO DE INTENCIÓN
      Toni, sobre la v4: "las físicas son muy duras, no da placer bajar como un
      juego pro de PlayStation". Tenía razón y el problema NO eran los números,
@@ -233,7 +235,7 @@ const K = {
         tumba el planchazo de verdad.
      4. HAY SUELO DE VELOCIDAD por zona: nunca te quedas muerto en la nieve. */
   carveBoost: 0.115,   // u/s² de empuje por unidad de fuerza de canto ←(1)
-  carveCap:   96,      // techo de velocidad alcanzable BOMBEANDO (el turbo lo pasa)
+  carveCap:   135,     // techo de velocidad alcanzable BOMBEANDO (el turbo lo pasa)
   skidRecov:  0.25,    // s en que el board vuelve solo a la velocidad ←(2)
   skidDrag:   0.22,    // lo que raspa el derrape (era 0,65: castigaba demasiado)
   landBoost:  0.30,    // fracción del impacto que se DEVUELVE como velocidad ←(3)
@@ -248,13 +250,16 @@ const K = {
      con la montaña. Medido: tallando se tardaba 245 s contra 38 s yendo recto.
      Ahora el stick PIDE UN ÁNGULO: a fondo = K.steerMax respecto de la línea
      de máxima pendiente, y al soltar vuelve solo. Apuntas y se queda. */
-  steerMax:   52 * RAD,// ángulo que pide el stick a fondo
-  steerBack:  2.0,     // rad/s con que vuelve a la línea al soltar
+  steerMax:   58 * RAD,// ángulo que pide el stick a fondo
+  steerBack:  0.55,    // rad/s con que vuelve a la línea al soltar. Toni: "la
+                       // vuelta es brusca, tiende a la línea recta él solo".
+                       // Con 2,0 se enderezaba en medio segundo y parecía que
+                       // el juego te quitaba el volante de las manos.
   turnLow:    5.0,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
   turnHigh:   3.0,     // ...y a tope
   airTurn:    3.4,     // en el aire se gira MUCHO: deja encarar la caída y sale
                        // gratis en diversión
-  turboThrust:13,
+  turboThrust:22,
   dashMax:    2.4,
   dashRegen:  0.34,
   nMax:       3.0,     // tope de la fuerza normal (compresiones)
@@ -280,11 +285,32 @@ const K = {
   trailN:     760,
 
   /* --- CHOQUES Y CAÍDAS --- */
-  crashMul:   0.5,
+  /* Toni: "cuando te caes o chocas debes arrastrar algo de la velocidad que
+     llevabas". Hasta aquí caerse te dejaba CLAVADO (velocidad a 0), y eso es
+     lo que más rompe el ritmo: pierdes el error Y el impulso. */
+  crashMul:   0.74,
+  fallMul:    0.46,    // lo que CONSERVAS al caerte: sigues deslizando
+  fallDrag:   0.72,    // ...y a qué ritmo se te va mientras estás por el suelo
   crashTime:  0.55,
   crashChain: 3,
   crashWindow:3.0,
   fallTime:   1.35,
+
+  /* --- ►GRINDING sobre raíles ---
+     Se engancha SOLO con caer encima (no hay botón). Una vez arriba, el raíl
+     te lleva y tú peleas el equilibrio con el mismo stick que gira: se va
+     torciendo solo y hay que corregir. Si se te va, te caes. */
+  grindSnapX: 2.6,     // margen lateral para engancharse
+  grindSnapY: 2.2,     // ...y vertical (hay que venir de arriba)
+  grindMinV:  14,      // por debajo de esto no engancha
+  grindDrift: 1.5,     // a qué ritmo se te tuerce el equilibrio solo
+  grindFix:   2.3,     // cuánto lo corriges con el stick a fondo
+  grindFric:  0.999,   // el raíl casi no frena: es la recompensa. OJO, es POR
+                       // 1/60 s: 0,985 parecía inofensivo y dejaba el 40% de la
+                       // velocidad al cabo de UN segundo — el grind se cortaba
+                       // solo a los 2 s por el corte de velocidad mínima.
+  grindPts:   26,      // puntos por segundo aguantando
+  grindOut:   11,      // impulso vertical al salir del raíl
 
   /* --- ataque / agarre --- */
   atkSpeed:   30, atkTime:0.55, atkCd:4.2, atkPush:30, atkPts:45,
@@ -322,6 +348,16 @@ const K = {
   orbMouse:   0.006,   // rad por píxel arrastrado
   orbPitchMin:-28 * RAD,
   orbPitchMax: 68 * RAD,
+  /* ►GOLPE DE CÁMARA. La mitad de la sensación de un juego de tabla está en
+     que la cámara ACUSA el aterrizaje: se hunde de golpe y rebota. Sin esto,
+     caer de una rampa grande y de un bordillo se ven exactamente igual. */
+  kickLand:   0.16,    // hundimiento por unidad de impacto normal
+  kickMax:    3.4,     // tope del hundimiento
+  kickCrash:  2.6,     // el que mete un choque
+  kickSpring: 150,     // rigidez del muelle que la devuelve
+  kickDamp:   13,      // amortiguación (por debajo del crítico = rebota una vez)
+  kickFov:    5.5,     // tirón de FOV al aterrizar fuerte
+
   orbHold:    1.2,     // s parado antes de volver sola detrás
   orbBack:    2.4,     // velocidad de recentrado
   camMinH:    4.6,     // la cámara nunca baja de esto sobre el suelo (ni ella
@@ -360,16 +396,69 @@ const ZONA = {
   fuera: { deg:42, nombre:'FUERA PISTA', col:0x9d5ad4, hard:0.20, bump:4.6, rock:1.25, ramp:0.30 },
 };
 
-/* El recorrido. Cambiar esta lista es cambiar la montaña entera. */
+/* =====================================================================
+   EL RECORRIDO — cambiar esta lista es cambiar la montaña entera
+
+   Cada tramo dice su ZONA (que fija pendiente, material y color), su LARGO,
+   su SEMIANCHURA al empezar, y opcionalmente una PIEZA:
+
+     hueco:N .... PRECIPICIO de N unidades. Corta la montaña de lado a lado y
+                  hay que SALTARLO. Con N pequeño (14-20) basta un ollie seco;
+                  con N grande (45-70) hace falta llegar lanzado y usar el
+                  kicker que se planta solo delante.
+     parte:{...}. BIFURCACIÓN: un espolón de roca parte el corredor en dos
+                  rutas que se vuelven a juntar. Sirve para despegarse del
+                  grupo (o para perderlos de vista y reencontrarlos).
+     tunel ...... TÚNEL DE NIEVE sobre un corredor estrecho.
+     rail:{...}.. RAÍL para hacer grinding: se salta encima y se aguanta el
+                  equilibrio con el stick.
+
+   Largo total ≈ 6.200 u ⇒ unos DOS MINUTOS a la velocidad media medida.
+   ===================================================================== */
 const PLAN = [
-  ['verde', 240], ['azul', 250], ['roja', 300], ['negra', 260], ['verde', 210],
-  ['fuera', 340], ['roja', 270], ['negra', 300], ['azul', 230], ['verde', 200],
+  { z:'verde', len:260, hw:70  },
+  { z:'azul',  len:240, hw:88,  rail:{ x:0,   largo:110 } },
+  { z:'azul',  len:200, hw:120 },
+  { z:'roja',  len:280, hw:150, hueco:16 },                    // salto corto: ollie
+  { z:'roja',  len:240, hw:60,  tunel:true },                  // estrechamiento + túnel
+  { z:'negra', len:300, hw:110, parte:{ largo:230, alto:26 } }, // dos rutas
+  { z:'negra', len:260, hw:150, hueco:52 },                    // GRAN precipicio
+  { z:'verde', len:220, hw:170 },                              // respiro
+  { z:'fuera', len:340, hw:200 },
+  { z:'fuera', len:260, hw:130, rail:{ x:-22, largo:120 } },
+  { z:'roja',  len:280, hw:70  },                              // pasillo de giro
+  { z:'roja',  len:260, hw:150, hueco:18 },
+  { z:'negra', len:320, hw:120, parte:{ largo:250, alto:30 } },
+  { z:'negra', len:280, hw:170, hueco:62 },                    // el más grande
+  { z:'azul',  len:240, hw:74,  tunel:true },
+  { z:'azul',  len:260, hw:90,  rail:{ x:16, largo:130 } },
+  { z:'roja',  len:300, hw:150 },
+  { z:'roja',  len:260, hw:80  },                              // último pasillo
+  { z:'negra', len:300, hw:140, hueco:20 },
+  { z:'verde', len:280, hw:190 },
+  { z:'verde', len:220, hw:210 },
 ];
 
-const BANDS = [];
+const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [];
 {
   let z = 0;
-  for(const [tipo, L] of PLAN){ BANDS.push({ tipo, z0:z, z1:z - L }); z -= L; }
+  for(const t of PLAN){
+    const b = { tipo:t.z, z0:z, z1:z - t.len, hw:t.hw };
+    BANDS.push(b);
+
+    /* el hueco va centrado en el tramo, con sitio antes para coger carrerilla */
+    if(t.hueco){
+      const zc = z - t.len * 0.62;
+      HUECOS.push({ z0: zc + t.hueco/2, z1: zc - t.hueco/2, largo: t.hueco,
+                    grande: t.hueco >= 34 });
+    }
+    if(t.parte) PARTES.push({ z0: z - (t.len - t.parte.largo)/2,
+                              z1: z - (t.len + t.parte.largo)/2, alto: t.parte.alto });
+    if(t.tunel) TUNELES.push({ z0: z - t.len*0.25, z1: z - t.len*0.75 });
+    if(t.rail)  RAILES.push({ x: t.rail.x, z0: z - t.len*0.3,
+                              z1: z - t.len*0.3 - t.rail.largo, alto: 3.2 });
+    z -= t.len;
+  }
   K.len = -z;
 }
 
@@ -421,10 +510,53 @@ function baseY(z){
   return lerp(HTAB[i], HTAB[i + 1], f - i);
 }
 
-/* semianchura del abanico */
+/* --- SEMIANCHURA: perfil por tramos, no un abanico que solo se abre ---
+   Toni pidió "zonas más estrechas que otras y pasillos de giro". La anchura
+   la manda ahora el PLAN: se interpola entre la de cada tramo y la del
+   siguiente, así que un embudo de 150 a 60 se lee como un estrechamiento. */
 function hwAt(z){
-  const t = clamp(-z / K.len, 0, 1);
-  return K.hw0 + (K.hw1 - K.hw0) * Math.pow(t, K.hwPow);
+  const i = bandIdx(z), b = BANDS[i];
+  const nx = BANDS[i + 1];
+  const t = clamp((b.z0 - z) / Math.max(1, b.z0 - b.z1), 0, 1);
+  return lerp(b.hw, nx ? nx.hw : b.hw, smooth(t));
+}
+
+/* --- PRECIPICIOS ---
+   Dentro de un hueco NO HAY SUELO. Se sale por el aire o se cae al vacío (y
+   del vacío se vuelve, que esto es una transición y no puede acabarte la run). */
+function huecoAt(z){
+  for(let i = 0; i < HUECOS.length; i++){
+    const h = HUECOS[i];
+    if(z < h.z0 && z > h.z1) return h;
+  }
+  return null;
+}
+/* borde de salida más cercano por detrás (para reponer al que se cae) */
+function bordeDe(h){ return h.z0 + 5; }
+
+/* --- BIFURCACIONES: un espolón en el centro que parte el corredor --- */
+function parteAt(x, z){
+  for(let i = 0; i < PARTES.length; i++){
+    const p = PARTES[i];
+    if(z > p.z0 || z < p.z1) continue;
+    /* se levanta y se hunde suavemente por los extremos: si apareciera de
+       golpe sería un muro invisible en mitad de la bajada */
+    const L = p.z0 - p.z1, d = Math.min(p.z0 - z, z - p.z1);
+    const fz = smooth(clamp(d / (L * 0.16), 0, 1));
+    const w = 26;
+    const fx = Math.max(0, 1 - (x * x) / (w * w));
+    return p.alto * fz * fx * fx;
+  }
+  return 0;
+}
+
+/* --- RAÍLES --- */
+function railAt(z){
+  for(let i = 0; i < RAILES.length; i++){
+    const r = RAILES[i];
+    if(z < r.z0 && z > r.z1) return r;
+  }
+  return null;
 }
 
 /* PIELES. `soft`/`hard` son los dos colores entre los que se interpola el
@@ -452,13 +584,14 @@ function GAME_RENDERER(){ return (typeof renderer !== 'undefined') ? renderer : 
 function GAME_KEYS(){ return (typeof keys !== 'undefined') ? keys : null; }
 
 const DESC = window.DESC = {
-  on:false, K, TRICKS, ZONA, BANDS,
+  on:false, K, TRICKS, ZONA, BANDS, HUECOS, PARTES, TUNELES, RAILES,
   scene:null, cam:null, world:null, backdrop:null,
   seed:0, rng:null, noise:null, noiseH:null,
   racers:[], obst:[], buckets:null, picks:null,
   t:0, phase:'countdown', count:3.2,
   finishOrder:[], hud:null, _built:false, _why:{},
   orb:{ yaw:0, pitch:0, idle:9, mx:0, my:0, down:false },
+  kick:{ y:0, v:0 },
 };
 
 const BUCKET = 60;
@@ -473,7 +606,7 @@ function terrainY(x, z){
   const cuenco = K.bowl * u * u;                         // los bordes suben
   const big = n(x * K.bumpFreqB, z * K.bumpFreqB) * zoneProp(z, 'bump');
   const sml = n(x * K.bumpFreqS, z * K.bumpFreqS) * K.bumpSmall;
-  return baseY(z) + cuenco + big + sml;
+  return baseY(z) + cuenco + big + sml + parteAt(x, z);
 }
 /* DUREZA 0..1: base de la zona (el fuera pista es nieve profunda) + ruido. */
 function hardnessAt(x, z){
@@ -488,9 +621,21 @@ DESC._hard = hardnessAt;
    ===================================================================== */
 function genTrack(rng){
   const obst = [];
+
+  /* KICKERS DE LOS PRECIPICIOS GRANDES: una rampa ancha justo antes del labio.
+     Va PRIMERO y a mano — si la dejara al azar, el hueco de 62 u sería
+     injusto la mitad de las partidas. */
+  for(const h of HUECOS){
+    if(!h.grande) continue;
+    obst.push({ type:'ramp', size:'l', x:0, z:h.z0 + 16, w:34, len:26, h:7.4, kicker:true });
+  }
+
   let z = -120;
   let sinceRamp = 0;
   while(z > -(K.len - 70)){
+    /* ni rocas ni rampas DENTRO de un hueco (no hay suelo donde apoyarlas), ni
+       en los 26 u previos: ahí se necesita pista limpia para coger carrerilla */
+    if(huecoAt(z) || huecoAt(z - 26) || huecoAt(z + 12)){ z -= 26; continue; }
     const hw = hwAt(z) - 12;
     const zn = { rock: zoneProp(z, 'rock'), ramp: zoneProp(z, 'ramp') };
     sinceRamp++;
@@ -512,8 +657,9 @@ function genTrack(rng){
     /* rocas: el fuera pista está sembrado, la verde casi limpia */
     const nr = Math.floor(rng() * 1.4 + zn.rock * 1.5);
     for(let k = 0; k < nr; k++){
-      obst.push({ type:'rock', x:(rng()*2-1)*hw, z:z + (rng()-0.5)*26,
-                  r: 2.2 + rng()*1.6 + zn.rock * 1.1 });
+      const rx2 = (rng()*2-1)*hw, rz2 = z + (rng()-0.5)*26;
+      if(parteAt(rx2, rz2) > 1.5) continue;      // no sembrar sobre el espolón
+      obst.push({ type:'rock', x:rx2, z:rz2, r: 2.2 + rng()*1.6 + zn.rock * 1.1 });
     }
 
     if(rng() < 0.42) obst.push({ type:'pick', x:(rng()*2-1)*hw*0.9, z:z - 12, taken:false });
@@ -567,11 +713,17 @@ function rampAt(x, z){
 function rampSurfaceY(o, z){
   return terrainY(o.x, o.z) + ((o.z + o.len/2 - z) / o.len) * o.h;
 }
+/* SIN SUELO: lo que devuelve groundYAt dentro de un precipicio. No es
+   -Infinity porque eso envenena de NaN cualquier resta; es un número muy bajo
+   pero finito, y `enVacio()` es quien decide que te has caído. */
+const VACIO = -100000;
 function groundYAt(x, z){
+  if(huecoAt(z)) return VACIO;
   const t = terrainY(x, z);
   const o = rampAt(x, z);
   return o ? Math.max(t, rampSurfaceY(o, z)) : t;
 }
+function enVacio(y, z){ return y < baseY(z) - 55; }
 DESC._gy = groundYAt;
 
 /* HUELLA DE LA TABLA: un board mide 4,6 unidades y no cabe en un punto.
@@ -580,9 +732,13 @@ DESC._gy = groundYAt;
    la tabla PUENTEA los baches pequeños, exactamente como en la realidad.
    Sin esto, la detección de despegue por curvatura es una traca. */
 function padY(x, z, fx, fz){
-  return 0.25 * groundYAt(x - fx*2.3, z - fz*2.3)
-       + 0.50 * groundYAt(x, z)
-       + 0.25 * groundYAt(x + fx*2.3, z + fz*2.3);
+  const a = groundYAt(x - fx*2.3, z - fz*2.3);
+  const b = groundYAt(x, z);
+  const c = groundYAt(x + fx*2.3, z + fz*2.3);
+  /* si CUALQUIER punto de la tabla está sobre el vacío, no hay apoyo: promediar
+     -100000 con dos alturas normales daría un suelo fantasma a mitad del abismo */
+  if(a <= VACIO || b <= VACIO || c <= VACIO) return VACIO;
+  return 0.25*a + 0.50*b + 0.25*c;
 }
 
 /* SUPERFICIE: altura + NORMAL. La normal es la pieza de la que cuelga toda la
@@ -613,6 +769,7 @@ function surfaceAt(x, z, out){
 /* pendiente en la dirección de la marcha (rad, >0 cuesta abajo) — para cámara e IA */
 function slopeAt(x, z){
   const a = groundYAt(x, z), b = groundYAt(x, z - 3);
+  if(a <= VACIO || b <= VACIO) return zoneProp(z, 'deg') * RAD;   // sobre un hueco
   return Math.atan2(a - b, 3);
 }
 
@@ -659,8 +816,10 @@ function buildScene(){
   /* --- TERRENO: malla en ABANICO (sigue la semianchura, así que la
          resolución cae donde hace falta y no se malgastan vértices) --- */
   {
-    const COLS = 62, ROWS = 380;
+    /* la resolución se ata al LARGO, no a un número fijo: con la pista de 2
+       minutos, 380 filas dejaban 17 u por fila y los lomos se veían facetados */
     const zTop = 160, zBot = -(K.len + 240);
+    const COLS = 58, ROWS = Math.min(1000, Math.round((zTop - zBot) / 8.5));
     const OUT = 1.16;                    // se pinta un poco más allá del límite
     const nv = (COLS + 1) * (ROWS + 1);
     const pos = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
@@ -687,12 +846,17 @@ function buildScene(){
         vi++;
       }
     }
-    let ii = 0;
+    /* NO SE EMITEN LOS QUADS QUE CAEN DENTRO DE UN PRECIPICIO: ese es el
+       agujero. Se cuenta cuántos se saltan para poder afirmar que el hueco
+       existe de verdad y no solo en la física. */
+    let ii = 0, saltados = 0;
     for(let ri = 0; ri < ROWS; ri++) for(let ci = 0; ci < COLS; ci++){
       /* OJO AL DEVANADO: con las filas yendo hacia -z y las columnas hacia +x,
          el orden (a,d,b) da la normal MIRANDO AL SUELO → el terreno entero se
          culleaba y la escena parecía "props flotando sobre el telón de fondo".
          Se cazó con un raycast por el centro de pantalla: impactaba a 2.400 u. */
+      const zq = zTop + (zBot - zTop) * ((ri + 0.5) / ROWS);
+      if(huecoAt(zq)){ saltados++; continue; }
       const a = ri * (COLS + 1) + ci, b = a + 1, d = a + (COLS + 1), e = d + 1;
       idx[ii++] = a; idx[ii++] = b; idx[ii++] = d;
       idx[ii++] = b; idx[ii++] = e; idx[ii++] = d;
@@ -700,11 +864,97 @@ function buildScene(){
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.setIndex(new THREE.BufferAttribute(idx.subarray(0, ii), 1));
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true }));
     world.add(mesh);
     DESC.terrain = mesh;
+    DESC._quadsHueco = saltados;
+  }
+
+  /* --- PAREDES Y FONDO DEL PRECIPICIO ---
+     Sin esto el agujero se ve como una ventana al cielo y no da ningún vértigo.
+     Un labio claro que marca el borde de salto, paredes verticales y un fondo
+     oscuro muy abajo. */
+  for(const h of HUECOS){
+    const hw = hwAt((h.z0 + h.z1) / 2) * 1.16;
+    const prof = 150;
+    const paredMat = new THREE.MeshLambertMaterial({ color: PAL.wall2, side:THREE.DoubleSide });
+    for(const zz of [h.z0, h.z1]){
+      const g2 = new THREE.PlaneGeometry(hw * 2, prof);
+      const pared = new THREE.Mesh(g2, paredMat);
+      pared.position.set(0, terrainY(0, zz) - prof/2, zz);
+      world.add(pared);
+    }
+    const fondo = new THREE.Mesh(new THREE.PlaneGeometry(hw*2, Math.abs(h.z0-h.z1)+8),
+      new THREE.MeshBasicMaterial({ color:0x1a1620, fog:false }));
+    fondo.rotation.x = -Math.PI/2;
+    fondo.position.set(0, terrainY(0, h.z0) - prof, (h.z0 + h.z1)/2);
+    world.add(fondo);
+    /* LABIO de salida: naranja y ancho, para que se vea desde lejos */
+    const labio = new THREE.Mesh(new THREE.BoxGeometry(hw*2, 1.0, 2.4),
+      new THREE.MeshLambertMaterial({ color: h.grande ? 0xff4d3d : 0xff9a3d }));
+    labio.position.set(0, terrainY(0, h.z0) + 0.5, h.z0 + 1);
+    world.add(labio);
+  }
+
+  /* --- TÚNELES DE NIEVE ---
+     DOS COSAS QUE SALIERON MAL Y ESTÁN RESUELTAS AQUÍ:
+     · Encadenar rotation.z y rotation.y para tumbar un cilindro es pedir un
+       error: con el orden Euler por defecto acabó tapando media pantalla en
+       vez de arquearse por encima. Se alinea con setFromUnitVectors, que no
+       tiene ambigüedad.
+     · Un tubo RECTO sobre un terreno que baja 26° queda enterrado por un
+       extremo y flotando por el otro. Tiene que seguir la pendiente: se
+       orienta con el vector que une sus dos bocas.
+     · El interior de un BackSide no le llega la luz direccional: sin emissive
+       el túnel es una cueva negra. */
+  for(const tn of TUNELES){
+    const y0 = terrainY(0, tn.z0), y1 = terrainY(0, tn.z1);
+    const dz = tn.z1 - tn.z0, dy = y1 - y0;
+    const largo = Math.hypot(dy, dz);
+    /* EL RADIO ES EL DEL PASILLO, no uno inventado: un tubo más estrecho que
+       el corredor deja que vayas por fuera mientras la cámara va por dentro, y
+       lo que se ve es una pared crema tapando media pantalla. Por eso los
+       tramos con túnel son SIEMPRE estrechos. */
+    const rad = Math.min(78, hwAt((tn.z0 + tn.z1) / 2) + 4);
+    const g2 = new THREE.CylinderGeometry(rad, rad, largo, 20, 1, true);
+    const tun = new THREE.Mesh(g2, new THREE.MeshLambertMaterial({
+      color: PAL.soft, emissive: PAL.hemi, emissiveIntensity: 0.34,
+      side: THREE.BackSide, flatShading: true }));
+    tun.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, dy, dz).normalize());
+    tun.position.set(0, (y0 + y1) / 2 + rad * 0.10, (tn.z0 + tn.z1) / 2);
+    world.add(tun);
+
+    /* BOCAS: un aro oscuro en cada extremo, para que se vea la entrada desde
+       lejos y no parezca que la nieve se abre sola */
+    for(const [zz, yy] of [[tn.z0, y0], [tn.z1, y1]]){
+      const aro = new THREE.Mesh(new THREE.TorusGeometry(rad, 1.1, 6, 20),
+        new THREE.MeshLambertMaterial({ color: PAL.wall2 }));
+      aro.position.set(0, yy + rad * 0.10, zz);
+      world.add(aro);
+    }
+  }
+
+  /* --- RAÍLES --- */
+  for(const R of RAILES){
+    const largo = Math.abs(R.z0 - R.z1);
+    const y0 = terrainY(R.x, R.z0) + R.alto, y1 = terrainY(R.x, R.z1) + R.alto;
+    const barra = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, largo),
+      new THREE.MeshLambertMaterial({ color:0xd8dee8 }));
+    barra.position.set(R.x, (y0 + y1) / 2, (R.z0 + R.z1) / 2);
+    barra.rotation.x = Math.atan2(y0 - y1, largo) * -1;
+    world.add(barra);
+    const nPost = Math.max(2, Math.round(largo / 12));
+    for(let i = 0; i <= nPost; i++){
+      const zz = R.z0 + (R.z1 - R.z0) * (i / nPost);
+      const yy = terrainY(R.x, zz);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.34, R.alto, 0.34),
+        new THREE.MeshLambertMaterial({ color:0x8a94a4 }));
+      post.position.set(R.x, yy + R.alto/2, zz);
+      world.add(post);
+    }
   }
 
   /* --- BORDE DEL ABANICO: rocas siguiendo la semianchura --- */
@@ -1092,6 +1342,7 @@ function makeRacer(i, human){
     yaw:0,                       // hacia dónde apunta el board (0 = máxima pendiente)
     slip:0, skid:0, nForce:1, sink:0, _trailAcc:0, _vT:NaN,
     air:false, airVy0:0, fall:0, crash:0, crashN:0, crashT:0, charge:0,
+    grind:null, gBal:0, voids:0,
     trick:null, trickT:0, combo:0,
     dash:K.dashMax, turbo:false,
     atk:0, atkCd:0, grabCd:0, grabbed:0, grabbedBy:null,
@@ -1169,6 +1420,28 @@ function aiInput(r, dt){
   r._ai.plan = null;
 
   const hw = hwAt(r.z) - 10;
+
+  /* ---------- LA IA VE LOS PRECIPICIOS ----------
+     Sin esto se caen los cuatro al primer hueco y la carrera es una broma.
+     Al detectar uno delante: apunta al centro (donde está el kicker), endereza
+     el board (cruzado no se cruza nada) y mete turbo para llegar lanzada. */
+  let hAhead = null;
+  for(const g of HUECOS){
+    const d = r.z - g.z0;
+    if(d > 0 && d < 150 && (!hAhead || d < r.z - hAhead.z0)) hAhead = g;
+  }
+  if(hAhead){
+    const d = r.z - hAhead.z0;
+    o.turbo = d < 110 && r.spd < 90;
+    /* el ancho del hueco decide si hace falta el kicker del centro */
+    const tx0 = hAhead.grande ? 0 : r.x * 0.5;
+    const wy = clamp(Math.atan2(tx0 - r.x, Math.max(24, d)), -0.7, 0.7);
+    o.ax = clamp((d < 34 ? 0 : wy) / K.steerMax, -1, 1);
+    if(!hAhead.grande && d < 5 && !r.air) o.jump = true;   // los cortos, a ollie
+    r._ai.tx = tx0;
+    return o;
+  }
+
   const ahead = nearObst(r.z - K.aiLook/2, K.aiLook);
   let danger = null, dz = 1e9, tx = clamp(r._ai.tx, -hw, hw);
 
@@ -1237,8 +1510,50 @@ function aiInput(r, dt){
    ===================================================================== */
 /* `por` no es decoración: sin contar POR QUÉ se choca, afinar es adivinar.
    DESC._why lo dice en cualquier momento (roca / aterrizaje / plancha / borde / rival). */
+function camKick(v){ DESC.kick.v -= v * 8; }
+
+/* Sacar del abismo a quien no llegó al otro lado. Se le devuelve por DETRÁS del
+   hueco, con pista por delante para volver a coger carrerilla.
+
+   TRAMPA CAÍDA: reponer justo en el labio (h.z0 + 5) es un BUCLE INFINITO —
+   con 5 unidades no se coge velocidad para cruzar, así que se vuelve a caer.
+   Medido: 48 reposiciones en una carrera y el corredor no pasó del 17%.
+   Por eso hay (a) carrerilla proporcional al ancho del hueco y (b) un seguro:
+   al tercer intento se pasa al otro lado. Esto es una transición entre stages;
+   no puede atascar a nadie. */
+function reponer(r){
+  let h = null, mejor = -1e9;
+  for(const g of HUECOS) if(r.z <= g.z0 + 2 && g.z1 > mejor){ h = g; mejor = g.z1; }
+  r.voids = (r.voids || 0) + 1;
+  DESC._why.vacio = (DESC._why.vacio || 0) + 1;
+
+  if(h){
+    r._vh = (r._vh === h) ? r._vh : h;
+    r._vn = (r._vhLast === h ? (r._vn || 0) + 1 : 1);
+    r._vhLast = h;
+    if(r._vn >= 3){                                  // seguro anti-atasco
+      r.z = h.z1 - 8; r.x = 0;
+      r.y = terrainY(0, r.z);
+      r.vx = 0; r.vz = -26; r.yaw = 0;
+      r._vn = 0;
+    } else {
+      const carrerilla = clamp(70 + h.largo * 1.6, 70, 150);
+      r.z = h.z0 + carrerilla;
+      r.x = clamp(r.x, -hwAt(r.z) + 12, hwAt(r.z) - 12);
+      r.y = terrainY(r.x, r.z);
+      r.vx = 0; r.vz = -18; r.yaw = 0;                // encarado y con algo de impulso
+    }
+  } else { r.vx *= 0.15; r.vz *= 0.15; }
+
+  r.vy = 0; r.air = false; r._vT = NaN; r.grind = null;
+  r.crash = K.crashTime; r.crashN = 0;
+  if(r.human){ camKick(K.kickCrash); r._lastTrick = '¡AL VACÍO!'; r._lastTrickT = 1.4; }
+  spray(r, 26, 3.4);
+}
+
 function crash(r, por){
   if(r.fall > 0 || r.crash > 0) return;
+  if(r.human) camKick(K.kickCrash);
   DESC._why[por || 'otro'] = (DESC._why[por || 'otro'] || 0) + 1;
   r.crashes++;
   r.crashN = (DESC.t - r.crashT < K.crashWindow) ? r.crashN + 1 : 1;
@@ -1251,7 +1566,8 @@ function crash(r, por){
 function fall(r){
   if(r.fall > 0) return;
   r.falls++; r.fall = K.fallTime;
-  r.vx = 0; r.vz = 0; r.vy = 0; r.air = false; r.charge = 0;
+  /* NO se para en seco: sigue deslizando con parte de lo que llevaba */
+  r.vx *= K.fallMul; r.vz *= K.fallMul; r.vy = 0; r.air = false; r.charge = 0;
   r.trick = null; r.combo = 0; r.crashN = 0;
   r.meteor.visible = false; r.atk = 0;
   spray(r, 40, 4.2);
@@ -1279,7 +1595,8 @@ function stepRacer(r, dt){
     r.fall -= dt;
     r.body.rotation.set(-1.35, 0, Math.sin(DESC.t*7)*0.12);
     r.x += r.vx*dt; r.z += r.vz*dt;
-    r.vx *= 0.94; r.vz *= 0.94;
+    const fd = Math.pow(K.fallDrag, dt);
+    r.vx *= fd; r.vz *= fd;
     r.y = groundYAt(r.x, r.z);
     r.spd = Math.hypot(r.vx, r.vz);
     r.gfx.position.set(r.x, r.y, r.z);
@@ -1326,7 +1643,7 @@ function stepRacer(r, dt){
   const hard = hardnessAt(r.x, r.z);
   const srf  = surfaceAt(r.x, r.z, _srf);
 
-  if(!r.air){
+  if(!r.air && !r.grind){
     /* ---------- GRAVEDAD PROYECTADA EN EL PLANO ----------
        G - (G·n)n. De aquí sale todo: la velocidad terminal, que una
        hondonada acelere y que atravesar la ladera te pare. */
@@ -1437,7 +1754,7 @@ function stepRacer(r, dt){
      Si te has soltado, el board vuelve a alinearse con la velocidad. Derrapar
      pasa de "castigo del que no ha calculado" a recurso vistoso del que se
      recupera solo. Es la diferencia entre pelearse con el juego y lucirse. */
-  if(!r.air && r.skid > 0.0001 && r.spd > 6 && r.fall <= 0){
+  if(!r.air && !r.grind && r.skid > 0.0001 && r.spd > 6 && r.fall <= 0){
     const vYaw = Math.atan2(r.vx, -r.vz);
     let d = vYaw - r.yaw;
     while(d >  Math.PI) d -= TAU;
@@ -1448,9 +1765,9 @@ function stepRacer(r, dt){
   /* GIRO POR GRAVEDAD: a poca velocidad el morro cae solo hacia la línea de
      máxima pendiente (el peso tira de la punta). Es la salida natural del
      callejón de arriba y además hace que arrancar se sienta bien. */
-  if(!r.air && r.fall <= 0){
-    const w = 1 - clamp(r.spd / 25, 0, 1);
-    r.yaw -= Math.sin(r.yaw) * K.fallTurn * w * dt;
+  if(!r.air && !r.grind && r.fall <= 0){
+    const w = 1 - clamp(r.spd / K.fallTurnV, 0, 1);
+    if(w > 0) r.yaw -= Math.sin(r.yaw) * K.fallTurn * w * dt;
   }
 
   r.x += r.vx * dt; r.z += r.vz * dt;
@@ -1460,7 +1777,19 @@ function stepRacer(r, dt){
      vT = velocidad vertical que exige el terreno bajo mis pies. Si el terreno
      cae MÁS rápido de lo que la gravedad me puede bajar, despego. Es lo que
      hace que un lomo o el labio de una rampa lancen sin impulso escrito. */
-  if(!r.air){
+  /* ---------- PRECIPICIO: pisar el aire ----------
+     Al pasar el labio de un hueco simplemente dejas de tener suelo. No hay
+     impulso ni animación: te vas con la velocidad que llevaras, que es
+     exactamente lo que decide si lo cruzas o no. */
+  if(!r.air && !r.grind && huecoAt(r.z)){
+    r.air = true; r.vy = Math.min(0, r._vT || 0); r.airVy0 = 0; r._vT = NaN;
+  }
+  /* ---------- CAERSE AL VACÍO ----------
+     No puede matarte ni acabarte la run (esto es una transición): te repone en
+     el borde de salida habiendo perdido tiempo y casi toda la velocidad. */
+  if(enVacio(r.y, r.z)) reponer(r);
+
+  if(!r.air && !r.grind){
     const gy = padY(r.x, r.z, fx, fz);
     const vT = (gy - r.y) / dt;
     /* PRIMER paso tras tocar suelo: no hay _vT anterior con el que comparar.
@@ -1486,7 +1815,7 @@ function stepRacer(r, dt){
      ARCADE: soltar el botón salta, pero si lo sueltas rápido saltas IGUAL de
      bien (K.ollieMin ya es un salto de verdad). Cargar es para el truco largo.
      La v4 obligaba a cargar para despegar y eso se sentía a peaje. */
-  if(!r.air && r.crash <= 0){
+  if(!r.air && !r.grind && r.crash <= 0){
     if(inp.jump){ r.charge = Math.min(K.ollieChg, r.charge + dt); }
     else if(r.charge > 0){
       r.air = true;
@@ -1546,8 +1875,52 @@ function stepRacer(r, dt){
     if(Math.abs(vn) > 12) crash(r, 'borde');
   }
 
+  /* ---------- ►GRINDING ---------- */
+  if(r.grind){
+    const R = r.grind;
+    r.x = R.x;                                   // el raíl manda en el lateral
+    r.y = terrainY(R.x, r.z) + R.alto;
+    r.air = false; r.vy = 0; r.vx = 0;
+    r.vz *= Math.pow(K.grindFric, dt * 60);
+    r.spd = Math.abs(r.vz);
+    /* el equilibrio se tuerce solo y se corrige con el stick */
+    r.gBal += (R.dir * K.grindDrift + inp.ax * K.grindFix) * dt;
+    r.pts += K.grindPts * dt;
+    r._grindT = (r._grindT || 0) + dt;
+    if(Math.random() < 0.5) emit(r.x + (Math.random()-0.5)*0.8, r.y + 0.2, r.z + 1.2,
+        (Math.random()-0.5)*5, 1 + Math.random()*3, 4 + Math.random()*6, 0.13);
+    const salir = inp.jump && !r._jumpHeld;
+    if(Math.abs(r.gBal) > 1 || r.z <= R.z1 || r.spd < 5 || salir){
+      const perdido = Math.abs(r.gBal) > 1;
+      r.grind = null;
+      r.air = true; r.vy = salir ? K.grindOut + 4 : K.grindOut;
+      r.airVy0 = r.vy;
+      if(perdido){ fall(r); }
+      else {
+        r.pts += Math.round(60 * (r._grindT || 0));
+        r._lastTrick = 'GRIND ' + (r._grindT||0).toFixed(1) + 's'; r._lastTrickT = 1.2;
+      }
+      r._grindT = 0;
+    }
+    r._jumpHeld = inp.jump;
+  } else if(r.air && r.vy < 0 && r.spd > K.grindMinV && !r.trick){
+    /* ¿estoy cayendo justo encima de un raíl? */
+    const R = railAt(r.z);
+    if(R && Math.abs(r.x - R.x) < K.grindSnapX){
+      const ry = terrainY(R.x, r.z) + R.alto;
+      if(r.y > ry - 0.6 && r.y < ry + K.grindSnapY){
+        r.grind = R; r.gBal = 0; r._grindT = 0;
+        r.vz = -Math.hypot(r.vx, r.vz);            // toda la velocidad al raíl
+        r.vx = 0; r.y = ry; r.air = false; r.vy = 0;
+        R.dir = R.dir || (Math.random() < 0.5 ? -1 : 1);
+        r._lastTrick = '¡GRIND!'; r._lastTrickT = 0.8;
+        if(r.human) camKick(0.9);
+      }
+    }
+  }
+
   /* ---------- AIRE: trucos y ATERRIZAJE POR ABSORCIÓN ---------- */
-  if(r.air){
+  if(r.air && !r.grind){
     /* los saltitos de chatter (medio metro sobre un lomo) NO son un salto:
        si dejas encadenar trucos ahí, el aterrizaje a medias te tumba sin que
        el jugador entienda por qué */
@@ -1580,6 +1953,7 @@ function stepRacer(r, dt){
          empuje en el eje del board. Cuanto mejor encares la pendiente, menos
          impacto hay y más se conserva: caer bien pasa a ser rentable, no solo
          "no ser castigado". Y el board se endereza un poco solo. */
+      if(r.human) camKick(Math.min(K.kickMax, impacto * K.kickLand));
       if(impacto > 4 && !r.trick){
         const b = impacto * K.landBoost;
         r.vx += fx * b; r.vz += fz * b;
@@ -1607,7 +1981,7 @@ function stepRacer(r, dt){
   }
 
   /* ---------- rastro y polvo en el suelo ---------- */
-  if(!r.air && r.fall <= 0){
+  if(!r.air && !r.grind && r.fall <= 0){
     const carve = clamp(r.slip / 16, 0, 1);
     r._trailAcc += r.spd * dt;
     if(r._trailAcc >= K.trailEvery){
@@ -1779,16 +2153,22 @@ function stepCamera(dt){
   if(!_camInit){ DESC.cam.position.copy(_camPos); _camInit = true; }
   else DESC.cam.position.lerp(_camPos, Math.min(1, K.camLag*dt));
 
+  /* muelle del golpe de cámara: se hunde de golpe y vuelve rebotando */
+  const KK = DESC.kick;
+  KK.v += (-K.kickSpring * KK.y - K.kickDamp * KK.v) * dt;
+  KK.y += KK.v * dt;
+  if(Math.abs(KK.y) < 0.002 && Math.abs(KK.v) < 0.02){ KK.y = 0; KK.v = 0; }
+
   const sh = k * K.shakeSpeed;
   DESC.cam.position.x += (Math.random()-0.5)*sh;
-  DESC.cam.position.y += (Math.random()-0.5)*sh;
+  DESC.cam.position.y += (Math.random()-0.5)*sh + KK.y;
   DESC.cam.lookAt(_camLook);
   DESC.cam.updateMatrixWorld();
 
   if(DESC.backdrop) DESC.backdrop.position.set(DESC.cam.position.x, DESC.cam.position.y, DESC.cam.position.z);
   if(DESC.sky) DESC.sky.position.copy(DESC.cam.position);
 
-  const want = K.fovBase + K.fovSpeed * k * k;
+  const want = K.fovBase + K.fovSpeed * k * k - KK.y * K.kickFov;
   DESC.cam.fov += (want - DESC.cam.fov) * Math.min(1, 5*dt);
   DESC.cam.updateProjectionMatrix();
 }
@@ -1907,6 +2287,7 @@ function start(seed){
   for(let i = 0; i < 4; i++) DESC.racers.push(makeRacer(i, i < HUMANS));
   DESC.t = 0; DESC.phase = 'countdown'; DESC.count = 3.2;
   DESC.finishOrder = []; _camInit = false; DESC._acc = 0; DESC._why = {};
+  DESC.kick.y = DESC.kick.v = 0;
   DESC.orb.yaw = DESC.orb.pitch = 0; DESC.orb.idle = 9;
   DESC._zn = null; DESC._znT = 0;
   console.log('[descenso] semilla=' + seed + ' · ' + DESC.obst.length + ' props · piel=' + SKIN +
