@@ -1524,6 +1524,16 @@ const VISUAL = {
   rim:  { color:0xb8d8ff, intensity:0.32, pos:[-26, 22, -26] },   // [int 0.10–0.60]
   // RELLENO LATERAL espejado izq/der (esculpe los lados) — SIN sombra
   side: { color:0xffffff, intensity:0.26, pos:[58, 16, 6] },      // [int 0.10–0.60]
+  /* ►S2LUZ2 · SUELO DE SOMBRA (luz ambiente, por stage). Es lo ÚNICO que levanta una cara que no
+     mira a ninguna luz: el hemisférico reparte según hacia dónde apunta la normal, así que a una
+     cara VERTICAL le llega la mezcla a medias y poco más, y el faldón de las plataformas —que es un
+     marrón medio (#6b512f), no negro— acababa leyendo como una banda negra pegada al canto.
+     0 = apagada (todos los stages salvo el 2 se quedan EXACTAMENTE como estaban).
+     Ojo si se toca: una luz ambiente NO entra en la clave de programa de los materiales (three la
+     suma en el uniform `ambientLightColor`), así que se puede crear al arrancar y modular su
+     intensidad por stage sin provocar recompilaciones — que es justo lo contrario de añadir una
+     direccional o una point (ver la ficha de precalentado de GPU). */
+  fill: { color:0xbfd0d8, intensity:0 },                          // [int 0–0.30] súbelo y sube el suelo de las sombras
   // NIEBLA aérea (color del horizonte) — separa islas cercanas de lejanas
   fog:  { color:0xdfe8f4, near:72, far:142 },   // ►LOOK-C: niebla casada con el nuevo horizonte crema · [near 40–100][far 120–180] far↓ = más bruma pero +pop-in del belt lejano
   // ►DEPTH: PROFUNDIDAD TONAL (perspectiva aérea). La niebla SOLO TIÑE, y además empieza tan lejos
@@ -1939,6 +1949,10 @@ const sideR = new THREE.DirectionalLight(LIGHT_RIG.side.color, LIGHT_RIG.side.in
 sideR.position.set(LIGHT_RIG.side.pos[0], LIGHT_RIG.side.pos[1], LIGHT_RIG.side.pos[2]); sideR.castShadow = false; scene.add(sideR);
 const sideL = new THREE.DirectionalLight(LIGHT_RIG.side.color, LIGHT_RIG.side.intensity);
 sideL.position.set(-LIGHT_RIG.side.pos[0], LIGHT_RIG.side.pos[1], LIGHT_RIG.side.pos[2]); sideL.castShadow = false; scene.add(sideL);
+/* ►S2LUZ2 · SUELO DE SOMBRA: se crea SIEMPRE y arranca a 0 (ver VISUAL.fill). Existir desde el
+   principio con intensidad 0 no cambia nada visualmente y evita añadir una luz a mitad de partida. */
+const fillLight = new THREE.AmbientLight(LIGHT_RIG.fill.color, LIGHT_RIG.fill.intensity);
+scene.add(fillLight);
 /* LUCES DE FUEGO (rendimiento): SOLO 3 point-lights reales reutilizables que cada frame SIGUEN a
    las hogueras/antorchas más cercanas a los jugadores → iluminación real (charcos, contraste)
    donde está la acción, sin pagar decenas de luces. Las demás fogatas quedan decorativas. */
@@ -20138,6 +20152,19 @@ function applyStageTheme(stage){
     VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.40;
     VISUAL.rim.color = 0xe2f2ff; VISUAL.rim.intensity = 0.32;                        // contraluz frío (color S2 por legibilidad) a intensidad EQUILIBRADO
     VISUAL.side.color = 0xcfe0d8; VISUAL.side.intensity = 0.26;
+    /* ►S2LUZ2 (Toni, 2ª pasada: "siguen saliendo sombras muy duras en uno de los lados de las
+       plataformas"). La 1ª pasada (►S2LUZ) bajó el sol y subió el hemisférico, y aun así seguía.
+       No era el shadow map: con `sun.castShadow=false` la banda negra del canto NO desaparece, y con
+       `shadowMap.type=PCFShadowMap`+radio tampoco. Lo que la quita es RELLENO — comprobado con un
+       tablero A/B en la misma toma:
+         · subir el `ground` del hemisférico (0x6a5f52 → 0x9a8f7a): NO se nota. Una cara vertical
+           recibe la mezcla a medias cielo/suelo, así que mover solo el suelo vale la mitad de poco.
+         · hemi 0.55 y laterales 0.45: mejoran un pelo y de paso aplanan las tapas.
+         · luz AMBIENTE: es la única que llega a una cara que no mira a ninguna luz. A 0.08 el canto
+           sigue casi negro; a 0.18 lee como la tierra marrón que es, sin que las tapas pierdan el
+           modelado del sol; a 0.24 ya empieza a aplanar.
+       El faldón, de hecho, nunca fue negro: su material es #6b512f (marrón medio). Era falta de luz. */
+    VISUAL.fill.color = 0xc2d2da; VISUAL.fill.intensity = 0.18;
     VISUAL.fog.color = 0x46554f; VISUAL.fog.near = 34; VISUAL.fog.far = 122;          // ►S2FIX2: el color va CASADO con skyMat.bot (misma cifra) → el mar se funde con el cielo y NO hay línea de horizonte. Eso lo hace el COLOR, no la distancia. · far 115→122 y no más: updateBelt culla los segmentos a min(fog.far,92)+8 = 100u, así que a far 150 un segmento aparecía con solo un 57% de niebla encima = pop-in (y subir el cull costaría 2 segmentos más de draw calls)
     if(typeof seaMat!=='undefined') seaMat.color.setHex(0x2d4a33);                    // agua VERDOSA oscura
     for(const c of cloudOccluders) c.visible = false;   // jungla densa en tormenta: fuera nubes de prado (el dosel llena el techo; el occluder clona su material así que tintarlo no vale)
@@ -33675,6 +33702,10 @@ function applyVisual(){
   sideR.position.set(VISUAL.side.pos[0], VISUAL.side.pos[1], VISUAL.side.pos[2]);
   sideL.color.set(VISUAL.side.color); sideL.intensity = VISUAL.side.intensity;
   sideL.position.set(-VISUAL.side.pos[0], VISUAL.side.pos[1], VISUAL.side.pos[2]);
+  // SUELO DE SOMBRA (►S2LUZ2)
+  if(typeof fillLight!=='undefined' && VISUAL.fill){
+    fillLight.color.set(VISUAL.fill.color); fillLight.intensity = VISUAL.fill.intensity;
+  }
   // NIEBLA
   if(scene.fog){ scene.fog.color.set(VISUAL.fog.color); scene.fog.near = VISUAL.fog.near; scene.fog.far = VISUAL.fog.far; }
   // DOF (bokeh) si el composer lo montó
