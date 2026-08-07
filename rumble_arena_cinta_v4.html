@@ -19783,9 +19783,11 @@ function buildSegment(idx){
   scene.add = function(){ for(let i=0;i<arguments.length;i++) seg.group.add(arguments[i]); return scene; };
   const _tbl = (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
   const buildVariant = _tbl[((idx % _tbl.length) + _tbl.length) % _tbl.length];
-  if(STAGE===3) _sjSegProps.length = 0;   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento
+  if(STAGE===3){ _sjSegProps.length = 0; _sjBridgeQ.length = 0; }   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento · ►S3PUENTES: y la cola de puentes pendientes
   if(STAGE===11 && typeof _wSegProps!=='undefined') _wSegProps.length = 0;   // ►WEST: ídem para el western
-  try { buildVariant(); flushGrass(); scatterModelDecor(p0); scatterGrassPatches(p0); }   // césped DESPUÉS de los muros; parches de hierba al final (esquivan caminos/props ya colocados)
+  /* ►S3PUENTES: los puentes de Japón se tienden aquí, con la sala YA construida (ver sjBridge) —
+     y DENTRO del try, que es donde `scene.add` sigue apuntando al grupo del segmento. */
+  try { buildVariant(); if(STAGE===3) _sjFlushBridges(); flushGrass(); scatterModelDecor(p0); scatterGrassPatches(p0); }   // césped DESPUÉS de los muros; parches de hierba al final (esquivan caminos/props ya colocados)
   finally { scene.add = origAdd; flushGrass(); _CAP = false; _segP0 = 0; }   // por si algo quedó pendiente
   if(STAGE===3 && typeof _sjResolvePropClashes==='function') _sjResolvePropClashes(p0);   // ►S3CLEAR: retira props que un puente/plataforma de este segmento atraviese (ya existen todas)
   if(STAGE===11 && typeof _wResolvePropClashes==='function') _wResolvePropClashes(p0);    // ►WEST: ídem
@@ -21719,6 +21721,24 @@ function _s2AnyFloorAt(x, z, yLo, yHi){
   }
   return null;
 }
+/* ►S3PUENTES · ¿este punto está DENTRO del CUERPO de una losa? _s2AnyFloorAt solo mira la TAPA
+   (`pl.topY` dentro de una banda), y por eso no veía el caso más feo de todos: un puente bajo que
+   cruza POR DENTRO de una plataforma alta. Medido en el S3: un puente a y=-3,1 metido en una losa
+   cuya tapa está a 0,8 y cuya tierra colgante baja hasta ~-4 — la tapa quedaba 4u por encima de la
+   banda que se consultaba, así que el recorte lo daba por libre y el puente salía del interior de la
+   piedra. Aquí se mira el VOLUMEN [baseY, topY], que es lo que de verdad se ve.
+   Solo losas SÓLIDAS: un flotante o el tablón de otro puente son laminares, no tienen cuerpo. */
+function _s2SolidBodyAt(x, z, yLo, yHi){
+  for(let i=Math.max(0, _segP0|0); i<platforms.length; i++){ const pl = platforms[i];
+    if(!pl.solid || pl._fell || pl._bossNoFloor || pl._bridge) continue;
+    if(pl.blob){ if(!_inBlob(pl, x, z, 0)) continue; }
+    else if(!(x>=pl.minX && x<=pl.maxX && z>=pl.minZ && z<=pl.maxZ)) continue;
+    const lo = (pl.baseY != null) ? pl.baseY : (pl.topY - 0.9);
+    if(yHi > lo + 0.02 && yLo < pl.topY - 0.02) return pl.topY;
+  }
+  return null;
+}
+let _brSeq = 0;   // contador de puentes (solo para etiquetar sus tablones, ver _bridge)
 function addRopeBridge(x1, z1, x2, z2, y, opts){
   opts = opts || {};
   const width = opts.width || 2.6;
@@ -21733,23 +21753,55 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
      hardcode escena a escena. Ahora se RECORTAN los tablones de los EXTREMOS que caen sobre suelo ya
      existente (deck, flotante u otro puente). Solo extremos: el centro nunca queda con agujeros. */
   if((STAGE===2 || STAGE===3 || STAGE===4 || STAGE===11) && !opts._trimmed){   // ►S3FIX: Japón · ►SWFIX: western · ►S4FIX: y el DESIERTO (6 de sus 8 puentes tenían un extremo DENTRO del AABB de la plataforma y 4 quedaban por debajo de su cota)
+    /* ►S3PUENTES: se muestrea A LO ANCHO del tablón, no solo su eje. Con una sola muestra en el
+       centro, un puente que entra por el CANTO de una losa (media anchura dentro, media fuera) no se
+       detectaba y se quedaba mordiendo la plataforma — que es la mitad de los choques medidos. */
     const busy = (i)=>{
       const tc = (i+0.5)/n, py = y - sag*Math.sin(Math.PI*tc);
-      const px = alongX ? (x1 + (x2-x1)*tc) : cxM, pz = alongX ? czM : (z1 + (z2-z1)*tc);
-      return _s2AnyFloorAt(px, pz, py-1.5, py+2.5) !== null;   // suelo a la altura del tablón, o techo a menos de 2,5u
+      const bx = alongX ? (x1 + (x2-x1)*tc) : cxM, bz = alongX ? czM : (z1 + (z2-z1)*tc);
+      const off = Math.max(0, width*0.5 - 0.25);
+      for(const s of [-off, 0, off]){
+        const px = alongX ? bx : (bx + s), pz = alongX ? (bz + s) : bz;
+        if(_s2AnyFloorAt(px, pz, py-1.5, py+2.5) !== null) return true;   // suelo a la altura del tablón, o techo a menos de 2,5u
+        if(_s2SolidBodyAt(px, pz, py-0.34, py+0.12) !== null) return true; // …o el tablón va POR DENTRO de una losa
+      }
+      return false;
     };
-    let i0 = 0, i1 = n-1;
-    while(i0 <= i1 && busy(i0)) i0++;
-    while(i1 >= i0 && busy(i1)) i1--;
-    if(i1 - i0 + 1 < 3){ console.warn('[►S2FIX] puente descartado (todo él sobre suelo existente):', x1, z1, '→', x2, z2, 'y', y); return null; }
-    if(i0 > 0 || i1 < n-1){
-      const tA = i0/n, tB = (i1+1)/n;
-      console.warn('[►S2FIX] puente recortado', x1, z1, '→', x2, z2, 'y', y, '· tablones', i0, '..', i1, 'de', n);
-      return addRopeBridge(x1 + (x2-x1)*tA, z1 + (z2-z1)*tA, x1 + (x2-x1)*tB, z1 + (z2-z1)*tB, y,
-                           Object.assign({}, opts, { _trimmed:true }));
+    /* ►S3PUENTES · SE PARTE EN TRAMOS, ya no solo se recorta por los extremos.
+       El recorte por extremos no puede arreglar un choque en MITAD del vano, y ese era justo el caso
+       que quedaba: un puente que entra por un lado de una losa y sale por el otro tiene los dos
+       extremos libres, así que los dos bucles de recorte no avanzaban ni un tablón y el puente se
+       construía entero atravesando la piedra (medido: 39 tablones por cinta así).
+       Ahora se calcula la máscara de todo el vano y se levanta UN PUENTE POR CADA TRAMO LIBRE. Así
+       un puente que cruza una plataforma por el medio se convierte en dos puentes que llegan a sus
+       bordes —el paso se conserva, porque por encima de la losa ya se camina— en vez de desaparecer
+       o de atravesarla. Los tramos de menos de 3 tablones se descartan (un puente de dos tablones no
+       es un puente). */
+    const libre = [];
+    for(let i=0;i<n;i++) libre.push(!busy(i));
+    if(libre.some(v=>!v)){
+      const tramos = [];
+      let a = -1;
+      for(let i=0;i<=n;i++){
+        if(i<n && libre[i]){ if(a<0) a = i; }
+        else if(a>=0){ if(i-a >= 3) tramos.push([a, i-1]); a = -1; }
+      }
+      if(!tramos.length){
+        console.warn('[►S3PUENTES] puente descartado (todo él sobre/dentro de suelo existente):', x1, z1, '→', x2, z2, 'y', y);
+        return null;
+      }
+      console.warn('[►S3PUENTES] puente partido en', tramos.length, 'tramo(s)', x1, z1, '→', x2, z2, 'y', y, '· de', n, 'tablones');
+      let ultimo = null;
+      for(const [a0, b0] of tramos){
+        const tA = a0/n, tB = (b0+1)/n;
+        ultimo = addRopeBridge(x1 + (x2-x1)*tA, z1 + (z2-z1)*tA, x1 + (x2-x1)*tB, z1 + (z2-z1)*tB, y,
+                               Object.assign({}, opts, { _trimmed:true }));
+      }
+      return ultimo;
     }
   }
   const ropeMat  = (M.woodD || M.brick);   // ►LTSTAM: antes tanteaba M_LIANA, que ya era SIEMPRE null (sin lianas) → mismo material de siempre
+  const _brId = ++_brSeq;
   const g = new THREE.Group(); g.userData.noOcc = true;
   for(let i=0;i<n;i++){
     const t0 = i/n, t1 = (i+1)/n, tc = (i+0.5)/n;
@@ -21761,10 +21813,15 @@ function addRopeBridge(x1, z1, x2, z2, y, opts){
     const plank = _facetBox(alongX ? segL*0.84 : width, 0.16, alongX ? width : segL*0.84, plankPal, 0.10);
     plank.position.set(cx, py, cz); plank.castShadow = plank.receiveShadow = true; g.add(plank);
     // colisión CONTIGUA (cubre [t0,t1] sin hueco) a la altura combada del tablón
+    /* `_bridge` = {id, i, n}: identifica el puente y la POSICIÓN del tablón dentro de él. Hace falta
+       para poder medir: un tablón del EXTREMO montado sobre su losa de anclaje es lo correcto (si no
+       el puente no engancha con nada), mientras que uno del INTERIOR metido en una losa es el fallo.
+       Sin distinguirlos, cualquier recuento mezcla las dos cosas y no dice nada. */
+    const _brTag = { id:_brId, i, n };
     if(alongX){ const a0 = x1+(x2-x1)*t0, a1 = x1+(x2-x1)*t1;
-      platforms.push({ minX:Math.min(a0,a1), maxX:Math.max(a0,a1), minZ:czM-width/2, maxZ:czM+width/2, topY:py+0.09, baseY:py-0.5, float:true, step:0.55 }); }   // step: SUBIR la rampa de la comba no te descuelga (fix "el puente traspasa")
+      platforms.push({ minX:Math.min(a0,a1), maxX:Math.max(a0,a1), minZ:czM-width/2, maxZ:czM+width/2, topY:py+0.09, baseY:py-0.5, float:true, step:0.55, _bridge:_brTag }); }   // step: SUBIR la rampa de la comba no te descuelga (fix "el puente traspasa")
     else { const a0 = z1+(z2-z1)*t0, a1 = z1+(z2-z1)*t1;
-      platforms.push({ minX:cxM-width/2, maxX:cxM+width/2, minZ:Math.min(a0,a1), maxZ:Math.max(a0,a1), topY:py+0.09, baseY:py-0.5, float:true, step:0.55 }); }
+      platforms.push({ minX:cxM-width/2, maxX:cxM+width/2, minZ:Math.min(a0,a1), maxZ:Math.max(a0,a1), topY:py+0.09, baseY:py-0.5, float:true, step:0.55, _bridge:_brTag }); }
   }
   for(const s of [-1,1]) for(let i=0;i<n;i++){        // 2 barandillas de cuerda (siguen la comba)
     const tc = (i+0.5)/n, dip = -sag*Math.sin(Math.PI*tc);
@@ -23173,7 +23230,14 @@ function sjPond(x, z, topY, r){
     _sjKoi.push({ m:fish, cx:x, cz:z, r:rr, a:Math.random()*6.283, spd:(0.5 + Math.random()*0.5)*(Math.random()<0.5?1:-1), y:topY+0.045, ph:Math.random()*6.283, pond:pondIdx });
   }
 }
-function sjBridge(x, z, topY, yaw){
+/* ►S3PUENTES · OJO CON EL NOMBRE. Esta es la PASARELA DE ESTANQUE (el arco `sj_bridge` del jardín),
+   y se llamaba `sjBridge` igual que el PUENTE COLGANTE de más abajo (línea ~23670). Dos `function`
+   con el mismo nombre en el mismo ámbito: gana la SEGUNDA, así que esta estaba muerta y sus tres
+   llamadas (`sjBridge(-6, 3.5, 0, 0)`) entraban en el puente colgante con los argumentos
+   desplazados — (x1,z1,x2,z2) = (-6, 3.5, 0, 0) y sin altura — tendiendo un puente de cuerda de
+   través sobre la plaza, justo encima del estanque. Ese era uno de los "puentes que chocan con las
+   plataformas". Renombrada; el arco vuelve a ser un arco. */
+function sjPondBridge(x, z, topY, yaw){
   const m = addPropSJ('sj_bridge', x, z, topY, 1, yaw||0);
   if(!m) return null;
   /* pasarela: rect PISABLE sobre el arco (span 6.2 → cubierta ≈5.4×1.6, ápice ≈ +0.95) */
@@ -23661,11 +23725,29 @@ function s5Bridge(x1, z1, x2, z2, yFallback, opts){
   }
   return addRopeBridge(a.x, a.z, b.x, b.z, Math.max(a.topY, b.topY), opts);
 }
+/* ►S3PUENTES · LOS PUENTES DE JAPÓN SE TIENDEN AL FINAL, NO DONDE SE ESCRIBEN.
+   El recorte de addRopeBridge solo ve las plataformas que YA existen en `platforms`, y sjLattice
+   corre al PRINCIPIO de cada sala: sus cuatro puentes se validaban contra media sala y después
+   llegaban las losas propias de la sala y los atravesaban. Medido antes de esto: 39 tablones por
+   cinta metidos dentro de una losa y 31 tumbados encima de una.
+   Ahora sjBridge solo APUNTA el puente; _sjFlushBridges los tiende cuando la sala está entera, con
+   lo cual tanto el ancla (_sjAnchor) como el recorte ven TODO el escenario.
+   OJO al sitio de la llamada: tiene que ser DENTRO del try de buildSegment, mientras `scene.add`
+   sigue secuestrado hacia el grupo del segmento — si se tiende después, el puente se cuelga de la
+   raíz de la escena y se queda quieto mientras la cinta se mueve. */
+let _sjBridgeQ = [];
 function sjBridge(x1, z1, x2, z2, yFallback, opts){
-  const a = _sjAnchor(x1, z1), b = _sjAnchor(x2, z2);
-  const y = (a.topY!=null && b.topY!=null) ? Math.max(a.topY, b.topY)
-          : (a.topY!=null ? a.topY : (b.topY!=null ? b.topY : yFallback));   // ►S3FIX: la altura sale del suelo REAL, no de un literal (había puentes flotando 0.19u y otros metidos dentro de la losa)
-  return addRopeBridge(a.x, a.z, b.x, b.z, y, opts);
+  _sjBridgeQ.push({ x1, z1, x2, z2, yFallback, opts });
+  return null;
+}
+function _sjFlushBridges(){
+  const q = _sjBridgeQ; _sjBridgeQ = [];
+  for(const b of q){
+    const a = _sjAnchor(b.x1, b.z1), c = _sjAnchor(b.x2, b.z2);
+    const y = (a.topY!=null && c.topY!=null) ? Math.max(a.topY, c.topY)
+            : (a.topY!=null ? a.topY : (c.topY!=null ? c.topY : b.yFallback));   // ►S3FIX: la altura sale del suelo REAL, no de un literal (había puentes flotando 0.19u y otros metidos dentro de la losa)
+    addRopeBridge(a.x, a.z, c.x, c.z, y, b.opts);
+  }
 }
 /* ►S3FIX · ¿está libre este rectángulo A ESTA ALTURA? _s2WideClear ignora la altura y por tanto
    rechaza cualquier sitio que tenga algo arriba o abajo; para las rejillas hace falta mirar solo la
@@ -24056,8 +24138,8 @@ function buildSJJardin(){
 function buildSJEstanques(){
   s3Slab(0, 0, 30, 16, 0, 'sakura');                       // pradera central (MAGENTA)
   s3Slab(-27, 0, 10, 12, 0, 'sakura'); s3Slab(27, 0, 10, 12, 0, 'sakura');   // anclas
-  sjPond(-6, 3.5, 0, 2.2); sjBridge(-6, 3.5, 0, 0);        // estanque O + puente E-O
-  sjPond(7, -3, 0, 2.4); sjBridge(7, -3, 0, Math.PI/2);    // estanque E + puente N-S
+  sjPond(-6, 3.5, 0, 2.2); sjPondBridge(-6, 3.5, 0, 0);        // estanque O + puente E-O
+  sjPond(7, -3, 0, 2.4); sjPondBridge(7, -3, 0, Math.PI/2);    // estanque E + puente N-S
   sjPath(-1, -6, 0, 0, 5); sjPath(-11, 3, 0, Math.PI/2, 4);   // caminos SOLO ejes (nunca diagonal)
   addPropSJ('sj_lamp', -9.5, 5.8, 0, 1.0, 0); addPropSJ('sj_lamp', -2.5, 5.8, 0, 1.0, 0);
   sjTaiko(-12, -2, 0);                                      // ►TAIKO junto a los estanques
@@ -24165,7 +24247,7 @@ function buildSJArces(){
   sjMoon(-10, -13, 4.6, -2.0, 0, 'sakura'); sjMoon(-18, -16, 3.8, -4.2, 0, 'stone');   // bancales que BAJAN
   sjMoon(-8, 17, 5.6, 3.0, Math.PI, 'earth');
   addPropSJ('sj_mystic', -8, 18.5, 3.0, 1.35, 0.4);        // el ÁRBOL MÍSTICO (pieza única en su terraza)
-  sjPond(5, -5, 0, 2.2); sjBridge(5, -5, 0, Math.PI/2);    // estanque bajo los arces
+  sjPond(5, -5, 0, 2.2); sjPondBridge(5, -5, 0, Math.PI/2);    // estanque bajo los arces
   sjOdoshi(8.2, -2.4, 0, 2.1); sjZenGarden(12.5, -3.2, 0, 1.8);   // ►shishi-odoshi + karesansui junto al estanque
   sjZenGarden(-11, -4, 0, 1.8);                            // ►2º karesansui al SO de la vega
   sjDaruma(-2, 0, 0, 'z', 5.5, 0.6, 1.2);                  // ►DARUMA bajando y subiendo la vega en z
