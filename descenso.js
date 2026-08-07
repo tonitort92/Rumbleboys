@@ -326,21 +326,31 @@ const K = {
 
   /* --- cámara --- */
   tilt:       0,       // inclinación FALSA. 0: ya hay pendiente real. Para el surf.
-  camPitch:   16,      // picado SOBRE la pendiente local. Medido: con 24 y
-                       // herencia 0,75 la cámara miraba 38° hacia abajo en una
-                       // roja y la bajada se leía como un plano cenital.
-  camSlopeK:  0.85,    // cuánto de la pendiente local hereda el picado: casi
-                       // toda, para ir "dentro" de la ladera y ver el horizonte
+  /* ►CÁMARA AL HOMBRO (petición de Toni: "mucho más cámara al hombro, un poco
+     picada, y que con el ratón puedas rotar un poco y alejarte/acercarte").
+     Antes iba a 34 unidades y casi cenital: los personajes salían del tamaño
+     de una hormiga y la pendiente no se leía. Ahora va pegada y por encima del
+     hombro, con el jinete descentrado — que es lo que da sensación de tercera
+     persona en vez de vista de dron. */
+  camHombro:  2.3,     // desplazamiento lateral (el jinete queda descentrado)
+  camAlto:    1.7,     // altura sobre el jinete
+  camPitch:   11,      // picado SOBRE la pendiente local (era 16 y muy alto)
+  camSlopeK:  0.62,    // cuánto de la pendiente local hereda el picado. A
+                       // cámara corta heredar casi toda la clava en el suelo y
+                       // el cielo desaparece del encuadre.
   camSlopeBase:30,     // sobre cuántas unidades se mide esa pendiente. Con 3 (la
                        // que usa la IA) un lomo la disparaba y en el fuera pista
                        // la cámara se iba a cenital.
   camPitchMin:10 * RAD,
   camPitchMax:36 * RAD,
-  camDist:    34,
-  camDistFast:-7,
-  camLookAhead: 14,    // con 26 el encuadre se comía al jugador por abajo:
-                       // el punto de mira tira de la cámara más que la distancia
-  camLookY:   3.0,
+  camDist:    15.5,    // ← al hombro. La rueda del ratón mueve esto.
+  camDistMin: 7,
+  camDistMax: 26,
+  camDistFast:-2.2,    // se acerca un poco más a tope de velocidad
+  camLookAhead: 5.5,   // a cámara corta hay que mirar MENOS lejos o el jinete
+                       // se va al borde inferior del encuadre (medido: con 9
+                       // salía cortado por abajo)
+  camLookY:   3.4,
   camLookMix: 0.5,     // el punto de mira se queda a media altura entre yo y el
                        // suelo de allí; apuntar al suelo de una pared de 42°
                        // manda la cámara a mirarse los pies
@@ -350,9 +360,12 @@ const K = {
   shakeSpeed: 0.55,
   leash:      70,
   orbSpeed:   2.3,     // rad/s del stick derecho / Q / E
-  orbMouse:   0.006,   // rad por píxel arrastrado
-  orbPitchMin:-28 * RAD,
-  orbPitchMax: 68 * RAD,
+  orbMouse:   0.0042,  // rad por píxel de ratón
+  orbLibre:   true,    // el ratón rota SIN tener que arrastrar (como un shooter)
+  orbYawMax:  75 * RAD,// cuánto se puede girar la vista a cada lado
+  zoomPaso:   2.2,     // unidades por muesca de rueda
+  orbPitchMin:-24 * RAD,
+  orbPitchMax: 48 * RAD,
   /* ►GOLPE DE CÁMARA. La mitad de la sensación de un juego de tabla está en
      que la cámara ACUSA el aterrizaje: se hunde de golpe y rebota. Sin esto,
      caer de una rampa grande y de un bordillo se ven exactamente igual. */
@@ -365,12 +378,12 @@ const K = {
 
   orbHold:    1.2,     // s parado antes de volver sola detrás
   orbBack:    2.4,     // velocidad de recentrado
-  camMinH:    4.6,     // la cámara nunca baja de esto sobre el suelo (ni ella
+  camMinH:    2.2,     // la cámara nunca baja de esto sobre el suelo (ni ella
                        // ni NINGÚN punto entre ella y el jugador)
 
   /* --- efecto de velocidad --- */
-  streakN:    340,
-  streakFrom: 0.25,
+  streakN:    150,    // Con 340 se leían como arañazos blancos sobre el cielo
+  streakFrom: 0.45,   // liso; y arrancaban demasiado pronto.
 
   /* --- IA --- */
   aiBand: 0.14, aiMaxGap: 170, aiLook: 55, aiSkill: [0.93, 0.87, 0.81],
@@ -438,14 +451,14 @@ const PLAN = [
   { z:'roja',  len:280, hw:150, hueco:16 },                    // salto corto: ollie
   { z:'roja',  len:240, hw:60,  tunel:true },                  // estrechamiento + túnel
   { z:'negra', len:300, hw:110, parte:{ largo:230, alto:26 } }, // dos rutas
-  { z:'negra', len:260, hw:150, hueco:52 },                    // GRAN precipicio
+  { z:'negra', len:260, hw:150, hueco:44 },                    // GRAN precipicio
   { z:'verde', len:220, hw:170 },                              // respiro
   { z:'fuera', len:340, hw:200 },
   { z:'fuera', len:260, hw:130, rail:{ x:-22, largo:120 } },
   { z:'roja',  len:280, hw:70  },                              // pasillo de giro
   { z:'roja',  len:260, hw:150, hueco:18 },
   { z:'negra', len:320, hw:120, parte:{ largo:250, alto:30 } },
-  { z:'negra', len:280, hw:170, hueco:62 },                    // el más grande
+  { z:'negra', len:280, hw:170, hueco:54 },                    // el más grande
   { z:'azul',  len:240, hw:74,  tunel:true },
   { z:'azul',  len:260, hw:90,  rail:{ x:16, largo:130 } },
   { z:'roja',  len:300, hw:150 },
@@ -577,19 +590,26 @@ function railAt(z){
 
 /* PIELES. `soft`/`hard` son los dos colores entre los que se interpola el
    terreno según la dureza; encima se mezcla el color de la ZONA. */
+/* PIELES.
+   `zmix` = cuánto del color de la ZONA se mezclaba en el suelo. Va a CERO:
+   Toni, viendo la pista verde: "la arena la pones de colorinchis en lugar de
+   arena normal". Tenía razón — la arena es arena y la nieve es nieve. La
+   dificultad de la zona se lee por las BANDERAS del cambio de tramo y por el
+   HUD, no pintando el desierto de verde. El relieve del terreno lo da ahora el
+   sombreado por dureza y por pendiente, no un tinte plano. */
 const SKINS = {
   arena: { sky:0xf3d6a4, sky2:0xbfd8ea, fog:0xe8c187,
            soft:0xf0d3a0, hard:0xb07f42, wall:0xb8834f, wall2:0x8a6039,
-           rock:0x8a6f4d, ramp:0xa8672c, part:0xf3e0bb, trail:0xb08a55,
-           valley:0xd8ae72, ridge:0xc09a68, sun:0xfff0d0, hemi:0xffe4bc, zmix:0.42 },
+           rock:0x8a6f4d, ramp:0xa8672c, part:0xdcc094, trail:0xb08a55,
+           valley:0xd8ae72, ridge:0xc09a68, sun:0xfff0d0, hemi:0xffe4bc, zmix:0.0 },
   nieve: { sky:0xe8f4ff, sky2:0x9dc4e8, fog:0xd6e7f4,
            soft:0xffffff, hard:0x9fbdd8, wall:0x93a9bb, wall2:0x6f8496,
            rock:0x6d7f8e, ramp:0x7fa8cc, part:0xffffff, trail:0x9fb8cc,
-           valley:0xc6dced, ridge:0xa4bcd2, sun:0xffffff, hemi:0xdcecff, zmix:0.34 },
+           valley:0xc6dced, ridge:0xa4bcd2, sun:0xffffff, hemi:0xdcecff, zmix:0.0 },
   mar:   { sky:0xa8e8f5, sky2:0x4fb0d8, fog:0x76cde2,
            soft:0x4fc4e0, hard:0x14647f, wall:0x4a6b78, wall2:0x37525d,
            rock:0x40606d, ramp:0xcdf6ff, part:0xeafcff, trail:0x8fe0f0,
-           valley:0x2f9fc4, ridge:0x4a8fa8, sun:0xfffbe8, hemi:0xbfeef8, zmix:0.18 },
+           valley:0x2f9fc4, ridge:0x4a8fa8, sun:0xfffbe8, hemi:0xbfeef8, zmix:0.0 },
 };
 const PAL = SKINS[SKIN] || SKINS.arena;
 if(SKIN === 'mar') K.tilt = 7;
@@ -668,6 +688,71 @@ function tablaDe(clase){
   return g;
 }
 
+/* =====================================================================
+   ►ROCAS: una FAMILIA, no el mismo dodecaedro mil veces
+
+   Toni: "siempre usas el mismo asset mierdoso como piedras". Era literal —
+   `DodecahedronGeometry(1,0)` para el borde, para los peñascos del fondo y
+   para los obstáculos. Ahora hay cinco siluetas distintas, todas talladas
+   deformando los vértices de un poliedro con una semilla propia, y cada
+   instancia coge una al azar. Se generan UNA vez y se comparten.
+   ===================================================================== */
+function tallaRoca(base, semilla, rugosidad, achatado){
+  const g = base.clone();
+  const rng = mulberry32(semilla);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  /* los vértices de estos poliedros vienen SIN indexar y repetidos por cara;
+     se deforman por POSICIÓN redondeada para que las caras sigan casando y no
+     se abra la malla en costuras */
+  const cache = new Map();
+  for(let i = 0; i < pos.count; i++){
+    v.fromBufferAttribute(pos, i);
+    const k = v.x.toFixed(3) + '|' + v.y.toFixed(3) + '|' + v.z.toFixed(3);
+    let d = cache.get(k);
+    if(d === undefined){ d = 1 + (mulberry32(semilla ^ (i * 2654435761))() - 0.5) * rugosidad; cache.set(k, d); }
+    v.multiplyScalar(d);
+    v.y *= achatado;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+let _ROCAS = null;
+function geoRocas(){
+  if(_ROCAS) return _ROCAS;
+  const ico = new THREE.IcosahedronGeometry(1, 0);
+  const dod = new THREE.DodecahedronGeometry(1, 0);
+  const oct = new THREE.OctahedronGeometry(1, 1);
+  _ROCAS = [
+    tallaRoca(dod, 0x51a1, 0.55, 0.86),   // canto rodado
+    tallaRoca(ico, 0x7b33, 0.75, 0.62),   // laja tumbada
+    tallaRoca(oct, 0x2c19, 0.50, 1.15),   // punta
+    tallaRoca(ico, 0x9f07, 0.95, 0.95),   // peñasco irregular
+    tallaRoca(dod, 0x3e55, 0.35, 0.48),   // losa plana
+  ];
+  return _ROCAS;
+}
+
+/* props REALES del juego para decorar los lados (nada inventado): plantas del
+   desierto para la piel de arena, pinos y árboles muertos para la de nieve */
+const DECOR = {
+  arena: ['s3_agave', 's3_aloe', 's3_cactusbarrel'],
+  nieve: ['s6_pine', 's6_deadtrees', 's6_bush'],
+  mar:   ['s3_agave', 's6_bush'],
+};
+function propDelJuego(key){
+  try {
+    if(typeof _parseRaw !== 'function' || !window.GAME_MODELS || !window.GAME_MODELS[key]) return null;
+    if(typeof MODEL_CACHE !== 'undefined'){
+      if(!MODEL_CACHE[key]) MODEL_CACHE[key] = _parseRaw(key);
+      return MODEL_CACHE[key] ? MODEL_CACHE[key].clone(true) : null;
+    }
+    const o = _parseRaw(key);
+    return o ? o.clone(true) : null;
+  } catch(e){ return null; }
+}
+
 function GAME_RENDERER(){ return (typeof renderer !== 'undefined') ? renderer : null; }
 function GAME_KEYS(){ return (typeof keys !== 'undefined') ? keys : null; }
 
@@ -678,7 +763,7 @@ const DESC = window.DESC = {
   racers:[], obst:[], buckets:null, picks:null,
   t:0, phase:'countdown', count:3.2,
   finishOrder:[], hud:null, _built:false, _why:{},
-  orb:{ yaw:0, pitch:0, idle:9, mx:0, my:0, down:false },
+  orb:{ yaw:0, pitch:0, idle:9, mx:0, my:0, down:false, wheel:0 },
   kick:{ y:0, v:0 },
 };
 
@@ -895,6 +980,65 @@ function buildScene(){
     const sky = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors:true, side:THREE.BackSide, fog:false }));
     sc.add(sky);
     DESC.sky = sky;
+
+    /* ►CIELO CON ALGO DENTRO. Toni: "nada en el cielo". Era una esfera con un
+       degradado y punto: sin sol, sin nubes y sin ninguna referencia, así que
+       la mitad superior de la pantalla era una pared de color. Todo esto va
+       en el grupo del telón (se mueve con la cámara) y sin fog. */
+    const cielo = new THREE.Group();
+    cielo.renderOrder = -1;
+
+    /* SOL: disco + dos halos concéntricos que se funden */
+    const dirSol = new THREE.Vector3(-0.45, 0.42, -0.79).normalize();
+    for(const [r2, op] of [[95, 1.0], [210, 0.26], [430, 0.11]]){
+      const disco = new THREE.Mesh(new THREE.CircleGeometry(r2, 26),
+        new THREE.MeshBasicMaterial({ color: PAL.sun, transparent:true, opacity:op,
+                                      depthWrite:false, fog:false, side:THREE.DoubleSide }));
+      disco.position.copy(dirSol).multiplyScalar(2150);
+      disco.lookAt(0, 0, 0);
+      cielo.add(disco);
+    }
+
+    /* NUBES: cúmulos de esferas achatadas en dos bandas de altura. Se generan
+       con la semilla, así que el cielo es el mismo para todos los clientes. */
+    const rngC = mulberry32(DESC.seed ^ 0xc10d);
+    /* SIN ILUMINAR (MeshBasic). Con Lambert se ven desde ABAJO, o sea siempre
+       por su cara en sombra: salían gris plomo en un cielo de desierto. Una
+       nube estilizada es una mancha clara, no un objeto sombreado. */
+    const matNube = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true,
+                                                  opacity:0.95, fog:false });
+    const geoNube = new THREE.SphereGeometry(1, 8, 6);
+    const nubes = 42, porNube = 6;
+    const imN = new THREE.InstancedMesh(geoNube, matNube, nubes * porNube);
+    let ni = 0;
+    const mm = new THREE.Matrix4(), qq = new THREE.Quaternion(),
+          pp = new THREE.Vector3(), ss = new THREE.Vector3(), cc = new THREE.Color();
+    for(let k = 0; k < nubes; k++){
+      const ang = rngC() * TAU;
+      const rad = 850 + rngC() * 1100;
+      const alt = 240 + rngC() * 620;
+      const cx = Math.cos(ang) * rad, cz = Math.sin(ang) * rad;
+      const esc = 55 + rngC() * 75;
+      for(let b = 0; b < porNube; b++){
+        pp.set(cx + (rngC()-0.5)*esc*2.6, alt + (rngC()-0.5)*esc*0.5, cz + (rngC()-0.5)*esc*1.6);
+        qq.identity();
+        const rr = esc * (0.5 + rngC()*0.6);
+        ss.set(rr, rr * (0.42 + rngC()*0.2), rr);
+        mm.compose(pp, qq, ss);
+        imN.setMatrixAt(ni, mm);
+        /* las de abajo, un punto más grises: da profundidad al banco de nubes */
+        const g2 = 0.90 + 0.10 * clamp((alt - 240) / 620, 0, 1);
+        cc.setRGB(g2, g2 * 0.985, g2 * 0.96);
+        imN.setColorAt(ni, cc);
+        ni++;
+      }
+    }
+    imN.instanceMatrix.needsUpdate = true;
+    if(imN.instanceColor) imN.instanceColor.needsUpdate = true;
+    cielo.add(imN);
+
+    sc.add(cielo);
+    DESC.cielo = cielo;
   }
 
   const world = new THREE.Group();
@@ -932,9 +1076,25 @@ function buildScene(){
         const y = terrainY(x, z);
         pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
         const h = hardnessAt(x, z);
-        c.copy(cSoft).lerp(cHard, h).lerp(cz, PAL.zmix);
-        const fuera = Math.abs(u) > 1 / OUT ? 0.68 : 1;      // fuera del límite: apagado
-        const shade = (0.90 + 0.10 * h) * fuera;
+        c.copy(cSoft).lerp(cHard, h);
+        if(PAL.zmix > 0) c.lerp(cz, PAL.zmix);
+        /* ►RELIEVE. Sin tinte de zona el suelo sería una plancha lisa (Toni:
+           "todo super plano, sin casi efectos de luz"). El volumen se pinta en
+           el vértice, que es gratis:
+             · PENDIENTE LOCAL: las caras que miran al sol se aclaran y las
+               contrapendientes se oscurecen. Es lo que dibuja los lomos.
+             · CAVIDAD: los valles se hunden en sombra y las lomas se realzan,
+               comparando la altura con la media de alrededor. Oclusión pobre
+               pero legible, y a coste cero en tiempo de ejecución. */
+        const e2 = 6;
+        const hx = terrainY(x + e2, z) - terrainY(x - e2, z);
+        const hz = terrainY(x, z + e2) - terrainY(x, z - e2);
+        const pend = clamp((hz / (2*e2)) * 0.9 + (hx / (2*e2)) * 0.55, -0.5, 0.5);
+        const media = 0.25 * (terrainY(x+14, z) + terrainY(x-14, z) +
+                              terrainY(x, z+14) + terrainY(x, z-14));
+        const cav = clamp((y - media) * 0.10, -0.30, 0.22);
+        const fuera = Math.abs(u) > 1 / OUT ? 0.62 : 1;      // fuera del límite: apagado
+        const shade = (0.88 + 0.12 * h + pend * 0.42 + cav) * fuera;
         col[vi*3] = c.r * shade; col[vi*3+1] = c.g * shade; col[vi*3+2] = c.b * shade;
         vi++;
       }
@@ -1052,28 +1212,37 @@ function buildScene(){
 
   /* --- BORDE DEL ABANICO: rocas siguiendo la semianchura --- */
   {
+    /* Una InstancedMesh POR SILUETA: cinco formas distintas repartidas a lo
+       largo del borde en vez del mismo canto repetido mil veces. */
+    const FORMAS = geoRocas();
     const step = 11, n1 = Math.floor((K.len + 300) / step) * 2;
-    const im = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(1, 0),
-      new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading:true }), n1);
+    const porForma = Math.ceil(n1 / FORMAS.length) + 2;
+    const ims = FORMAS.map(g2 => { const im2 = new THREE.InstancedMesh(g2,
+        new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading:true }), porForma);
+      im2.count = 0; return im2; });
     const base = new THREE.Color(PAL.wall);
-    let i = 0;
     for(let k = 0; k < n1 / 2; k++){
       const z = 120 - k * step, hw = hwAt(z);
       for(const side of [-1, 1]){
+        const f = (rng() * FORMAS.length) | 0;
+        const im2 = ims[f];
+        const i2 = im2.count;
+        if(i2 >= porForma) continue;
         const r  = 3.4 + rng() * 4.6;
         const x  = side * (hw + r * 0.45 + rng() * 3);
-        p.set(x, terrainY(x, z) + r * 0.2 + rng() * 1.4, z + (rng() - 0.5) * 8);
+        p.set(x, terrainY(x, z) + r * 0.18 + rng() * 1.4, z + (rng() - 0.5) * 8);
         q.setFromEuler(new THREE.Euler(rng()*3, rng()*3, rng()*3));
-        s.set(r, r * (0.75 + rng() * 0.6), r);
-        m.compose(p, q, s); im.setMatrixAt(i, m);
-        c.copy(base).offsetHSL((rng()-0.5)*0.03, (rng()-0.5)*0.12, (rng()-0.5)*0.16);
-        im.setColorAt(i, c); i++;
+        s.set(r * (0.8 + rng()*0.5), r * (0.7 + rng() * 0.7), r * (0.8 + rng()*0.5));
+        m.compose(p, q, s); im2.setMatrixAt(i2, m);
+        c.copy(base).offsetHSL((rng()-0.5)*0.04, (rng()-0.5)*0.14, (rng()-0.5)*0.20);
+        im2.setColorAt(i2, c);
+        im2.count = i2 + 1;
       }
     }
-    im.instanceMatrix.needsUpdate = true;
-    if(im.instanceColor) im.instanceColor.needsUpdate = true;
-    world.add(im);
+    /* OJO r128: instanceColor NACE con el tamaño de this.count. Se crea a
+       `porForma` (arriba) y solo DESPUÉS se recorta el count al usado. */
+    ims.forEach(im2 => { im2.instanceMatrix.needsUpdate = true;
+      if(im2.instanceColor) im2.instanceColor.needsUpdate = true; world.add(im2); });
 
     const step2 = 26, nb = Math.floor((K.len + 300) / step2) * 2;
     const im2 = new THREE.InstancedMesh(
@@ -1146,22 +1315,54 @@ function buildScene(){
   const ramps = DESC.obst.filter(o => o.type === 'ramp');
 
   if(rocks.length){
-    const im = new THREE.InstancedMesh(
-      new THREE.DodecahedronGeometry(1, 0),
-      new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading:true }), rocks.length);
+    const FORMAS2 = geoRocas();
+    const cupo = rocks.length + 2;
+    const ims2 = FORMAS2.map(g2 => { const im2 = new THREE.InstancedMesh(g2,
+        new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading:true }), cupo);
+      im2.count = 0; return im2; });
     const base = new THREE.Color(PAL.rock);
-    rocks.forEach((o, i) => {
+    rocks.forEach(o => {
       o.baseY = terrainY(o.x, o.z);
-      p.set(o.x, o.baseY + o.r * 0.45, o.z);
+      const im2 = ims2[(rng() * FORMAS2.length) | 0];
+      const i2 = im2.count;
+      p.set(o.x, o.baseY + o.r * 0.42, o.z);
       q.setFromEuler(new THREE.Euler(o.r, o.x, o.z));
-      s.set(o.r, o.r * 0.85, o.r);
-      m.compose(p, q, s); im.setMatrixAt(i, m);
-      c.copy(base).offsetHSL((rng()-0.5)*0.03, (rng()-0.5)*0.10, (rng()-0.5)*0.14);
-      im.setColorAt(i, c);
+      s.set(o.r * (0.85 + rng()*0.4), o.r * (0.7 + rng()*0.45), o.r * (0.85 + rng()*0.4));
+      m.compose(p, q, s); im2.setMatrixAt(i2, m);
+      c.copy(base).offsetHSL((rng()-0.5)*0.04, (rng()-0.5)*0.12, (rng()-0.5)*0.18);
+      im2.setColorAt(i2, c);
+      im2.count = i2 + 1;
     });
-    im.instanceMatrix.needsUpdate = true;
-    if(im.instanceColor) im.instanceColor.needsUpdate = true;
-    world.add(im);
+    ims2.forEach(im2 => { im2.instanceMatrix.needsUpdate = true;
+      if(im2.instanceColor) im2.instanceColor.needsUpdate = true; world.add(im2); });
+  }
+
+  /* --- DECORADO CON PROPS DEL JUEGO (nada inventado) ---
+     Agaves, aloes y barriles de cactus del stage 3 salpicando los lados de la
+     pista. Se colocan FUERA del corredor útil para no estorbar. */
+  {
+    const claves = DECOR[SKIN] || DECOR.arena;
+    const plantillas = claves.map(propDelJuego).filter(Boolean);
+    if(plantillas.length){
+      let puestos = 0;
+      for(let z2 = -60; z2 > -(K.len - 40); z2 -= 34 + rng() * 40){
+        if(huecoAt(z2)) continue;
+        const hw2 = hwAt(z2);
+        for(const lado of [-1, 1]){
+          if(rng() > 0.55) continue;
+          const tpl = plantillas[(rng() * plantillas.length) | 0];
+          const o = tpl.clone(true);
+          const x2 = lado * (hw2 * (0.80 + rng() * 0.28));
+          const e2 = 1.6 + rng() * 1.8;
+          o.scale.setScalar(e2);
+          o.position.set(x2, terrainY(x2, z2), z2 + (rng() - 0.5) * 20);
+          o.rotation.y = rng() * TAU;
+          o.traverse(q2 => { if(q2.isMesh){ q2.castShadow = false; q2.frustumCulled = true; } });
+          world.add(o); puestos++;
+        }
+      }
+      console.log('[descenso] decorado: ' + puestos + ' props de ' + claves.join('/'));
+    } else console.warn('[descenso] sin props del juego para la piel ' + SKIN);
   }
 
   if(ramps.length){
@@ -1261,8 +1462,12 @@ function buildScene(){
   /* --- PARTÍCULAS --- */
   {
     const N = 460;
-    const im = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(1,0),
-      new THREE.MeshLambertMaterial({ color: PAL.part, transparent:true, opacity:0.95 }), N);
+    /* Toni: "el suelo desprende partículas triangulares en lugar de
+       circulares". Eran tetraedros de 4 caras y a esta escala se leían como
+       triángulos de papel. Ahora son granos ESFÉRICOS de 2 anillos: siguen
+       siendo baratísimos (48 triángulos) y ruedan bien. */
+    const im = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4),
+      new THREE.MeshLambertMaterial({ color: PAL.part, transparent:true, opacity:0.82 }), N);
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     im.frustumCulled = false;
     world.add(im);
@@ -1378,7 +1583,7 @@ function updateStreaks(dt, k){
     S.z[i] += vel * dt;
     if(S.z[i] > 26){ S.on[i] = 0; _m4.makeScale(0,0,0); S.im.setMatrixAt(i, _m4); continue; }
     const rad = Math.hypot(S.x[i], S.y[i]);
-    const largo = (1.2 + 20 * k * k) * Math.min(1, rad / 26);
+    const largo = (0.9 + 11 * k * k) * Math.min(1, rad / 26);
     const gordo = 0.7 + 1.3 * Math.min(1, rad / 30);
     _v3.set(S.x[i], S.y[i], S.z[i]).applyMatrix4(cam.matrixWorld);
     _qt.copy(cam.quaternion);
@@ -1387,7 +1592,7 @@ function updateStreaks(dt, k){
     S.im.setMatrixAt(i, _m4);
   }
   S.im.instanceMatrix.needsUpdate = true;
-  S.im.material.opacity = 0.06 + 0.34 * k;
+  S.im.material.opacity = 0.03 + 0.17 * k;
 }
 
 /* =====================================================================
@@ -1776,7 +1981,7 @@ function spray(r, n, force){
   for(let i = 0; i < n; i++){
     emit(r.x + (Math.random()-0.5)*2.2, gy + 0.3 + Math.random()*0.6, r.z + (Math.random()-0.5)*2.2,
          (Math.random()-0.5)*force*2.2, Math.random()*force*1.5, (Math.random()*0.4+0.5)*force,
-         0.20 + Math.random()*0.34);
+         0.055 + Math.random()*0.085);
   }
 }
 
@@ -2014,7 +2219,7 @@ function stepRacer(r, dt){
     if(!primero && aT < -K.grav * K.airThr && vT < -K.airMin){
       r.air = true;
       r.vy = r._vT + (r.charge > 0 ? K.olliePop * (r.charge / K.ollieChg) : 0);
-      r.airVy0 = r.vy; r.charge = 0;
+      r.airVy0 = r.vy; r.charge = 0; r._noLand = true;
       if(r.vy > 3) spray(r, 8, 2.4);
     } else {
       r.y = gy;
@@ -2032,6 +2237,8 @@ function stepRacer(r, dt){
       r.air = true;
       r.vy = lerp(K.ollieMin, K.ollieMax, r.charge / K.ollieChg);
       r.airVy0 = r.vy; r.charge = 0;
+      r._noLand = true;                  // ← ver la nota en el bloque de AIRE
+      r.y += 0.06;
       spray(r, 8, 2.2);
     }
   }
@@ -2148,8 +2355,16 @@ function stepRacer(r, dt){
         r.trick = null; r.trickT = 0; r.body.rotation.set(0,0,0);
       }
     }
+    /* ►EL BUG QUE MATABA EL SALTO (lo cazó Toni jugando: "ya no puedo saltar").
+       El ollie pone air=true unas líneas más arriba, en ESTE MISMO frame, y en
+       ese instante r.y sigue valiendo exactamente la altura del suelo — porque
+       el bloque de seguimiento del terreno se la acaba de asignar. Así que la
+       comprobación de aterrizaje se cumplía al vuelo y te aterrizaba en el
+       frame cero: nunca despegabas, sin error ni aviso. El frame del despegue
+       NO se comprueba; a partir del siguiente ya hay integración de vy. */
     const gy = padY(r.x, r.z, fx, fz);
-    if(r.y <= gy){
+    if(r._noLand){ r._noLand = false; }
+    else if(r.y <= gy){
       r.y = gy;
       r.air = false;
       const sf = surfaceAt(r.x, r.z, _srf);
@@ -2199,11 +2414,11 @@ function stepRacer(r, dt){
       r._trailAcc = 0;
       dropTrail(r.x, r.z, r.yaw, 1.7 + carve*1.8);
     }
-    if(Math.random() < 0.10 + carve*0.9 + (r.spd/90)*0.3){
+    if(Math.random() < 0.06 + carve*0.55 + (r.spd/90)*0.2){
       const s2 = Math.sign(r.vx*Math.cos(r.yaw) + r.vz*Math.sin(r.yaw)) || 1;
       emit(r.x - Math.cos(r.yaw)*s2*0.9, r.y + 0.25, r.z - Math.sin(r.yaw)*s2*0.9,
            -r.vx*0.15 + (Math.random()-0.5)*3, 1.5 + Math.random()*3.5 + carve*7,
-           -r.vz*0.15 + (Math.random()-0.5)*3, 0.16 + Math.random()*0.22 + carve*0.26);
+           -r.vz*0.15 + (Math.random()-0.5)*3, 0.045 + Math.random()*0.06 + carve*0.075);
     }
   }
 
@@ -2275,6 +2490,11 @@ let _camInit = false;
 function orbitInput(dt){
   const o = DESC.orb, kk = GAME_KEYS() || {};
   let dy = 0, dp = 0, tocado = false;
+  /* la rueda acerca y aleja (Toni: "alejarte y acercarte un poquito") */
+  if(o.wheel){
+    K.camDist = clamp(K.camDist + o.wheel * K.zoomPaso, K.camDistMin, K.camDistMax);
+    o.wheel = 0;
+  }
   if(kk['KeyQ']) dy -= 1;
   if(kk['KeyE']) dy += 1;
   if(navigator.getGamepads){
@@ -2288,18 +2508,18 @@ function orbitInput(dt){
   if(dy || dp) tocado = true;
   o.yaw   += dy * K.orbSpeed * dt;
   o.pitch += dp * K.orbSpeed * 0.6 * dt;
-  if(o.mx || o.my){                        // arrastre de ratón acumulado
+  if(o.mx || o.my){                        // movimiento de ratón acumulado
     o.yaw   += o.mx * K.orbMouse;
     o.pitch -= o.my * K.orbMouse;
     o.mx = o.my = 0; tocado = true;
   }
+  o.yaw = clamp(o.yaw, -K.orbYawMax, K.orbYawMax);   // no se puede dar la vuelta entera
   o.idle = tocado ? 0 : o.idle + dt;
   if(o.idle > K.orbHold){                  // vuelve sola detrás
     const k = Math.min(1, K.orbBack * dt);
     o.yaw   -= o.yaw * k;
     o.pitch -= o.pitch * k;
   }
-  o.yaw = ((o.yaw + Math.PI) % TAU + TAU) % TAU - Math.PI;
   o.pitch = clamp(o.pitch, K.orbPitchMin, K.orbPitchMax);
 }
 
@@ -2328,9 +2548,14 @@ function stepCamera(dt){
   const sl = Math.atan2(groundYAt(r.x, r.z) - groundYAt(r.x + rfx*B, r.z + rfz*B), B);
   const p = clamp(K.camPitch * RAD + sl * K.camSlopeK, K.camPitchMin, K.camPitchMax) + o.pitch;
   const dist = K.camDist + K.camDistFast * k;
-  const set = d => _camPos.set(_camLook.x - fx * Math.cos(p) * d,
-                               _camLook.y + Math.sin(p) * d,
-                               _camLook.z - fz * Math.cos(p) * d);
+  /* AL HOMBRO: además de ir detrás, se desplaza de lado y sube, y el punto de
+     mira se desplaza con ella. Es lo que separa "tercera persona" de "dron". */
+  const lax = Math.cos(yawW), laz = Math.sin(yawW);        // eje lateral de la vista
+  _camLook.x += lax * K.camHombro * 0.55;
+  _camLook.z += laz * K.camHombro * 0.55;
+  const set = d => _camPos.set(_camLook.x - fx * Math.cos(p) * d + lax * K.camHombro,
+                               _camLook.y + Math.sin(p) * d + K.camAlto,
+                               _camLook.z - fz * Math.cos(p) * d + laz * K.camHombro);
   /* ---------- LA CÁMARA NO SE METE EN LA MONTAÑA ----------
      Mirar solo el suelo BAJO la cámara no basta: en una ladera de 42° el
      terreno se cruza ENTRE el jugador y la cámara, y lo que se ve es un
@@ -2378,6 +2603,7 @@ function stepCamera(dt){
 
   if(DESC.backdrop) DESC.backdrop.position.set(DESC.cam.position.x, DESC.cam.position.y, DESC.cam.position.z);
   if(DESC.sky) DESC.sky.position.copy(DESC.cam.position);
+  if(DESC.cielo) DESC.cielo.position.copy(DESC.cam.position);
 
   const want = K.fovBase + K.fovSpeed * k * k - KK.y * K.kickFov;
   DESC.cam.fov += (want - DESC.cam.fov) * Math.min(1, 5*dt);
@@ -2399,17 +2625,21 @@ function buildHud(){
     '<div id="dLeft" style="position:absolute;top:14px;left:16px;background:rgba(6,10,20,.5);padding:9px 13px;border-radius:9px"></div>' +
     '<div id="dRight" style="position:absolute;top:14px;right:16px;background:rgba(6,10,20,.5);padding:9px 13px;border-radius:9px;text-align:right"></div>' +
     '<div id="dTrick" style="position:absolute;top:31%;left:50%;transform:translate(-50%,-50%);font-size:34px;font-weight:900;opacity:0;color:#ffe14d"></div>' +
+    '<div id="dSalta" style="position:absolute;top:22%;left:50%;transform:translate(-50%,-50%);font-size:44px;font-weight:900;opacity:0;color:#ff5a3d;letter-spacing:1px"></div>' +
+    '<div id="dAire" style="position:absolute;left:50%;bottom:74px;transform:translateX(-50%);opacity:0;' +
+      'background:rgba(6,10,20,.72);padding:10px 16px;border-radius:12px;font-size:15px;line-height:1.7;white-space:nowrap"></div>' +
     '<div id="dBig" style="position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:84px;font-weight:900;letter-spacing:-2px"></div>' +
     '<div id="dBar" style="position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:min(620px,72vw);height:9px;background:rgba(0,0,0,.42);border-radius:6px;overflow:hidden">' +
       '<div id="dFill" style="height:100%;width:0;background:#fff;border-radius:6px"></div></div>' +
     '<div id="dHelp" style="position:absolute;left:16px;bottom:14px;opacity:.5;font-size:11px;line-height:1.5">' +
-      'A/D girar · ESPACIO mantener=cargar ollie, soltar=saltar · SHIFT turbo · J meteorito · L agarrar/contra · U objeto<br>' +
-      'CÁMARA: stick derecho / Q / E / arrastrar ratón · TRUCOS: 1 Indy · 2 mortal atrás · 3 adelante · 4 360 · 5 DOBLE · 6 Superman<br>' +
-      'R reiniciar · T semilla nueva · <b>DESC.K</b></div>';
+      '<b>A/D</b> girar · <b>ESPACIO</b> saltar (mantener = salto más alto) · <b>SHIFT</b> turbo<br>' +
+      '<b>RATÓN</b> mira alrededor · <b>RUEDA</b> acerca/aleja · <b>J</b> meteorito · <b>L</b> agarrar · <b>U</b> objeto<br>' +
+      '<b>EN EL AIRE: 1..6 = TRUCOS</b> (te los recuerda en pantalla) · R reiniciar · T semilla</div>';
   document.body.appendChild(d);
   DESC.hud = { root:d, top:d.querySelector('#dTop'), left:d.querySelector('#dLeft'),
     right:d.querySelector('#dRight'), big:d.querySelector('#dBig'), fill:d.querySelector('#dFill'),
-    vig:d.querySelector('#dVig'), trick:d.querySelector('#dTrick'), zone:d.querySelector('#dZone') };
+    vig:d.querySelector('#dVig'), trick:d.querySelector('#dTrick'), zone:d.querySelector('#dZone'),
+    salta:d.querySelector('#dSalta'), aire:d.querySelector('#dAire') };
 }
 
 function updateHud(dt){
@@ -2455,6 +2685,31 @@ function updateHud(dt){
     '<div style="font-size:20px;font-weight:800">' + me.pts + ' pts</div>' +
     '<div style="opacity:.8">' + me.tricks + ' trucos · ' + me.falls + ' caídas</div>' +
     '<div style="opacity:.8">' + DESC.t.toFixed(1) + ' s</div>';
+
+  /* ►CHULETA DE TRUCOS EN EL AIRE. Toni: "soy incapaz de lanzar trucos, no sé
+     qué botones son". Estaban en una línea de ayuda de 11 px abajo a la
+     izquierda, que nadie lee mientras baja a 200 km/h. Ahora aparecen GRANDES
+     justo cuando sirven — en el aire — y el que ya has hecho se marca. */
+  if(me.air && !me.grind && me.fall <= 0){
+    if(!h._aireHtml){
+      h._aireHtml = '<b style="color:#ffe14d">TRUCOS</b> &nbsp;' +
+        [['1','Indy'],['2','Mortal atrás'],['3','Mortal adelante'],
+         ['4','360'],['5','DOBLE mortal'],['6','Superman']]
+        .map(([k2, n]) => '<span style="display:inline-block;margin:0 7px">' +
+             '<b style="background:#fff;color:#111;border-radius:5px;padding:1px 7px">' + k2 + '</b> ' + n + '</span>').join('');
+      h.aire.innerHTML = h._aireHtml;
+    }
+    h.aire.style.opacity = me.trick ? 0.45 : 1;
+  } else h.aire.style.opacity = 0;
+
+  /* ►AVISO DE PRECIPICIO: un hueco no se ve venir hasta que lo tienes encima */
+  let avisoZ = 1e9;
+  for(const g of DESC.HUECOS){ const d = me.z - g.z0; if(d > 0 && d < avisoZ) avisoZ = d; }
+  if(avisoZ < 105 && !me.air){
+    h.salta.textContent = avisoZ < 42 ? '¡SALTA!' : 'PRECIPICIO';
+    h.salta.style.opacity = (avisoZ < 42 ? 1 : 0.72).toFixed(2);
+    h.salta.style.color = avisoZ < 42 ? '#ff3d2e' : '#ffb03d';
+  } else h.salta.style.opacity = 0;
 
   h.top.innerHTML = order.map(r => '<span style="color:#' + r.col.toString(16).padStart(6,'0') + ';margin:0 7px">' + r.name + '</span>').join('');
   h.trick.style.opacity = (me._lastTrickT > 0) ? Math.min(1, me._lastTrickT) : 0;
@@ -2600,14 +2855,21 @@ addEventListener('keydown', e => {
 addEventListener('resize', () => {
   if(DESC.cam){ DESC.cam.aspect = innerWidth/innerHeight; DESC.cam.updateProjectionMatrix(); }
 });
-/* ratón: arrastrar = orbitar la cámara */
+/* ratón: MOVERLO rota la vista (sin tener que arrastrar) y la RUEDA acerca o
+   aleja. Con orbLibre=false vuelve al comportamiento de arrastrar. */
 addEventListener('mousedown', () => { if(DESC.on) DESC.orb.down = true; });
 addEventListener('mouseup',   () => { DESC.orb.down = false; });
 addEventListener('mousemove', e => {
-  if(!DESC.on || !DESC.orb.down) return;
+  if(!DESC.on) return;
+  if(!K.orbLibre && !DESC.orb.down) return;
   DESC.orb.mx += e.movementX || 0;
   DESC.orb.my += e.movementY || 0;
 });
+addEventListener('wheel', e => {
+  if(!DESC.on) return;
+  DESC.orb.wheel = (DESC.orb.wheel || 0) + Math.sign(e.deltaY);
+  e.preventDefault();
+}, { passive:false });
 
 function boot(){
   if(DESC._built) return;
