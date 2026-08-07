@@ -1,5 +1,32 @@
 /* =====================================================================
-   ►DESCENSO — carrera de transición entre stages  ·  v4
+   ►DESCENSO — carrera de transición entre stages  ·  v5 (ARCADE)
+
+   VEREDICTO DE TONI SOBRE LA v4: "las físicas son muy duras, no da placer
+   bajar como un juego pro de PlayStation". Tenía razón, y lo que hacía falta
+   NO era tocar números: era cambiar la INTENCIÓN. La v4 simulaba, y simular
+   castiga. Un SSX/Steep premia. Ver el bloque ►ARCADE en K.
+
+   LOS DOS FALLOS DE FONDO QUE HABÍA DEBAJO (los dos, de modelo, no de ajuste):
+
+   1. EL VOLANTE ERA UN INTEGRADOR. Mantener el stick SUMABA ángulo, así que
+      sostener una línea obligaba a contra-girar sin parar: te peleabas con el
+      volante, no con la montaña. Ahora el stick PIDE UN ÁNGULO y al soltar
+      vuelve solo. Medido antes del cambio: tallar tardaba 245 s contra 38 s
+      yendo recto.
+   2. EL CANTO MATABA LA VELOCIDAD LATERAL EN VEZ DE GIRARLA. Eso borra
+      energía: tallar costaba el 47% de la velocidad. Un canto real ejerce una
+      fuerza centrípeta, que NO hace trabajo — gira el vector, no lo encoge.
+      Ahora se rota el vector conservando el módulo y lo único que se paga al
+      tallar es lo honesto: apuntando de lado, la gravedad empuja menos.
+      Medido después: se conserva el 92% de la velocidad (objetivo del
+      género: ≥75%).
+
+   LA MÉTRICA CORRECTA, que también estaba mal: "¿tallar llega antes?" es la
+   pregunta equivocada — en un SSX la línea recta TAMBIÉN es la más rápida. Lo
+   que define el placer es cuánta VELOCIDAD CONSERVAS al tallar.
+
+   =====================================================================
+   ►DESCENSO  ·  v4 (la base: pista, zonas y física de tabla)
 
    Minijuego de sandboard / snowboard / surf que se juega ENTRE dos mundos.
    Un solo sistema con tres pieles.
@@ -171,7 +198,7 @@ const K = {
      Nada de "velocidad máxima": sale de gravedad-en-el-plano contra
      rozamiento. A 11° son ~54 u/s y a 42° pasa de 100. */
   grav:       52,
-  dragC:      0.0055,  // rozamiento aerodinámico (∝ v²). Calibrado para que la
+  dragC:      0.0062,  // rozamiento aerodinámico (∝ v²). Calibrado para que la
                        // velocidad de equilibrio salga 45/56/63/68/58 u/s por
                        // zona (verde/azul/roja/negra/fuera): ver la cabecera.
   dragAir:    0.85,    // el MISMO rozamiento vale en el aire. Sin esto la
@@ -179,35 +206,72 @@ const K = {
                        // 60% del tiempo, el rozamiento solo actuaba el 40%.
   dragSoft:   2.0,     // multiplicador en el material MÁS suelto
   dragHard:   0.60,    // ...y en el más prensado
-  muBase:     2.2,     // rozamiento seco del material (u/s², escala con la normal)
-  grip:       62,      // TOPE de agarre lateral (u/s² con N=1). Pasado esto, DERRAPAS
-  gripSoft:   0.55,    // el agarre que queda en material suelto
+  muBase:     1.1,     // rozamiento seco del material (u/s², escala con la normal)
+  grip:       130,     // TOPE de agarre lateral (u/s² con N=1). Pasado esto, DERRAPAS.
+                       // ARCADE: el doble que en la v4. Un juego de tabla de
+                       // consola te deja tallar fuerte y solo te suelta si te
+                       // pasas MUCHO; el agarre honesto se sentía "duro".
+  gripSoft:   0.72,    // el agarre que queda en material suelto
   gripLowV:   10,      // por debajo de esta velocidad el canto NO agarra: parado
                        // y cruzado se derrapa ladera abajo, como en la realidad
   gripLowMin: 0.22,
   fallTurn:   1.1,     // rad/s con que el morro cae hacia la máxima pendiente a
                        // poca velocidad. Sin esto, cruzarse a 0 km/h es un
                        // callejón sin salida: medido, la IA se plantó 200 s.
-  carveDrag:  0.055,   // freno longitudinal proporcional a la fuerza de canto
-  skidDrag:   0.65,    // ...y el que raspa el derrape
-  turnLow:    2.5,     // rad/s de giro a poca velocidad
-  turnHigh:   1.15,    // ...y a tope (un board rápido gira menos)
-  airTurn:    1.5,
+  /* ►ARCADE — EL CAMBIO DE INTENCIÓN
+     Toni, sobre la v4: "las físicas son muy duras, no da placer bajar como un
+     juego pro de PlayStation". Tenía razón y el problema NO eran los números,
+     era la intención: la v4 simulaba y por tanto CASTIGABA. Un SSX/Steep
+     premia. Cuatro reglas invertidas, en orden de importancia:
+
+     1. TALLAR ACELERA. Es LA regla del género: la curva es la recompensa, no
+        el peaje. La fuerza de canto se convierte en empuje hacia delante
+        (bombear), con un techo para que no sea barra libre.
+     2. EL DERRAPE SE RECUPERA SOLO. Si te sueltas, el board vuelve a alinearse
+        con la velocidad en 0,25 s: se ve espectacular y no te arruina.
+     3. ATERRIZAR REGALA VELOCIDAD si caes alineado con la pendiente; solo te
+        tumba el planchazo de verdad.
+     4. HAY SUELO DE VELOCIDAD por zona: nunca te quedas muerto en la nieve. */
+  carveBoost: 0.115,   // u/s² de empuje por unidad de fuerza de canto ←(1)
+  carveCap:   96,      // techo de velocidad alcanzable BOMBEANDO (el turbo lo pasa)
+  skidRecov:  0.25,    // s en que el board vuelve solo a la velocidad ←(2)
+  skidDrag:   0.22,    // lo que raspa el derrape (era 0,65: castigaba demasiado)
+  landBoost:  0.30,    // fracción del impacto que se DEVUELVE como velocidad ←(3)
+  landAlign:  0.55,    // cuánto se endereza el board al tocar (perdona el ángulo)
+  floorFrac:  0.52,    // suelo de velocidad = esta fracción del equilibrio ←(4)
+  floorPush:  16,      // con cuánta fuerza se empuja hacia ese suelo
+
+  /* ►VOLANTE POR OBJETIVO, no por integración. EL cambio de tacto.
+     Hasta aquí el stick SUMABA ángulo: mantener a la derecha te cruzaba la
+     ladera entera y había que contra-girar sin parar para sostener una línea.
+     Eso es lo que se sentía "duro" — estabas peleándote con el volante, no
+     con la montaña. Medido: tallando se tardaba 245 s contra 38 s yendo recto.
+     Ahora el stick PIDE UN ÁNGULO: a fondo = K.steerMax respecto de la línea
+     de máxima pendiente, y al soltar vuelve solo. Apuntas y se queda. */
+  steerMax:   52 * RAD,// ángulo que pide el stick a fondo
+  steerBack:  2.0,     // rad/s con que vuelve a la línea al soltar
+  turnLow:    5.0,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
+  turnHigh:   3.0,     // ...y a tope
+  airTurn:    3.4,     // en el aire se gira MUCHO: deja encarar la caída y sale
+                       // gratis en diversión
   turboThrust:13,
   dashMax:    2.4,
   dashRegen:  0.34,
   nMax:       3.0,     // tope de la fuerza normal (compresiones)
 
   /* --- SALTO / AIRE / ATERRIZAJE --- */
-  ollieMin:   9,       // impulso del ollie sin cargar
-  ollieMax:   19,      // ...y con la carga llena
+  ollieMin:   14,      // impulso del ollie sin cargar. ARCADE: el toque seco ya
+                       // salta bien; cargar es para el truco largo, no un peaje
+  ollieMax:   23,      // ...y con la carga llena
   ollieChg:   0.40,    // segundos de carga
   olliePop:   9,       // pop extra si sales por un labio con la carga puesta
-  landHard:   34,      // componente NORMAL de impacto que te tumba
-  landSlip:   62 * RAD,// desalineación board/velocidad que te tumba al caer
+  landHard:   52,      // componente NORMAL de impacto que te tumba (era 34)
+  landSlip:   105 * RAD,// desalineación board/velocidad que te tumba al caer
   airMin:     1.2,     // vy mínima para dar por bueno un despegue por relieve
-  airThr:     1.35,    // margen sobre la gravedad para despegar de verdad. Es la
+  airThr:     2.6,     // margen sobre la gravedad para despegar de verdad. Es la
                        // "suspensión": las piernas absorben lo que no llega.
+                       // Con 1,35 y la velocidad alta se volaba el 63% de la
+                       // bajada: eso es una cama elástica, no un descenso.
 
   /* --- HUNDIMIENTO Y RASTRO --- */
   sinkMax:    0.55,
@@ -260,7 +324,8 @@ const K = {
   orbPitchMax: 68 * RAD,
   orbHold:    1.2,     // s parado antes de volver sola detrás
   orbBack:    2.4,     // velocidad de recentrado
-  camMinH:    3.2,     // la cámara nunca baja de esto sobre el suelo
+  camMinH:    4.6,     // la cámara nunca baja de esto sobre el suelo (ni ella
+                       // ni NINGÚN punto entre ella y el jugador)
 
   /* --- efecto de velocidad --- */
   streakN:    340,
@@ -515,9 +580,9 @@ DESC._gy = groundYAt;
    la tabla PUENTEA los baches pequeños, exactamente como en la realidad.
    Sin esto, la detección de despegue por curvatura es una traca. */
 function padY(x, z, fx, fz){
-  return 0.25 * groundYAt(x - fx*2.0, z - fz*2.0)
+  return 0.25 * groundYAt(x - fx*2.3, z - fz*2.3)
        + 0.50 * groundYAt(x, z)
-       + 0.25 * groundYAt(x + fx*2.0, z + fz*2.0);
+       + 0.25 * groundYAt(x + fx*2.3, z + fz*2.3);
 }
 
 /* SUPERFICIE: altura + NORMAL. La normal es la pieza de la que cuelga toda la
@@ -1147,10 +1212,10 @@ function aiInput(r, dt){
      Si va lento, lo único sensato es apuntar cuesta abajo y coger velocidad. */
   const wantYaw = r.spd < 13 ? 0
                 : clamp(Math.atan2(tx - r.x, Math.max(20, K.aiLook * 0.7)), -1.1, 1.1);
-  /* sin bajar la ganancia (y sin zona muerta) la IA sobregira, derrapa y se
-     frena sola: la corrección constante es lo que la dejaba a media velocidad */
-  const err = wantYaw - r.yaw;
-  o.ax = Math.abs(err) < 0.045 ? 0 : clamp(err * (1.1 + skill * 0.5), -1, 1);
+  /* con el volante POR OBJETIVO, el eje ES el ángulo: la IA pide directamente
+     el que quiere en vez de perseguirlo a base de correcciones (que era lo que
+     la dejaba derrapando a media velocidad). */
+  o.ax = clamp(wantYaw / K.steerMax, -1, 1);
 
   const s = surfaceAt(r.x, r.z);
   if(s.ramp && skill > 0.75) o.jump = true;                 // carga el ollie en la rampa
@@ -1249,7 +1314,12 @@ function stepRacer(r, dt){
      límite de 180° de la pista. */
   const kSpd = clamp(r.spd / 90, 0, 1);
   const turn = (r.air ? K.airTurn : lerp(K.turnLow, K.turnHigh, kSpd));
-  r.yaw = clamp(r.yaw + inp.ax * turn * dt, -K.yawLimit, K.yawLimit);
+  /* el stick pide un ÁNGULO (no suma ángulo): a fondo, K.steerMax respecto de
+     la línea de máxima pendiente. Al soltar, vuelve solo. */
+  const wantYaw = inp.ax * K.steerMax;
+  const dYaw = wantYaw - r.yaw;
+  const vel = (Math.abs(inp.ax) > 0.05 ? turn : K.steerBack);
+  r.yaw = clamp(r.yaw + clamp(dYaw, -vel * dt, vel * dt), -K.yawLimit, K.yawLimit);
   const fx = Math.sin(r.yaw), fz = -Math.cos(r.yaw);       // eje largo del board
   const rx = Math.cos(r.yaw), rz = Math.sin(r.yaw);        // eje transversal
 
@@ -1263,38 +1333,82 @@ function stepRacer(r, dt){
     let ax = K.grav * srf.ny * srf.nx;
     let az = K.grav * srf.ny * srf.nz;
 
-    /* ---------- MODELO DE CANTO ----------
-       Descompongo la velocidad en el eje del board y en el transversal.
-       Lo transversal se lo come el canto... hasta el tope de agarre. */
+    /* ---------- MODELO DE CANTO: ROTAR, NO MATAR ----------
+       ESTE era el fallo de fondo del "se siente duro". Antes el canto MATABA la
+       componente lateral de la velocidad — y eso borra energía: tallar costaba
+       el 47% de la velocidad (medido, 72 → 38 u/s). Un canto de verdad no
+       frena la velocidad: la GIRA. La fuerza es centrípeta y no hace trabajo.
+
+       Así que ahora el canto ROTA el vector velocidad hacia el eje del board,
+       conservando su módulo, a la velocidad angular que da el agarre
+       (a = v·ω ⇒ ω_max = agarre/v). Lo que NO alcanza a girar es derrape, y
+       ESO sí raspa. Lo único que se pierde al tallar pasa a ser lo honesto:
+       que apuntando de lado la gravedad empuja menos (cos del ángulo). */
     const vF =  r.vx*fx + r.vz*fz;
     const vR =  r.vx*rx + r.vz*rz;
     r.slip = Math.abs(vR);
 
-    /* el canto solo agarra si hay velocidad: es lo que impide quedarse
-       clavado en diagonal y lo que hace que se pueda "derrapar de lado" */
     const gripFade = clamp(r.spd / K.gripLowV, K.gripLowMin, 1);
-    const gripMax = K.grip * r.nForce * lerp(K.gripSoft, 1, hard) * gripFade;
-    const need    = Math.abs(vR) / dt;                    // lo que haría falta para no derrapar
-    const aR      = -Math.sign(vR) * Math.min(need, gripMax);
-    r.skid = Math.max(0, need - gripMax) * dt;            // cuánto se escapa: eso es derrapar
+    const gripMax  = K.grip * r.nForce * lerp(K.gripSoft, 1, hard) * gripFade;
 
-    ax += aR * rx; az += aR * rz;
+    if(r.spd > 2 && vF > 0){
+      const vYaw = Math.atan2(r.vx, -r.vz);
+      let dv = r.yaw - vYaw;                              // lo que falta por girar
+      while(dv >  Math.PI) dv -= TAU;
+      while(dv < -Math.PI) dv += TAU;
+      const wMax = (gripMax / r.spd) * dt;                // ω que da el agarre
+      const w    = clamp(dv, -wMax, wMax);
+      /* OJO AL SIGNO: con la rotación al revés el canto giraba la velocidad
+         EN SENTIDO CONTRARIO y se estabilizaba de lado — se bajaba de costado
+         a 2 u/s con el board recto. Comprobación: v=(0,-1) (θ=0) con w>0 debe
+         dar θ=+w. */
+      const cw = Math.cos(w), sw = Math.sin(w);           // rotación PURA: |v| intacto
+      const nvx = r.vx*cw - r.vz*sw;
+      const nvz = r.vx*sw + r.vz*cw;
+      r.vx = nvx; r.vz = nvz;
+      r.skid = Math.max(0, Math.abs(dv) - wMax) * r.spd;  // lo que no se pudo girar
+      r._carveF = Math.abs(w / dt) * r.spd;               // fuerza de canto (para el bombeo)
+    } else { r.skid = 0; r._carveF = 0; }
+    const aR = r._carveF;
 
     /* ---------- ROZAMIENTOS (siempre CONTRA la velocidad, no contra el
        eje del board: si no, a poca velocidad el signo baila y tiembla) ----------
-       aerodinámico (v²) + seco del material + el precio de tallar (la fuerza
-       de canto cuesta energía) + el raspón del derrape. */
+       aerodinámico (v²) + seco del material + el raspón del derrape.
+       Ya NO se cobra por tallar: tallar paga (ver el empuje de abajo). */
     const dragMul = K.dragSoft + (K.dragHard - K.dragSoft) * hard;
     let aFric = K.dragC * r.spd * r.spd * dragMul
               + K.muBase * r.nForce * (1.6 - hard)
-              + Math.abs(aR) * K.carveDrag
-              + (r.skid / dt) * K.skidDrag;
+              + r.skid * K.skidDrag;
     if(r.grabbed > 0) aFric += 8;
     const vm = Math.hypot(r.vx, r.vz);
     if(vm > 0.01){
       const f = Math.min(aFric, vm / dt) / vm;          // nunca te empuja hacia atrás
       ax -= r.vx * f; az -= r.vz * f;
     }
+
+    /* ---------- ►ARCADE (1): TALLAR ACELERA ----------
+       La fuerza que el canto hace contra el terreno se devuelve como empuje
+       hacia delante — es "bombear" la curva. Se desvanece al acercarse a
+       K.carveCap para que no sea barra libre, y solo cuenta si NO estás
+       derrapando (si te sueltas, no bombeas: raspas). */
+    if(r.crash <= 0){
+      const techo = clamp((K.carveCap - r.spd) / 22, 0, 1);
+      const limpio = 1 - clamp(r.skid / 8, 0, 1);
+      const pump = aR * K.carveBoost * techo * limpio;
+      ax += pump * fx; az += pump * fz;
+      r._pump = pump;                                   // el HUD lo pinta
+    } else r._pump = 0;
+
+    /* ---------- ►ARCADE (4): SUELO DE VELOCIDAD ----------
+       En nieve profunda o tras un choque te quedabas muerto y eso no da placer.
+       Por debajo de una fracción del equilibrio de ESTA zona, empuja. */
+    const eq = 26 + zoneProp(r.z, 'deg') * 1.5;         // aproximación del equilibrio
+    const piso = eq * K.floorFrac;
+    if(r.spd < piso && r.fall <= 0){
+      const k2 = (piso - r.spd) / piso;
+      ax += K.floorPush * k2 * fx; az += K.floorPush * k2 * fz;
+    }
+
     /* el empuje del turbo sí va por el eje del board */
     let push = r.turbo ? K.turboThrust : 0;
     push *= (r._ai.targetMul || 1);
@@ -1317,6 +1431,18 @@ function stepRacer(r, dt){
     }
     r.vy -= K.grav * dt;
     r.y  += r.vy * dt;
+  }
+
+  /* ---------- ►ARCADE (2): EL DERRAPE SE RECUPERA SOLO ----------
+     Si te has soltado, el board vuelve a alinearse con la velocidad. Derrapar
+     pasa de "castigo del que no ha calculado" a recurso vistoso del que se
+     recupera solo. Es la diferencia entre pelearse con el juego y lucirse. */
+  if(!r.air && r.skid > 0.0001 && r.spd > 6 && r.fall <= 0){
+    const vYaw = Math.atan2(r.vx, -r.vz);
+    let d = vYaw - r.yaw;
+    while(d >  Math.PI) d -= TAU;
+    while(d < -Math.PI) d += TAU;
+    r.yaw = clamp(r.yaw + d * Math.min(1, dt / K.skidRecov), -K.yawLimit, K.yawLimit);
   }
 
   /* GIRO POR GRAVEDAD: a poca velocidad el morro cae solo hacia la línea de
@@ -1356,7 +1482,10 @@ function stepRacer(r, dt){
     }
   }
 
-  /* ---------- OLLIE: mantener carga, soltar salta ---------- */
+  /* ---------- OLLIE ----------
+     ARCADE: soltar el botón salta, pero si lo sueltas rápido saltas IGUAL de
+     bien (K.ollieMin ya es un salto de verdad). Cargar es para el truco largo.
+     La v4 obligaba a cargar para despegar y eso se sentía a peaje. */
   if(!r.air && r.crash <= 0){
     if(inp.jump){ r.charge = Math.min(K.ollieChg, r.charge + dt); }
     else if(r.charge > 0){
@@ -1422,7 +1551,7 @@ function stepRacer(r, dt){
     /* los saltitos de chatter (medio metro sobre un lomo) NO son un salto:
        si dejas encadenar trucos ahí, el aterrizaje a medias te tumba sin que
        el jugador entienda por qué */
-    if(inp.trick && !r.trick && TRICKS[inp.trick] && r.airVy0 > 5){ r.trick = inp.trick; r.trickT = 0; }
+    if(inp.trick && !r.trick && TRICKS[inp.trick] && r.airVy0 > 7){ r.trick = inp.trick; r.trickT = 0; }
     if(r.trick){
       const T = TRICKS[r.trick];
       r.trickT += dt;
@@ -1447,11 +1576,28 @@ function stepRacer(r, dt){
       r.vx -= vdotn * sf.nx;
       r.vz -= vdotn * sf.nz;
       r.vy = 0;
+      /* ►ARCADE (3): ATERRIZAR REGALA VELOCIDAD. Parte del impacto vuelve como
+         empuje en el eje del board. Cuanto mejor encares la pendiente, menos
+         impacto hay y más se conserva: caer bien pasa a ser rentable, no solo
+         "no ser castigado". Y el board se endereza un poco solo. */
+      if(impacto > 4 && !r.trick){
+        const b = impacto * K.landBoost;
+        r.vx += fx * b; r.vz += fz * b;
+        r._lastTrick = 'ATERRIZAJE +' + Math.round(b); r._lastTrickT = 0.7;
+      }
       r._vT = NaN;                       // sin referencia previa: ver `primero`
       r.spd = Math.hypot(r.vx, r.vz);
       /* desalineación board/velocidad al tocar */
       const vAng = r.spd > 4 ? Math.abs(Math.atan2(r.vx*Math.cos(r.yaw) + r.vz*Math.sin(r.yaw),
                                                     r.vx*Math.sin(r.yaw) - r.vz*Math.cos(r.yaw))) : 0;
+      /* endereza el board hacia la velocidad al tocar: perdona el ángulo */
+      if(r.spd > 6 && !r.trick){
+        const vYaw2 = Math.atan2(r.vx, -r.vz);
+        let d2 = vYaw2 - r.yaw;
+        while(d2 >  Math.PI) d2 -= TAU;
+        while(d2 < -Math.PI) d2 += TAU;
+        r.yaw = clamp(r.yaw + d2 * K.landAlign, -K.yawLimit, K.yawLimit);
+      }
       spray(r, 6 + Math.round(impacto*0.5), 2.0 + impacto*0.08);
       if(r.trick) fall(r);
       else if(impacto > K.landHard) crash(r, 'aterrizaje');
@@ -1600,12 +1746,29 @@ function stepCamera(dt){
   const set = d => _camPos.set(_camLook.x - fx * Math.cos(p) * d,
                                _camLook.y + Math.sin(p) * d,
                                _camLook.z - fz * Math.cos(p) * d);
-  set(dist);
-  /* En una pared de 42° la cámara "detrás" cae DENTRO de la montaña. Antes de
-     subirla (que la vuelve cenital), se ACERCA: encuadra mejor y es lo que
-     hacen los juegos de tabla en terreno vertical. */
-  let gmin = groundYAt(_camPos.x, _camPos.z) + K.camMinH;
-  if(_camPos.y < gmin){ set(dist * 0.62); gmin = groundYAt(_camPos.x, _camPos.z) + K.camMinH; }
+  /* ---------- LA CÁMARA NO SE METE EN LA MONTAÑA ----------
+     Mirar solo el suelo BAJO la cámara no basta: en una ladera de 42° el
+     terreno se cruza ENTRE el jugador y la cámara, y lo que se ve es un
+     pegote oscuro tapando media pantalla (cazado con un raycast: era el
+     propio terreno a 15 u). Hay que barrer el segmento y acortar la
+     distancia hasta que el camino esté libre. Acercarse encuadra mucho
+     mejor que subir, que deja la cámara cenital. */
+  let d = dist;
+  for(let intento = 0; intento < 5; intento++){
+    set(d);
+    let libre = true;
+    for(let k = 1; k <= 5; k++){
+      const f2 = k / 5;
+      const sx = lerp(_camLook.x, _camPos.x, f2);
+      const sy = lerp(_camLook.y, _camPos.y, f2);
+      const sz = lerp(_camLook.z, _camPos.z, f2);
+      if(sy < groundYAt(sx, sz) + K.camMinH){ libre = false; break; }
+    }
+    if(libre) break;
+    d *= 0.72;
+    if(d < 7){ set(d); break; }
+  }
+  const gmin = groundYAt(_camPos.x, _camPos.z) + K.camMinH;
   if(_camPos.y < gmin) _camPos.y = gmin;
 
   if(DESC.world && K.tilt){
@@ -1686,6 +1849,8 @@ function updateHud(dt){
     '<div style="font-size:18px;font-weight:800;color:' + (me.turbo ? '#ffd23f' : '#fff') + '">' +
       Math.round(me.spd*2.6) + ' km/h</div>' +
     '<div style="opacity:.8">turbo ' + '▮'.repeat(tb) + '▯'.repeat(6-tb) + '</div>' +
+    (me._pump > 1.5 ? '<div style="color:#7bf06a;font-weight:800">◄ TALLANDO +' +
+        Math.round(me._pump) + ' ►</div>' : '') +
     (me.charge > 0 ? '<div style="color:#7bf06a">ollie ' + '▮'.repeat(ch) + '▯'.repeat(6-ch) + '</div>' : '') +
     '<div style="opacity:.7">suelo ' + (hard > 0.62 ? '<b style="color:#7bf06a">DURO</b>'
       : hard < 0.38 ? '<b style="color:#ff8a3d">PROFUNDO</b>' : 'normal') +
