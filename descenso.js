@@ -294,7 +294,12 @@ const K = {
   crashTime:  0.55,
   crashChain: 3,
   crashWindow:3.0,
-  fallTime:   1.35,
+  /* La caída dura lo que tardan los clips reales (wipeout 2,40 s + getup
+     2,37 s). Se ACELERAN con timeScale para caber en su ventana, igual que se
+     hizo con el clip 'climb' de la partida: 4,8 s tirado en el suelo en una
+     carrera de 100 s sería insufrible. */
+  fallTime:   2.7,
+  wipeFrac:   0.56,    // qué parte de la ventana es el batacazo; el resto, levantarse
 
   /* --- ►GRINDING sobre raíles ---
      Se engancha SOLO con caer encima (no hay botón). Una vez arriba, el raíl
@@ -369,6 +374,17 @@ const K = {
 
   /* --- IA --- */
   aiBand: 0.14, aiMaxGap: 170, aiLook: 55, aiSkill: [0.93, 0.87, 0.81],
+
+  /* --- ►PERSONAJES (tunables en vivo con DESC.K) --- */
+  charScale:  1.55,    // multiplicador sobre CHAR_TARGET_H: la escala del juego
+                       // es para una arena, aquí la cámara está más lejos
+  charYaw:    Math.PI, // los chars del juego miran a +Z y aquí se avanza a -Z
+  tablaEsc:   0.56,    // la tabla mide 4,53 u de fábrica y el jinete 2,4: a
+                       // escala 1 la tabla salía del DOBLE de largo que el
+                       // personaje. Una tabla real mide como su dueño.
+  tablaYaw:   0,
+  animFade:   0.18,
+  wipeMin:    0.9,     // lo que dura como poco la caída antes de levantarse
 
   /* --- simulación --- */
   fixed:      1/120,
@@ -580,6 +596,78 @@ if(SKIN === 'mar') K.tilt = 7;
 
 const RACER_COL = [0x35c9ff, 0xff5a52, 0x7bf06a, 0xffd23f];
 
+/* =====================================================================
+   ►PERSONAJES REALES — los 6 GLB del juego, no cápsulas
+
+   Se reutiliza TODO lo que ya existe: las plantillas `_charTpls` que carga el
+   juego, el RECOLOR DE MARCA (`recolorAtlas`) y el aclarado del caballero.
+   Aquí no se inventa ni un cargador ni un tinte propios.
+
+   Los tres clips (board / wipeout / getup) se inyectaron por NOMBRE DE HUESO
+   en `chars_models.js` con el pipeline de siempre (Blender → GLB → merge de
+   canales de ROTACIÓN). 41 huesos casados en las 6 clases, 0 sin casar.
+   ===================================================================== */
+const CLASES = ['samurai', 'voxelhero', 'archer', 'knight', 'nun', 'link'];
+/* color del DECK de la tabla por clase (el mismo criterio que CLASS_COLOR) */
+const CLASE_COL = { voxelhero:0xff3b30, samurai:0x9b2bff, archer:0xffd84f,
+                    link:0x3ad06a, knight:0xe8edf5, nun:0x2563eb };
+
+const CHAR = { tpls:null, tabla:null, pedido:false };
+
+/* La tabla es un GLB propio (snowboard_model.js). Se parsea UNA vez y se
+   clona por corredor tintando solo el deck. */
+function pideTabla(){
+  if(CHAR.tabla || CHAR.pedido || !window.SNOWBOARD_GLB_B64 || !THREE.GLTFLoader) return;
+  CHAR.pedido = true;
+  const bin = atob(window.SNOWBOARD_GLB_B64);
+  const u = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  new THREE.GLTFLoader().parse(u.buffer, '', g => {
+    CHAR.tabla = g.scene;
+    console.log('[descenso] tabla de snowboard lista');
+  }, e => console.warn('[descenso] la tabla no cargó', e));
+}
+
+function tplDe(k){
+  const t = (typeof _charTpls !== 'undefined') ? _charTpls : null;
+  return (t && t[k]) ? t[k] : null;
+}
+
+/* Clona la tabla y le pone el color de la clase en el DECK (Material.001);
+   la base y las fijaciones (Material.002) se quedan oscuras. */
+function tablaDe(clase){
+  if(!CHAR.tabla) return null;
+  const g = CHAR.tabla.clone(true);
+  /* la tabla también clona compartiendo geometría con su plantilla */
+  g.traverse(o => { o.userData = o.userData || {}; o.userData._compartido = true; });
+  const col = CLASE_COL[clase] || 0xdddddd;
+  g.traverse(o => {
+    if(!o.isMesh) return;
+    o.castShadow = false; o.frustumCulled = false;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    o.material = ms.map(m => {
+      if(!m) return m;
+      const c = m.clone();
+      /* Se tiñen LOS DOS materiales: el que va arriba con el color de la clase
+         y el otro con una versión oscura. Distinguirlos por luminancia falló
+         (el que yo daba por "deck" resultó ser el canto: la tabla salía negra
+         por arriba con el filo de color). */
+      const lum = c.color ? (c.color.r + c.color.g + c.color.b) / 3 : 1;
+      if(c.color){
+        c.color.setHex(col);
+        if(lum > 0.12) c.color.multiplyScalar(0.30);     // el claro pasa a ser el canto oscuro
+      }
+      if('metalness' in c) c.metalness = 0.0;
+      if('roughness' in c) c.roughness = 0.55;
+      if(c.emissive){ c.emissive.setHex(col); c.emissiveIntensity = 0.12; }
+      c.needsUpdate = true;
+      return c;
+    });
+    if(o.material.length === 1) o.material = o.material[0];
+  });
+  return g;
+}
+
 function GAME_RENDERER(){ return (typeof renderer !== 'undefined') ? renderer : null; }
 function GAME_KEYS(){ return (typeof keys !== 'undefined') ? keys : null; }
 
@@ -782,10 +870,15 @@ function buildScene(){
 
   /* 0,9 + 1,25 = 2,15 de luz: TODO saturaba a blanco y el color de zona no se
      leía (medido en captura: la pista roja salía color arena). */
-  sc.add(new THREE.HemisphereLight(PAL.hemi, 0x40404e, 0.52));
+  sc.add(new THREE.HemisphereLight(PAL.hemi, 0x40404e, 0.62));
   const sun = new THREE.DirectionalLight(PAL.sun, 0.85);
   sun.position.set(-50, 90, 30);
   sc.add(sun);
+  /* relleno DESDE LA CÁMARA: sin él, los personajes (MeshStandard) se ven de
+     frente en sombra mientras el terreno (Lambert) ya está bien expuesto */
+  const fill = new THREE.DirectionalLight(PAL.sun, 0.42);
+  fill.position.set(30, 40, 80);
+  sc.add(fill);
 
   /* CIELO con degradado */
   {
@@ -1300,6 +1393,101 @@ function updateStreaks(dt, k){
 /* =====================================================================
    CORREDORES
    ===================================================================== */
+/* ---------------------------------------------------------------------
+   MONTAR EL PERSONAJE DE VERDAD
+   Se llama en cuanto la plantilla de su clase existe (los GLB cargan async,
+   así que se reintenta cada frame hasta que llega). Sustituye la cápsula.
+   --------------------------------------------------------------------- */
+function montaPersonaje(r){
+  const tpl = tplDe(r.clase);
+  if(!tpl || r.montado) return;
+  const SKU = THREE.SkeletonUtils;
+  const model = SKU ? SKU.clone(tpl.scene) : tpl.scene.clone(true);
+
+  /* --- RECOLOR DE MARCA: el MISMO del juego, no uno nuevo --- */
+  model.traverse(o => {
+    if(!o.isMesh && !o.isSkinnedMesh) return;
+    o.frustumCulled = false; o.castShadow = false;
+    const clona = m => (m ? m.clone() : m);
+    o.material = Array.isArray(o.material) ? o.material.map(clona) : clona(o.material);
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if(typeof BRAND_HUE !== 'undefined' && BRAND_HUE[r.clase] != null && typeof recolorAtlas === 'function'){
+      ms.forEach(m => { if(m && m.map){ const t = recolorAtlas(m.map, r.clase);
+        if(t){ m.map = t; if(m.color) m.color.setRGB(1,1,1); m.needsUpdate = true; }
+        else r._recolorPend = true; } });      // la textura aún no decodificó: se reintenta
+    }
+    /* ►METALNESS A CERO. La escena del descenso NO tiene scene.environment, y
+       un MeshStandardMaterial con metalness>0 y sin mapa de entorno se dibuja
+       NEGRO (está documentado en este proyecto: es lo que desbloqueó ►ENVMAP).
+       Los personajes SÍ se dibujaban — se veían como una silueta oscura sobre
+       la nieve y parecía que faltaban. Se perdieron varias rondas buscando un
+       fallo de render que no existía. */
+    ms.forEach(m => { if(!m) return;
+      if('metalness' in m) m.metalness = 0.0;
+      if('roughness' in m) m.roughness = Math.max(0.55, m.roughness != null ? m.roughness : 0.7);
+      if(m.emissive && r.clase !== 'knight'){ m.emissive.copy(m.color || new THREE.Color(0xffffff)); m.emissiveIntensity = 0.10; }
+      m.needsUpdate = true; });
+    if(r.clase === 'knight' && typeof KNIGHT_LIGHTEN !== 'undefined'){
+      ms.forEach(m => { if(!m || !m.emissive) return;
+        m.emissive.setHex(KNIGHT_LIGHTEN); m.emissiveIntensity = KNIGHT_LIGHTEN_I;
+        if('metalness' in m) m.metalness = 0.0; if('roughness' in m) m.roughness = 0.65;
+        m.needsUpdate = true; });
+    }
+  });
+
+  /* --- escala y apoyo: mismo criterio que el juego (altura objetivo) --- */
+  model.updateMatrixWorld(true);
+  const caja = (typeof charModelBox === 'function') ? charModelBox(model)
+                                                   : new THREE.Box3().setFromObject(model);
+  const sz = new THREE.Vector3(); caja.getSize(sz);
+  const alto = (typeof CHAR_TARGET_H !== 'undefined' ? CHAR_TARGET_H : 2.0) * K.charScale;
+  const e = alto / (sz.y || 1);
+  model.scale.setScalar(e);
+  model.position.y = -caja.min.y * e;
+  /* los chars del juego miran a +Z y aquí el board avanza hacia -Z */
+  model.rotation.y = K.charYaw;
+
+  /* marcar TODO el clon como compartido: su geometría y sus texturas son las
+     de la plantilla del juego y no se pueden disponer (ver start()) */
+  model.traverse(o => { o.userData = o.userData || {}; o.userData._compartido = true; });
+  r.body.remove(r.capsula);
+  r.body.add(model);
+  r.model = model;
+  r.montado = true;
+
+  /* --- clips --- */
+  r.mixer = new THREE.AnimationMixer(model);
+  r.acts = {};
+  for(const nom of ['board', 'wipeout', 'getup']){
+    const c = (tpl.animations || []).find(a => a.name === nom);
+    if(c){ const a = r.mixer.clipAction(c); a.enabled = true; r.acts[nom] = a; r.dur = r.dur || {}; r.dur[nom] = c.duration; }
+  }
+  if(r.acts.wipeout){ r.acts.wipeout.setLoop(THREE.LoopOnce, 1); r.acts.wipeout.clampWhenFinished = true; }
+  if(r.acts.getup){   r.acts.getup.setLoop(THREE.LoopOnce, 1);   r.acts.getup.clampWhenFinished = true; }
+  if(r.acts.board) r.acts.board.play();
+  r.animCur = 'board';
+
+  /* --- la tabla, con el color de su clase --- */
+  const tb = tablaDe(r.clase);
+  if(tb){
+    if(r.tabla) r.body.remove(r.tabla);
+    tb.scale.setScalar(K.tablaEsc);
+    tb.position.y = 0.02;
+    tb.rotation.y = K.tablaYaw;
+    r.body.add(tb);
+    r.tabla = tb;
+  }
+}
+
+/* Cambia de clip con fundido. Los de una sola pasada se reinician al entrar. */
+function animA(r, nom){
+  if(!r.acts || !r.acts[nom] || r.animCur === nom) return;
+  const nuevo = r.acts[nom], viejo = r.acts[r.animCur];
+  nuevo.reset(); nuevo.enabled = true; nuevo.setEffectiveWeight(1); nuevo.play();
+  if(viejo && viejo !== nuevo) viejo.crossFadeTo(nuevo, K.animFade, false);
+  r.animCur = nom;
+}
+
 function makeRacer(i, human){
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
@@ -1307,16 +1495,20 @@ function makeRacer(i, human){
   const mat = new THREE.MeshLambertMaterial({ color: col });
 
   const body = new THREE.Group();
+  /* CÁPSULA DE RESPALDO: se ve solo hasta que su GLB termina de cargar (son
+     12 MB y llegan async). Sin esto, la salida es una pista vacía. */
+  const capsula = new THREE.Group();
   const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.24, 4.6),
                                new THREE.MeshLambertMaterial({ color: 0x22262e }));
-  board.position.y = 0.12; body.add(board);
+  board.position.y = 0.12; capsula.add(board);
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.74, 0.74, 1.7, 12), mat);
-  torso.position.y = 1.4; body.add(torso);
+  torso.position.y = 1.4; capsula.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.64, 14, 10), mat);
-  head.position.y = 2.6; body.add(head);
+  head.position.y = 2.6; capsula.add(head);
   const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.95),
                               new THREE.MeshLambertMaterial({ color: 0x101418 }));
-  nose.position.set(0, 2.6, -0.66); body.add(nose);
+  nose.position.set(0, 2.6, -0.66); capsula.add(nose);
+  body.add(capsula);
   g.add(body);
 
   const meteor = new THREE.Mesh(new THREE.SphereGeometry(2.1, 14, 10),
@@ -1333,7 +1525,9 @@ function makeRacer(i, human){
   return {
     i, human, col,
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
-    gfx:g, body, board, meteor, shadow:sh,
+    gfx:g, body, capsula, board, meteor, shadow:sh,
+    clase: CLASES[i % CLASES.length], montado:false, model:null, mixer:null,
+    acts:null, animCur:null, tabla:null,
     padIndex: human ? (HUMANS === 1 ? 0 : i) : -1,
     kb: human && i === 0,
     x:x0, y:terrainY(x0, 0), z:0,
@@ -1566,6 +1760,11 @@ function crash(r, por){
 function fall(r){
   if(r.fall > 0) return;
   r.falls++; r.fall = K.fallTime;
+  if(r.montado && r.acts && r.acts.wipeout){
+    const w = K.fallTime * K.wipeFrac;
+    r.acts.wipeout.timeScale = (r.dur.wipeout || 2.4) / w;
+    animA(r, 'wipeout');
+  }
   /* NO se para en seco: sigue deslizando con parte de lo que llevaba */
   r.vx *= K.fallMul; r.vz *= K.fallMul; r.vy = 0; r.air = false; r.charge = 0;
   r.trick = null; r.combo = 0; r.crashN = 0;
@@ -1592,8 +1791,20 @@ function stepRacer(r, dt){
 
   /* --- caído: se desliza sin control --- */
   if(r.fall > 0){
+    const antes = r.fall;
     r.fall -= dt;
-    r.body.rotation.set(-1.35, 0, Math.sin(DESC.t*7)*0.12);
+    if(r.montado){
+      /* con clips de verdad NO se tumba la cápsula a mano: se encadena
+         batacazo → levantarse, y el cuerpo se queda derecho (el clip manda) */
+      const corte = K.fallTime * (1 - K.wipeFrac);
+      if(antes > corte && r.fall <= corte && r.acts && r.acts.getup){
+        r.acts.getup.timeScale = (r.dur.getup || 2.4) / Math.max(0.25, corte);
+        animA(r, 'getup');
+      }
+      r.body.rotation.set(0, 0, 0);
+    } else {
+      r.body.rotation.set(-1.35, 0, Math.sin(DESC.t*7)*0.12);
+    }
     r.x += r.vx*dt; r.z += r.vz*dt;
     const fd = Math.pow(K.fallDrag, dt);
     r.vx *= fd; r.vz *= fd;
@@ -1602,7 +1813,7 @@ function stepRacer(r, dt){
     r.gfx.position.set(r.x, r.y, r.z);
     r.gfx.rotation.y = -r.yaw;
     r.shadow.position.set(r.x, r.y + 0.07, r.z);
-    if(r.fall <= 0) r.body.rotation.set(0,0,0);
+    if(r.fall <= 0){ r.body.rotation.set(0,0,0); animA(r, 'board'); }
     return;
   }
 
@@ -2270,7 +2481,17 @@ function updateHud(dt){
    ===================================================================== */
 function start(seed){
   if(DESC.scene){
+    /* ►NO DISPONER LO COMPARTIDO.
+       SkeletonUtils.clone() COMPARTE geometría y texturas con la plantilla de
+       `_charTpls`. Este bucle las destruía al reiniciar (tecla R, tecla T o
+       cualquier `_start`), y con ellas se llevaba por delante los personajes
+       del descenso Y LOS DE LA PARTIDA — la plantilla es la misma. El síntoma
+       era desconcertante: los corredores existían, con su esqueleto colocado
+       y a la altura correcta, pero su material nunca llegaba a compilarse
+       (`material.program` a null) porque su geometría ya no estaba en la GPU.
+       La home ya tenía esta guarda (`_sharedGeo`); aquí faltaba. */
     DESC.scene.traverse(o => {
+      if(o.userData && o.userData._compartido) return;
       if(o.geometry) o.geometry.dispose();
       if(o.material){ const mm = Array.isArray(o.material) ? o.material : [o.material];
         mm.forEach(x => { if(x.map) x.map.dispose(); x.dispose(); }); }
@@ -2327,6 +2548,31 @@ DESC.tick = function(dt){
       }
       DESC.phase = 'finish';
     }
+  }
+
+  /* ►PERSONAJES: los GLB llegan async, así que se intenta montar cada frame
+     hasta que su plantilla existe. Y el recolor puede quedar PENDIENTE si la
+     textura aún no había decodificado — se reintenta igual. */
+  pideTabla();
+  for(const r of DESC.racers){
+    if(!r.montado) montaPersonaje(r);
+    else if(r._recolorPend && typeof recolorAtlas === 'function' && r.model){
+      r._recolorPend = false;
+      r.model.traverse(o => {
+        if(!o.isMesh && !o.isSkinnedMesh) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+          if(m && m.map){ const t = recolorAtlas(m.map, r.clase);
+            if(t){ m.map = t; if(m.color) m.color.setRGB(1,1,1); m.needsUpdate = true; }
+            else r._recolorPend = true; }
+        });
+      });
+    }
+    if(!r.tabla && r.montado && CHAR.tabla){
+      const tb = tablaDe(r.clase);
+      if(tb){ tb.scale.setScalar(K.tablaEsc); tb.position.y = 0.02;
+              tb.rotation.y = K.tablaYaw; r.body.add(tb); r.tabla = tb; }
+    }
+    if(r.mixer) r.mixer.update(dt);
   }
 
   if(DESC.picks) for(const o of DESC.picks)
