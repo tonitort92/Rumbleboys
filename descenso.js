@@ -440,6 +440,13 @@ const K = {
   /* --- efecto de velocidad --- */
   streakN:    150,    // Con 340 se leían como arañazos blancos sobre el cielo
   streakFrom: 0.45,   // liso; y arrancaban demasiado pronto.
+  /* ►POLVO AMBIENTE (Toni: "me falta más polvo en el aire o ambiente").
+     Motas que derivan con el viento alrededor de la cámara, SIEMPRE — no solo
+     al carvear. Baratas: 1 InstancedMesh, reciclado por caja envolvente. */
+  polvoN:     130,
+  polvoOp:    0.22,
+  polvoCaja:  70,     // radio de la caja de reciclado alrededor de la cámara
+  polvoViento:8,      // u/s de deriva lateral
   /* ►TÚNEL. Toni pidió "más efecto túnel donde se blurrea lo que tienes
      alrededor" y MENOS vibración. Las dos cosas van juntas: la sensación de
      velocidad la da el desenfoque de la periferia, no zarandear la cámara.
@@ -1081,6 +1088,7 @@ function groundYAt(x, z){
 }
 function enVacio(y, z){ return y < baseY(z) - 55; }
 DESC._gy = groundYAt;
+DESC._hw = hwAt;
 
 /* HUELLA DE LA TABLA: un board mide 4,6 unidades y no cabe en un punto.
    Promediar tres puntos a lo largo de su eje es lo que impide que el rizado
@@ -1254,24 +1262,39 @@ function buildScene(){
     /* la resolución se ata al LARGO, no a un número fijo: con la pista de 2
        minutos, 380 filas dejaban 17 u por fila y los lomos se veían facetados */
     const zTop = 160, zBot = -(K.len + 240);
-    const COLS = 58, ROWS = Math.min(1000, Math.round((zTop - zBot) / 8.5));
+    const COLS = 72, ROWS = Math.min(1000, Math.round((zTop - zBot) / 8.5));
     const OUT = 1.16;                    // se pinta un poco más allá del límite
+    /* ►FALDÓN. La malla acababa en 1,16×hw pero la 2ª fila de rocas se coloca
+       en hw+26..hw+60: se apoyaban en un terrainY() que existe matemáticamente
+       pero NO SE DIBUJA — por eso Toni veía palmeras y peñascos flotando, y una
+       banda vacía entre la pista y el horizonte. El faldón extiende la malla
+       85 u más por cada lado; el CUENCO (K.bowl·u², que ya vive en terrainY)
+       hace que esa franja SUBA sola en forma de flanco de cañón — a hw+85 son
+       ~100 u de alza — así que sirve de suelo para el decorado Y de muro
+       visual coherente con el tope físico. COLS sube 58→72 para no robarle
+       resolución a la pista. */
+    const FALDA = 85, FALDA_ALZA = 12;
     const nv = (COLS + 1) * (ROWS + 1);
     const pos = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
     const idx = new Uint32Array(COLS * ROWS * 6);
     const cSoft = new THREE.Color(PAL.soft), cHard = new THREE.Color(PAL.hard), cz = new THREE.Color();
+    const _cFalda = new THREE.Color(PAL.wall);
     let vi = 0;
     for(let ri = 0; ri <= ROWS; ri++){
       const z  = zTop + (zBot - zTop) * (ri / ROWS);
-      const hw = hwAt(z) * OUT;
+      const hwPista = hwAt(z);
+      const hw = hwPista * OUT + FALDA;
       /* zoneProp interpola NÚMEROS y un color en hex NO se puede interpolar
          así (0x22222c entre 0x3fbe63 daría un color que no existe): el tinte
          se toma de la banda dominante y el corte se ve, que es lo que se busca. */
       cz.setHex(zoneAt(z).col);
       for(let ci = 0; ci <= COLS; ci++){
         const u = -1 + 2 * (ci / COLS);
-        const x = u * hw;
-        const y = terrainY(x, z);
+        /* muestreo NO uniforme: u² concentra columnas en la pista y deja las
+           largas para el faldón, donde el detalle no se aprecia */
+        const x = Math.sign(u) * Math.pow(Math.abs(u), 1.35) * hw;
+        const faldaT = clamp((Math.abs(x) - hwPista * OUT) / FALDA, 0, 1);
+        const y = terrainY(x, z) + smooth(faldaT) * FALDA_ALZA;
         pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
         const h = hardnessAt(x, z);
         c.copy(cSoft).lerp(cHard, h);
@@ -1291,8 +1314,10 @@ function buildScene(){
         const media = 0.25 * (terrainY(x+14, z) + terrainY(x-14, z) +
                               terrainY(x, z+14) + terrainY(x, z-14));
         const cav = clamp((y - media) * 0.10, -0.30, 0.22);
-        const fuera = Math.abs(u) > 1 / OUT ? 0.62 : 1;      // fuera del límite: apagado
-        const shade = (0.88 + 0.12 * h + pend * 0.42 + cav) * fuera;
+        const fuera = Math.abs(x) > hwPista ? 0.62 : 1;      // fuera del límite: apagado
+        /* el faldón vira hacia el color de la roca del cañón y se oscurece */
+        if(faldaT > 0) c.lerp(_cFalda, faldaT * 0.55);
+        const shade = (0.88 + 0.12 * h + pend * 0.42 + cav) * fuera * (1 - faldaT * 0.18);
         col[vi*3] = c.r * shade; col[vi*3+1] = c.g * shade; col[vi*3+2] = c.b * shade;
         vi++;
       }
@@ -1461,7 +1486,7 @@ function buildScene(){
        su propia InstancedMesh: 5 modelos ⇒ un puñado de draw calls para ~900
        rocas, en vez de 900. */
     const CLAVES_ROCA = (K.densRoca > 0.01 ? (ROCAS_POR_PIEL[SKIN] || ROCAS_POR_PIEL.arena) : []);
-    const PASO = Math.round(17 / clamp(K.densRoca, 0.2, 2));
+    const PASO = Math.round(13 / clamp(K.densRoca, 0.2, 2));
     const filas = [];
     for(let z = 120; z > -(K.len + 200); z -= PASO){
       const hw = hwAt(z);
@@ -1486,7 +1511,7 @@ function buildScene(){
     const filas2 = [];
     for(let z = 120; z > -(K.len + 200); z -= 42){
       const hw = hwAt(z);
-      for(const lado of [-1, 1]) if(rng() < 0.62 * K.densRoca) filas2.push({ z, hw, lado });
+      for(const lado of [-1, 1]) if(rng() < 0.8 * K.densRoca) filas2.push({ z, hw, lado });
     }
     CLAVES_ROCA.forEach((clave, ci) => {
       const mias = filas2.filter((_, i) => (i % CLAVES_ROCA.length) === ci);
@@ -1658,6 +1683,32 @@ function buildScene(){
       x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N), on:new Uint8Array(N) };
   }
 
+  /* --- POLVO AMBIENTE --- */
+  {
+    const N = Math.round(K.polvoN * clamp(K.densDeco, 0, 1.5));
+    if(N > 0){
+      const im2 = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 5, 4),
+        new THREE.MeshBasicMaterial({ color: PAL.part, transparent:true,
+                                      opacity: K.polvoOp, depthWrite:false }), N);
+      im2.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im2.frustumCulled = false;
+      im2.renderOrder = 2;
+      sc.add(im2);                       // en la ESCENA: vive alrededor de la cámara
+      const P = { im: im2, N,
+        x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N),
+        s:new Float32Array(N), f:new Float32Array(N) };
+      const rp = mulberry32(DESC.seed ^ 0x9d05);
+      for(let i = 0; i < N; i++){
+        P.x[i] = (rp()*2-1) * K.polvoCaja;
+        P.y[i] = (rp()*2-1) * K.polvoCaja * 0.4;
+        P.z[i] = (rp()*2-1) * K.polvoCaja;
+        P.s[i] = 0.05 + rp() * 0.13;     // motas PEQUEÑAS: es bruma, no pedrisco
+        P.f[i] = rp() * TAU;             // fase para la ondulación
+      }
+      DESC.polvo = P;
+    } else DESC.polvo = null;
+  }
+
   DESC.scene = sc;
   DESC.cam = new THREE.PerspectiveCamera(K.fovBase, innerWidth / innerHeight, 0.5, 5000);
   return sc;
@@ -1716,6 +1767,30 @@ function updateTrail(dt){
     T.im.setMatrixAt(i, _m4);
   }
   T.im.instanceMatrix.needsUpdate = true;
+}
+
+/* POLVO AMBIENTE: deriva con viento lateral + caída lenta, en coordenadas
+   RELATIVAS a la cámara con reciclado por caja envolvente (la mota que sale
+   por un lado entra por el contrario: nunca se ve nacer ni morir). */
+function updatePolvo(dt){
+  const P = DESC.polvo; if(!P || !DESC.cam) return;
+  const C = K.polvoCaja;
+  const t = DESC.t;
+  for(let i = 0; i < P.N; i++){
+    P.x[i] += (K.polvoViento * 0.6 + Math.sin(t * 0.7 + P.f[i]) * 3.5) * dt;
+    P.y[i] += (-1.1 + Math.cos(t * 0.9 + P.f[i]) * 0.8) * dt;
+    P.z[i] += (K.polvoViento + Math.sin(t * 0.5 + P.f[i] * 2) * 2.5) * dt;
+    if(P.x[i] >  C) P.x[i] -= 2*C; if(P.x[i] < -C) P.x[i] += 2*C;
+    if(P.z[i] >  C) P.z[i] -= 2*C; if(P.z[i] < -C) P.z[i] += 2*C;
+    const CY = C * 0.4;
+    if(P.y[i] >  CY) P.y[i] -= 2*CY; if(P.y[i] < -CY) P.y[i] += 2*CY;
+    _v3.set(DESC.cam.position.x + P.x[i], DESC.cam.position.y + P.y[i], DESC.cam.position.z + P.z[i]);
+    _qt.identity();
+    _sc3.setScalar(P.s[i]);
+    _m4.compose(_v3, _qt, _sc3);
+    P.im.setMatrixAt(i, _m4);
+  }
+  P.im.instanceMatrix.needsUpdate = true;
 }
 
 /* POLVO EN VUELO: material del stage barriendo la cámara. La LONGITUD de cada
@@ -1813,15 +1888,20 @@ function montaPersonaje(r){
   r.model = model;
   r.montado = true;
 
-  /* --- clips --- */
+  /* --- clips ---
+     board/wipeout/getup/turbo/carve vienen inyectados por merge.js para el
+     descenso; 'jump' es EL DEL JUEGO NORMAL (ya vivía en el GLB de cada clase
+     — petición de Toni: reutilizarlo para el salto). */
   r.mixer = new THREE.AnimationMixer(model);
   r.acts = {};
-  for(const nom of ['board', 'wipeout', 'getup']){
+  for(const nom of ['board', 'wipeout', 'getup', 'turbo', 'carve', 'jump']){
     const c = (tpl.animations || []).find(a => a.name === nom);
     if(c){ const a = r.mixer.clipAction(c); a.enabled = true; r.acts[nom] = a; r.dur = r.dur || {}; r.dur[nom] = c.duration; }
   }
   if(r.acts.wipeout){ r.acts.wipeout.setLoop(THREE.LoopOnce, 1); r.acts.wipeout.clampWhenFinished = true; }
   if(r.acts.getup){   r.acts.getup.setLoop(THREE.LoopOnce, 1);   r.acts.getup.clampWhenFinished = true; }
+  /* el salto se queda clavado en su último frame hasta aterrizar */
+  if(r.acts.jump){    r.acts.jump.setLoop(THREE.LoopOnce, 1);    r.acts.jump.clampWhenFinished = true; }
   if(r.acts.board) r.acts.board.play();
   r.animCur = 'board';
 
@@ -1844,6 +1924,19 @@ function animA(r, nom){
   nuevo.reset(); nuevo.enabled = true; nuevo.setEffectiveWeight(1); nuevo.play();
   if(viejo && viejo !== nuevo) viejo.crossFadeTo(nuevo, K.animFade, false);
   r.animCur = nom;
+}
+
+/* ►MÁQUINA DE ESTADOS DE ANIMACIÓN (una decisión por frame, en orden de
+   prioridad). La caída NO se decide aquí: fall() y su cadena wipeout→getup
+   mandan mientras r.fall > 0. El salto usa el clip 'jump' DEL JUEGO NORMAL
+   (petición de Toni), turbo y carve son los Crouch de Mixamo. */
+function animEstado(r){
+  if(!r.montado || r.fall > 0) return;
+  if(r.air)                 animA(r, 'jump');    // animA ya reinicia al entrar
+  else if(r.grind)          animA(r, 'board');
+  else if(r.turbo)          animA(r, 'turbo');
+  else if((r._cruce || 0) > 0.45) animA(r, 'carve');
+  else                      animA(r, 'board');
 }
 
 function makeRacer(i, human){
@@ -2072,6 +2165,20 @@ function aiInput(r, dt){
    DESC._why lo dice en cualquier momento (roca / aterrizaje / plancha / borde / rival). */
 function camKick(v){ DESC.kick.v -= v * 8; }
 
+/* Tope duro del abanico. Extraído a helper porque el BUG que dejaba salirse
+   por los lados (lo cazó Toni jugando) era exactamente este: la rama de CAÍDA
+   hace early-return integrando x += vx·dt ANTES de llegar al clamp del flujo
+   normal, así que caerte cerca del borde te sacaba de la pista deslizando. */
+function topeLateral(r, conCrash){
+  const lim = hwAt(r.z) - 1.5;
+  if(Math.abs(r.x) > lim){
+    r.x = Math.sign(r.x) * lim;
+    const vn = r.vx;
+    r.vx = -vn * 0.25;
+    if(conCrash && Math.abs(vn) > 12) crash(r, 'borde');
+  }
+}
+
 /* Sacar del abismo a quien no llegó al otro lado. Se le devuelve por DETRÁS del
    hueco, con pista por delante para volver a coger carrerilla.
 
@@ -2172,6 +2279,7 @@ function stepRacer(r, dt){
       r.body.rotation.set(-1.35, 0, Math.sin(DESC.t*7)*0.12);
     }
     r.x += r.vx*dt; r.z += r.vz*dt;
+    topeLateral(r, false);            // caído también hay borde (sin re-crash)
     const fd = Math.pow(K.fallDrag, dt);
     r.vx *= fd; r.vz *= fd;
     r.y = groundYAt(r.x, r.z);
@@ -2482,13 +2590,7 @@ function stepRacer(r, dt){
 
   /* ---------- LÍMITE DEL ABANICO ----------
      No hay muro: el cuenco ya te empuja al centro. Esto es solo el tope duro. */
-  const lim = hwAt(r.z) - 1.5;
-  if(Math.abs(r.x) > lim){
-    r.x = Math.sign(r.x) * lim;
-    const vn = r.vx;
-    r.vx = -vn * 0.25;
-    if(Math.abs(vn) > 12) crash(r, 'borde');
-  }
+  topeLateral(r, true);
 
   /* ---------- ►GRINDING ---------- */
   if(r.grind){
@@ -2619,13 +2721,32 @@ function stepRacer(r, dt){
     }
   }
 
-  /* obstáculos */
+  /* obstáculos.
+     ►LAS ROCAS SON SÓLIDAS. Antes la colisión solo llamaba crash() sin tocar
+     la posición, y mientras r.crash>0 este bloque entero se saltaba: durante
+     los 0,55 s del choque PLANEABAS A TRAVÉS de la roca (lo cazó Toni). Ahora
+     la resolución de penetración corre SIEMPRE (también chocado y caído):
+     se empuja al jugador fuera del radio y se refleja la velocidad entrante.
+     Solo el crash() nuevo respeta el cooldown. */
+  for(const o of nearObst(r.z, 18)){
+    if(o.type !== 'rock') continue;
+    if(r.y > (o.baseY||0) + o.r*1.05) continue;
+    const dx = r.x - o.x, dz = r.z - o.z;
+    const rad = o.r + 1.4;
+    const d2 = Math.hypot(dx, dz);
+    if(d2 >= rad) continue;
+    /* empujar fuera por la normal (y si estás clavado en el centro, de lado) */
+    const nx2 = d2 > 0.01 ? dx / d2 : 1, nz2 = d2 > 0.01 ? dz / d2 : 0;
+    r.x = o.x + nx2 * rad;
+    r.z = o.z + nz2 * rad;
+    /* reflejar SOLO la componente que entra en la roca */
+    const ven = r.vx * nx2 + r.vz * nz2;
+    if(ven < 0){ r.vx -= 1.6 * ven * nx2; r.vz -= 1.6 * ven * nz2; }
+    if(r.crash <= 0 && r.fall <= 0) crash(r, 'roca');
+  }
   if(r.crash <= 0 && r.fall <= 0){
     for(const o of nearObst(r.z, 18)){
-      if(o.type === 'rock'){
-        if(r.y > (o.baseY||0) + o.r*1.05) continue;
-        if(Math.abs(o.z-r.z) < o.r+1.6 && Math.abs(o.x-r.x) < o.r+1.2) crash(r, 'roca');
-      } else if(o.type === 'pick' && !o.taken){
+      if(o.type === 'pick' && !o.taken){
         if(Math.abs(o.z-r.z) < 3.4 && Math.abs(o.x-r.x) < 3.4 && r.y - terrainY(r.x,r.z) < 4.6){
           o.taken = true; if(o._m) o._m.visible = false;
           r.item = ITEM_KEYS[(Math.random()*ITEM_KEYS.length)|0];
@@ -2667,11 +2788,14 @@ function stepRacer(r, dt){
     const cruce = clamp((Math.abs(r.yaw) - K.torsoDesde) / (K.frenoYaw - K.torsoDesde), 0, 1);
     r._cruce = lerp(r._cruce || 0, r.air ? 0 : cruce, Math.min(1, dt * 9));
     const lado = Math.sign(r.yaw) || 1;
-    if(r.model) r.model.rotation.y = K.charYaw - r.yaw * K.torsoSigue * r._cruce;
+    /* con el clip 'carve' sonando, la postura procedural se ATENÚA al 60%:
+       el clip ya pone el cuerpo; lo procedural solo orienta y remata */
+    const pf = (r.animCur === 'carve') ? 0.6 : 1;
+    if(r.model) r.model.rotation.y = K.charYaw - r.yaw * K.torsoSigue * r._cruce * pf;
     r.body.rotation.set((r.air ? -0.14 : 0.04) + pitch*0.8 + (Math.random()-0.5)*tmb,
                         (Math.random()-0.5)*tmb*0.6,
-                        -roll*0.7 - lado * K.tumbaMax * r._cruce + (Math.random()-0.5)*tmb*2.2);
-    r.body.position.y = -K.agachaMax * r._cruce;
+                        -roll*0.7 - lado * K.tumbaMax * r._cruce * pf + (Math.random()-0.5)*tmb*2.2);
+    r.body.position.y = -K.agachaMax * r._cruce * pf;
   }
   const gyS = groundYAt(r.x, r.z);
   r.shadow.position.set(r.x, gyS + 0.07, r.z);
@@ -3140,6 +3264,7 @@ DESC.tick = function(dt){
       if(tb){ tb.scale.setScalar(K.tablaEsc); tb.position.y = 0.02;
               tb.rotation.y = K.tablaYaw; r.body.add(tb); r.tabla = tb; }
     }
+    animEstado(r);
     if(r.mixer) r.mixer.update(dt);
   }
 
@@ -3150,6 +3275,7 @@ DESC.tick = function(dt){
   updateParts(dt);
   updateTrail(dt);
   updateStreaks(dt, DESC._spdK || 0);
+  updatePolvo(dt);
   updateHud(dt);
 };
 
