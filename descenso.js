@@ -368,16 +368,25 @@ const K = {
      hombro, con el jinete descentrado — que es lo que da sensación de tercera
      persona en vez de vista de dron. */
   camHombro:  2.3,     // desplazamiento lateral (el jinete queda descentrado)
-  camAlto:    1.7,     // altura sobre el jinete
-  camPitch:   11,      // picado SOBRE la pendiente local (era 16 y muy alto)
-  camSlopeK:  0.62,    // cuánto de la pendiente local hereda el picado. A
-                       // cámara corta heredar casi toda la clava en el suelo y
-                       // el cielo desaparece del encuadre.
+  camAlto:    2.5,     // altura SOBRE LA LADERA (no sobre el horizonte)
+  camYawSigue:0.55,    // ►CUÁNTO acompaña la cámara al giro del board. A 1 la
+                       // cámara giraba TODO lo que giraba la tabla y el mundo
+                       // barría de lado a lado en cada curva. A 0,55 acompaña
+                       // pero se queda "mirando la montaña", no la tabla.
+  camYawLag:  3.2,     // rad/s con que persigue ese ángulo: suaviza el barrido
+  camPitch:   7,       // picado propio SOBRE la pendiente local
+  camSlopeK:  0.94,    // ►CUÁNTO de la pendiente local hereda el picado.
+                       // Contraintuitivo: hay que heredar CASI TODA. Si heredas
+                       // poco, en una ladera de 42° la cámara "de detrás" cae
+                       // dentro del monte, el barrido la empuja arriba y acabas
+                       // en vista de dron (medido: 16 u por encima del jinete).
+                       // Heredando casi toda, la cámara va PARALELA a la ladera
+                       // y se queda al hombro. El picado propio es el pequeño.
   camSlopeBase:30,     // sobre cuántas unidades se mide esa pendiente. Con 3 (la
                        // que usa la IA) un lomo la disparaba y en el fuera pista
                        // la cámara se iba a cenital.
-  camPitchMin:10 * RAD,
-  camPitchMax:36 * RAD,
+  camPitchMin:9 * RAD,
+  camPitchMax:50 * RAD,   // en fuera pista (42°) tiene que poder acompañar
   camDist:    10.5,    // ← al hombro. La rueda del ratón mueve esto.
   camDistMin: 6,
   camDistMax: 20,
@@ -386,19 +395,25 @@ const K = {
                        // (se acercaba), pero el FOV subía 28° con la velocidad
                        // y el efecto era exactamente ese: alejarse. Ahora la
                        // distancia es tuya (rueda) y solo tuya.
-  camAireY:   0.75,    // cuánto sigue la cámara al jinete cuando VUELA
-  camAireMax: 26,      // tope de subida (que no se quede en órbita)
+  camAireY:   0.55,    // cuánto sigue la MIRA al jinete cuando VUELA
+  camAireMax: 12,      // tope de subida. Con 26 y aplicándolo también a la
+                       // POSICIÓN de la cámara, un lomo cualquiera la mandaba
+                       // 16 u hacia arriba: medido, 25 u sobre el jinete y el
+                       // personaje fuera de cuadro por abajo. La cámara se
+                       // queda donde está y lo que sube es la MIRA.
+  camAireLag: 3.5,     // suavizado (rad/s): sin él, cada bache da un tirón
   camLookAhead: 5.5,   // a cámara corta hay que mirar MENOS lejos o el jinete
                        // se va al borde inferior del encuadre (medido: con 9
                        // salía cortado por abajo)
-  camLookY:   3.4,
+  camLookY:   1.3,     // mira más bajo que la cámara ⇒ "un poco picada"
   camLookMix: 0.5,     // el punto de mira se queda a media altura entre yo y el
                        // suelo de allí; apuntar al suelo de una pared de 42°
                        // manda la cámara a mirarse los pies
   camLag:     11.0,    // más pegada = "te sigue" de verdad
   fovBase:    58,
   fovSpeed:   7,       // era 28: el "zoom out" que se sentía al correr
-  shakeSpeed: 0.55,
+  shakeSpeed: 0.10,    // Toni: "no quiero que todo vibre tantísimo". Era 0,55
+                       // y a tope de velocidad la imagen no paraba quieta.
   leash:      70,
   orbSpeed:   2.3,     // rad/s del stick derecho / Q / E
   orbMouse:   0.0042,  // rad por píxel de ratón
@@ -410,12 +425,12 @@ const K = {
   /* ►GOLPE DE CÁMARA. La mitad de la sensación de un juego de tabla está en
      que la cámara ACUSA el aterrizaje: se hunde de golpe y rebota. Sin esto,
      caer de una rampa grande y de un bordillo se ven exactamente igual. */
-  kickLand:   0.16,    // hundimiento por unidad de impacto normal
-  kickMax:    3.4,     // tope del hundimiento
-  kickCrash:  2.6,     // el que mete un choque
+  kickLand:   0.09,    // hundimiento por unidad de impacto normal
+  kickMax:    1.9,     // tope del hundimiento
+  kickCrash:  1.4,     // el que mete un choque
   kickSpring: 150,     // rigidez del muelle que la devuelve
   kickDamp:   13,      // amortiguación (por debajo del crítico = rebota una vez)
-  kickFov:    5.5,     // tirón de FOV al aterrizar fuerte
+  kickFov:    3.0,     // tirón de FOV al aterrizar fuerte
 
   orbHold:    1.2,     // s parado antes de volver sola detrás
   orbBack:    2.4,     // velocidad de recentrado
@@ -425,6 +440,14 @@ const K = {
   /* --- efecto de velocidad --- */
   streakN:    150,    // Con 340 se leían como arañazos blancos sobre el cielo
   streakFrom: 0.45,   // liso; y arrancaban demasiado pronto.
+  /* ►TÚNEL. Toni pidió "más efecto túnel donde se blurrea lo que tienes
+     alrededor" y MENOS vibración. Las dos cosas van juntas: la sensación de
+     velocidad la da el desenfoque de la periferia, no zarandear la cámara.
+     Se hace con una capa DOM sobre el canvas (backdrop-filter + máscara
+     radial): cuesta 0 en el pipeline 3D y desenfoca de verdad. */
+  blurMax:    7.0,    // px de desenfoque en el borde a tope de velocidad
+  blurDesde:  0.30,   // fracción de velocidad a la que empieza
+  blurCentro: 0.34,   // radio del "ojo" limpio (0..1 de la pantalla)
 
   /* --- IA --- */
   aiBand: 0.14, aiMaxGap: 170, aiLook: 55, aiSkill: [0.93, 0.87, 0.81],
@@ -438,6 +461,16 @@ const K = {
                        // personaje. Una tabla real mide como su dueño.
   tablaYaw:   0,
   animFade:   0.18,
+  /* ►POSTURA AL CRUZAR LA TABLA. Toni: "cuando se gira mucho debe cambiar la
+     animación y ponerse de lado con la tabla como si frenase". No hay clip de
+     carve, pero no hace falta: lo que hace un rider de verdad es dejar que la
+     TABLA se cruce mientras el TORSO sigue mirando cuesta abajo. Eso se compone
+     girando el modelo en contra del board, y se lee exactamente como un
+     frenazo. Se suma agacharse y tumbarse hacia dentro de la curva. */
+  torsoSigue: 0.80,    // cuánto se queda el torso mirando la bajada (0..1)
+  torsoDesde: 0.22,    // rad de giro a partir del cual empieza a notarse
+  agachaMax:  0.34,    // cuánto se agacha en el cruce máximo
+  tumbaMax:   0.42,    // cuánto se tumba hacia dentro
   wipeMin:    0.9,     // lo que dura como poco la caída antes de levantarse
 
   /* --- ►CALIDAD ---
@@ -447,6 +480,7 @@ const K = {
      1,5 M de triángulos, y el mapa de sombras vuelve a dibujar la escena. */
   sombras:    true,
   densRoca:   1.0,     // multiplicador de densidad del pedregal
+  densDeco:   1.0,     // ...y del decorado (plantas)
   sombraMap:  1024,
 
   /* --- simulación --- */
@@ -495,25 +529,28 @@ const ZONA = {
    Largo total ≈ 6.200 u ⇒ unos DOS MINUTOS a la velocidad media medida.
    ===================================================================== */
 const PLAN = [
+  /* HUECOS Y TÚNELES RETIRADOS a peticion de Toni ("quita los precipicios y
+     los túneles de momento"). El código de ambos sigue vivo y probado: basta
+     volver a poner `hueco:N` o `tunel:true` en un tramo para recuperarlos. */
   { z:'verde', len:260, hw:70  },
   { z:'azul',  len:240, hw:88,  rail:{ x:0,   largo:110 } },
   { z:'azul',  len:200, hw:120 },
-  { z:'roja',  len:280, hw:150, hueco:16 },                    // salto corto: ollie
-  { z:'roja',  len:240, hw:60,  tunel:true },                  // estrechamiento + túnel
+  { z:'roja',  len:280, hw:150 },
+  { z:'roja',  len:240, hw:60  },                              // embudo
   { z:'negra', len:300, hw:110, parte:{ largo:230, alto:26 } }, // dos rutas
-  { z:'negra', len:260, hw:150, hueco:44 },                    // GRAN precipicio
+  { z:'negra', len:260, hw:150 },
   { z:'verde', len:220, hw:170 },                              // respiro
   { z:'fuera', len:340, hw:200 },
   { z:'fuera', len:260, hw:130, rail:{ x:-22, largo:120 } },
   { z:'roja',  len:280, hw:70  },                              // pasillo de giro
-  { z:'roja',  len:260, hw:150, hueco:18 },
+  { z:'roja',  len:260, hw:150 },
   { z:'negra', len:320, hw:120, parte:{ largo:250, alto:30 } },
-  { z:'negra', len:280, hw:170, hueco:54 },                    // el más grande
-  { z:'azul',  len:240, hw:74,  tunel:true },
+  { z:'negra', len:280, hw:170 },
+  { z:'azul',  len:240, hw:74  },
   { z:'azul',  len:260, hw:90,  rail:{ x:16, largo:130 } },
   { z:'roja',  len:300, hw:150 },
   { z:'roja',  len:260, hw:80  },                              // último pasillo
-  { z:'negra', len:300, hw:140, hueco:20 },
+  { z:'negra', len:300, hw:140 },
   { z:'verde', len:280, hw:190 },
   { z:'verde', len:220, hw:210 },
 ];
@@ -758,10 +795,19 @@ const ROCAS_POR_PIEL = {
   nieve: ['s6_peak', 's6_peak2', 's3_rock', 's3_rock2', 's3_boulder'],
   mar:   ['s3_rock', 's3_rock2', 's3_boulder'],
 };
+/* DECORADO. SOLO cosas que tienen sentido en un desierto: plantas, cactus,
+   palmeras y rocas. Nada de alfombras, cofres ni props de interior — el juego
+   tiene s3_carpet/s3_rug/s3_rugoriental y NO se usan aquí a propósito.
+   `mata` = va también EN MEDIO de la pista (no estorba, se atraviesa);
+   `borde`  = solo a los lados, porque es grande y taparía. */
 const DECOR = {
-  arena: ['s3_agave', 's3_aloe', 's3_cactusbarrel', 's3_cactus', 's3_datepalm', 's3_palm2'],
-  nieve: ['s6_pine', 's6_deadtrees', 's6_bush', 's6_crystal'],
-  mar:   ['s3_agave', 's3_palm', 's6_bush'],
+  arena: { mata:  ['s3_agave', 's3_aloe', 's3_cactusbarrel', 's3_bloom'],
+           borde: ['s3_cactus', 's3_cactus3', 's3_datepalm', 's3_palm', 's3_palm2',
+                   's3_palm3', 's3_palm4', 's3_palm5', 's3_pillar'] },
+  nieve: { mata:  ['s6_bush', 's6_crystal', 's6_crystal2'],
+           borde: ['s6_pine', 's6_deadtrees', 's6_peak', 's6_snowman'] },
+  mar:   { mata:  ['s6_bush', 's3_agave'],
+           borde: ['s3_palm', 's3_palm2', 's3_datepalm'] },
 };
 
 /* Instancia un modelo del juego. Usa el mismo parseo y la misma caché que el
@@ -784,6 +830,24 @@ function mideProp(o){
   const b = new THREE.Box3().setFromObject(o);
   const sz = new THREE.Vector3(); b.getSize(sz);
   return { alto: sz.y || 1, minY: b.min.y, radio: Math.max(sz.x, sz.z) * 0.5 || 1 };
+}
+
+/* ►APOYAR UN PROP EN UNA LADERA SIN QUE FLOTE.
+   Toni: "las rocas de los laterales no están hundidas en la arena, muchas
+   flotan por la inclinación". Exacto, y la causa era apoyarlas en UN SOLO
+   punto (el centro): en una pendiente de 26-42° el punto bajo de su huella
+   queda muy por debajo del centro, así que medio prop se queda en el aire.
+   Aquí se muestrea el terreno en el CENTRO Y EN OCHO PUNTOS de su huella y se
+   usa el MÁS BAJO — y encima se hunde una fracción de su tamaño, porque una
+   roca de verdad está enterrada, no posada. */
+const _OCHO = [[1,0],[0.71,0.71],[0,1],[-0.71,0.71],[-1,0],[-0.71,-0.71],[0,-1],[0.71,-0.71]];
+function apoyaEnLadera(x, z, radio, hundir){
+  let y = terrainY(x, z);
+  for(let i = 0; i < 8; i++){
+    const yy = terrainY(x + _OCHO[i][0] * radio, z + _OCHO[i][1] * radio);
+    if(yy < y) y = yy;
+  }
+  return y - (hundir || 0);
 }
 
 /* ►MULTITONO SIN PAGARLO EN DRAW CALLS.
@@ -847,6 +911,13 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
   for(let i = 0; i < n; i++){
     const pl = hazPlaza(i, med);
     if(!pl) continue;
+    /* si la plaza no fija `y`, se calcula apoyando en la ladera y hundiendo */
+    if(pl.y == null){
+      const rad = med.radio * Math.max(pl.ex, pl.ez);
+      const alt = med.alto * pl.ey;
+      pl.y = apoyaEnLadera(pl.x, pl.z, rad * 0.8, alt * (pl.hundeFrac != null ? pl.hundeFrac : 0.16))
+             - med.minY * pl.ey;
+    }
     v3.set(pl.x, pl.y, pl.z);
     qt.setFromEuler(new THREE.Euler(pl.rx || 0, pl.rotY || 0, pl.rz || 0));
     sc.set(pl.ex, pl.ey, pl.ez);
@@ -1389,7 +1460,7 @@ function buildScene(){
        Se reparten las plazas entre las claves disponibles y cada clave monta
        su propia InstancedMesh: 5 modelos ⇒ un puñado de draw calls para ~900
        rocas, en vez de 900. */
-    const CLAVES_ROCA = ROCAS_POR_PIEL[SKIN] || ROCAS_POR_PIEL.arena;
+    const CLAVES_ROCA = (K.densRoca > 0.01 ? (ROCAS_POR_PIEL[SKIN] || ROCAS_POR_PIEL.arena) : []);
     const PASO = Math.round(17 / clamp(K.densRoca, 0.2, 2));
     const filas = [];
     for(let z = 120; z > -(K.len + 200); z -= PASO){
@@ -1405,8 +1476,8 @@ function buildScene(){
         const e = alto / med.alto;
         const x = f.lado * (f.hw + med.radio * e * 0.5 + rng() * 5);
         const zz = f.z + (rng() - 0.5) * 9;
-        return { x, y: terrainY(x, zz) - med.minY * e - 0.4, z: zz,
-                 rotY: rng() * TAU, rx:(rng()-0.5)*0.22, rz:(rng()-0.5)*0.22,
+        return { x, y: null, z: zz, hundeFrac: 0.20 + rng()*0.14,
+                 rotY: rng() * TAU, rx:(rng()-0.5)*0.14, rz:(rng()-0.5)*0.14,
                  ex: e * (0.8 + rng()*0.5), ey: e, ez: e * (0.8 + rng()*0.5) };
       }, { sombra:true, plano:true });
     });
@@ -1425,8 +1496,8 @@ function buildScene(){
         const e = alto / med.alto;
         const x = f.lado * (f.hw + 26 + rng() * 34);
         const zz = f.z + (rng() - 0.5) * 16;
-        return { x, y: terrainY(x, zz) - med.minY * e - 1.5, z: zz,
-                 rotY: rng() * TAU, rx:(rng()-0.5)*0.18, rz:(rng()-0.5)*0.18,
+        return { x, y: null, z: zz, hundeFrac: 0.24 + rng()*0.16,
+                 rotY: rng() * TAU, rx:(rng()-0.5)*0.10, rz:(rng()-0.5)*0.10,
                  ex: e * (0.85 + rng()*0.5), ey: e, ez: e * (0.85 + rng()*0.5) };
       }, { sombra:false, plano:true });
     });
@@ -1487,34 +1558,58 @@ function buildScene(){
       siembra(world, clave, mios.length, rng, (i, med) => {
         const o2 = mios[i];
         const e = (o2.r * 2.1) / med.alto;
-        return { x:o2.x, y:o2.baseY - med.minY * e - 0.25, z:o2.z,
-                 rotY: rng() * TAU, rx:(rng()-0.5)*0.28, rz:(rng()-0.5)*0.28,
+        return { x:o2.x, y:null, z:o2.z, hundeFrac: 0.12 + rng()*0.08,
+                 rotY: rng() * TAU, rx:(rng()-0.5)*0.12, rz:(rng()-0.5)*0.12,
                  ex: e * (0.85 + rng()*0.35), ey: e * (0.8 + rng()*0.45), ez: e * (0.85 + rng()*0.35) };
       }, { sombra:true, plano:true });
     });
   }
 
-  /* --- DECORADO CON PROPS DEL JUEGO (nada inventado), instanciado --- */
+  /* --- DECORADO CON PROPS DEL JUEGO (nada inventado), instanciado ---
+     Dos capas: LOS LADOS con lo grande (palmeras, cactus columnares) y EL
+     MEDIO DE LA PISTA con matojos bajos. Toni: "tampoco hay cactus u otras
+     cosas en medio de la pista". Los del medio son pequeños y NO son
+     obstáculos: se atraviesan, están para que la pista no sea una sábana. */
   {
-    const claves = DECOR[SKIN] || DECOR.arena;
+    const D = K.densDeco > 0.01 ? (DECOR[SKIN] || DECOR.arena) : { mata:[], borde:[] };
+
+    /* ---- lados: lo alto ---- */
     const sitios = [];
-    for(let z2 = -60; z2 > -(K.len - 40); z2 -= 30 + rng() * 34){
-      if(huecoAt(z2)) continue;
-      for(const lado of [-1, 1]) if(rng() < 0.55) sitios.push({ z:z2, lado, hw:hwAt(z2) });
+    for(let z2 = -50; z2 > -(K.len - 30); z2 -= (34 + rng() * 30) / clamp(K.densDeco, 0.2, 2)){
+      for(const lado of [-1, 1]) if(rng() < 0.62) sitios.push({ z:z2, lado, hw:hwAt(z2) });
     }
-    let puestos = 0;
-    claves.forEach((clave, ci) => {
-      const mios = sitios.filter((_, i) => (i % claves.length) === ci);
-      puestos += siembra(world, clave, mios.length, rng, (i, med) => {
+    let nBorde = 0;
+    D.borde.forEach((clave, ci) => {
+      const mios = sitios.filter((_, i) => (i % D.borde.length) === ci);
+      nBorde += siembra(world, clave, mios.length, rng, (i, med) => {
         const f = mios[i];
-        const x2 = f.lado * (f.hw * (0.80 + rng() * 0.28));
-        const zz = f.z + (rng() - 0.5) * 20;
-        const e2 = (2.6 + rng() * 3.4) / med.alto;
-        return { x:x2, y: terrainY(x2, zz) - med.minY * e2, z: zz,
-                 rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
+        const x2 = f.lado * (f.hw * (0.74 + rng() * 0.30));
+        const zz = f.z + (rng() - 0.5) * 18;
+        const e2 = (3.4 + rng() * 5.2) / med.alto;
+        return { x:x2, y:null, z:zz, hundeFrac:0.05, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
       }, { sombra:true });
     });
-    console.log('[descenso] decorado: ' + puestos + ' props de ' + claves.join('/'));
+
+    /* ---- EN MEDIO DE LA PISTA: matojos bajos, repartidos por todo el ancho ---- */
+    const medio = [];
+    for(let z2 = -70; z2 > -(K.len - 30); z2 -= (26 + rng() * 26) / clamp(K.densDeco, 0.2, 2)){
+      const hw2 = hwAt(z2);
+      const cuantos = 1 + ((rng() * 2.4) | 0);
+      for(let k = 0; k < cuantos; k++)
+        medio.push({ z: z2 + (rng()-0.5)*12, x: (rng()*2 - 1) * hw2 * 0.94 });
+    }
+    let nMedio = 0;
+    D.mata.forEach((clave, ci) => {
+      const mios = medio.filter((_, i) => (i % D.mata.length) === ci);
+      nMedio += siembra(world, clave, mios.length, rng, (i, med) => {
+        const f = mios[i];
+        if(parteAt(f.x, f.z) > 1.5) return null;        // no sobre el espolón
+        const e2 = (1.1 + rng() * 1.5) / med.alto;      // BAJOS: no tapan la vista
+        return { x:f.x, y:null, z:f.z, hundeFrac:0.10, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
+      }, { sombra:true });
+    });
+    console.log('[descenso] decorado: ' + nBorde + ' a los lados (' + D.borde.join('/') +
+                ') + ' + nMedio + ' en pista (' + D.mata.join('/') + ')');
   }
 
   /* --- PARTÍCULAS --- */
@@ -2567,9 +2662,16 @@ function stepRacer(r, dt){
        invisible sería una tomadura de pelo (ya cometí ese error con la dureza
        del suelo en la v3). */
     const tmb = r.chat > 0.2 ? (r.chat - 0.2) * 0.16 : 0;
+    /* ►DE LADO AL CRUZAR: el board va donde va (r.gfx.rotation.y) y el TORSO se
+       queda mirando la bajada. `cruce` es 0 recto y 1 con la tabla de través. */
+    const cruce = clamp((Math.abs(r.yaw) - K.torsoDesde) / (K.frenoYaw - K.torsoDesde), 0, 1);
+    r._cruce = lerp(r._cruce || 0, r.air ? 0 : cruce, Math.min(1, dt * 9));
+    const lado = Math.sign(r.yaw) || 1;
+    if(r.model) r.model.rotation.y = K.charYaw - r.yaw * K.torsoSigue * r._cruce;
     r.body.rotation.set((r.air ? -0.14 : 0.04) + pitch*0.8 + (Math.random()-0.5)*tmb,
                         (Math.random()-0.5)*tmb*0.6,
-                        -roll*0.7 + (Math.random()-0.5)*tmb*2.2);
+                        -roll*0.7 - lado * K.tumbaMax * r._cruce + (Math.random()-0.5)*tmb*2.2);
+    r.body.position.y = -K.agachaMax * r._cruce;
   }
   const gyS = groundYAt(r.x, r.z);
   r.shadow.position.set(r.x, gyS + 0.07, r.z);
@@ -2593,6 +2695,7 @@ function leash(){
    CÁMARA — detrás del BOARD, orbitable
    ===================================================================== */
 const _camPos = new THREE.Vector3(), _camLook = new THREE.Vector3();
+const _srfCam = { y:0, nx:0, ny:1, nz:0, ramp:null };
 let _camInit = false;
 
 function orbitInput(dt){
@@ -2642,56 +2745,100 @@ function stepCamera(dt){
   const k = clamp((fast - 22) / 62, 0, 1);
   DESC._spdK = k;
 
-  /* mira por delante en la dirección DEL BOARD (no del eje Z) */
-  const rfx = Math.sin(r.yaw), rfz = -Math.cos(r.yaw);
-  const lx = r.x + rfx * K.camLookAhead, lz = r.z + rfz * K.camLookAhead;
-  /* ►NO PERDER AL JINETE EN EL AIRE. Toni: "si sales volando hacia arriba, que
-     la cámara no te pierda". El punto de mira se calculaba SIEMPRE sobre el
-     suelo, así que en un salto grande el personaje se salía por arriba del
-     encuadre. Ahora, cuando vuela, la mira sube con él (con tope, para que un
-     mortal desde una rampa no ponga la cámara en órbita). */
-  const gSuelo = groundYAt(lx, lz);
-  const vuelo = clamp(r.y - groundYAt(r.x, r.z), 0, K.camAireMax);
-  _camLook.set(lx, lerp(r.y, gSuelo, K.camLookMix) + K.camLookY + vuelo * K.camAireY, lz);
+  /* =====================================================================
+     ►CÁMARA EN EL MARCO DE LA LADERA (no en el del mundo)
 
+     Aquí me equivoqué dos veces seguidas mezclando la vertical del MUNDO con
+     la pendiente: la cámara acababa 6, 9 y hasta 16 unidades por encima del
+     jinete (vista de dron) precisamente en las zonas empinadas, que son las
+     que más se disfrutan. Ajustar el "picado" era pelearse con el síntoma.
+
+     La forma correcta es construirla en el marco del TERRENO:
+        n = normal de la ladera
+        f = dirección de la vista PROYECTADA en la ladera
+        cámara = jinete + n·alto − f·distancia
+     Así "alto" es alto SOBRE LA NIEVE, no sobre el horizonte, y sale al hombro
+     tanto en una verde de 11° como en un fuera pista de 42° sin tocar nada.
+     El "poco picada" sale de mirar un pelín más bajo que donde está la cámara
+     (camLookY < camAlto), no de rotar nada.
+     ===================================================================== */
   const o = DESC.orb;
-  const yawW = r.yaw + o.yaw;
-  const fx = Math.sin(yawW), fz = -Math.cos(yawW);
-  /* el picado hereda la pendiente MEDIA de lo que viene (no la del bache que
-     pisas), con tope: la órbita del jugador se suma DESPUÉS del tope. */
-  const B = K.camSlopeBase;
-  const sl = Math.atan2(groundYAt(r.x, r.z) - groundYAt(r.x + rfx*B, r.z + rfz*B), B);
-  const p = clamp(K.camPitch * RAD + sl * K.camSlopeK, K.camPitchMin, K.camPitchMax) + o.pitch;
+
+  /* ►LA CÁMARA NO GIRA TODO LO QUE GIRA LA TABLA, y lo poco que gira lo hace
+     con retardo. Antes seguía el yaw del board al 100% e instantáneamente: en
+     cada curva el paisaje barría la pantalla de lado a lado y marea. */
+  const yawObj = r.yaw * K.camYawSigue;
+  if(DESC._camYaw == null) DESC._camYaw = yawObj;
+  DESC._camYaw += clamp(yawObj - DESC._camYaw, -K.camYawLag * dt, K.camYawLag * dt);
+  const yawW = DESC._camYaw + o.yaw;
+
+  /* --- marco de la ladera --- */
+  const srf = surfaceAt(r.x, r.z, _srfCam);
+  let nx = srf.nx, ny = srf.ny, nz = srf.nz;
+  /* suavizado: la normal de un bache no debe zarandear la cámara */
+  if(DESC._nSuave == null) DESC._nSuave = { x:nx, y:ny, z:nz };
+  const kn = Math.min(1, dt * 4.5);
+  DESC._nSuave.x += (nx - DESC._nSuave.x) * kn;
+  DESC._nSuave.y += (ny - DESC._nSuave.y) * kn;
+  DESC._nSuave.z += (nz - DESC._nSuave.z) * kn;
+  const nl = Math.hypot(DESC._nSuave.x, DESC._nSuave.y, DESC._nSuave.z) || 1;
+  nx = DESC._nSuave.x / nl; ny = DESC._nSuave.y / nl; nz = DESC._nSuave.z / nl;
+
+  /* f = dirección de vista proyectada en el plano de la ladera */
+  let fx = Math.sin(yawW), fy = 0, fz = -Math.cos(yawW);
+  const dotf = fx*nx + fy*ny + fz*nz;
+  fx -= nx*dotf; fy -= ny*dotf; fz -= nz*dotf;
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  fx /= fl; fy /= fl; fz /= fl;
+  /* lateral = f × n  (para el desplazamiento al hombro) */
+  const lax = fy*nz - fz*ny, lay = fz*nx - fx*nz, laz = fx*ny - fy*nx;
+
+  /* la órbita vertical del ratón inclina DENTRO del marco: sube o baja el alto */
+  const altoCam  = Math.max(0.4, K.camAlto  + o.pitch * 9);
+  const altoMira = Math.max(0.2, K.camLookY - o.pitch * 3);
+
+  /* en el aire la MIRA sube con el jinete (Toni: "que la cámara no te pierda").
+     Suavizado, y con el suelo medido bajo el jinete: en un bache r.y - suelo da
+     saltos, y sin filtro eso es un tirón de cámara por cada lomo. */
+  /* SOLO cuenta si de verdad estás en el aire. Comparar r.y con el suelo exacto
+     daba "vuelo" permanente en terreno picado, porque r.y viene de padY (media
+     de tres puntos de la tabla) y en un lomo eso está por encima del centro:
+     medido, la cámara acababa 10 u sobre el jinete sin haber saltado. */
+  const vueloObj = r.air ? clamp(r.y - groundYAt(r.x, r.z), 0, K.camAireMax) : 0;
+  if(DESC._vuelo == null) DESC._vuelo = 0;
+  DESC._vuelo += (vueloObj - DESC._vuelo) * Math.min(1, K.camAireLag * dt);
+  const vuelo = DESC._vuelo;
+
+  _camLook.set(r.x + fx * K.camLookAhead + lax * K.camHombro * 0.5,
+               r.y + fy * K.camLookAhead + ny * altoMira + vuelo * K.camAireY,
+               r.z + fz * K.camLookAhead + laz * K.camHombro * 0.5);
+
   const dist = K.camDist + K.camDistFast * k;
-  /* AL HOMBRO: además de ir detrás, se desplaza de lado y sube, y el punto de
-     mira se desplaza con ella. Es lo que separa "tercera persona" de "dron". */
-  const lax = Math.cos(yawW), laz = Math.sin(yawW);        // eje lateral de la vista
-  _camLook.x += lax * K.camHombro * 0.55;
-  _camLook.z += laz * K.camHombro * 0.55;
-  const set = d => _camPos.set(_camLook.x - fx * Math.cos(p) * d + lax * K.camHombro,
-                               _camLook.y + Math.sin(p) * d + K.camAlto,
-                               _camLook.z - fz * Math.cos(p) * d + laz * K.camHombro);
+  /* la cámara NO sube con el vuelo: se queda al hombro y es la mira la que
+     acompaña. Solo se le da una fracción mínima para que un salto enorme no
+     saque al jinete del cuadro por arriba. */
+  const set = d => _camPos.set(r.x - fx * d + nx * altoCam + lax * K.camHombro,
+                               r.y - fy * d + ny * altoCam + vuelo * 0.22,
+                               r.z - fz * d + nz * altoCam + laz * K.camHombro);
+
   /* ---------- LA CÁMARA NO SE METE EN LA MONTAÑA ----------
-     Mirar solo el suelo BAJO la cámara no basta: en una ladera de 42° el
-     terreno se cruza ENTRE el jugador y la cámara, y lo que se ve es un
-     pegote oscuro tapando media pantalla (cazado con un raycast: era el
-     propio terreno a 15 u). Hay que barrer el segmento y acortar la
-     distancia hasta que el camino esté libre. Acercarse encuadra mucho
-     mejor que subir, que deja la cámara cenital. */
+     Con el marco de la ladera esto casi no salta, pero un lomo entre jinete y
+     cámara todavía puede cruzarse: se barre el segmento y se ACORTA (acercarse
+     encuadra mejor que subir, que es lo que la volvía cenital). */
   let d = dist;
   for(let intento = 0; intento < 5; intento++){
     set(d);
     let libre = true;
-    for(let k = 1; k <= 5; k++){
-      const f2 = k / 5;
+    for(let j = 1; j <= 5; j++){
+      const f2 = j / 5;
       const sx = lerp(_camLook.x, _camPos.x, f2);
       const sy = lerp(_camLook.y, _camPos.y, f2);
       const sz = lerp(_camLook.z, _camPos.z, f2);
       if(sy < groundYAt(sx, sz) + K.camMinH){ libre = false; break; }
     }
     if(libre) break;
-    d *= 0.72;
-    if(d < 7){ set(d); break; }
+    d *= 0.78;
+    if(d < K.camDistMin){ set(K.camDistMin); break; }
   }
   const gmin = groundYAt(_camPos.x, _camPos.z) + K.camMinH;
   if(_camPos.y < gmin) _camPos.y = gmin;
@@ -2744,6 +2891,13 @@ function buildHud(){
   d.style.cssText = 'position:fixed;inset:0;z-index:120;pointer-events:none;' +
     'font:13px/1.45 ui-monospace,Consolas,monospace;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.75)';
   d.innerHTML =
+    /* ►TÚNEL: desenfoque de la periferia. La máscara radial deja el centro
+       nítido y difumina hacia los bordes; el `will-change` evita que Chromium
+       recomponga la capa entera en cada cambio de filtro. */
+    '<div id="dBlur" style="position:absolute;inset:0;opacity:0;backdrop-filter:blur(0px);' +
+      '-webkit-backdrop-filter:blur(0px);will-change:backdrop-filter;' +
+      'mask-image:radial-gradient(ellipse 62% 62% at 50% 54%,rgba(0,0,0,0) 40%,#000 100%);' +
+      '-webkit-mask-image:radial-gradient(ellipse 62% 62% at 50% 54%,rgba(0,0,0,0) 40%,#000 100%)"></div>' +
     '<div id="dVig" style="position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 42%,rgba(0,0,0,.5) 100%)"></div>' +
     '<div id="dTop" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);text-align:center;font-size:15px;font-weight:700"></div>' +
     '<div id="dZone" style="position:absolute;top:44px;left:50%;transform:translateX(-50%);font-size:22px;font-weight:900;letter-spacing:1px;opacity:0"></div>' +
@@ -2763,7 +2917,8 @@ function buildHud(){
   document.body.appendChild(d);
   DESC.hud = { root:d, top:d.querySelector('#dTop'), left:d.querySelector('#dLeft'),
     right:d.querySelector('#dRight'), big:d.querySelector('#dBig'), fill:d.querySelector('#dFill'),
-    vig:d.querySelector('#dVig'), trick:d.querySelector('#dTrick'), zone:d.querySelector('#dZone'),
+    vig:d.querySelector('#dVig'), blur:d.querySelector('#dBlur'),
+    trick:d.querySelector('#dTrick'), zone:d.querySelector('#dZone'),
     salta:d.querySelector('#dSalta'), aire:d.querySelector('#dAire') };
 }
 
@@ -2786,7 +2941,24 @@ function updateHud(dt){
     h.zone.style.opacity = Math.min(1, DESC._znT).toFixed(2);
   } else h.zone.style.opacity = 0;
 
-  h.vig.style.opacity = (k*0.8).toFixed(2);
+  h.vig.style.opacity = (k*0.62).toFixed(2);
+
+  /* ►TÚNEL: el desenfoque periférico crece con la velocidad. El centro se
+     mantiene nítido siempre (si no, no ves por dónde vas). */
+  if(h.blur){
+    const kb = Math.max(0, (k - K.blurDesde) / (1 - K.blurDesde));
+    const px = (K.blurMax * kb * kb).toFixed(2);
+    if(h._blurPx !== px){
+      h._blurPx = px;
+      h.blur.style.backdropFilter = 'blur(' + px + 'px)';
+      h.blur.style.webkitBackdropFilter = 'blur(' + px + 'px)';
+      h.blur.style.opacity = kb > 0.01 ? 1 : 0;
+      /* el ojo limpio se ESTRECHA al correr: es lo que da el túnel */
+      const r0 = (K.blurCentro * 100 * (1 - 0.35 * kb)).toFixed(0);
+      const mk = 'radial-gradient(ellipse 62% 62% at 50% 54%,rgba(0,0,0,0) ' + r0 + '%,#000 100%)';
+      h.blur.style.maskImage = mk; h.blur.style.webkitMaskImage = mk;
+    }
+  }
 
   /* ►AVISO DE CANTO: se enciende ANTES de que te enganche, y parpadea al final */
   if(me.chat > K.chatAviso && !me.air){
@@ -2898,7 +3070,7 @@ function start(seed){
   DESC.t = 0; DESC.phase = 'countdown'; DESC.count = 3.2;
   DESC.finishOrder = []; _camInit = false; DESC._acc = 0; DESC._why = {};
   DESC.kick.y = DESC.kick.v = 0;
-  DESC.orb.yaw = DESC.orb.pitch = 0; DESC.orb.idle = 9;
+  DESC.orb.yaw = DESC.orb.pitch = 0; DESC.orb.idle = 9; DESC._camYaw = null; DESC._espera = 0; DESC._nSuave = null; DESC._vuelo = 0;
   DESC._zn = null; DESC._znT = 0;
   console.log('[descenso] semilla=' + seed + ' · ' + DESC.obst.length + ' props · piel=' + SKIN +
               ' · ' + BANDS.length + ' bandas · ' + Math.round(K.len) + ' u · desnivel ' +
@@ -2911,7 +3083,14 @@ DESC.tick = function(dt){
   dt = Math.min(0.05, dt);
 
   if(DESC.phase === 'countdown'){
-    DESC.count -= dt;
+    /* ►SALIR YA PREPARADOS. Toni: "cuando se inicia la partida deben estar ya
+       preparados los personajes". Los GLB son 12 MB y llegan async, así que la
+       cuenta atrás podía acabar con cápsulas grises en la línea. Ahora la
+       cuenta ESPERA a que los cuatro estén montados (con tope de 12 s, para
+       que un fallo de carga no cuelgue la salida). */
+    const listos = DESC.racers.length && DESC.racers.every(r => r.montado);
+    DESC._espera = (DESC._espera || 0) + dt;
+    if(listos || DESC._espera > 12) DESC.count -= dt;
     if(DESC.count <= 0) DESC.phase = 'race';
   } else if(DESC.phase === 'race'){
     /* input UNA vez por frame (leer el gamepad 120 veces sería absurdo) */
@@ -3016,13 +3195,21 @@ addEventListener('wheel', e => {
 
 function boot(){
   if(DESC._built) return;
-  /* si el juego trae selector de CALIDAD, la Baja apaga sombras y aligera el
-     pedregal: no se degrada a todo el mundo, solo a quien lo ha pedido */
-  try {
-    const q = (typeof QUALITY !== 'undefined') ? QUALITY
-            : (typeof _qualityTier !== 'undefined') ? _qualityTier : null;
-    if(q && /baj|low/i.test(String(q))){ K.sombras = false; K.densRoca = 0.55; }
-  } catch(e){}
+  /* CALIDAD: manda `?calidad=baja|media|alta` de la URL y, si no viene, el
+     selector del juego. La Baja apaga sombras y aligera decorado: no se degrada
+     a todo el mundo, solo a quien lo pide (o a quien no puede con más). */
+  let cal = (_qs.get('calidad') || '').toLowerCase();
+  if(!cal){
+    try {
+      const q = (typeof QUALITY !== 'undefined') ? QUALITY
+              : (typeof _qualityTier !== 'undefined') ? _qualityTier : '';
+      cal = String(q || '').toLowerCase();
+    } catch(e){}
+  }
+  if(/pelad|min|none/.test(cal)){ K.sombras = false; K.densRoca = 0; K.densDeco = 0; K.streakN = 40; }
+  else if(/baj|low/.test(cal)){ K.sombras = false; K.densRoca = 0.5;  K.densDeco = 0.45; K.streakN = 60; }
+  else if(/med/.test(cal)){ K.sombras = false; K.densRoca = 0.75; K.densDeco = 0.7; }
+  if(cal) console.log('[descenso] calidad=' + cal + ' · sombras=' + K.sombras);
   if(typeof THREE === 'undefined' || !GAME_RENDERER()) return;
   DESC._built = true;
   buildHud();
