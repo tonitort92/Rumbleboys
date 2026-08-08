@@ -377,10 +377,11 @@ const K = {
      persona en vez de vista de dron. */
   camHombro:  2.3,     // desplazamiento lateral (el jinete queda descentrado)
   camAlto:    2.5,     // altura SOBRE LA LADERA (no sobre el horizonte)
-  camYawSigue:0.55,    // ►CUÁNTO acompaña la cámara al giro del board. A 1 la
-                       // cámara giraba TODO lo que giraba la tabla y el mundo
-                       // barría de lado a lado en cada curva. A 0,55 acompaña
-                       // pero se queda "mirando la montaña", no la tabla.
+  camYawSigue:0,       // ►CÁMARA FIJA (Toni, v12: "cuando giras NO te siga;
+                       // estática, fija detrás"). A 0 la cámara mira SIEMPRE la
+                       // línea de máxima pendiente y la tabla gira debajo —
+                       // el encuadre no rota nunca. (0,55 era el término medio
+                       // anterior; se deja el knob por si cambia de idea.)
   camYawLag:  3.2,     // rad/s con que persigue ese ángulo: suaviza el barrido
   camPitch:   7,       // picado propio SOBRE la pendiente local
   camSlopeK:  0.94,    // ►CUÁNTO de la pendiente local hereda el picado.
@@ -395,7 +396,8 @@ const K = {
                        // la cámara se iba a cenital.
   camPitchMin:9 * RAD,
   camPitchMax:50 * RAD,   // en fuera pista (42°) tiene que poder acompañar
-  camDist:    10.5,    // ← al hombro. La rueda del ratón mueve esto.
+  camDist:    13,      // ← al hombro, "un pelín" más lejos (Toni, v12).
+                       // La rueda del ratón sigue moviendo esto.
   camDistMin: 6,
   camDistMax: 20,
   camDistFast:0,       // ►FIJA. Toni: "cuando corres mucho no quiero que la
@@ -423,9 +425,11 @@ const K = {
   shakeSpeed: 0.10,    // Toni: "no quiero que todo vibre tantísimo". Era 0,55
                        // y a tope de velocidad la imagen no paraba quieta.
   leash:      70,
-  orbSpeed:   2.3,     // rad/s del stick derecho / Q / E
-  orbMouse:   0.0042,  // rad por píxel de ratón
-  orbLibre:   true,    // el ratón rota SIN tener que arrastrar (como un shooter)
+  orbitaOn:   false,   // ►SIN ÓRBITA (Toni, v12: "que no puedas rotarla").
+                       // Ratón/stick/Q/E quedan muertos; la RUEDA (zoom) vive.
+  orbSpeed:   2.3,     // rad/s del stick derecho / Q / E (con orbitaOn)
+  orbMouse:   0.0042,  // rad por píxel de ratón (con orbitaOn)
+  orbLibre:   true,    // el ratón rota SIN arrastrar (con orbitaOn)
   orbYawMax:  75 * RAD,// cuánto se puede girar la vista a cada lado
   zoomPaso:   2.2,     // unidades por muesca de rueda
   orbPitchMin:-24 * RAD,
@@ -499,6 +503,9 @@ const K = {
   densRoca:   1.0,     // multiplicador de densidad del pedregal
   densDeco:   1.0,     // ...y del decorado (plantas)
   sombraMap:  1024,
+
+  /* --- sonido --- */
+  vol:        0.55,   // volumen maestro del minijuego (0 = mudo)
 
   /* --- simulación --- */
   fixed:      1/120,
@@ -710,10 +717,13 @@ function railAt(z){
    HUD, no pintando el desierto de verde. El relieve del terreno lo da ahora el
    sombreado por dureza y por pendiente, no un tinte plano. */
 const SKINS = {
-  arena: { sky:0xf3d6a4, sky2:0xbfd8ea, fog:0xe8c187,
-           soft:0xf0d3a0, hard:0xb07f42, wall:0xb8834f, wall2:0x8a6039,
-           rock:0x8a6f4d, ramp:0xa8672c, part:0xdcc094, trail:0xb08a55,
-           valley:0xd8ae72, ridge:0xc09a68, sun:0xfff0d0, hemi:0xffe4bc, zmix:0.0 },
+  /* ►HORA DORADA. El diagnóstico era "beige sobre beige": luz de mediodía
+     sin carácter. Misma escena, sol BAJO y cálido: cielo naranja→azul, niebla
+     cálida, sombras largas. Es UNA decisión de dirección de arte, no assets. */
+  arena: { sky:0xffc98c, sky2:0x7ea6d8, fog:0xf0be84,
+           soft:0xf2d5a2, hard:0xb8854a, wall:0xc08a52, wall2:0x936741,
+           rock:0x8f6f48, ramp:0xb06e2e, part:0xe8c896, trail:0xb8905c,
+           valley:0xe0b47e, ridge:0xcf9f6d, sun:0xffc37a, hemi:0xffd9b0, zmix:0.0 },
   nieve: { sky:0xe8f4ff, sky2:0x9dc4e8, fog:0xd6e7f4,
            soft:0xffffff, hard:0x9fbdd8, wall:0x93a9bb, wall2:0x6f8496,
            rock:0x6d7f8e, ramp:0x7fa8cc, part:0xffffff, trail:0x9fb8cc,
@@ -1190,14 +1200,16 @@ function buildScene(){
 
   /* 0,9 + 1,25 = 2,15 de luz: TODO saturaba a blanco y el color de zona no se
      leía (medido en captura: la pista roja salía color arena). */
-  sc.add(new THREE.HemisphereLight(PAL.hemi, 0x40404e, 0.55));
+  /* hemisferio BAJO + sol FUERTE = contraste; el ambiente azulado del
+     hemisferio inferior enfría las sombras (complementario del sol cálido) */
+  sc.add(new THREE.HemisphereLight(PAL.hemi, 0x4a4e66, 0.42));
   /* ►SOMBRAS REALES. Es lo que más levanta una escena plana: sin ellas, nada
      toca el suelo. La caja de sombra es PEQUEÑA y VIAJA con el jugador (100×100
      unidades): una que cubriera los 5.600 u de pista daría texels del tamaño de
      un coche. Solo proyectan los personajes y las rocas cercanas; el terreno
      únicamente las recibe. */
-  const sun = new THREE.DirectionalLight(PAL.sun, 1.05);
-  sun.position.set(-50, 90, 30);
+  const sun = new THREE.DirectionalLight(PAL.sun, 1.3);
+  sun.position.set(-85, 42, 30);          // BAJO: sombras largas de atardecer
   sun.castShadow = !!K.sombras;
   const S = 52;
   sun.shadow.camera.left = -S; sun.shadow.camera.right = S;
@@ -1211,7 +1223,7 @@ function buildScene(){
   DESC.sun = sun;
   /* relleno DESDE LA CÁMARA: sin él, los personajes (MeshStandard) se ven de
      frente en sombra mientras el terreno (Lambert) ya está bien expuesto */
-  const fill = new THREE.DirectionalLight(PAL.sun, 0.42);
+  const fill = new THREE.DirectionalLight(0xffe0c0, 0.28);
   fill.position.set(30, 40, 80);
   sc.add(fill);
 
@@ -1239,10 +1251,12 @@ function buildScene(){
     cielo.renderOrder = -1;
 
     /* SOL: disco + dos halos concéntricos que se funden */
-    const dirSol = new THREE.Vector3(-0.45, 0.42, -0.79).normalize();
-    for(const [r2, op] of [[95, 1.0], [210, 0.26], [430, 0.11]]){
+    const dirSol = new THREE.Vector3(-0.62, 0.20, -0.76).normalize();
+    const CSOL = [0xfff2d0, 0xffce8e, 0xffb870];        // núcleo blanco → halo naranja
+    let iSol = 0;
+    for(const [r2, op] of [[130, 1.0], [300, 0.30], [580, 0.12]]){
       const disco = new THREE.Mesh(new THREE.CircleGeometry(r2, 26),
-        new THREE.MeshBasicMaterial({ color: PAL.sun, transparent:true, opacity:op,
+        new THREE.MeshBasicMaterial({ color: CSOL[iSol++], transparent:true, opacity:op,
                                       depthWrite:false, fog:false, side:THREE.DoubleSide }));
       disco.position.copy(dirSol).multiplyScalar(2150);
       disco.lookAt(0, 0, 0);
@@ -1278,7 +1292,9 @@ function buildScene(){
         imN.setMatrixAt(ni, mm);
         /* las de abajo, un punto más grises: da profundidad al banco de nubes */
         const g2 = 0.90 + 0.10 * clamp((alt - 240) / 620, 0, 1);
-        cc.setRGB(g2, g2 * 0.985, g2 * 0.96);
+        /* atardecer: las bajas se tiñen de naranja, las altas casi blancas */
+        const w = 1 - clamp((alt - 240) / 620, 0, 1);
+        cc.setRGB(g2, g2 * (0.985 - 0.09*w), g2 * (0.96 - 0.22*w));
         imN.setColorAt(ni, cc);
         ni++;
       }
@@ -1799,7 +1815,9 @@ function buildScene(){
   {
     const N = K.trailN;
     const im2 = new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),
-      new THREE.MeshBasicMaterial({ color:PAL.trail, transparent:true, opacity:0.5, depthWrite:false }), N);
+      /* 0,5 de opacidad se leía como CRISTAL con la cámara baja del hombro y
+         el sol rasante: el surco debe insinuarse, no brillar */
+      new THREE.MeshBasicMaterial({ color:PAL.trail, transparent:true, opacity:0.28, depthWrite:false }), N);
     im2.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     im2.frustumCulled = false;
     im2.renderOrder = 1;
@@ -1879,6 +1897,122 @@ function buildScene(){
   DESC.scene = sc;
   DESC.cam = new THREE.PerspectiveCamera(K.fovBase, innerWidth / innerHeight, 0.5, 5000);
   return sc;
+}
+
+/* =====================================================================
+   ►SONIDO — sintetizado con WebAudio, SIN assets
+
+   El minijuego era MUDO, y en un juego de velocidad el sonido es la mitad de
+   la sensación: el viento que crece con la velocidad dice "voy rápido" mejor
+   que cualquier blur. Todo se sintetiza (ruido filtrado + osciladores):
+     · VIENTO en dos capas: grave (lowpass, siempre) + silbido (bandpass, solo
+       a mucha velocidad).
+     · CARVE: ruido medio cuya ganancia sigue la fuerza de canto — se OYE
+       cuánto estás apretando.
+     · GRIND: zumbido metálico mientras vas en el raíl.
+     · Golpes (aterrizaje/choque), ding de truco que SUBE con el combo,
+       swoosh de salto/turbo y bips de salida.
+   Solo suena el JUGADOR HUMANO. Master en K.vol (0 = mudo).
+   ===================================================================== */
+const SND = { ctx:null, on:false };
+function sndInit(){
+  if(SND.ctx || !K.vol) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    const ctx = new AC();
+    const master = ctx.createGain(); master.gain.value = K.vol; master.connect(ctx.destination);
+    /* búfer de ruido blanco de 2 s, compartido por todos los lazos */
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    function lazo(tipo, f0, q){
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const fil = ctx.createBiquadFilter(); fil.type = tipo; fil.frequency.value = f0; fil.Q.value = q;
+      const g = ctx.createGain(); g.gain.value = 0;
+      src.connect(fil); fil.connect(g); g.connect(master); src.start();
+      return { fil, g };
+    }
+    SND.wind  = lazo('lowpass', 220, 0.6);
+    SND.silb  = lazo('bandpass', 1700, 0.9);
+    SND.carve = lazo('bandpass', 520, 1.1);
+    SND.grind = lazo('bandpass', 2300, 7);
+    SND.ctx = ctx; SND.master = master; SND.buf = buf; SND.on = true;
+  } catch(e){ /* sin audio no se rompe nada */ }
+}
+/* golpe sordo: seno que cae + ráfaga de ruido grave */
+function sndThump(fuerza){
+  if(!SND.on) return;
+  const c = SND.ctx, t = c.currentTime, v = clamp(fuerza, 0.1, 1);
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(110, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.16);
+  g.gain.setValueAtTime(0.7 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  o.connect(g); g.connect(SND.master); o.start(t); o.stop(t + 0.22);
+  sndRafagaSnd(300, 0.14, 0.5 * v);
+}
+function sndRafagaSnd(freq, dur, vol){
+  if(!SND.on) return;
+  const c = SND.ctx, t = c.currentTime;
+  const src = c.createBufferSource(); src.buffer = SND.buf;
+  const fil = c.createBiquadFilter(); fil.type = 'lowpass'; fil.frequency.value = freq;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(fil); fil.connect(g); g.connect(SND.master);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+/* ding de truco: dos senos en quinta; el combo sube el tono */
+function sndDing(combo){
+  if(!SND.on) return;
+  const c = SND.ctx, t = c.currentTime;
+  const base = 660 * Math.pow(1.19, Math.min(combo || 0, 5));
+  [[base, 0], [base * 1.5, 0.07]].forEach(par => {
+    const f = par[0], dt2 = par[1];
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.28, t + dt2);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dt2 + 0.30);
+    o.connect(g); g.connect(SND.master); o.start(t + dt2); o.stop(t + dt2 + 0.32);
+  });
+}
+function sndSwoosh(){ sndRafagaSnd(1400, 0.24, 0.30); }
+function sndBip(f, dur, vol){
+  if(!SND.on) return;
+  const c = SND.ctx, t = c.currentTime;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = 'square'; o.frequency.value = f;
+  g.gain.setValueAtTime(vol || 0.16, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + (dur || 0.12));
+  o.connect(g); g.connect(SND.master); o.start(t); o.stop(t + (dur || 0.12) + 0.02);
+}
+/* lazos continuos: se ajustan cada frame con el estado del humano */
+function updateAudio(dt){
+  if(!SND.on) return;
+  const r = DESC.racers[0]; if(!r) return;
+  const k = clamp(r.spd / K.velMax, 0, 1);
+  const st = (x, v, tc) => x.setTargetAtTime(v, SND.ctx.currentTime, tc || 0.08);
+  st(SND.wind.fil.frequency, 200 + 950 * k);
+  st(SND.wind.g.gain, DESC.phase === 'race' ? 0.06 + 0.46 * Math.pow(k, 1.6) : 0.03);
+  st(SND.silb.g.gain, Math.max(0, k - 0.62) * 0.9);
+  const tallando = (!r.air && !r.grind && r.fall <= 0)
+    ? clamp((r._carveF || 0) / 70 + r.skid * 0.12, 0, 0.55) * clamp(r.spd / 30, 0, 1) : 0;
+  st(SND.carve.g.gain, tallando, 0.05);
+  st(SND.grind.g.gain, r.grind ? 0.4 : 0, 0.03);
+  /* eventos por FLANCO (comparando con el frame anterior) */
+  const S = DESC._snd || (DESC._snd = { air:false, turbo:false, grind:false, trickT:0, fase:'', cuenta:9 });
+  if(r.air && !S.air && r.vy > 6) sndSwoosh();
+  if(!r.air && S.air) sndThump(clamp((DESC._impacto || 8) / 30, 0.15, 1));
+  if(r.turbo && !S.turbo) sndRafagaSnd(2400, 0.3, 0.22);
+  if(r.grind && !S.grind){ sndBip(2100, 0.06, 0.2); sndBip(2600, 0.06, 0.14); }
+  if((r._lastTrickT || 0) > S.trickT + 0.5) sndDing(r.combo);
+  if(DESC.phase === 'countdown'){
+    const n = Math.ceil(DESC.count);
+    if(n !== S.cuenta && n > 0){ sndBip(560, 0.11); S.cuenta = n; }
+  }
+  if(DESC.phase === 'race' && S.fase === 'countdown') sndBip(880, 0.28, 0.22);
+  if(DESC.phase === 'finish' && S.fase === 'race'){ sndDing(0); sndDing(2); }
+  S.air = r.air; S.turbo = r.turbo; S.grind = !!r.grind;
+  S.trickT = r._lastTrickT || 0; S.fase = DESC.phase;
 }
 
 /* --------------------------------------------------------------------
@@ -2408,7 +2542,7 @@ function reponer(r){
 
 function crash(r, por){
   if(r.fall > 0 || r.crash > 0) return;
-  if(r.human) camKick(K.kickCrash);
+  if(r.human){ camKick(K.kickCrash); sndRafagaSnd(240, 0.28, 0.5); }
   DESC._why[por || 'otro'] = (DESC._why[por || 'otro'] || 0) + 1;
   r.crashes++;
   r.crashN = (DESC.t - r.crashT < K.crashWindow) ? r.crashN + 1 : 1;
@@ -2885,7 +3019,7 @@ function stepRacer(r, dt){
          empuje en el eje del board. Cuanto mejor encares la pendiente, menos
          impacto hay y más se conserva: caer bien pasa a ser rentable, no solo
          "no ser castigado". Y el board se endereza un poco solo. */
-      if(r.human) camKick(Math.min(K.kickMax, impacto * K.kickLand));
+      if(r.human){ camKick(Math.min(K.kickMax, impacto * K.kickLand)); DESC._impacto = impacto; }
       if(impacto > 4 && !r.trick){
         const b = impacto * K.landBoost;
         r.vx += fx * b; r.vz += fz * b;
@@ -3033,6 +3167,15 @@ let _camInit = false;
 
 function orbitInput(dt){
   const o = DESC.orb, kk = GAME_KEYS() || {};
+  /* órbita apagada: solo se atiende la rueda (zoom) y los ángulos van a 0 */
+  if(!K.orbitaOn){
+    if(o.wheel){
+      K.camDist = clamp(K.camDist + o.wheel * K.zoomPaso, K.camDistMin, K.camDistMax);
+      o.wheel = 0;
+    }
+    o.yaw = 0; o.pitch = 0; o.mx = o.my = 0;
+    return;
+  }
   let dy = 0, dp = 0, tocado = false;
   /* la rueda acerca y aleja (Toni: "alejarte y acercarte un poquito") */
   if(o.wheel){
@@ -3202,7 +3345,7 @@ function stepCamera(dt){
     const rr2 = DESC.racers[0];
     if(rr2){
       DESC.sun.target.position.set(rr2.x, rr2.y, rr2.z);
-      DESC.sun.position.set(rr2.x - 55, rr2.y + 95, rr2.z + 34);
+      DESC.sun.position.set(rr2.x - 85, rr2.y + 42, rr2.z + 30);   // sol bajo
       DESC.sun.target.updateMatrixWorld();
     }
   }
@@ -3245,7 +3388,7 @@ function buildHud(){
       '<div id="dFill" style="height:100%;width:0;background:#fff;border-radius:6px"></div></div>' +
     '<div id="dHelp" style="position:absolute;left:16px;bottom:14px;opacity:.5;font-size:11px;line-height:1.5">' +
       '<b>A/D</b> girar · <b>S</b> CLAVAR CANTOS (frena y derrapa) · <b>ESPACIO</b> saltar · <b>SHIFT</b> turbo<br>' +
-      '<b>RATÓN</b> mira alrededor · <b>RUEDA</b> acerca/aleja · <b>J</b> meteorito · <b>L</b> agarrar · <b>U</b> objeto<br>' +
+      '<b>RUEDA</b> acerca/aleja la cámara · <b>J</b> meteorito · <b>L</b> agarrar · <b>U</b> objeto<br>' +
       '<b>EN EL AIRE: 1..6 = TRUCOS</b> (te los recuerda en pantalla) · R reiniciar · T semilla</div>';
   document.body.appendChild(d);
   DESC.hud = { root:d, top:d.querySelector('#dTop'), left:d.querySelector('#dLeft'),
@@ -3486,6 +3629,7 @@ DESC.tick = function(dt){
   updateStreaks(dt, DESC._spdK || 0);
   updatePolvo(dt);
   updateRafagas(dt);
+  updateAudio(dt);
   updateHud(dt);
 };
 
@@ -3507,6 +3651,7 @@ DESC.render = function(){
 
 addEventListener('keydown', e => {
   if(!DESC.on) return;
+  sndInit(); if(SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume();
   if(e.code === 'KeyR'){ start(DESC.seed); e.preventDefault(); }
   if(e.code === 'KeyT'){ start((Math.random()*1e9)|0); e.preventDefault(); }
 });
@@ -3515,7 +3660,8 @@ addEventListener('resize', () => {
 });
 /* ratón: MOVERLO rota la vista (sin tener que arrastrar) y la RUEDA acerca o
    aleja. Con orbLibre=false vuelve al comportamiento de arrastrar. */
-addEventListener('mousedown', () => { if(DESC.on) DESC.orb.down = true; });
+addEventListener('mousedown', () => { if(DESC.on){ DESC.orb.down = true;
+  sndInit(); if(SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume(); } });
 addEventListener('mouseup',   () => { DESC.orb.down = false; });
 addEventListener('mousemove', e => {
   if(!DESC.on) return;
