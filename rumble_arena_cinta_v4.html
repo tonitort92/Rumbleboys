@@ -1485,6 +1485,8 @@ window.addEventListener('load', function(){
 <script src="smallgolem_anims.js?v=1"></script> <!-- ►G3 · STAGE 5: Gólem VELOZ pequeño (dasher rápido) — 6 FBX Mixamo en base64; los monta smallgolemLoad → BOSS_TPLS_S5.small -->
 <script src="icevik_anims.js?v=1"></script> <!-- ►ICEBOSS · STAGE 7: Coloso Vikingo de Hielo — 11 FBX (rig Mixamo Chr_Vikings_Warrior_02) en base64; se cargan con FBXLoader (icevikLoad) -->
 <script src="robot_anims.js?v=1"></script> <!-- ►ROBOTBOSS · STAGE 8: Robot de la Forja — 14 FBX Mixamo (idle/capo/run/point1/point3/charge + 7 patadas de capoeira + death) en base64; se cargan con FBXLoader (robotLoad) -->
+<script src="robotminion_anims.js?v=1"></script> <!-- ►S8ROBOT: robot LaloBOT como MINION de la horda S8 — 3 FBX Mixamo (idle/walk/attack) en base64; los monta _gobFbxLoad -->
+<script src="drone_model.js?v=1"></script> <!-- ►S8DRON: dron volador (OBJ+MTL de Dave404) de la horda S8. VA DESPUÉS de models.js: ese hace `window.GAME_MODELS = {...}` (asignación, no merge) y borraría el dron si fuese antes -->
 <script>window.GAME_MODELS_LOADED = !!window.GAME_MODELS;</script>
 <script>/* Pixel Clash — tema del juego (incrustado) */
 const MUSIC_SRC='';
@@ -3341,6 +3343,30 @@ const pads = [];
    el columpio (p.swing/tryLianaGrab/addLiana) era código muerto y LT queda solo para agarre/aguante.) */
 const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd166 });
 const PAD_R = 1.7;                             // radio de la base del cilindro del saltador
+/* ►S8FLOTA (pedido de Toni: "hay varios pads de salto que no hacen contacto con ninguna plataforma,
+   están volando en el aire, y algunos de los puntos que sacan vapor también").
+   LA CAUSA: en los builders de la FÁBRICA (buildS7F*, stage 8) el `topY` de estos props es un NÚMERO
+   ESCRITO A MANO, no una consulta al suelo. En cuanto la losa de al lado cambió de tamaño —o el prop
+   se escribió con la coordenada de otro segmento— el pad/vapor se quedó a su altura escrita sobre el
+   vacío. Es el patrón de [[borrar-no-recolocar]], y la respuesta de Toni a ese patrón es BORRAR:
+   recolocar un prop que nadie diseñó ahí solo lo pone en otro sitio igual de arbitrario.
+   El criterio es DELIBERADAMENTE estrecho —"no hay NADA debajo a esa altura", no "asoma por el
+   borde"— para no cargarse colocaciones al filo de una losa, que sí son intencionadas.
+   Deja rastro en `_s7Dropped`: una guarda que borra en SILENCIO es justo como se pierde nivel escrito
+   a mano (ya pasó una vez). Aquí arriba, junto a _footOnTop, por el TDZ: addPad y compañía se llaman
+   a nivel superior mucho antes de que se declare nada de la fábrica. */
+const _s7Dropped = [];
+function _s7Grounded(cx, cz, topY, r){
+  const ok = (x, z)=>{ const t = platformTopAt(x, z, -TOP_INSET); return t !== null && Math.abs(t - topY) <= 0.35; };
+  if(ok(cx, cz)) return true;
+  const d = (r || 1) * 0.6;                       // tolerancia: basta con que APOYE por un lado
+  return ok(cx+d, cz) || ok(cx-d, cz) || ok(cx, cz+d) || ok(cx, cz-d);
+}
+function _s7DropIfAir(what, cx, cz, topY, r){
+  if(_s7Grounded(cx, cz, topY, r)) return false;
+  _s7Dropped.push({ what, x:cx, z:cz, y:topY });
+  return true;
+}
 function addPad(x, z){
   if(!_CAP && !_ISLAND) return null;
   if(_inWall(x, z, 0)) return null;             // no pongas jump-pads dentro de un muro
@@ -5551,7 +5577,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
   } catch(e){ console.warn('[char] no se pudo cargar el humanoide', e); }
 }
 /* === puntuación / barra de minions / ataque DEFINITIVO === */
-const MINION_PTS = { small:10, shooter:25, large:50, brute:120 };   // (ajustable) pequeño<tirador<grande · brute = MINI-JEFE (el más fuerte del stage)
+const MINION_PTS = { small:10, shooter:25, large:50, brute:120, drone:40 };   // ►S8DRON: paga casi como un grande — hay que subir a por él en el aire   // (ajustable) pequeño<tirador<grande · brute = MINI-JEFE (el más fuerte del stage)
 const MPOW_MAX = 300;                                    // barra de minions llena (ajustable)
 const ULT_WIND = 2, ULT_DUR = 4, ULT_RMAX = 20, ULT_DMG = 60;   // definitiva (ajustable)
 function addMpow(p, amt){ p.mpow = Math.min(MPOW_MAX, (p.mpow||0)+amt*((p&&p._pkUltCharge)?1.5:1)); }   // ►PERK CARGA VELOZ: la definitiva se llena 50% más rápido
@@ -8831,7 +8857,7 @@ const minions = [], mprojs = [];
 let minionT = 2;
 function maxMinions(){ const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
 function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S1 (sin elite morado del desierto)
-  return type==='small' ? 14 : type==='shooter' ? 30 : type==='boss' ? 99999 : large; }   // vida: pequeño débil · tirador medio · gordo duro/elite · JEFE: muere por su propia lógica
+  return type==='small' ? 14 : type==='shooter' ? 30 : type==='drone' ? DRONE_HP : type==='boss' ? 99999 : large; }   // ►S8DRON: el dron es frágil a propósito — el coste de matarlo es SUBIR a por él, no aguantarle golpes   // vida: pequeño débil · tirador medio · gordo duro/elite · JEFE: muere por su propia lógica
 /* ===== ENJAMBRE INSTANCIADO: 1 InstancedMesh por parte → ~8 draw calls para TODO el enjambre =====
    El minion es un muñeco de cajas no-skinned (cuerpo/cabeza/2 ojos/2 brazos/2 piernas) animado por
    rotación de miembros → ideal para instancing. Geometrías y materiales compartidos. */
@@ -8874,7 +8900,7 @@ function renderMinionInstances(){
   const n = Math.min(minions.length, MINION_CAP);
   for(let i=0;i<n;i++){
     const mn = minions[i];
-    if(mn._gob || mn._boss || mn._brute || mn._carcher){ for(let pi=0;pi<minstMeshes.length;pi++) minstMeshes[pi].setMatrixAt(i, _GOB_ZERO); continue; }   // minion con GLB animado (gob*), el JEFE o el MINI-JEFE (FBX propio): oculta su caja instanciada
+    if(mn._gob || mn._boss || mn._brute || mn._carcher || mn._drone){ for(let pi=0;pi<minstMeshes.length;pi++) minstMeshes[pi].setMatrixAt(i, _GOB_ZERO); continue; }   // minion con GLB animado (gob*), el JEFE o el MINI-JEFE (FBX propio): oculta su caja instanciada
     _qY.setFromAxisAngle(_AX_Y, mn.yaw); _vScl.setScalar(mn.scale);
     _qLean.setFromAxisAngle(_AX_X, mn.bodyLean||0);           // inclinación adelante (lean): atacar / andar
     _qRoll.setFromAxisAngle(_AX_Z, mn.bodyRoll||0);           // balanceo lateral (sway) al andar
@@ -8976,12 +9002,64 @@ const GOBLIN_KINDS = {
   ninja:    { glb:'NINJA_GLB_B64',    h:1.9, walkRef:3.2, max:8, shadow:false, jitter:false, shootAtk:true,  noTint:true },   // ►ORIENTALS: ninja disparador (lanza)
   sensei:   { glb:'SENSEI_GLB_B64',   h:2.3, walkRef:2.4, max:5, shadow:true,  jitter:false, shootAtk:false, noTint:true },   // ►ORIENTALS: sensei (large melee)
   villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:8, shadow:false, jitter:true,  shootAtk:false, noTint:true },   // ►ORIENTALS: aldeano (small melee)
+  /* ►S8ROBOT (Stage 8, la fábrica): robot LaloBOT de la horda. Es la ÚNICA piel del proyecto que no
+     viene de un GLB sino de 3 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack) → los monta
+     _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
+     · type base 'large' (lo fuerza spawnMinion) = HP 60 y melee de 20 → "pega bastante fuerte".
+     · SIN noTint: el S8 lo pinta LILA por el mismo camino que a los goblins (m._s7col en gobAttach).
+     · fbxWorldBox: el rig Mixamo mide bien con setFromObject (cm), pero MIENTE con la caja LOCAL de
+       la geometría que usa _gobBuildInst para los Synty a escala 0.01 → hay que pedirle la de mundo. */
+  robotm:  { fbx:'RBOTMIN_FBX_B64', fbxClips:['idle','walk','attack'], fbxWorldBox:true, metal:true,
+             h:3.0, walkRef:2.3, max:4, shadow:true, jitter:false, shootAtk:false },
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
 const _GOB_ZERO = new THREE.Matrix4().makeScale(0,0,0);   // matriz nula → oculta la caja instanciada del minion que ya tiene GLB
+/* ►S8ROBOT · piel de minion montada desde FBX Mixamo SUELTOS (un fichero por clip) en vez de un GLB.
+   Fabrica exactamente el mismo {scene, animations} que devuelve GLTFLoader.parse, así que ni
+   _gobBuildInst ni gobAttach ni gobUpdate se enteran de la diferencia. Receta calcada de robotLoad():
+     · donante de malla = el primer FBX que trae SkinnedMesh (el orden de fbxClips manda: idle primero);
+     · stripRootMotion en TODOS los clips — estos FBX mueven la cadera en X/Z y sin congelarla el
+       minion se "despega" de su posición lógica (la que usan colisión y ataques). */
+function _gobFbxLoad(type){
+  const cfg = GOBLIN_KINDS[type], dict = window[cfg.fbx];
+  if(!dict || !THREE.FBXLoader){ console.warn('[goblin] '+type+': sin '+cfg.fbx+' o FBXLoader'); return; }
+  const loader = new THREE.FBXLoader(), names = cfg.fbxClips, parsed = {};
+  for(const key of names){
+    const b64 = dict[key]; if(!b64) continue;
+    try{ const bin=atob(b64), buf=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      parsed[key] = loader.parse(buf.buffer, ''); }
+    catch(e){ console.warn('[goblin] parse '+type+'/'+key, e); }
+  }
+  let meshSrc = null;
+  for(const key of names){ const o=parsed[key]; if(!o) continue;
+    let has=false; o.traverse(c=>{ if(c.isSkinnedMesh) has=true; });
+    if(has){ meshSrc = o; break; } }
+  if(!meshSrc){ console.warn('[goblin] '+type+': ningún FBX trae malla con piel'); return; }
+  const anims = [];
+  for(const key of names){ const o=parsed[key]; if(!(o && o.animations && o.animations[0])) continue;
+    const c = o.animations[0].clone();
+    for(const tr of c.tracks){ if(!/\.position$/.test(tr.name)) continue;
+      const v = tr.values; for(let i=0;i<v.length;i+=3){ v[i]=v[0]; v[i+2]=v[2]; } }
+    c.name = key; anims.push(c); }
+  if(cfg.metal) meshSrc.traverse(o=>{ if(!o.isMesh && !o.isSkinnedMesh) return;
+    /* OJO: FBXLoader (r128) devuelve MeshPhongMaterial, NO Standard — se ajusta lo que exista y no se
+       sustituye el material: en r128 una SkinnedMesh necesita `skinning:true` en su material y un
+       material nuevo saldría sin él (robot en pose T pegado al origen). */
+    const arr = Array.isArray(o.material) ? o.material : [o.material];
+    for(const m of arr){ if(!m) continue;
+      if('metalness' in m){ m.metalness = 0.6; m.roughness = 0.4; }
+      if(m.isMeshPhongMaterial){ m.shininess = 60; if(m.specular) m.specular.setHex(0x4a3a5c); } } });
+  _gobTpl[type] = { scene: meshSrc, animations: anims };
+  console.log('[goblin] '+type+' (FBX) listo ·', anims.map(a=>a.name).join('/'));
+  encolarSiEnPartida('prewarm goblin ' + type, ()=>{
+    const w = _gobBuildInst(type); precalentarObjeto(w.root, 'goblin ' + type); _gobPool[type].push(w);
+  });
+}
 (function gobLoad(){
   for(const type in GOBLIN_KINDS){
+    if(GOBLIN_KINDS[type].fbx){ _gobFbxLoad(type); continue; }   // ►S8ROBOT: piel de FBX sueltos (no GLB)
     const glbVar = GOBLIN_KINDS[type].glb;
     if(!window[glbVar] || !THREE.GLTFLoader) continue;
     try{
@@ -9090,7 +9168,10 @@ function _gobBuildInst(type){                             // crea UNA instancia 
   const cfg = GOBLIN_KINDS[type], tpl = _gobTpl[type];
   const root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(tpl.scene) : tpl.scene.clone();
   const box = new THREE.Box3();                         // bbox LOCAL de la geometría (la skin a escala 0.01 miente con setFromObject)
-  root.traverse(o=>{ if((o.isSkinnedMesh||o.isMesh)&&o.geometry){ if(!o.geometry.boundingBox)o.geometry.computeBoundingBox(); if(o.geometry.boundingBox) box.union(o.geometry.boundingBox); }});
+  /* ►S8ROBOT: al revés en los rigs Mixamo de FBX — ahí la caja LOCAL es la que miente (la geometría
+     va en cm bajo transformaciones anidadas) y la de MUNDO es la buena, igual que en robotLoad(). */
+  if(cfg.fbxWorldBox){ root.updateMatrixWorld(true); box.setFromObject(root); }
+  else root.traverse(o=>{ if((o.isSkinnedMesh||o.isMesh)&&o.geometry){ if(!o.geometry.boundingBox)o.geometry.computeBoundingBox(); if(o.geometry.boundingBox) box.union(o.geometry.boundingBox); }});
   const sz=new THREE.Vector3(); box.getSize(sz);
   root.traverse(o=>{ if(o.isMesh){ o.castShadow=cfg.shadow; o.frustumCulled=false; } });
   // R2-4 · Stage 2 = paleta MARRÓN (cueva). Clono materiales por-instancia (SkeletonUtils comparte
@@ -9229,6 +9310,242 @@ function gobUpdate(mn, dt){
 }
 function gobClearAll(){ for(const mn of minions) if(mn._gob) gobRemove(mn); }   // al reiniciar partida → todos al pool
 /* (los bloques duplicados _g2/_g1 se han unificado en el sistema gob* de arriba — pool incluido) */
+
+/* =====================================================================
+   ►S8DRON · EL DRON DE LA FÁBRICA (Stage 8)
+   Enemigo VOLADOR. Es un minion de pleno derecho (entra en minions[], type:'drone') para heredar
+   GRATIS toda la tubería de daño del jugador —hitMinions, atribución de kill, puntos, definitiva— sin
+   fontanería nueva. Lo único suyo es la IA (updateDrone) y el modelo (OBJ, sin rig).
+
+   LA MECÁNICA, que es lo que lo hace distinto de todo lo demás de la horda: FLOTA fuera del alcance
+   del melee de pie. hitMinions descarta el golpe si |p.pos.y - mn.pos.y| > VHIT_BAND (1.8), así que
+   con el dron anclado a suelo+2.6 un jugador plantado NO puede tocarlo: hay que SALTAR. No hace falta
+   ni una línea de código para eso — sale solo de la banda vertical que ya existía.
+
+   Su ataque es un aviso largo y visible: apunta, la luz lila crece hasta el máximo (DRONE_CHARGE
+   segundos con una línea fina que se va encendiendo) y ENTONCES suelta el rayo, que pega fuerte. O
+   sea: te da tiempo de sobra a reaccionar, pero si lo ignoras te crujue. Y como no huye —solo
+   mantiene la distancia con un vaivén de hover— la respuesta correcta siempre es saltar a por él.
+
+   OJO con las luces: NADA de PointLight por dron. El nº de luces entra en la CLAVE de todos los
+   materiales del proyecto, así que encender una en partida recompila TODOS los shaders (medido, ver
+   la memoria de rendimiento). El brillo va con mallas aditivas, que salen gratis.
+   ===================================================================== */
+const DRONE_MAX      = 3;     // vivos a la vez (es un enemigo de EVENTO, no un relleno de enjambre)
+const DRONE_HOVER    = 2.6;   // altura de vuelo sobre el suelo. >VHIT_BAND(1.8) = INTOCABLE de pie ← la mecánica
+const DRONE_STANDOFF = 6.5;   // distancia a la que se planta respecto al objetivo
+const DRONE_RANGE    = 20;    // a partir de aquí ni apunta
+const DRONE_CHARGE   = 1.5;   // s de carga de la luz (el aviso)
+const DRONE_HP       = 26;    // 2-3 golpes en el aire
+const DRONE_DMG      = 20;    // + escala con el caos: "les quita bastante"
+const DRONE_LILA     = 0xb04bff, DRONE_LILA2 = 0xe9c2ff;
+const _dronePool = []; let _droneLive = 0, _droneTpl = null, _droneTplTried = false;
+const _DR_FWD = new THREE.Vector3(0,0,1), _drA = new THREE.Vector3(), _drB = new THREE.Vector3();   // el haz se construye tumbado a +Z (ver _droneBuildInst) → la rotación va de +Z a la dirección de tiro, NO de +Y
+/* Recolor LILA del OBJ. El modelo no trae texturas, solo Kd planos por material (9), así que el
+   recolor es exacto: se conserva la LUMINANCIA de cada Kd (el modelado se mantiene) y se le impone el
+   tono lila. Los Kd muy saturados y vivos del original (los pilotos rojos) se quedan como acentos:
+   lila claro + emissive, que es lo que le da la cara de "está encendido". */
+function _droneTintMat(m){
+  const c = m.color || new THREE.Color(0x808080);
+  const L = 0.30*c.r + 0.59*c.g + 0.11*c.b;
+  const mx = Math.max(c.r,c.g,c.b), mnv = Math.min(c.r,c.g,c.b);
+  const sat = mx>0.001 ? (mx-mnv)/mx : 0;
+  const accent = (sat > 0.55 && mx > 0.5);                      // piloto/acento del modelo original
+  if(accent){ c.setHSL(0.77, 0.85, 0.66); if(m.emissive){ m.emissive.setHex(DRONE_LILA); m.emissiveIntensity = 1.4; } }
+  else       { c.setHSL(0.77, 0.52, THREE.MathUtils.clamp(L*0.70 + 0.10, 0.06, 0.62)); if(m.emissive) m.emissive.setHex(0x140424); }
+  m.transparent = false; m.depthWrite = true;                   // ►WESTERN FIX: la cúpula viene con d 0.4; una malla translúcida en el enjambre solo trae desorden de caras
+  m.opacity = 1; m.side = THREE.FrontSide; m.needsUpdate = true;
+}
+function droneTemplate(){
+  if(_droneTpl || _droneTplTried) return _droneTpl;
+  _droneTplTried = true;
+  try{
+    const data = window.GAME_MODELS && window.GAME_MODELS.drone;
+    if(!data || !THREE.OBJLoader || !THREE.MTLLoader){ console.warn('[dron] sin GAME_MODELS.drone o loaders'); return null; }
+    const mtl = new THREE.MTLLoader().parse(data.mtl||'', ''); if(mtl.preload) mtl.preload();
+    const obj = new THREE.OBJLoader().setMaterials(mtl).parse(data.obj);
+    const seen = new Set();
+    obj.traverse(o=>{ if(!o.isMesh) return;
+      o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false;
+      const arr = Array.isArray(o.material) ? o.material : [o.material];
+      for(const m of arr){ if(!m || seen.has(m.uuid)) continue; seen.add(m.uuid); _droneTintMat(m); }
+    });
+    /* normaliza: centrado en su propio bbox y escalado a DRONE_SIZE de ancho. El OBJ viene descentrado
+       (bbox -1.92..0.75 en x) — sin recentrar, el dron orbitaría alrededor de un punto que no es él. */
+    const box = new THREE.Box3().setFromObject(obj), sz = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+    const s = 1.7/(Math.max(sz.x, sz.z)||1);
+    const g = new THREE.Group();
+    obj.position.set(-ctr.x*s, -ctr.y*s, -ctr.z*s); obj.scale.setScalar(s); g.add(obj);
+    _droneTpl = g;
+  }catch(e){ console.warn('[dron] no se pudo montar el modelo', e); _droneTpl = null; }
+  return _droneTpl;
+}
+/* Una instancia = modelo + el ORBE de carga + el HAZ. Los dos efectos son aditivos y viven SIEMPRE en
+   el grupo (visible=false cuando no tocan): así no se crean/destruyen mallas por disparo. */
+function _droneBuildInst(){
+  const tpl = droneTemplate(); if(!tpl) return null;
+  const root = new THREE.Group();
+  const body = tpl.clone(true);   // geometría y materiales COMPARTIDOS: los 3 drones son idénticos, no hay nada que clonar por instancia
+  root.add(body);
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8),
+    new THREE.MeshBasicMaterial({ color:DRONE_LILA2, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false, fog:false }));
+  orb.position.set(0, -0.35, 0.55); orb.visible = false; orb.userData.noOcc = true; root.add(orb);
+  /* el HAZ es un cilindro de LONGITUD 1 tumbado a +Z: se estira con scale.z hasta el objetivo y se
+     orienta con un quaternion. Un cilindro por disparo sería basura para el GC en cada tirada. */
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 8, 1, true),
+    new THREE.MeshBasicMaterial({ color:DRONE_LILA, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide, fog:false }));
+  beam.geometry.rotateX(Math.PI/2); beam.geometry.translate(0, 0, 0.5);   // origen en la base, crece hacia +Z
+  beam.visible = false; beam.frustumCulled = false; beam.userData.noOcc = true;
+  scene.add(beam);                                    // suelto en la escena: va de dron a jugador, no cuelga del dron
+  return { root, body, orb, beam };
+}
+function droneAttach(mn){
+  if(mn._dinst) return;
+  let inst = _dronePool.pop();
+  if(!inst) inst = _droneBuildInst();
+  if(!inst) return;
+  inst.root.visible = true; inst.orb.visible = false; inst.beam.visible = false;
+  scene.add(inst.root);
+  mn._dinst = inst; _droneLive++;
+}
+function droneRemove(mn){
+  const inst = mn._dinst; if(!inst) return;
+  scene.remove(inst.root); inst.root.visible = false;
+  inst.beam.visible = false; inst.orb.visible = false;
+  _dronePool.push(inst); _droneLive = Math.max(0, _droneLive-1);
+  mn._dinst = null;
+}
+function droneClearAll(){ for(const mn of minions) if(mn._drone) droneRemove(mn); }
+function spawnDrone(x, z, y0){
+  if(minions.length >= MINION_CAP || _droneLive >= DRONE_MAX) return null;
+  if(!droneTemplate()) return null;
+  const mn = { type:'drone', _drone:true, scale:1, skin:null,
+    pos:new THREE.Vector3(x, y0 + DRONE_HOVER + 5, z), vel:new THREE.Vector3(),
+    yaw:0, onGround:false, damage:0, hitstun:0, invuln:0.6, atkPhase:'none', atkT:0,
+    cd:1.2+Math.random()*1.6, hitCD:0, dead:false, target:null, retargetT:0,
+    st:'idle', chg:0, beamT:0, ph:Math.random()*Math.PI*2, drift:Math.random()*Math.PI*2,
+    animPhase:0, shootT:0, bodyRoll:0, bodyLean:0, aHead:0, aArmL:0, aArmR:0, aLegL:0, aLegR:0 };
+  minions.push(mn); droneAttach(mn);
+  burst(mn.pos.clone(), DRONE_LILA, 10, 5, 4, .8);
+  return mn;
+}
+function droneFire(mn, tgt){
+  const inst = mn._dinst;
+  const o = _drA.set(mn.pos.x, mn.pos.y + 1, mn.pos.z);
+  const to = _drB.set(tgt.pos.x, tgt.pos.y + 1.0, tgt.pos.z).sub(o);
+  const len = to.length() || 1; to.multiplyScalar(1/len);
+  if(inst){
+    inst.beam.position.copy(o);
+    inst.beam.quaternion.setFromUnitVectors(_DR_FWD, to);
+    inst.beam.scale.set(0.30, 0.30, len);
+    inst.beam.visible = true;
+  }
+  mn.beamT = 0.18;
+  if(!tgt.dead && !(tgt.invuln>0)){
+    if(tgt.block){ tgt.damage += 6*defMul(tgt); tgt.shieldFlash = .2; sfx.chip(); }
+    else {
+      const dmg = (DRONE_DMG + chaosLvl*1.6) * defMul(tgt);
+      tgt.damage += dmg; noteMinion(tgt);
+      tgt.vel.x += to.x*4; tgt.vel.z += to.z*4; tgt.vel.y = Math.max(tgt.vel.y, 3);
+      tgt.hitstun = Math.max(tgt.hitstun, .28); tgt.hitFlash = .2; tgt.comboWindow = 0; tgt.onGround = false;
+      burst(tgt.pos.clone().add(new THREE.Vector3(0,1,0)), DRONE_LILA, 14, 6, 5, .9);
+      ring(tgt.pos.clone().add(new THREE.Vector3(0,1,0)), DRONE_LILA2, 14, .35);
+      jiggle(tgt, 12); shake = Math.max(shake, .28);
+      sfx.hit(tgt.damage);
+    }
+  }
+  burst(o.clone(), DRONE_LILA2, 8, 4, 3, .4);
+  sfx.throwS();
+}
+function updateDrone(mn, dt){
+  const inst = mn._dinst;
+  if(!inst){ droneAttach(mn); }
+  mn.hitCD = Math.max(0, mn.hitCD - dt);
+  mn.invuln = Math.max(0, mn.invuln - dt);
+  mn.hitstun = Math.max(0, mn.hitstun - dt);
+  mn.cd -= dt; mn.beamT -= dt; mn.ph += dt; mn.drift += dt*0.7;
+  mn.retargetT -= dt;
+  if(!mn.target || mn.target.dead || mn.retargetT<=0){ mn.target = pickMinionTarget(mn); mn.retargetT = 0.7+Math.random()*0.5; }
+  const tgt = mn.target;
+  if(BELT.on) mn.pos.x += BELT.vel*dt;                 // viaja con la cinta como todo lo demás
+  /* ALTURA: se ancla al suelo que tenga debajo; sobre el vacío usa el del objetivo (así te sigue por
+     encima de un hueco en vez de desplomarse o quedarse a una altura absurda). */
+  let fy = platformTopAt(mn.pos.x, mn.pos.z);
+  if(fy === null) fy = tgt ? tgt.pos.y : 0;
+  const bob = Math.sin(mn.ph*1.9)*0.28 + Math.sin(mn.ph*3.7)*0.09;   // dos senos = flotación de dron, no un balanceo de metrónomo
+  const wantY = fy + DRONE_HOVER + bob;
+  /* MOVIMIENTO: nunca huye (petición) — se acerca hasta DRONE_STANDOFF y a partir de ahí solo
+     ORBITA despacio. El resultado es el "hovering en movimiento constante y suave" sin alejarse. */
+  let wx = 0, wz = 0;
+  if(tgt){
+    const dx = tgt.pos.x - mn.pos.x, dz = tgt.pos.z - mn.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    mn.yaw = Math.atan2(dx, dz);
+    const closing = (d - DRONE_STANDOFF);
+    const approach = THREE.MathUtils.clamp(closing*0.9, -1.6, 3.4);   // si se pasa de cerca retrocede MUY poco: mantiene sitio, no kitea
+    wx = dx/d*approach; wz = dz/d*approach;
+    const orb = Math.sin(mn.drift)*1.5;                                // deriva lateral (perpendicular)
+    wx += -dz/d*orb; wz += dx/d*orb;
+  } else { wx = Math.sin(mn.drift)*1.2; wz = Math.cos(mn.drift*0.8)*1.2; }
+  const k = Math.min(1, dt*(mn.hitstun>0 ? 1.6 : 3.2));   // aturdido = tarda en recomponerse (el empujón del jugador se nota)
+  mn.vel.x += (wx - mn.vel.x)*k;
+  mn.vel.z += (wz - mn.vel.z)*k;
+  mn.vel.y += ((wantY - mn.pos.y)*3.2 - mn.vel.y)*Math.min(1, dt*4.5);
+  mn.pos.addScaledVector(mn.vel, dt);
+  mn.onGround = false;
+  /* ATAQUE: apuntar (la luz crece) → rayo. Si le pegan durante la carga, la PIERDE — recompensa
+     directa a haber saltado a por él. */
+  if(mn.st === 'charge'){
+    if(mn.hitstun > 0){ mn.st = 'idle'; mn.chg = 0; mn.cd = 1.0; }
+    else if(!tgt || tgt.dead || Math.hypot(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) > DRONE_RANGE*1.4){ mn.st='idle'; mn.chg = 0; mn.cd = 0.8; }
+    else {
+      mn.chg += dt;
+      if(mn.chg >= DRONE_CHARGE){ droneFire(mn, tgt); mn.st = 'idle'; mn.chg = 0; mn.cd = 2.2 + Math.random()*1.4; }
+    }
+  } else if(tgt && mn.cd <= 0 && mn.hitstun <= 0 && Math.hypot(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) < DRONE_RANGE){
+    mn.st = 'charge'; mn.chg = 0;
+  }
+  // ---- visual ----
+  if(inst){
+    inst.root.position.set(mn.pos.x, mn.pos.y + 1, mn.pos.z);   // mn.pos = ancla "a ras" del minion; el cuerpo va 1u por encima (donde hitMinions pone su esfera de golpeo)
+    inst.root.rotation.y = mn.yaw;
+    inst.root.rotation.z = THREE.MathUtils.clamp(-mn.vel.x*0.05, -0.3, 0.3);   // se inclina hacia donde deriva
+    inst.root.rotation.x = THREE.MathUtils.clamp(mn.vel.z*0.05, -0.3, 0.3);
+    const ch = mn.st==='charge' ? THREE.MathUtils.clamp(mn.chg/DRONE_CHARGE, 0, 1) : 0;
+    inst.orb.visible = ch > 0;
+    if(ch > 0){
+      const puls = 1 + Math.sin(mn.chg*26)*0.10*ch;
+      inst.orb.scale.setScalar((0.5 + ch*1.5)*puls);
+      inst.orb.material.opacity = 0.35 + 0.6*ch;
+      inst.orb.material.color.setHex(ch>0.85 ? 0xffffff : DRONE_LILA2);   // al llenarse se blanquea: "ya viene"
+    }
+    /* el haz hace DOS papeles con la MISMA malla: hilo de puntería que se enciende durante la carga y
+       latigazo grueso al disparar (mn.beamT). Sin mallas nuevas por tirada. */
+    if(mn.beamT > 0){
+      inst.beam.material.opacity = 0.9 * (mn.beamT/0.18);
+      const w = 0.30 * (0.6 + 0.4*(mn.beamT/0.18));
+      inst.beam.scale.x = w; inst.beam.scale.y = w;
+      inst.beam.visible = true;
+    } else if(ch > 0 && tgt){
+      const o = _drA.set(mn.pos.x, mn.pos.y + 1, mn.pos.z);
+      const to = _drB.set(tgt.pos.x, tgt.pos.y + 1.0, tgt.pos.z).sub(o);
+      const len = to.length() || 1; to.multiplyScalar(1/len);
+      inst.beam.position.copy(o);
+      inst.beam.quaternion.setFromUnitVectors(_DR_FWD, to);
+      const w = 0.02 + 0.07*ch;
+      inst.beam.scale.set(w, w, len);
+      inst.beam.material.opacity = 0.15 + 0.55*ch*ch;
+      inst.beam.visible = true;
+    } else inst.beam.visible = false;
+  }
+  // ---- muerte ----
+  if(mn.damage >= minionHP('drone')){
+    const c = mn.pos.clone().add(new THREE.Vector3(0,1,0));
+    burst(c, DRONE_LILA, 18, 8, 6, 1.1); burst(c, DRONE_LILA2, 10, 6, 4, .9); ring(c, DRONE_LILA2, 18, .45);
+    awardMinion(mn); killMinion(mn); return;
+  }
+  if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+6 || mn.pos.z > 52 || mn.pos.z < -64){ awardMinion(mn); killMinion(mn); return; }
+}
 /* ►SPAWN-NEAR-PLAYERS: MEZCLA — parte de la horda cae alrededor de los luchadores vivos y parte
    sigue repartida por todo el mapa (como antes). Cierra el exploit de ponerte en primera línea (antes
    ahí caían menos minions y podías salvarte demasiado) sin convertir el 1-jugador en una pesadilla.
@@ -9282,8 +9599,15 @@ function spawnMinion(){
      no un enemigo más. Su peso por mundo lo pone ELITE_MUL dentro de spawnBrute. */
   const bruteChance = BRUTE_SPAWN_CHANCE;
   if(!demo && _bossTpl && _bruteLive===0 && !bossActive && chaosLvl>=ELITE_MIN_CHAOS && Math.random()<bruteChance){ spawnBrute(); return; }   // ►RONDA6d: el mini-jefe no aparece en la home/demo
+  /* ►S8DRON: en la fábrica (S8) una parte de la horda son DRONES voladores. Salen por su propia vía y
+     no por `skin`: no son otra piel del muñeco de la horda, son otro type con IA, modelo y vida
+     propios (y sobre todo: vuelan, que es justo lo que no sabe hacer updateMinion). */
+  if(!demo && STAGE===8 && !bossActive && _droneLive < DRONE_MAX && Math.random() < 0.22){
+    const sd = minionDropSpot() || dropSpot();
+    if(sd && spawnDrone(sd.x, sd.z, sd.y0)) return;
+  }
   const roll = Math.random();
-  let type = roll<.65 ? 'small' : roll<.87 ? 'shooter' : 'large';   // ►WESTERN: let — la rama S8 fuerza 'shooter'
+  let type = roll<.65 ? 'small' : roll<.87 ? 'shooter' : 'large';   // ►S8ROBOT: let — la rama de los robots del S8 y la de los vaqueros del S11 fuerzan su type
   /* ►SKELMINIONS: S4 (desierto), S5 (pirámide corrupta) y S7 (ártico) comparten la horda entre los
      goblins de S1 (recoloreados por gobAttach) y los ESQUELETOS nuevos (~50/50), con el mismo
      type/comportamiento: small→esqueleto pequeño · shooter→soldado (arco+flechas) · large→caballero
@@ -9309,15 +9633,21 @@ function spawnMinion(){
     const vk = Math.random()<0.5 ? 'viking1' : 'viking2';
     if(_gobTpl[vk] && _gobLive[vk] < GOBLIN_KINDS[vk].max) skin = vk;
   }
-  /* ►WESTERN: S8 mezcla ~50/50 goblins lila + pistoleros vaqueros. FUERZAN type 'shooter' (escala 1.0,
-     HP 30, IA a distancia) sea cual sea el roll — los 3 son idénticos en tamaño y todos disparan.
-     Si sus pools están al tope, cae al goblin lila (igual que la salvaguarda de los esqueletos). */
   /* ►WEST (STAGE 11): aquí los pistoleros NO son una mezcla, son LA horda — es su stage. Sin tirada
      de probabilidad: si queda hueco en sus pools, sale vaquero. No hay que quitarles ningún tinte:
-     su ficha lleva noTint:true, así que gobAttach ni les toca el material (el lila es cosa del S8). */
-  if(STAGE===11 || (STAGE===8 && Math.random() < 0.5)){
+     su ficha lleva noTint:true, así que gobAttach ni les toca el material.
+     ►S8ROBOT (pedido de Toni): los vaqueros SALEN del stage 8. Antes el S8 iba ~50/50 goblins lila +
+     pistoleros; ahora la fábrica es SOLO suya — goblins lila, robots lila y drones. Los 3 pistoleros
+     siguen cargados y con su pool intacto porque el stage 11 (las mesetas) es su casa. */
+  if(STAGE===11){
     const ks = ['westbad','westgun','westcow'].filter(k => _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max);
     if(ks.length){ skin = ks[(Math.random()*ks.length)|0]; type = 'shooter'; }
+  }
+  /* ►S8ROBOT: en la fábrica (S8) una parte de la horda son ROBOTS lila. FUERZAN type 'large' — que es
+     lo que les da los 60 de vida y el melee de 20 ("pega bastante fuerte") — sea cual sea el roll.
+     Si su pool está al tope cae al goblin lila, igual que la salvaguarda de los esqueletos. */
+  if(STAGE===8 && Math.random() < 0.34){
+    if(_gobTpl.robotm && _gobLive.robotm < GOBLIN_KINDS.robotm.max){ skin = 'robotm'; type = 'large'; }
   }
   const sp = minionDropSpot() || dropSpot() || { x:(Math.random()-.5)*20, z:(Math.random()-.5)*10, y0:0 };
   spawnMinionAt(sp.x, sp.z, sp.y0, type, skin);
@@ -9589,7 +9919,7 @@ function updateMinions(dt){
       minionT=Math.max(.32, 1.5 - chaosLvl*.18);
     }
   }
-  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); minions.splice(i,1); continue; } if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
+  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
   renderMinionInstances();               // re-empaqueta las matrices instanciadas de los vivos en [0,n)
   updateMprojs(dt);
 }
@@ -20138,18 +20468,27 @@ function applyStageTheme(stage){
     skyMat.uniforms.top.value.setHex(0x2a333c); skyMat.uniforms.hor.value.setHex(0x50605a); skyMat.uniforms.bot.value.setHex(0x46554f);   // CIELO DE TORMENTA gris-azul → los huecos del dosel respiran (antes techo marrón turbio)
     /* ►R2: iluminación EQUILIBRADO en los 3 stages (pedido del usuario) — exposición/sol/ambiente/rim/side
        del preset; la NIEBLA y el cielo siguen siendo por-stage (la tormenta conserva su atmósfera) */
-    /* ►S2LUZ (pedido: "que no se generen sombras tan durísimas"). El comentario de arriba dice que el
-       S2 va con la iluminación del preset EQUILIBRADO, pero los valores NO eran los del preset: sol
-       1.50 contra 1.15 y relleno 0.20 contra 0.36. O sea un ratio sol/relleno de 7.5 aquí frente a
-       3.2 en el prado — más del doble de contraste, y de ahí el corte durísimo que cruzaba las
-       plataformas. Ojo: `shadow.radius` NO sirve para suavizar (es inerte con PCFSoftShadowMap, ya
-       verificado en el shader de r128), así que lo único que ablanda la sombra es subir el RELLENO.
-       Medido con A/B en la misma toma: con relleno 0.52 el stage se aplana y pierde el volumen de los
-       cantos, así que 0.40 es el punto donde la sombra deja de cortar sin volverse plano. */
-    VISUAL.exposure = 0.64;
-    VISUAL.key.color = 0xfff1cf; VISUAL.key.intensity = 1.15;
+    /* ►S2LUZ3 · LUZ DE CIELO TAPADO (3ª pasada; Toni: "luz suave desde TODOS los ángulos y la cinta
+       bien iluminada, sin perder la sensación de cielo tapado y tormenta").
+       Las dos pasadas anteriores fueron parches sobre un rig de DÍA SOLEADO —un sol dominante con un
+       relleno pequeño— y por eso seguían saliendo cortes: con un sol fuerte SIEMPRE hay una cara
+       oscura, la ablandes como la ablandes. Bajo un cielo encapotado la luz no viene de un punto,
+       viene de TODA la bóveda: el sol pinta poco y el cielo pinta mucho. Así que se invierte el
+       reparto en vez de seguir compensando:
+           sol   1.15 → 0.70   (deja de esculpir a hachazos; sigue dando dirección)
+           hemi  0.40 → 0.75   (la bóveda pasa a ser la fuente principal = luz por todos lados)
+           fill  0.18 → 0.34   (suelo de sombra: la única que llega a una cara que no mira a nada)
+           expo  0.64 → 0.80   (compensa el sol flojo; la cinta queda legible de punta a punta)
+       La TORMENTA no se toca: cielo, niebla y color siguen siendo los de antes, y son ellos los que
+       ponen la atmósfera. De hecho un encapotado es MÁS creíble así que con un sol duro.
+       Elegido con A/B en la misma toma contra cuatro alternativas: subir solo el `fill` a 0.30 deja
+       las rayas de sombra de los árboles; sol 0.85/hemi 0.62 aún deja el canto oscuro; tocar el
+       shadow map (PCFShadowMap+radio, o mapa a 1024) NO arregla el canto —ya se comprobó que la
+       banda negra no es la sombra proyectada— y encima cambia el look de todos los stages. */
+    VISUAL.exposure = 0.80;
+    VISUAL.key.color = 0xfff1cf; VISUAL.key.intensity = 0.70;
     VISUAL.key.pos = [42, 36, 30];
-    VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.40;
+    VISUAL.hemi.sky = 0xaad0ff; VISUAL.hemi.ground = 0x6a5f52; VISUAL.hemi.intensity = 0.75;
     VISUAL.rim.color = 0xe2f2ff; VISUAL.rim.intensity = 0.32;                        // contraluz frío (color S2 por legibilidad) a intensidad EQUILIBRADO
     VISUAL.side.color = 0xcfe0d8; VISUAL.side.intensity = 0.26;
     /* ►S2LUZ2 (Toni, 2ª pasada: "siguen saliendo sombras muy duras en uno de los lados de las
@@ -20162,9 +20501,10 @@ function applyStageTheme(stage){
          · hemi 0.55 y laterales 0.45: mejoran un pelo y de paso aplanan las tapas.
          · luz AMBIENTE: es la única que llega a una cara que no mira a ninguna luz. A 0.08 el canto
            sigue casi negro; a 0.18 lee como la tierra marrón que es, sin que las tapas pierdan el
-           modelado del sol; a 0.24 ya empieza a aplanar.
+           modelado del sol; a 0.24 empezaba a aplanar CON EL SOL A 1.15 — con el sol ya bajado a 0.70
+           (►S2LUZ3) el margen es otro y 0.34 es lo que iguala la luz por todos los lados.
        El faldón, de hecho, nunca fue negro: su material es #6b512f (marrón medio). Era falta de luz. */
-    VISUAL.fill.color = 0xc2d2da; VISUAL.fill.intensity = 0.18;
+    VISUAL.fill.color = 0xc2d2da; VISUAL.fill.intensity = 0.34;
     VISUAL.fog.color = 0x46554f; VISUAL.fog.near = 34; VISUAL.fog.far = 122;          // ►S2FIX2: el color va CASADO con skyMat.bot (misma cifra) → el mar se funde con el cielo y NO hay línea de horizonte. Eso lo hace el COLOR, no la distancia. · far 115→122 y no más: updateBelt culla los segmentos a min(fog.far,92)+8 = 100u, así que a far 150 un segmento aparecía con solo un 57% de niebla encima = pop-in (y subir el cull costaría 2 segmentos más de draw calls)
     if(typeof seaMat!=='undefined') seaMat.color.setHex(0x2d4a33);                    // agua VERDOSA oscura
     for(const c of cloudOccluders) c.visible = false;   // jungla densa en tormenta: fuera nubes de prado (el dosel llena el techo; el occluder clona su material así que tintarlo no vale)
@@ -20297,9 +20637,19 @@ function _applySWTheme(){
      y=42; y=34 es lo más bajo que se puede pedir sin salirse de terreno probado. El atardecer lo
      cuentan el color, la niebla y el cielo — no la longitud de la sombra. */
   VISUAL.key.color = 0xffc078; VISUAL.key.intensity = 1.30; VISUAL.key.pos = [58, 34, 24];   // lateral (sol poniente) pero a la altura segura del resto de stages
-  VISUAL.hemi.sky = 0xffb488; VISUAL.hemi.ground = 0x6b3f2c; VISUAL.hemi.intensity = 0.34;
+  VISUAL.hemi.sky = 0xffb488; VISUAL.hemi.ground = 0x6b3f2c; VISUAL.hemi.intensity = 0.62;   // ►WESTLUZ: 0.34 → 0.62, la bóveda del atardecer pasa a pintar de verdad (ver la nota de abajo)
   VISUAL.rim.color = 0x9fc4ff; VISUAL.rim.intensity = 0.38;                          // contraluz FRÍO: separa al luchador del cielo naranja
   VISUAL.side.color = 0xffc999; VISUAL.side.intensity = 0.28;
+  /* ►WESTLUZ (Toni mandó una captura de una caseta NEGRA ENTERA y lo leyó como "no has recuperado la
+     textura"). No era la textura —está puesta y es correcta, se comprobó volcando el atlas y con el
+     modelo iluminado de frente—: era el MISMO problema que la jungla. Un edificio de espaldas a este
+     sol tan lateral no recibe nada, y aquí `fill` estaba a 0, así que se iba a negro puro.
+     Cálido y bajo, que es luz rebotada de la arena al atardecer, no luz de estudio.
+     Además las dos cabañas suben su `lift` de 1,3 a 2,3 en el pack: son las más OSCURAS de los
+     edificios del stage (atlas a luminancia 0,075 y 0,085, por debajo del cottage 0,178), y las que
+     NO llevan textura sí reciben `_wLiftColors(m, 2.35)` — que es no-op sobre una malla texturizada.
+     O sea que las texturizadas se quedaban sin el realce que tienen todas sus vecinas. */
+  VISUAL.fill.color = 0xffd0b0; VISUAL.fill.intensity = 0.45;
   /* ►SWFIX (pedido: "las montañas rocosas tienen estas líneas raras del efecto outline"). El
      detector de bordes del inkPass es una diferencia de PROFUNDIDAD a 1 texel, sin normales: no
      distingue una silueta real de una superficie muy rasante. Las mesetas son cilindros de 6
@@ -20329,6 +20679,52 @@ function _applySWTheme(){
    Las mesetas llevan ESTRATOS horizontales por vertex-color — es el rasgo que hace leer una roca
    como cañón y no como un cilindro marrón. */
 const SW_SCENERY = { group:null, on:false };
+/* ►SWCALIMA · NIEBLA A RAS DE SUELO EN EL PIE DE LAS MESETAS (pedido de Toni: "que el corte entre el
+   suelo y los peñascos que salen no sea tan duro y literal").
+   NO se hace con planos de calima: ya se probaron dos (ver la nota al final de buildSWScenery) y se
+   veían como rectángulos translúcidos con el canto recortado cruzando el cielo. Aquí la bruma va
+   DENTRO del material de las mesetas: cada fragmento se mezcla hacia el color de la calima según su
+   ALTURA DE MUNDO, así que el pie se disuelve y la cumbre queda limpia. Sin geometría nueva, sin
+   cantos, y correcto desde cualquier ángulo — que es justo lo que fallaba con los planos.
+   Se aplica SOLO a las mesetas, no al suelo del cañón: el suelo vive a y=-24, o sea justo en la cota
+   de la bruma, y hazearlo entero lo dejaría de un color liso y le borraría el grano de arena. */
+const SW_HAZE = {
+  y0: -24,          // cota del fondo del cañón (la misma que usa el suelo del decorado)
+  h:  16,           // altura sobre la que se disuelve el pie: por debajo de y0+h hay bruma
+  strength: 0.92,   // 1 = el pie desaparece del todo en la calima
+};
+function _swGroundHaze(mat){
+  mat.onBeforeCompile = (sh)=>{
+    sh.uniforms.swHazeY0  = { value: SW_HAZE.y0 };
+    sh.uniforms.swHazeH   = { value: SW_HAZE.h  };
+    sh.uniforms.swHazeStr = { value: SW_HAZE.strength };
+    sh.uniforms.swHazeCol = { value: new THREE.Color(VISUAL.fog.color).convertSRGBToLinear() };
+    /* `transformed` ya existe en <project_vertex> (después de begin_vertex/skinning). NO se usa
+       <worldpos_vertex>: three solo lo incluye si hay envmap/sombras/etc., así que no es fiable. */
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vSwY;')
+      .replace('#include <project_vertex>', 'vSwY = (modelMatrix * vec4(transformed, 1.0)).y;\n#include <project_vertex>');
+    const fragHead = '#include <common>\nvarying float vSwY;\nuniform float swHazeY0;\nuniform float swHazeH;\nuniform float swHazeStr;\nuniform vec3 swHazeCol;';
+    const fragMix = [
+      'float swT = clamp(1.0 - (vSwY - swHazeY0) / swHazeH, 0.0, 1.0);',
+      'swT = swT * swT;',                                    // curva: sube despacio y se cierra abajo
+      'gl_FragColor.rgb = mix(gl_FragColor.rgb, swHazeCol, swT * swHazeStr);',
+      '#include <fog_fragment>'
+    ].join('\n');
+    if(sh.fragmentShader.indexOf('#include <fog_fragment>') < 0){
+      console.warn('►SWCALIMA desactivado: el material de las mesetas no lleva fog_fragment');
+      return;
+    }
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', fragHead)
+      .replace('#include <fog_fragment>', fragMix);
+  };
+  /* ►DEPTH gotcha: sin clave propia three reutiliza el programa de OTRO material y el parche no se
+     compila. Constante y exclusiva de estos materiales (todos comparten el mismo código). */
+  mat.customProgramCacheKey = ()=> 'swhaze';
+  mat.needsUpdate = true;
+  return mat;
+}
 function _swButteGeo(rTop, rBot, h, seg, cA, cB){
   const g = new THREE.CylinderGeometry(rTop, rBot, h, seg, 6);
   const pa = g.attributes.position, col = new Float32Array(pa.count*3), cc = new THREE.Color();
@@ -20410,6 +20806,7 @@ function buildSWScenery(){
     for(const R of RINGS){
       const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, metalness:0, flatShading:true });
       mat.color.copy(new THREE.Color(1,1,1).lerp(DUSK, R.mix));          // perspectiva aérea: el vertex-color se apaga hacia el violeta de anochecer
+      _swGroundHaze(mat);                                                // ►SWCALIMA: el pie de la meseta se disuelve en la calima
       for(let i=0;i<R.n;i++){
         const a = (i / R.n) * Math.PI * 2 + rng(-0.22, 0.22);            // repartidas en todo el círculo, con desorden
         const rad = rng(R.rad[0], R.rad[1]), h = rng(R.h[0], R.h[1]), rb = rng(R.r[0], R.r[1]);
@@ -30281,8 +30678,15 @@ function _s7ConvLoop(cx, cz, w, d, topY, dir, spd, laneW){
    plataformas es SIEMPRE la misma (el audit/BFS no depende del azar) */
 function _s7RandDir(){ return Math.random()<0.5 ? 1 : -1; }
 function _s7RandSpd(){ return 5.5 + Math.random()*3; }
+/* PAD normal de la fábrica: addPad con la misma guarda ►S8FLOTA. No se toca addPad (lo usan los 11
+   stages y sus ~60 llamadas); el filtro vive aquí, en el único sitio donde el topY va a mano. */
+function s7Pad(x, z, topY){
+  if(_s7DropIfAir('pad', x, z, topY||0, 1.7)) return null;
+  return addPad(x, z);
+}
 /* MEGAPAD-PISTÓN: saltador que te lanza ALTÍSIMO (pd.boost) con cuerpo de pistón */
 function s7MegaPad(x, z, topY, boost){
+  if(_s7DropIfAir('megapad', x, z, topY||0, 1.8)) return;   // ►S8FLOTA
   const pd = addPad(x, z);
   if(pd){ pd.boost = boost || 32; if(pd.pos) pd.pos.y = 0; }   // el pistón tiene su cuerpo propio a y=0
   const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 1.0, 10),
@@ -30296,6 +30700,7 @@ function s7MegaPad(x, z, topY, boost){
 const _s7Vents = [];
 function s7Vent(cx, cz, topY){
   if(!_CAP && !_ISLAND) return;
+  if(_s7DropIfAir('vent', cx, cz, topY, 0.7)) return;   // ►S8FLOTA: válvula de vapor sobre el vacío → fuera
   const m = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 0.6, 8),
     new THREE.MeshStandardMaterial({ color:0x8a5a2a, roughness:0.6, metalness:0.4 }));
   m.position.set(cx, topY+0.3, cz); m.castShadow = true; scene.add(m);
@@ -30464,6 +30869,7 @@ function s7PropFloor(cx, cz, topY){
 const _s7Springs = [];
 function s7Spring(x, z, topY, boost){
   if(!_CAP && !_ISLAND) return;
+  if(_s7DropIfAir('spring', x, z, topY, 1.0)) return;   // ►S8FLOTA: el súper-muelle es otro "pad de salto" — mismo trato
   let m = (typeof getModel==='function') ? getModel('s7_spring', DECOR_DEFS7) : null, halfH = 0.97;
   if(m){ halfH = m.userData.halfH || 0.97; }
   else {
@@ -30869,7 +31275,7 @@ function buildS7FMuelle(){                   // idx1 · spawn: el MUELLE DE CARG
   _s7Conv(0, -13, 20, 4, 0.3, 1, 0, 4.5);                           // cinta suave de intro
   /* ►S7POLISH: fuera las cajas rojas del muelle (pedido: quitar los cubos rojos del borde) */
   s7Gear(-13.5, 8, 4, 2.2, 0.7, true); s7Gear(13.5, -8, 5, 1.6, -1.0, true);
-  addPad(0, 6);
+  s7Pad(0, 6, 0);                                                   // ►S8FLOTA: pads de la fábrica por s7Pad (topY explícito → se puede comprobar)
   s7Doormat(5, -13, 0.3, -1, 0);                                    // ►SPACEPORT: la cinta te arrastra AL FELPUDO (lección de bienvenida)
   s7Spring(-6, 6, 0);                                               // ►SPACEPORT: el SUPER-MUELLE de demostración (¡×52!)
   /* ►SONICCITY: profundidad + altura + circuitos */
@@ -30911,7 +31317,7 @@ function buildS7FCintas(){                   // idx2 · EL CRUCE DE CINTAS: tran
   _s7Conv(-19, 0, 18, 5, 0, 1, 0, 7);   _s7Conv(19, 0, 18, 5, 0, -1, 0, 7);    // te EMPUJAN hacia el centro…
   _s7Conv(0, -14, 5, 14, 0, 0, 1, 7);   _s7Conv(0, 14, 5, 14, 0, 0, -1, 7);
   s4TrapCircuit(0, 0, 7, 7, 0.15, 3, 6.5, ['ball','ball','ball']); // ►S7POLISH: solo BOLAS de pinchos (fuera los bloques rojos)
-  s7MegaPad(-26, 8, 0); addPad(26, -8);
+  s7MegaPad(-26, 8, 0); s7Pad(26, -8, 0);
   s3Slab(0, 0, 6, 5, 9, 'metal');                                   // isla de respiro ARRIBA (megapad para subir)
   s7Gear(-8, 8, 3.5, 1.8, 0.9, true); s7Gear(8, -8, 3.5, 1.8, -0.9, true);
   s7Vent(0, -7.5, 0);
@@ -30935,7 +31341,7 @@ function buildS7FForja(){                    // idx3 · LA FORJA: rodillos + vap
   s3Slab(0, 12, 12, 5, 6, 'metal');                                  // pasarela alta
   s7GlowFloor(0, 12, 6, 2, 6);                                       // panel-sensor que se ilumina al pisar
   s7Gear(0, -14, 5, 3.2, 0.5, true);
-  addPad(-24, 0); addPad(24, 0);
+  s7Pad(-24, 0, 0); s7Pad(24, 0, 0);
   s7PropWall(-18.8, 0, 2, 1, 0);                                    // ►SPACEPORT: hélice en el canto ESTE de la losa oeste (lanza ARRIBA al que salta al foso)
   s7PropFloor(-24, -4, 0);                                          // ►SPACEPORT: hélice de suelo barriendo la losa oeste
   s7PortalPair(24, 4, 0, 3.8, 12, 6, 'shortcut');                   // ►SPACEPORT: teleport ATAJO losa este ⇄ pasarela alta
@@ -30977,7 +31383,7 @@ function buildS7FLanzadera(){                // idx5 · LA RAMPA DE LANZAMIENTO:
   s7Vent(-14, 5, 0); s7Vent(-14, -5, 0);
   s7GlowFloor(-6, 0, 10, 2, 0.04);                                   // sensores de la recta
   s7Gear(0, 13, 5, 2.8, 0.7, true); s7Gear(-18, -13, 4, 2, -1.1, true);
-  addPad(0, -6);
+  s7Pad(0, -6, 0);
   s7Hurdle(-6, 0, 0.02, 'x');                                        // ►SPACEPORT: valla en la recta de aceleración (si llegas turbo, tropiezas)
   s7Doormat(-4, -6, 0, 0, 1);                                        // ►SPACEPORT: felpudo junto a la recta
   s7PropWall(12.7, 0, 7.5, -1, 0);                                   // ►SPACEPORT: hélice guardando el canto de la plataforma del cañón
@@ -31743,7 +32149,7 @@ function goToStage2(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;   // ►CAMP: la arquera también al pool
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;   // ►CAMP: la arquera también al pool
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);                       // cúpulas/rayos/discos persistentes fuera
@@ -31781,7 +32187,7 @@ function goToStage3(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31819,7 +32225,7 @@ function goToStage11(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31857,7 +32263,7 @@ function goToStage4(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31893,7 +32299,7 @@ function goToStage5(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31925,7 +32331,7 @@ function goToStage6(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31955,7 +32361,7 @@ function goToStage7(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -31985,7 +32391,7 @@ function goToStage8(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -32015,7 +32421,7 @@ function goToStage9(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -32045,7 +32451,7 @@ function goToStage10(){
   for(let i=orbs.length-1;i>=0;i--) killOrb(i);
   for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
   for(const mn of minions) killMinion(mn);
-  gobClearAll(); bruteClearAll(); carcherClearAll(); minions.length = 0;
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
   if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   for(const q of allPlayers) clearFX(q);
@@ -32508,6 +32914,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   gobClearAll();                                             // devuelve todos los goblins skinned (small/shooter/large) al pool antes de soltar refs
   bruteClearAll();                                           // y el/los MINI-JEFE (brute) al suyo
   carcherClearAll();                                         // ►CAMP: la arquera corrupta al suyo
+  droneClearAll();                                           // ►S8DRON: y los drones de la fábrica al suyo
   for(const A of S2_AMBUSHES){ A.state='armed'; A.t=0; }     // ►CAMP: emboscadas re-armadas en cada partida nueva
   for(const T of S2_TOWERS){ T.cooldown=0; T.live=null; }
   minions.length = 0;
