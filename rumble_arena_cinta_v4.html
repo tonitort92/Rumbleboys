@@ -9376,6 +9376,11 @@ function droneTemplate(){
     const s = 1.7/(Math.max(sz.x, sz.z)||1);
     const g = new THREE.Group();
     obj.position.set(-ctr.x*s, -ctr.y*s, -ctr.z*s); obj.scale.setScalar(s); g.add(obj);
+    /* La CARA del dron (el ojo grande y el morro) está en su -X nativo, y todo lo que se orienta en
+       este juego asume +Z como "delante" (mn.yaw = atan2(dx,dz)). Sin este giro el dron te apunta con
+       el costado — comprobado en captura headless con tres drones a yaw 0/90/180. El giro va en la
+       PLANTILLA (no en cada instancia): así la rotación por-instancia sigue siendo solo el yaw. */
+    g.rotation.y = Math.PI/2;
     _droneTpl = g;
   }catch(e){ console.warn('[dron] no se pudo montar el modelo', e); _droneTpl = null; }
   return _droneTpl;
@@ -9387,9 +9392,9 @@ function _droneBuildInst(){
   const root = new THREE.Group();
   const body = tpl.clone(true);   // geometría y materiales COMPARTIDOS: los 3 drones son idénticos, no hay nada que clonar por instancia
   root.add(body);
-  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8),
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8),
     new THREE.MeshBasicMaterial({ color:DRONE_LILA2, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false, fog:false }));
-  orb.position.set(0, -0.35, 0.55); orb.visible = false; orb.userData.noOcc = true; root.add(orb);
+  orb.position.set(0, -0.12, 0.9); orb.visible = false; orb.userData.noOcc = true; root.add(orb);   // delante del morro (el giro de la plantilla ya deja la cara en +Z)
   /* el HAZ es un cilindro de LONGITUD 1 tumbado a +Z: se estira con scale.z hasta el objetivo y se
      orienta con un quaternion. Un cilindro por disparo sería basura para el GC en cada tirada. */
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 8, 1, true),
@@ -9416,6 +9421,17 @@ function droneRemove(mn){
   mn._dinst = null;
 }
 function droneClearAll(){ for(const mn of minions) if(mn._drone) droneRemove(mn); }
+/* PRECALENTADO. droneTemplate() es perezosa, así que su PRIMER uso caería dentro de la partida:
+   parsear un OBJ de 1,6 MB + montar 9 materiales + compilar sus programas (y los del pase de sombra)
+   con drones ya cayendo = tirón garantizado, que es exactamente el fallo que documenta la memoria de
+   rendimiento. Se monta y se precalienta en la carga, con la MISMA cola que las pieles de la horda
+   (si hay pelea en marcha, espera a que acabe en vez de clavarla). */
+encolarSiEnPartida('prewarm dron S8', ()=>{
+  const inst = _droneBuildInst();
+  if(!inst) return;
+  precalentarObjeto(inst.root, 'dron S8');
+  _dronePool.push(inst);
+});
 function spawnDrone(x, z, y0){
   if(minions.length >= MINION_CAP || _droneLive >= DRONE_MAX) return null;
   if(!droneTemplate()) return null;
