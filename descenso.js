@@ -255,13 +255,18 @@ const K = {
                        // vuelta es brusca, tiende a la línea recta él solo".
                        // Con 2,0 se enderezaba en medio segundo y parecía que
                        // el juego te quitaba el volante de las manos.
-  turnLow:    5.0,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
-  turnHigh:   3.0,     // ...y a tope
-  airTurn:    3.4,     // en el aire se gira MUCHO: deja encarar la caída y sale
-                       // gratis en diversión
+  turnLow:    3.4,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
+  turnHigh:   2.1,     // ...y a tope (Toni: "los giros más suaves")
+  airTurn:    2.6,     // en el aire se gira mucho: deja encarar la caída
   turboThrust:22,
   dashMax:    2.4,
   dashRegen:  0.34,
+  /* ►TOPE DE VELOCIDAD (Toni: "no quiero velocidades no realistas" — se
+     llegaba a 104 u/s). Doble freno: uno SUAVE progresivo desde velSuave (el
+     aire a esa velocidad es un muro que crece) y un clamp duro en velMax. */
+  velSuave:   62,
+  velCapK:    0.055,
+  velMax:     84,
   nMax:       3.0,     // tope de la fuerza normal (compresiones)
 
   /* --- SALTO / AIRE / ATERRIZAJE --- */
@@ -340,7 +345,10 @@ const K = {
      Se engancha SOLO con caer encima (no hay botón). Una vez arriba, el raíl
      te lleva y tú peleas el equilibrio con el mismo stick que gira: se va
      torciendo solo y hay que corregir. Si se te va, te caes. */
-  grindSnapX: 2.6,     // margen lateral para engancharse
+  grindSnapX: 3.6,     // margen lateral para engancharse
+  grindIman:  8,       // ►IMÁN (Toni: "solo saltar cerca ya te imanta"): en el
+                       // aire, cayendo cerca de un raíl, te ATRAE hacia él
+  grindImanF: 9,       // fuerza de la atracción (1/s)
   grindSnapY: 2.2,     // ...y vertical (hay que venir de arriba)
   grindMinV:  14,      // por debajo de esto no engancha
   grindDrift: 1.5,     // a qué ritmo se te tuerce el equilibrio solo
@@ -443,10 +451,12 @@ const K = {
   /* ►POLVO AMBIENTE (Toni: "me falta más polvo en el aire o ambiente").
      Motas que derivan con el viento alrededor de la cámara, SIEMPRE — no solo
      al carvear. Baratas: 1 InstancedMesh, reciclado por caja envolvente. */
-  polvoN:     130,
-  polvoOp:    0.22,
+  polvoN:     240,    // Toni: "sensación de tormenta de arena, no tan fuerte"
+  polvoOp:    0.17,
   polvoCaja:  70,     // radio de la caja de reciclado alrededor de la cámara
-  polvoViento:8,      // u/s de deriva lateral
+  polvoViento:16,     // u/s de deriva lateral
+  rafagasN:   26,     // VELOS de arena: láminas largas translúcidas cruzando
+  rafagasOp:  0.085,
   /* ►TÚNEL. Toni pidió "más efecto túnel donde se blurrea lo que tienes
      alrededor" y MENOS vibración. Las dos cosas van juntas: la sensación de
      velocidad la da el desenfoque de la periferia, no zarandear la cámara.
@@ -541,28 +551,28 @@ const PLAN = [
      volver a poner `hueco:N` o `tunel:true` en un tramo para recuperarlos. */
   { z:'verde', len:260, hw:70  },
   { z:'azul',  len:240, hw:88,  rail:{ x:0,   largo:110 } },
-  { z:'azul',  len:200, hw:120 },
-  { z:'roja',  len:280, hw:150 },
+  { z:'azul',  len:200, hw:120, pipe:'full' },                 // HALF-PIPE
+  { z:'roja',  len:280, hw:150, rail:{ x:-14, largo:120 } },
   { z:'roja',  len:240, hw:60  },                              // embudo
   { z:'negra', len:300, hw:110, parte:{ largo:230, alto:26 } }, // dos rutas
-  { z:'negra', len:260, hw:150 },
-  { z:'verde', len:220, hw:170 },                              // respiro
+  { z:'negra', len:260, hw:150, pipe:'right' },                // QUARTER dcho
+  { z:'verde', len:220, hw:170, rail:{ x:8, largo:110 } },     // respiro
   { z:'fuera', len:340, hw:200 },
   { z:'fuera', len:260, hw:130, rail:{ x:-22, largo:120 } },
   { z:'roja',  len:280, hw:70  },                              // pasillo de giro
-  { z:'roja',  len:260, hw:150 },
+  { z:'roja',  len:260, hw:150, rail:{ x:20, largo:120 } },
   { z:'negra', len:320, hw:120, parte:{ largo:250, alto:30 } },
-  { z:'negra', len:280, hw:170 },
-  { z:'azul',  len:240, hw:74  },
+  { z:'negra', len:280, hw:170, pipe:'left' },                 // QUARTER izdo
+  { z:'azul',  len:240, hw:74,  pipe:'full' },                 // HALF-PIPE estrecho
   { z:'azul',  len:260, hw:90,  rail:{ x:16, largo:130 } },
-  { z:'roja',  len:300, hw:150 },
+  { z:'roja',  len:300, hw:150, rail:{ x:-18, largo:130 } },
   { z:'roja',  len:260, hw:80  },                              // último pasillo
   { z:'negra', len:300, hw:140 },
   { z:'verde', len:280, hw:190 },
   { z:'verde', len:220, hw:210 },
 ];
 
-const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [];
+const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [], PIPES = [];
 {
   let z = 0;
   for(const t of PLAN){
@@ -580,6 +590,14 @@ const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [];
     if(t.tunel) TUNELES.push({ z0: z - t.len*0.25, z1: z - t.len*0.75 });
     if(t.rail)  RAILES.push({ x: t.rail.x, z0: z - t.len*0.3,
                               z1: z - t.len*0.3 - t.rail.largo, alto: 3.2 });
+    /* ►HALF-PIPES Y QUARTER-PIPES: no son props, son TERRENO. Los muros
+       curvos se suman a terrainY, así que la física (gravedad proyectada,
+       normales, carve subiendo la pared y volviendo) sale GRATIS del modelo
+       que ya existe — igual que las hondonadas. `full` = canal con dos muros;
+       `left`/`right` = un solo muro (quarter). */
+    if(t.pipe) PIPES.push({ tipo: t.pipe,
+                            z0: z - t.len*0.14, z1: z - t.len*0.86,
+                            W: clamp(t.hw * 0.62, 32, 78), D: 13 });
     z -= t.len;
   }
   K.len = -z;
@@ -809,8 +827,9 @@ const ROCAS_POR_PIEL = {
    `borde`  = solo a los lados, porque es grande y taparía. */
 const DECOR = {
   arena: { mata:  ['s3_agave', 's3_aloe', 's3_cactusbarrel', 's3_bloom'],
+           /* s3_pillar FUERA: Toni lo lee como "atalaya de tierra" y no pega */
            borde: ['s3_cactus', 's3_cactus3', 's3_datepalm', 's3_palm', 's3_palm2',
-                   's3_palm3', 's3_palm4', 's3_palm5', 's3_pillar'] },
+                   's3_palm3', 's3_palm4', 's3_palm5'] },
   nieve: { mata:  ['s6_bush', 's6_crystal', 's6_crystal2'],
            borde: ['s6_pine', 's6_deadtrees', 's6_peak', 's6_snowman'] },
   mar:   { mata:  ['s6_bush', 's3_agave'],
@@ -947,7 +966,7 @@ function GAME_RENDERER(){ return (typeof renderer !== 'undefined') ? renderer : 
 function GAME_KEYS(){ return (typeof keys !== 'undefined') ? keys : null; }
 
 const DESC = window.DESC = {
-  on:false, K, TRICKS, ZONA, BANDS, HUECOS, PARTES, TUNELES, RAILES,
+  on:false, K, TRICKS, ZONA, BANDS, HUECOS, PARTES, TUNELES, RAILES, PIPES,
   scene:null, cam:null, world:null, backdrop:null,
   seed:0, rng:null, noise:null, noiseH:null,
   racers:[], obst:[], buckets:null, picks:null,
@@ -962,14 +981,35 @@ const BUCKET = 60;
 /* =====================================================================
    TERRENO
    ===================================================================== */
+/* muro(s) de pipe en (x,z): altura añadida y máscara 0..1 (para amortiguar
+   el relieve dentro — un half-pipe con lomos dentro no se puede surfear) */
+function pipeAt(x, z){
+  for(let i = 0; i < PIPES.length; i++){
+    const P = PIPES[i];
+    if(z > P.z0 || z < P.z1) continue;
+    /* entrada y salida en 45 u: el muro CRECE, no aparece de golpe */
+    const dz = Math.min(P.z0 - z, z - P.z1);
+    const mz = smooth(clamp(dz / 45, 0, 1));
+    if(mz <= 0) continue;
+    const lado = P.tipo === 'left' ? -1 : 1;
+    const xx = P.tipo === 'full' ? Math.abs(x) : x * lado;
+    if(xx < 0) return { add: 0, mask: mz * 0.4 };        // lado plano del quarter
+    const u2 = clamp(xx / P.W, 0, 1);
+    return { add: P.D * u2 * u2 * mz, mask: mz };
+  }
+  return null;
+}
+
 function terrainY(x, z){
   const n = DESC.noise; if(!n) return 0;
   const hw  = hwAt(z);
   const u   = x / hw;
   const cuenco = K.bowl * u * u;                         // los bordes suben
-  const big = n(x * K.bumpFreqB, z * K.bumpFreqB) * zoneProp(z, 'bump');
-  const sml = n(x * K.bumpFreqS, z * K.bumpFreqS) * K.bumpSmall;
-  return baseY(z) + cuenco + big + sml + parteAt(x, z);
+  const P = PIPES.length ? pipeAt(x, z) : null;
+  const damp = P ? (1 - P.mask * 0.78) : 1;              // dentro del pipe, liso
+  const big = n(x * K.bumpFreqB, z * K.bumpFreqB) * zoneProp(z, 'bump') * damp;
+  const sml = n(x * K.bumpFreqS, z * K.bumpFreqS) * K.bumpSmall * damp;
+  return baseY(z) + cuenco + big + sml + parteAt(x, z) + (P ? P.add : 0);
 }
 /* DUREZA 0..1: base de la zona (el fuera pista es nieve profunda) + ruido. */
 function hardnessAt(x, z){
@@ -1009,10 +1049,14 @@ function genTrack(rng){
       const n = 1 + (rng() < 0.5 ? 1 : 0);
       for(let k = 0; k < n; k++){
         const r = rng();
-        const size = r < 0.42 ? 's' : (r < 0.80 ? 'm' : 'l');
+        /* 'xl' = KICKER de salto grande (Toni: "añade kickers de salto").
+           No necesita impulso propio: desde la v5 las rampas lanzan por
+           CURVATURA (el suelo se acaba y sales con tu velocidad). */
+        const size = r < 0.38 ? 's' : (r < 0.72 ? 'm' : (r < 0.90 ? 'l' : 'xl'));
         const dim  = size === 's' ? { w:7.0, len:11, h:2.4 }
                    : size === 'm' ? { w:8.4, len:15, h:3.8 }
-                   :                { w:10.5, len:21, h:6.2 };
+                   : size === 'l' ? { w:10.5, len:21, h:6.2 }
+                   :                { w:16, len:26, h:8.4 };
         obst.push({ type:'ramp', size, x:(rng()*2-1)*hw, z:z + (rng()-0.5)*20, ...dim });
       }
     }
@@ -1314,6 +1358,14 @@ function buildScene(){
         const media = 0.25 * (terrainY(x+14, z) + terrainY(x-14, z) +
                               terrainY(x, z+14) + terrainY(x, z-14));
         const cav = clamp((y - media) * 0.10, -0.30, 0.22);
+        /* los PIPES se leen como arena PRENSADA con banding multitono
+           (petición expresa de multitono también en los half-pipes) */
+        const pInfo = PIPES.length ? pipeAt(x, z) : null;
+        if(pInfo && pInfo.mask > 0){
+          c.lerp(cHard, pInfo.mask * 0.30);
+          const banda = 0.96 + 0.08 * Math.sin(x * 0.55 + z * 0.13);
+          c.multiplyScalar(1 - pInfo.mask * (1 - banda));
+        }
         const fuera = Math.abs(x) > hwPista ? 0.62 : 1;      // fuera del límite: apagado
         /* el faldón vira hacia el color de la roca del cañón y se oscurece */
         if(faldaT > 0) c.lerp(_cFalda, faldaT * 0.55);
@@ -1519,7 +1571,10 @@ function buildScene(){
         const f = mias[i];
         const alto = 16 + rng() * 26;
         const e = alto / med.alto;
-        const x = f.lado * (f.hw + 26 + rng() * 34);
+        /* offset RELATIVO al ancho: con +26..60 ABSOLUTO, en los tramos
+           estrechos (hw=60) acababan a 1,7-2,0×hw = 45-55 u de ALTURA en el
+           cuenco, siluetadas contra el cielo (medido con el audit). */
+        const x = f.lado * (f.hw * (1.18 + rng() * 0.22));
         const zz = f.z + (rng() - 0.5) * 16;
         return { x, y: null, z: zz, hundeFrac: 0.24 + rng()*0.16,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.10, rz:(rng()-0.5)*0.10,
@@ -1590,6 +1645,87 @@ function buildScene(){
     });
   }
 
+  /* --- RAMPAS / KICKERS ---
+     ►RESTAURADO Y AVISO: este bloque (rampas + recogidas + meta) se BORRÓ sin
+     querer en la v9 por una edición por índices que se comió el tramo entre
+     dos anclajes — tres versiones con rampas INVISIBLES que sí lanzaban (la
+     física usa rampAt, no la malla). Recuperado de git (v8) y ahora MULTITONO:
+     cada rampa recibe su tono por instancia (instanceColor multiplica el color
+     del material del cuerpo). */
+  if(ramps.length){
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      -.5,0,.5,  .5,0,.5,  .5,1,-.5,   -.5,0,.5,  .5,1,-.5, -.5,1,-.5,
+      -.5,0,.5, -.5,1,-.5, -.5,0,-.5,   .5,0,.5,  .5,0,-.5,  .5,1,-.5,
+      -.5,0,-.5,-.5,1,-.5,  .5,1,-.5,  -.5,0,-.5,  .5,1,-.5,  .5,0,-.5,
+    ]), 3));
+    geo.computeVertexNormals();
+    const im = new THREE.InstancedMesh(
+      geo, new THREE.MeshLambertMaterial({ color: PAL.ramp, flatShading:true }), ramps.length);
+    ramps.forEach((o, i) => {
+      o.baseY = terrainY(o.x, o.z);
+      p.set(o.x, o.baseY, o.z); q.identity(); s2.set(o.w, o.h, o.len);
+      m.compose(p, q, s2); im.setMatrixAt(i, m);
+      c.setRGB(1, 1, 1).offsetHSL((rng()-0.5)*0.05, (rng()-0.5)*0.22, (rng()-0.5)*0.24);
+      im.setColorAt(i, c);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    if(im.instanceColor) im.instanceColor.needsUpdate = true;
+    world.add(im);
+
+    /* LABIO oscuro + jalones: a distancia lo legible es el CANTO. */
+    const lip = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshLambertMaterial({ color:0x33302c }), ramps.length);
+    ramps.forEach((o, i) => {
+      p.set(o.x, o.baseY + o.h, o.z - o.len/2 + 0.5); q.identity(); s2.set(o.w*1.03, 0.55, 1.1);
+      m.compose(p, q, s2); lip.setMatrixAt(i, m);
+      c.setRGB(1, 1, 1).offsetHSL(0, 0, (rng()-0.5)*0.3);
+      lip.setColorAt(i, c);
+    });
+    lip.instanceMatrix.needsUpdate = true;
+    if(lip.instanceColor) lip.instanceColor.needsUpdate = true;
+    world.add(lip);
+
+    const post = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshLambertMaterial({ color:0xff8a3d }), ramps.length*2);
+    let pi = 0;
+    ramps.forEach(o => { for(const side of [-1,1]){
+      p.set(o.x + side*o.w/2, o.baseY + o.h + 1.6, o.z - o.len/2 + 0.5);
+      q.identity(); s2.set(0.5, 3.2, 0.5);
+      m.compose(p, q, s2); post.setMatrixAt(pi++, m);
+    }});
+    post.instanceMatrix.needsUpdate = true; world.add(post);
+  }
+
+  /* --- RECOGIDAS --- */
+  {
+    const picks = DESC.obst.filter(o => o.type === 'pick');
+    const geo = new THREE.OctahedronGeometry(1.25, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x776633 });
+    for(const o of picks){
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(o.x, terrainY(o.x, o.z) + 2.4, o.z);
+      o._m = mesh; world.add(mesh);
+    }
+    DESC.picks = picks;
+  }
+
+  /* --- META: cruza TODO el abanico --- */
+  {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const hw = hwAt(-K.len);
+    const n = 16;
+    for(let k = 0; k < n; k++){
+      const x = -hw + (2*hw)*(k/(n-1));
+      const cc = new THREE.Mesh(new THREE.BoxGeometry(1.8, 16, 1.8), mat);
+      cc.position.set(x, terrainY(x, -K.len) + 8, -K.len); g.add(cc);
+    }
+    const top = new THREE.Mesh(new THREE.BoxGeometry(hw*2, 3.4, 2.2), mat);
+    top.position.set(0, terrainY(0, -K.len) + 16, -K.len); g.add(top);
+    world.add(g);
+  }
+
   /* --- DECORADO CON PROPS DEL JUEGO (nada inventado), instanciado ---
      Dos capas: LOS LADOS con lo grande (palmeras, cactus columnares) y EL
      MEDIO DE LA PISTA con matojos bajos. Toni: "tampoco hay cactus u otras
@@ -1608,7 +1744,9 @@ function buildScene(){
       const mios = sitios.filter((_, i) => (i % D.borde.length) === ci);
       nBorde += siembra(world, clave, mios.length, rng, (i, med) => {
         const f = mios[i];
-        const x2 = f.lado * (f.hw * (0.74 + rng() * 0.30));
+        /* PEGADAS A PISTA (0,70-0,88·hw). A 1,04·hw el cuenco ya las subía
+           ~22 u y con las altas (palmeras) se leían FLOTANDO contra el cielo. */
+        const x2 = f.lado * (f.hw * (0.70 + rng() * 0.18));
         const zz = f.z + (rng() - 0.5) * 18;
         const e2 = (3.4 + rng() * 5.2) / med.alto;
         return { x:x2, y:null, z:zz, hundeFrac:0.05, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
@@ -1629,6 +1767,8 @@ function buildScene(){
       nMedio += siembra(world, clave, mios.length, rng, (i, med) => {
         const f = mios[i];
         if(parteAt(f.x, f.z) > 1.5) return null;        // no sobre el espolón
+        const pp = pipeAt(f.x, f.z);
+        if(pp && pp.mask > 0.25) return null;           // ni dentro de un pipe
         const e2 = (1.1 + rng() * 1.5) / med.alto;      // BAJOS: no tapan la vista
         return { x:f.x, y:null, z:f.z, hundeFrac:0.10, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
       }, { sombra:true });
@@ -1681,6 +1821,33 @@ function buildScene(){
     sc.add(im);
     DESC.streaks = { im, N,
       x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N), on:new Uint8Array(N) };
+  }
+
+  /* --- RÁFAGAS DE ARENA (tormenta suave) ---
+     Láminas MUY alargadas y casi transparentes que cruzan en la dirección del
+     viento a distinta altura: es lo que da la lectura de "tormenta de arena"
+     sin comerse la visibilidad (Toni: "como el stage del desierto, no tan
+     fuerte"). Mismo patrón de reciclado por caja que el polvo. */
+  {
+    const N = Math.round(K.rafagasN * clamp(K.densDeco, 0, 1.5));
+    if(N > 0){
+      const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.05, 0.16),
+        new THREE.MeshBasicMaterial({ color: PAL.part, transparent:true,
+                                      opacity: K.rafagasOp, depthWrite:false }), N);
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.frustumCulled = false;
+      im.renderOrder = 2;
+      sc.add(im);
+      const R = { im, N,
+        x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N),
+        l:new Float32Array(N), f:new Float32Array(N) };
+      const rr2 = mulberry32(DESC.seed ^ 0x7a44);
+      for(let i = 0; i < N; i++){
+        R.x[i] = (rr2()*2-1) * 90; R.y[i] = 2 + rr2() * 26; R.z[i] = (rr2()*2-1) * 90;
+        R.l[i] = 22 + rr2() * 38; R.f[i] = rr2() * TAU;
+      }
+      DESC.rafagas = R;
+    } else DESC.rafagas = null;
   }
 
   /* --- POLVO AMBIENTE --- */
@@ -1772,6 +1939,24 @@ function updateTrail(dt){
 /* POLVO AMBIENTE: deriva con viento lateral + caída lenta, en coordenadas
    RELATIVAS a la cámara con reciclado por caja envolvente (la mota que sale
    por un lado entra por el contrario: nunca se ve nacer ni morir). */
+function updateRafagas(dt){
+  const R = DESC.rafagas; if(!R || !DESC.cam) return;
+  const C = 90;
+  for(let i = 0; i < R.N; i++){
+    R.x[i] += (K.polvoViento * 2.6 + Math.sin(DESC.t * 0.6 + R.f[i]) * 6) * dt;
+    R.z[i] += (K.polvoViento * 1.4) * dt;
+    if(R.x[i] > C) R.x[i] -= 2*C; if(R.z[i] > C) R.z[i] -= 2*C;
+    if(R.x[i] < -C) R.x[i] += 2*C; if(R.z[i] < -C) R.z[i] += 2*C;
+    _v3.set(DESC.cam.position.x + R.x[i], DESC.cam.position.y + R.y[i] - 8, DESC.cam.position.z + R.z[i]);
+    /* orientada con el viento (diagonal fija + ondulación leve) */
+    _qt.setFromEuler(_eu.set(0, -0.5 + Math.sin(DESC.t * 0.4 + R.f[i]) * 0.12, 0));
+    _sc3.set(R.l[i], 1, 1);
+    _m4.compose(_v3, _qt, _sc3);
+    R.im.setMatrixAt(i, _m4);
+  }
+  R.im.instanceMatrix.needsUpdate = true;
+}
+
 function updatePolvo(dt){
   const P = DESC.polvo; if(!P || !DESC.cam) return;
   const C = K.polvoCaja;
@@ -1894,7 +2079,7 @@ function montaPersonaje(r){
      — petición de Toni: reutilizarlo para el salto). */
   r.mixer = new THREE.AnimationMixer(model);
   r.acts = {};
-  for(const nom of ['board', 'wipeout', 'getup', 'turbo', 'carve', 'jump']){
+  for(const nom of ['board', 'wipeout', 'getup', 'turbo', 'carve', 'carveM', 'jump']){
     const c = (tpl.animations || []).find(a => a.name === nom);
     if(c){ const a = r.mixer.clipAction(c); a.enabled = true; r.acts[nom] = a; r.dur = r.dur || {}; r.dur[nom] = c.duration; }
   }
@@ -1935,7 +2120,10 @@ function animEstado(r){
   if(r.air)                 animA(r, 'jump');    // animA ya reinicia al entrar
   else if(r.grind)          animA(r, 'board');
   else if(r.turbo)          animA(r, 'turbo');
-  else if((r._cruce || 0) > 0.45) animA(r, 'carve');
+  /* el clip de giro tiene LADO: el original va al giro a la DERECHA (Toni:
+     "la del giro a la izquierda es la que debes poner a la derecha") y el
+     espejado ('carveM') al izquierdo */
+  else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carve' : 'carveM');
   else                      animA(r, 'board');
 }
 
@@ -2388,6 +2576,9 @@ function stepRacer(r, dt){
     let aFric = K.dragC * r.spd * r.spd * dragMul
               + K.muBase * r.nForce * (1.6 - hard)
               + r.skid * K.skidDrag;
+    /* tope suave: pasado velSuave el aire crece al cuadrado del exceso */
+    const exceso = Math.max(0, r.spd - K.velSuave);
+    aFric += K.velCapK * exceso * exceso;
     if(r.grabbed > 0) aFric += 8;
     const vm = Math.hypot(r.vx, r.vz);
     if(vm > 0.01){
@@ -2493,6 +2684,8 @@ function stepRacer(r, dt){
 
   r.x += r.vx * dt; r.z += r.vz * dt;
   r.spd = Math.hypot(r.vx, r.vz);
+  /* clamp duro: nada por encima de velMax, ni con turbo ni cayendo de un salto */
+  if(r.spd > K.velMax){ const fcap = K.velMax / r.spd; r.vx *= fcap; r.vz *= fcap; r.spd = K.velMax; }
 
   /* ---------- SEGUIR EL SUELO / DESPEGAR SOLO ----------
      vT = velocidad vertical que exige el terreno bajo mis pies. Si el terreno
@@ -2621,8 +2814,17 @@ function stepRacer(r, dt){
     }
     r._jumpHeld = inp.jump;
   } else if(r.air && r.vy < 0 && r.spd > K.grindMinV && !r.trick){
-    /* ¿estoy cayendo justo encima de un raíl? */
+    /* ►IMÁN: cayendo CERCA de un raíl (no encima), te atrae lateralmente.
+       Toni: "que solo saltar cerca de una barandilla te imantes". Sin esto
+       había que clavar el aterrizaje a ±2,6 u, que a 60 u/s es una lotería. */
     const R = railAt(r.z);
+    if(R){
+      const dxR = R.x - r.x;
+      if(Math.abs(dxR) < K.grindIman && Math.abs(dxR) >= K.grindSnapX){
+        r.x += dxR * Math.min(1, K.grindImanF * dt);
+        r.vx += dxR * 2.2 * dt;
+      }
+    }
     if(R && Math.abs(r.x - R.x) < K.grindSnapX){
       const ry = terrainY(R.x, r.z) + R.alto;
       if(r.y > ry - 0.6 && r.y < ry + K.grindSnapY){
@@ -2641,7 +2843,12 @@ function stepRacer(r, dt){
     /* los saltitos de chatter (medio metro sobre un lomo) NO son un salto:
        si dejas encadenar trucos ahí, el aterrizaje a medias te tumba sin que
        el jugador entienda por qué */
-    if(inp.trick && !r.trick && TRICKS[inp.trick] && r.airVy0 > 7){ r.trick = inp.trick; r.trickT = 0; }
+    /* Toni: "en el aire no siempre deja hacer trucos". El umbral por vy0
+       bloqueaba los despegues POR RELIEVE (vy inicial pequeña aunque el vuelo
+       sea largo). Ahora vale despegar con impulso O estar ya claramente
+       separado del suelo. El chatter (saltitos de 20 cm) sigue fuera. */
+    if(inp.trick && !r.trick && TRICKS[inp.trick] &&
+       (r.airVy0 > 3.5 || (r.y - groundYAt(r.x, r.z)) > 1.6)){ r.trick = inp.trick; r.trickT = 0; }
     if(r.trick){
       const T = TRICKS[r.trick];
       r.trickT += dt;
@@ -2782,7 +2989,9 @@ function stepRacer(r, dt){
        Y el CASTAÑETEO se VE: la tabla vibra antes de engancharte. Un medidor
        invisible sería una tomadura de pelo (ya cometí ese error con la dureza
        del suelo en la v3). */
-    const tmb = r.chat > 0.2 ? (r.chat - 0.2) * 0.16 : 0;
+    /* Toni (v11): "no quiero que los muñecos vibren tanto" — el temblor del
+       castañeteo baja a menos de la mitad; sigue AVISANDO, ya no zarandea */
+    const tmb = r.chat > 0.2 ? (r.chat - 0.2) * 0.07 : 0;
     /* ►DE LADO AL CRUZAR: el board va donde va (r.gfx.rotation.y) y el TORSO se
        queda mirando la bajada. `cruce` es 0 recto y 1 con la tabla de través. */
     const cruce = clamp((Math.abs(r.yaw) - K.torsoDesde) / (K.frenoYaw - K.torsoDesde), 0, 1);
@@ -2790,11 +2999,11 @@ function stepRacer(r, dt){
     const lado = Math.sign(r.yaw) || 1;
     /* con el clip 'carve' sonando, la postura procedural se ATENÚA al 60%:
        el clip ya pone el cuerpo; lo procedural solo orienta y remata */
-    const pf = (r.animCur === 'carve') ? 0.6 : 1;
+    const pf = (r.animCur === 'carve' || r.animCur === 'carveM') ? 0.6 : 1;
     if(r.model) r.model.rotation.y = K.charYaw - r.yaw * K.torsoSigue * r._cruce * pf;
     r.body.rotation.set((r.air ? -0.14 : 0.04) + pitch*0.8 + (Math.random()-0.5)*tmb,
                         (Math.random()-0.5)*tmb*0.6,
-                        -roll*0.7 - lado * K.tumbaMax * r._cruce * pf + (Math.random()-0.5)*tmb*2.2);
+                        -roll*0.7 - lado * K.tumbaMax * r._cruce * pf + (Math.random()-0.5)*tmb*1.1);
     r.body.position.y = -K.agachaMax * r._cruce * pf;
   }
   const gyS = groundYAt(r.x, r.z);
@@ -3098,7 +3307,7 @@ function updateHud(dt){
   h.left.innerHTML =
     '<div style="font-size:26px;font-weight:900;line-height:1">' + place + 'º</div>' +
     '<div style="font-size:18px;font-weight:800;color:' + (me.turbo ? '#ffd23f' : '#fff') + '">' +
-      Math.round(me.spd*2.6) + ' km/h</div>' +
+      Math.round(me.spd*1.6) + ' km/h</div>' +
     '<div style="opacity:.8">turbo ' + '▮'.repeat(tb) + '▯'.repeat(6-tb) + '</div>' +
     (me._pump > 1.5 ? '<div style="color:#7bf06a;font-weight:800">◄ TALLANDO +' +
         Math.round(me._pump) + ' ►</div>' : '') +
@@ -3276,6 +3485,7 @@ DESC.tick = function(dt){
   updateTrail(dt);
   updateStreaks(dt, DESC._spdK || 0);
   updatePolvo(dt);
+  updateRafagas(dt);
   updateHud(dt);
 };
 
