@@ -2470,10 +2470,12 @@ function animEstado(r){
   if(r.air)                 animA(r, 'jump');    // animA ya reinicia al entrar
   else if(r.grind)          animA(r, 'board');
   else if(r.turbo)          animA(r, 'turbo');
-  /* el clip de giro tiene LADO: el original va al giro a la DERECHA (Toni:
-     "la del giro a la izquierda es la que debes poner a la derecha") y el
-     espejado ('carveM') al izquierdo */
-  else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carve' : 'carveM');
+  /* el clip de giro tiene LADO, y estaba AL REVÉS (Toni, dos veces: "la del
+     giro a la derecha va a la izquierda y viceversa"). El cuerpo va rotado
+     K.charYaw respecto al eje del clip, así que el que "mira bien" a cada lado
+     es el contrario: yaw>0 es girar a la DERECHA (fx=sin(yaw)>0 → +X, que en
+     esta cámara es la derecha de la pantalla) y le toca el ESPEJADO. */
+  else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carveM' : 'carve');
   else                      animA(r, 'board');
 }
 
@@ -3849,6 +3851,225 @@ DESC.tick = function(dt){
   updateHud(dt);
 };
 
+/* =====================================================================
+   ►DESCINK — el CONTORNO del juego normal, aquí
+
+   El descenso pinta DIRECTO a pantalla (no pasa por el composer del juego),
+   así que no heredaba NADA de su postproceso: ni el anillo de color de los
+   personajes ni la tinta del mundo. Esto lo reproduce sin tocar el render que
+   ya funciona:
+
+     · NO se re-renderiza la escena a un render-target para filtrarla. Ese blit
+       se come el MSAA (el descenso sí lo tiene: pinta a la pantalla) y obliga a
+       replicar a mano tonemapeo y encoding.
+     · Los dos efectos del juego son `mix(fondo, color, a)`: el anillo va POR
+       FUERA de la silueta y la tinta es una línea oscura. O sea, alfa-blending
+       puro → basta con pintar ENCIMA un quad que solo tenga alpha en el borde;
+       el resultado es idéntico y el píxel de dentro ni se toca.
+
+   Sus dos entradas van en UN target auxiliar a media resolución:
+     1) la PROFUNDIDAD de lo sólido. Los transparentes se OCULTAN: con
+        overrideMaterial three los sigue dibujando (el bucket lo decide su
+        material real), y las rayas de velocidad o el polvo escribirían depth
+        delante de todo → bordes de tinta inventados a media pantalla. Los
+        riders también se ocultan: un overrideMaterial con skinning:true PETA
+        en r128 en cuanto toca una malla sin esqueleto (getMaxBones lee
+        object.skeleton), y sin skinning escribirían su pose-T. No hace falta,
+        sus píxeles los tapa la silueta de (2).
+     2) encima, y SIN borrar la profundidad, los riders en SU COLOR (capa
+        DINK_LAYER y material plano por malla — ahí sí con skinning si toca).
+   ===================================================================== */
+const DINK = {
+  chars:  true,      // anillo de color por fuera del rider
+  mundo:  true,      // tinta oscura en los bordes del escenario
+  grosor: 0.0038,    // grosor del anillo en fracción de ALTURA de pantalla (igual a cualquier resolución)
+  fuerza: 1.0,
+  tinta:  0.42,      // fuerza de la línea del mundo
+  umbral: 0.030,     // curvatura relativa que ya cuenta como borde (ver el shader: es adimensional)
+  limGrow:0.0006,    // ...y cuánto sube ese umbral con la distancia (poda el ruido del fondo)
+  color:  0x0a0c16,
+  escala: 0.5        // resolución del target auxiliar (0.5 = 4× menos relleno)
+};
+const DINK_LAYER = 5;
+DESC.ink = DINK;   // los knobs, tocables en vivo desde consola (todo lo demás vive dentro del IIFE)
+let _dkRT = null, _dkSc = null, _dkCam = null, _dkU = null, _dkDepth = null;
+const _dkSil = {}, _dkHid = [], _dkSwap = [];
+let _dkTmpC = null, _dkTmpV = null;
+
+function dinkBuild(rr){
+  if(DINK._ko) return false;
+  if(!_dkTmpV) _dkTmpV = new THREE.Vector2();
+  if(!_dkTmpC) _dkTmpC = new THREE.Color();
+  const ds = rr.getDrawingBufferSize(_dkTmpV);
+  const w = Math.max(2, Math.round(ds.x * DINK.escala)), h = Math.max(2, Math.round(ds.y * DINK.escala));
+  if(_dkRT && _dkRT.width === w && _dkRT.height === h) return true;
+  try {
+    if(!(rr.capabilities.isWebGL2 || rr.extensions.get('WEBGL_depth_texture'))) throw new Error('sin depth texture');
+    if(_dkRT){ if(_dkRT.depthTexture) _dkRT.depthTexture.dispose(); _dkRT.dispose(); }
+    _dkRT = new THREE.WebGLRenderTarget(w, h, { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
+                                                format:THREE.RGBAFormat, depthBuffer:true, stencilBuffer:false });
+    /* 24 bits: con near=0.5 / far=5000, un depth de 16 bits deja el umbral de
+       borde POR DEBAJO del ruido de cuantización y la tinta hierve. */
+    const dt = new THREE.DepthTexture(w, h);
+    dt.type = THREE.UnsignedIntType;
+    _dkRT.depthTexture = dt;
+  } catch(e){ console.warn('[descenso] contorno desactivado:', e.message); DINK._ko = true; return false; }
+
+  if(!_dkSc){
+    _dkU = {
+      tSil:{ value:null }, tDepth:{ value:null },
+      texel:{ value:new THREE.Vector2(1/w, 1/h) },
+      grosor:{ value:DINK.grosor }, fuerza:{ value:DINK.fuerza },
+      near:{ value:0.5 }, far:{ value:5000 },
+      tinta:{ value:DINK.tinta }, umbral:{ value:DINK.umbral }, limGrow:{ value:DINK.limGrow },
+      fogNear:{ value:190 }, fogFar:{ value:700 },
+      inkCol:{ value:new THREE.Color(DINK.color) }
+    };
+    const mat = new THREE.ShaderMaterial({ uniforms:_dkU, transparent:true, depthTest:false, depthWrite:false, fog:false,
+      vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader:[
+        '#include <packing>',
+        'uniform sampler2D tSil; uniform sampler2D tDepth;',
+        'uniform vec2 texel; uniform float grosor, fuerza, near, far, tinta, umbral, limGrow, fogNear, fogFar;',
+        'uniform vec3 inkCol; varying vec2 vUv;',
+        /* w = 1/z. Para CUALQUIER plano, 1/z es AFÍN en coordenadas de pantalla
+           (la profundidad del z-buffer también, por eso interpola bien), así que
+           su segunda diferencia vale 0 mires el plano de frente o de canto. Con
+           la primera derivada —lo que hace el pase del juego— una ladera vista
+           casi de perfil dispara el umbral en TODOS sus píxeles: la primera
+           versión de esto llenó el descenso de manchones oscuros barriendo la
+           duna. La curvatura solo salta donde el plano se ROMPE: siluetas y
+           aristas, que es justo lo que se quiere dibujar. */
+        'float wz(vec2 uv){ return 1.0 / max(1e-4, -perspectiveDepthToViewZ(texture2D(tDepth,uv).x, near, far)); }',
+        'void main(){',
+        '  vec4 cur = texture2D(tSil, vUv);',
+        '  if(cur.a > 0.4) discard;',                       // DENTRO del rider: ni anillo ni tinta (la línea va por fuera)
+        '  vec2 o = vec2(texel.x/texel.y, 1.0) * grosor;',  // radio isótropo en fracción de altura
+        '  vec3 oc = vec3(0.0); float found = 0.0;',
+        '  for(int i=0;i<16;i++){',                         // 16 direcciones: si hay un rider a <= grosor, borde con SU color
+        '    float a = float(i)*0.392699;',                 // 2*PI/16
+        '    vec2 d = vec2(cos(a), sin(a));',
+        '    vec4 s = texture2D(tSil, vUv + d*o);',
+        '    if(s.a > 0.85){ oc = s.rgb; found = 1.0; }',
+        '  }',
+        '  if(found > 0.0){ gl_FragColor = vec4(oc, found*fuerza); return; }',
+        '  if(tinta <= 0.0) discard;',
+        '  float wc = wz(vUv); float z = 1.0/wc;',
+        '  if(z > far*0.95) discard;',                      // cielo / target sin escribir (el pase recorta el plano lejano a la niebla)
+        '  float kx = abs(wz(vUv+vec2(texel.x,0.0)) + wz(vUv-vec2(texel.x,0.0)) - 2.0*wc);',
+        '  float ky = abs(wz(vUv+vec2(0.0,texel.y)) + wz(vUv-vec2(0.0,texel.y)) - 2.0*wc);',
+        /* ×z lo vuelve ADIMENSIONAL: una silueta da ~1 esté a 10 u o a 300, así
+           que el umbral no necesita crecer con la distancia (limGrow se queda
+           como retoque fino, no como muleta). */
+        '  float rel = (kx + ky) * z;',
+        /* la tinta se DISUELVE con la niebla, igual que el objeto que contornea:
+           si no, quedan líneas oscuras flotando en un horizonte ya lavado. */
+        '  float fogT = smoothstep(fogNear, fogFar, z);',
+        '  float lim = umbral*(1.0 + z*limGrow);',
+        '  float ink = smoothstep(lim, lim*3.0, rel) * tinta * (1.0 - fogT);',
+        '  if(ink <= 0.004) discard;',
+        '  gl_FragColor = vec4(inkCol, ink);',
+        '}'].join('\n')
+    });
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    q.frustumCulled = false;
+    _dkSc = new THREE.Scene(); _dkSc.add(q);
+    _dkCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+  _dkU.texel.value.set(1/w, 1/h);
+  return true;
+}
+
+function dinkDraw(rr){
+  if((!DINK.chars && !DINK.mundo) || !DESC.scene || !DESC.cam || !DESC.racers) return;
+  if(!dinkBuild(rr)) return;
+  const sc = DESC.scene, cam = DESC.cam;
+
+  /* --- estado del renderer / de la escena que hay que devolver TAL CUAL --- */
+  const pMask = cam.layers.mask, pAuto = rr.autoClear, pBg = sc.background, pOv = sc.overrideMaterial;
+  const pSA = rr.shadowMap.autoUpdate, pSN = rr.shadowMap.needsUpdate;
+  const pcC = (rr.getClearColor(_dkTmpC) || _dkTmpC).getHex(), pcA = rr.getClearAlpha();
+  rr.shadowMap.autoUpdate = false; rr.shadowMap.needsUpdate = false;   // este pase extra NO re-renderiza sombras
+  sc.background = null;              // si no, el fondo rellena el target con alfa 1 y la silueta no se distingue del vacío
+  rr.setClearColor(0x000000, 0);
+  /* PLANO LEJANO RECORTADO a la niebla mientras dura el pase. La tinta ya se
+     disuelve en `fogFar`, así que todo lo que hay detrás se dibujaba para
+     nada: con far=5000 el pase extra DOBLABA los triángulos del frame (827k →
+     1,6M). Recortarlo lo deja en un sobrecoste pequeño, y de paso el depth de
+     24 bits gana precisión. El shader tiene que leer ESTE near/far, no los de
+     la cámara, o la linealización sale mal. */
+  const pFar = cam.far;
+  const fFar = sc.fog ? Math.min(cam.far, sc.fog.far * 1.06) : cam.far;
+  if(fFar < cam.far){ cam.far = fFar; cam.updateProjectionMatrix(); }
+  rr.setRenderTarget(_dkRT);
+  rr.clear(true, true, false);
+
+  /* 1) PROFUNDIDAD del mundo sólido. Se hace SIEMPRE, aunque la tinta esté
+     apagada: es también lo que hace que la silueta de (2) quede OCULTA cuando
+     el rider pasa por detrás de una roca. Sin ella, el anillo flota sobre la
+     duna que lo tapa. */
+  _dkHid.length = 0;
+  {
+    for(const r of DESC.racers) if(r.body && r.body.visible){ r.body.visible = false; _dkHid.push(r.body); }
+    sc.traverse(o => {
+      if(!o.visible) return;
+      if(o.isSprite || o.isPoints || o.isLine){ o.visible = false; _dkHid.push(o); return; }
+      if(!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if(m && (m.transparent === true || m.depthWrite === false)){ o.visible = false; _dkHid.push(o); }
+    });
+    if(!_dkDepth) _dkDepth = new THREE.MeshBasicMaterial({ colorWrite:false });   // solo depth: sin skinning (ver cabecera)
+    sc.overrideMaterial = _dkDepth;
+    rr.render(sc, cam);
+    sc.overrideMaterial = pOv;
+    for(const o of _dkHid) o.visible = true;
+    _dkHid.length = 0;
+  }
+
+  /* 2) SILUETA de los riders en su color, encima y sin borrar la profundidad */
+  _dkSwap.length = 0;
+  if(DINK.chars){
+    for(const r of DESC.racers){
+      const b = r.body; if(!b || !b.visible) continue;
+      const hex = r.col || 0xffffff;
+      b.traverse(o => {
+        if(!o.isMesh || !o.material) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if(m && m.depthWrite === false) return;          // ayudas translúcidas: no forman silueta
+        o.layers.enable(DINK_LAYER);                     // se re-marca cada frame: los GLB llegan async
+        const key = hex + (o.isSkinnedMesh ? 's' : 'r');
+        let sm = _dkSil[key];
+        if(!sm){ sm = new THREE.MeshBasicMaterial({ color:hex, fog:false, skinning:!!o.isSkinnedMesh }); _dkSil[key] = sm; }
+        _dkSwap.push(o, o.material); o.material = sm;
+      });
+    }
+    if(_dkSwap.length){
+      cam.layers.set(DINK_LAYER);
+      rr.autoClear = false;
+      rr.render(sc, cam);
+      for(let i = 0; i < _dkSwap.length; i += 2) _dkSwap[i].material = _dkSwap[i+1];
+      _dkSwap.length = 0;
+    }
+  }
+
+  /* --- devolver el estado y pintar el borde ENCIMA de lo ya renderizado --- */
+  cam.layers.mask = pMask; sc.background = pBg;
+  rr.shadowMap.autoUpdate = pSA; rr.shadowMap.needsUpdate = pSN;
+  rr.setClearColor(pcC, pcA);
+  _dkU.tSil.value   = _dkRT.texture;
+  _dkU.tDepth.value = _dkRT.depthTexture;
+  _dkU.near.value = cam.near; _dkU.far.value = fFar;   // los del PASE, no los de la cámara (ver arriba)
+  if(cam.far !== pFar){ cam.far = pFar; cam.updateProjectionMatrix(); }
+  _dkU.grosor.value = DINK.grosor; _dkU.fuerza.value = DINK.fuerza;
+  _dkU.tinta.value = DINK.mundo ? DINK.tinta : 0;
+  _dkU.umbral.value = DINK.umbral; _dkU.limGrow.value = DINK.limGrow;
+  if(sc.fog){ _dkU.fogNear.value = sc.fog.near; _dkU.fogFar.value = sc.fog.far; }
+  rr.setRenderTarget(null);
+  rr.autoClear = false;
+  rr.render(_dkSc, _dkCam);
+  rr.autoClear = pAuto;
+}
+
 DESC.render = function(){
   if(!DESC.scene) return;
   const rr = GAME_RENDERER(); if(!rr) return;
@@ -3863,6 +4084,7 @@ DESC.render = function(){
   }
   rr.setRenderTarget(null);
   rr.render(DESC.scene, DESC.cam);
+  dinkDraw(rr);
 };
 
 addEventListener('keydown', e => {
@@ -3904,8 +4126,11 @@ function boot(){
       cal = String(q || '').toLowerCase();
     } catch(e){}
   }
-  if(/pelad|min|none/.test(cal)){ K.sombras = false; K.densRoca = 0; K.densDeco = 0; K.streakN = 40; }
-  else if(/baj|low/.test(cal)){ K.sombras = false; K.densRoca = 0.5;  K.densDeco = 0.45; K.streakN = 60; }
+  /* el CONTORNO cuesta un pase de geometría extra (la profundidad del mundo);
+     el anillo de los personajes NO (son 4 riders), así que en calidad baja se
+     cae solo la tinta del mundo y en pelada el efecto entero. */
+  if(/pelad|min|none/.test(cal)){ K.sombras = false; K.densRoca = 0; K.densDeco = 0; K.streakN = 40; DINK.chars = false; DINK.mundo = false; }
+  else if(/baj|low/.test(cal)){ K.sombras = false; K.densRoca = 0.5;  K.densDeco = 0.45; K.streakN = 60; DINK.mundo = false; }
   else if(/med/.test(cal)){ K.sombras = false; K.densRoca = 0.75; K.densDeco = 0.7; }
   if(cal) console.log('[descenso] calidad=' + cal + ' · sombras=' + K.sombras);
   if(typeof THREE === 'undefined' || !GAME_RENDERER()) return;
