@@ -9117,7 +9117,13 @@ const GOBLIN_KINDS = {
        (_s7col). Si el FBX del salto se colara delante, el tinte se calcularía sobre OTRO material y el
        robot dejaría de salir lila. El clip nuevo NO aporta malla: solo pistas de hueso. */
   robotm:  { fbx:'RBOTMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, metal:true,
-             h:3.0, walkRef:2.3, max:4, shadow:true, jitter:false, shootAtk:false },
+             /* ►RBTALLA (9/08, Toni: "es muy pequeño"): 3.0 → 3.9. Y NO es que 3.0 se viera a 3.0 —
+                `h` se aplica sobre la caja de la BIND POSE, que en este FBX mide 3.0 de alto por 0.44
+                de ancho (brazos pegados y cuerpo estirado); de pie en el idle el hueso más alto queda
+                en 2.72, o sea que se perdía ~10% y salía MÁS BAJO que el goblin grande (h 3.6) siendo
+                el mismo tipo 'large'. Medido con los huesos, no con la caja: ver la memoria de
+                SkinnedMesh. Con 3.9 se planta a la altura del goblin grande, que es lo que toca. */
+             h:3.9, walkRef:2.3, max:4, shadow:true, jitter:false, shootAtk:false },
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
