@@ -898,17 +898,101 @@ function apoyaEnLadera(x, z, radio, hundir){
    OJO r128 (ya mordió en este proyecto): `instanceColor` NACE con el tamaño de
    `this.count`, así que el InstancedMesh se crea con el cupo TOTAL y solo
    después se recorta `count` a lo realmente usado. */
-function _gradVertical(g){
-  if(!g || !g.attributes.position || g.attributes.color) return;
+
+/* ►TONO POR COPIA (el "multitono"), BIEN HECHO.
+   `instanceColor` MULTIPLICA el color del material, así que lo que hay que
+   generar es un FACTOR alrededor de 1. Lo que había era
+   `setRGB(1,1,1).offsetHSL(dh, ds, dl)` y eso está roto de dos maneras:
+     · el blanco tiene luminosidad 1, así que TODO el desplazamiento hacia
+       arriba se recorta y la mitad de las copias salían EXACTAMENTE iguales;
+     · su saturación es 0, luego su tono es el rojo — subir saturación no
+       variaba el color, lo teñía de rojo.
+   Por eso Toni no veía multitono por ningún lado aunque el código lo dijera.
+   Aquí se hace en RGB directo: luminosidad ±f y temperatura (rojo contra azul,
+   en oposición), que es lo que da piedras cálidas y frías en la misma ladera. */
+function _tono(rng, out, f){
+  f = (f == null) ? 1 : f;
+  const l = 1 + (rng() - 0.5) * 0.46 * f;
+  const t = (rng() - 0.5) * 0.20 * f;
+  out.setRGB(l * (1 + t), l, l * (1 - t));
+  return out;
+}
+
+/* ►LOSETAS DE TONO EN LA PROPIA MALLA (el "multitile").
+   El tono por copia distingue una roca de la de al lado, pero cada roca seguía
+   siendo de un color plano. Aquí se hornea en el color de vértice:
+     · GRADIENTE vertical: base en sombra, cima al sol.
+     · LOSETAS: se cuantiza la posición del vértice a una rejilla y el tono sale
+       de un hash de esa celda, así que los vértices de una misma celda comparten
+       valor y aparecen CARAS/manchas de distinto tono en vez de un degradado
+       suave. Coste 0 en ejecución y NO añade vértices — la alternativa
+       (toNonIndexed para tener color por triángulo) multiplicaba por 4 el coste
+       de vértice de ~900 rocas instanciadas.
+   Y lo importante: si el modelo YA trae color de vértice (los del juego lo
+   traen), se MULTIPLICA sobre él. La versión anterior se RENDÍA en ese caso
+   (`if(g.attributes.color) return`), que es justo por qué los assets del juego
+   no tenían ni degradado ni losetas. */
+function _hashCelda(a, b, c){
+  const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function _pintaGeo(g, opts){
+  if(!g || !g.attributes.position) return;
+  opts = opts || {};
+  const grad = opts.grad != null ? opts.grad : 0.42;
+  const tile = opts.tile != null ? opts.tile : 0.26;
   const pos = g.attributes.position;
   if(!g.boundingBox) g.computeBoundingBox();
-  const y0 = g.boundingBox.min.y, y1 = g.boundingBox.max.y, h = (y1 - y0) || 1;
+  const bb = g.boundingBox;
+  const y0 = bb.min.y, alto = (bb.max.y - y0) || 1;
+  const dim = Math.max(bb.max.x - bb.min.x, alto, bb.max.z - bb.min.z) || 1;
+  const celda = dim * (opts.celda || 0.22);
+  const prev = g.attributes.color;
+  /* un color de vértice de GLB puede venir normalizado en enteros: getX()
+     devuelve el valor CRUDO (0..255), y multiplicar por eso reventaría a
+     blanco. Se desnormaliza a mano. */
+  let esc = 1;
+  if(prev && prev.normalized){
+    esc = (prev.array instanceof Uint8Array || prev.array instanceof Int8Array) ? 1/255 : 1/65535;
+  }
   const col = new Float32Array(pos.count * 3);
   for(let i = 0; i < pos.count; i++){
-    const k = 0.70 + 0.40 * ((pos.getY(i) - y0) / h);
-    col[i*3] = k; col[i*3+1] = k; col[i*3+2] = k;
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const k = (1 - grad * 0.5) + grad * ((y - y0) / alto);
+    const t = 1 + (_hashCelda(Math.floor(x / celda), Math.floor(y / celda),
+                              Math.floor(z / celda)) - 0.5) * tile;
+    const f = k * t;
+    col[i*3]   = f * (prev ? prev.getX(i) * esc : 1);
+    col[i*3+1] = f * (prev ? prev.getY(i) * esc : 1);
+    col[i*3+2] = f * (prev ? prev.getZ(i) * esc : 1);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+
+/* ►VALLAS Y JALONES A BANDAS (el multitile de una caja).
+   Un jalón era UNA caja de UN color plano: veinte de ellos se leen como veinte
+   calcomanías del mismo sticker. Aquí la caja se corta en bandas horizontales y
+   cada banda lleva su tono horneado en el color de vértice. La geometría se
+   comparte entre TODAS las copias (una sola, instanciada), así que las bandas
+   salen gratis; el tono POR copia lo pone `instanceColor` encima.
+   Va sin índices a propósito: con vértices compartidos las bandas serían un
+   degradado suave y lo que se busca es el corte. */
+function _cajaBandas(n, oscura, brillo){
+  const g = new THREE.BoxGeometry(1, 1, 1, 1, n, 1).toNonIndexed();
+  const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+  for(let t = 0; t < pos.count; t += 3){
+    const ym = (pos.getY(t) + pos.getY(t+1) + pos.getY(t+2)) / 3;
+    const b = Math.floor((ym + 0.5) * n);
+    /* `brillo` > 1 a propósito: un poste es TODO caras verticales y con el sol
+       rasante de la hora dorada solo le llega el hemisférico — sin compensar en
+       el albedo se leen como palos NEGROS (comprobado en captura). */
+    const f = ((b % 2 === 0) ? 1.0 : (oscura != null ? oscura : 0.62))
+            * (brillo != null ? brillo : 1)
+            * (0.94 + 0.12 * _hashCelda(b, 1, 1));
+    for(let k = 0; k < 3; k++){ col[(t+k)*3] = f; col[(t+k)*3+1] = f; col[(t+k)*3+2] = f; }
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }
 
 /* Siembra instanciada de un modelo del juego.
@@ -925,7 +1009,7 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
     if(!q.isMesh) return;
     const g = q.geometry.clone();
     g.applyMatrix4(q.matrixWorld);            // hornea la jerarquía del modelo
-    _gradVertical(g);
+    _pintaGeo(g, { grad: opts.grad, tile: opts.tile, celda: opts.celda });
     const m0 = Array.isArray(q.material) ? q.material[0] : q.material;
     const mat = new THREE.MeshLambertMaterial({
       color: (m0 && m0.color) ? m0.color.clone() : new THREE.Color(0xffffff),
@@ -959,7 +1043,7 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
     sc.set(pl.ex, pl.ey, pl.ez);
     m4.compose(v3, qt, sc);
     /* tono por COPIA: es el multitono, y sale gratis */
-    col.setRGB(1, 1, 1).offsetHSL((rng()-0.5)*0.05, (rng()-0.5)*0.20, (rng()-0.5)*0.30);
+    _tono(rng, col, opts.fuerza);
     for(const im of partes){ im.setMatrixAt(wi, m4); im.setColorAt(wi, col); }
     wi++; puestos++;
   }
@@ -1536,15 +1620,22 @@ function buildScene(){
     barra.position.set(R.x, (y0 + y1) / 2, (R.z0 + R.z1) / 2);
     barra.rotation.x = Math.atan2(y0 - y1, largo) * -1;
     world.add(barra);
+    /* postes del raíl: bandas en la propia caja + tinte por poste, y apoyados
+       en el punto más bajo de su pie (si no, en cuesta uno de cada dos flota) */
     const nPost = Math.max(2, Math.round(largo / 12));
+    const imP = new THREE.InstancedMesh(_cajaBandas(5, 0.55, 1.45),
+      new THREE.MeshLambertMaterial({ color:0x8a94a4, vertexColors:true, flatShading:true }),
+      nPost + 1);
     for(let i = 0; i <= nPost; i++){
       const zz = R.z0 + (R.z1 - R.z0) * (i / nPost);
-      const yy = terrainY(R.x, zz);
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.34, R.alto, 0.34),
-        new THREE.MeshLambertMaterial({ color:0x8a94a4 }));
-      post.position.set(R.x, yy + R.alto/2, zz);
-      world.add(post);
+      const yy = Math.min(terrainY(R.x, zz), terrainY(R.x, zz - 1), terrainY(R.x, zz + 1)) - 0.3;
+      p.set(R.x, yy + R.alto/2, zz); q.identity(); s2.set(0.34, R.alto, 0.34);
+      m.compose(p, q, s2); imP.setMatrixAt(i, m);
+      _tono(rng, c, 0.5); imP.setColorAt(i, c);
     }
+    imP.instanceMatrix.needsUpdate = true;
+    if(imP.instanceColor) imP.instanceColor.needsUpdate = true;
+    world.add(imP);
   }
 
   /* --- BORDE DEL ABANICO: rocas siguiendo la semianchura --- */
@@ -1604,18 +1695,27 @@ function buildScene(){
          acaba la pista sin necesidad de muro --- */
   {
     const step = 46, n = Math.floor((K.len + 60) / step) * 2;
-    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshLambertMaterial({ color:0xff8a3d }), n);
+    /* MULTITONO + MULTITILE: bandas naranja/oscuro en el propio poste y tinte
+       por copia. Antes era una caja lisa naranja repetida n veces. */
+    const im = new THREE.InstancedMesh(_cajaBandas(6, 0.52, 1.55),
+      new THREE.MeshLambertMaterial({ color:0xff8a3d, vertexColors:true, flatShading:true }), n);
     let i = 0;
     for(let k = 0; k < n / 2; k++){
       const z = 20 - k * step, hw = hwAt(z);
       for(const side of [-1, 1]){
         const x = side * hw;
-        p.set(x, terrainY(x, z) + 1.7, z); q.identity(); s2.set(0.26, 3.4, 0.26);
-        m.compose(p, q, s2); im.setMatrixAt(i++, m);
+        /* apoyado en el punto MÁS BAJO de su pie: en una ladera de 26-42° un
+           poste plantado por su centro deja una pata en el aire */
+        const yPie = Math.min(terrainY(x, z), terrainY(x, z - 1.2), terrainY(x, z + 1.2),
+                              terrainY(x - 1.2, z), terrainY(x + 1.2, z));
+        p.set(x, yPie + 1.5, z); q.identity(); s2.set(0.26, 3.4, 0.26);
+        m.compose(p, q, s2); im.setMatrixAt(i, m);
+        _tono(rng, c, 0.7); im.setColorAt(i, c); i++;
       }
     }
-    im.instanceMatrix.needsUpdate = true; world.add(im);
+    im.instanceMatrix.needsUpdate = true;
+    if(im.instanceColor) im.instanceColor.needsUpdate = true;
+    world.add(im);
   }
 
   /* --- SEÑALIZACIÓN DE ZONA: en cada cambio de banda, una hilera de jalones
@@ -1625,16 +1725,23 @@ function buildScene(){
     const filas = [];
     for(let i = 1; i < BANDS.length; i++) filas.push({ z: BANDS[i].z0, col: ZONA[BANDS[i].tipo].col });
     const perFila = 15;
-    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshLambertMaterial({ color:0xffffff }), filas.length * perFila);
+    const im = new THREE.InstancedMesh(_cajaBandas(7, 0.52, 1.45),
+      new THREE.MeshLambertMaterial({ color:0xffffff, vertexColors:true, flatShading:true }),
+      filas.length * perFila);
     let i = 0;
+    const _cz = new THREE.Color();
     for(const f of filas){
       const hw = hwAt(f.z);
-      c.setHex(f.col);
+      _cz.setHex(f.col);
       for(let k = 0; k < perFila; k++){
         const x = -hw + (2 * hw) * (k / (perFila - 1));
-        p.set(x, terrainY(x, f.z) + 2.3, f.z); q.identity(); s2.set(0.34, 4.6, 0.34);
-        m.compose(p, q, s2); im.setMatrixAt(i, m); im.setColorAt(i, c); i++;
+        const yPie = Math.min(terrainY(x, f.z), terrainY(x - 1.5, f.z), terrainY(x + 1.5, f.z));
+        p.set(x, yPie + 2.1, f.z); q.identity(); s2.set(0.34, 4.6, 0.34);
+        m.compose(p, q, s2); im.setMatrixAt(i, m);
+        /* el color de la banda que viene, pero con su variación por poste:
+           una hilera de 15 clones idénticos delata el copia-pega */
+        _tono(rng, c, 0.6); c.multiply(_cz);
+        im.setColorAt(i, c); i++;
       }
     }
     im.instanceMatrix.needsUpdate = true;
@@ -1669,25 +1776,130 @@ function buildScene(){
      cada rampa recibe su tono por instancia (instanceColor multiplica el color
      del material del cuerpo). */
   if(ramps.length){
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      -.5,0,.5,  .5,0,.5,  .5,1,-.5,   -.5,0,.5,  .5,1,-.5, -.5,1,-.5,
-      -.5,0,.5, -.5,1,-.5, -.5,0,-.5,   .5,0,.5,  .5,0,-.5,  .5,1,-.5,
-      -.5,0,-.5,-.5,1,-.5,  .5,1,-.5,  -.5,0,-.5,  .5,1,-.5,  .5,0,-.5,
-    ]), 3));
-    geo.computeVertexNormals();
-    const im = new THREE.InstancedMesh(
-      geo, new THREE.MeshLambertMaterial({ color: PAL.ramp, flatShading:true }), ramps.length);
-    ramps.forEach((o, i) => {
+    /* ►KICKERS QUE PISAN LA TIERRA. Toni: "los kickers por detrás no se apoyan
+       en la tierra, los tienes flotando una parte por detrás". Literal, y la
+       causa es geométrica: la cuña era UNA malla instanciada con la base PLANA
+       a la altura del centro (baseY) y escalada por (w, h, len). Pero el
+       terreno de esta pista baja entre 11° y 42°, así que en el extremo alto
+       —el de salida, el que se ve por detrás al pasar— el suelo ya ha caído
+       len/2·tan(pendiente): entre 3 y 15 unidades. Ahí no había nada: aire.
+       Instanciar una caja rígida NO puede resolverlo, porque cada rampa cae
+       sobre un trozo de ladera distinto.
+       Ahora cada kicker se construye con su propia geometría y todas se funden
+       en UNA malla (sigue siendo un draw call, sin instancing):
+         · la CARA de subida usa la misma fórmula que la física (rampSurfaceY),
+           y se levanta hasta el terreno si el terreno va por encima — así la
+           entrada se funde con la ladera en vez de quedar enterrada;
+         · del PERÍMETRO cuelga un FALDÓN que baja al terreno REAL muestreado
+           en ese punto y se hunde 2,5 u más. Por detrás, por los lados y por
+           delante: ya no hay hueco por ninguna cara;
+         · la cara se subdivide en LOSETAS con tono propio (multitile) y cada
+           kicker recibe además su tinte (multitono).
+
+       ►SEGUNDA PASADA (y esto lo enseñó la captura, no el razonamiento): al
+       rellenar el hueco aparecía un BLOQUE marrón oscuro de hasta 17 u — el
+       labio de un kicker de 6 u sobre una ladera de 35° está de verdad a 14 u
+       del suelo, así que esa masa es real y no se puede quitar sin tocar la
+       física del salto (que es la que Toni acaba de dar por buena). Lo que sí
+       se puede es hacer que se LEA como lo que sería en un desierto: un
+       terraplén de arena prensada. Por eso el faldón:
+         · va en el color de la ARENA COMPACTA (PAL.hard), no en marrón de
+           madera, y así se funde con la duna;
+         · se abre hacia abajo (talud) por los lados y por detrás — NUNCA por
+           delante: justo debajo del labio es donde se aterriza, y un talud ahí
+           te haría caer DENTRO de la malla;
+         · se corta en ESTRATOS horizontales con tono propio, que es lo que
+           impide que 17 u de pared se lean como una plancha lisa. */
+    const NX = 4, NZ = 6, NB = 4, HUNDE = 2.5;
+    const vPos = [], vCol = [];
+    const cCara = new THREE.Color(PAL.ramp);
+    const cFalda = new THREE.Color(PAL.hard);
+    const _t = new THREE.Color();
+    const tri3 = (ax,ay,az, bx,by,bz, cx,cy,cz, cc) => {
+      vPos.push(ax,ay,az, bx,by,bz, cx,cy,cz);
+      for(let k = 0; k < 3; k++) vCol.push(cc.r, cc.g, cc.b);
+    };
+
+    for(const o of ramps){
       o.baseY = terrainY(o.x, o.z);
-      p.set(o.x, o.baseY, o.z); q.identity(); s2.set(o.w, o.h, o.len);
-      m.compose(p, q, s2); im.setMatrixAt(i, m);
-      c.setRGB(1, 1, 1).offsetHSL((rng()-0.5)*0.05, (rng()-0.5)*0.22, (rng()-0.5)*0.24);
-      im.setColorAt(i, c);
-    });
-    im.instanceMatrix.needsUpdate = true;
-    if(im.instanceColor) im.instanceColor.needsUpdate = true;
-    world.add(im);
+      const x0 = o.x - o.w/2, zBack = o.z + o.len/2, zFront = o.z - o.len/2;
+      /* cara de subida = LA DE LA FÍSICA (rampSurfaceY), sin inventar nada */
+      const cara = (x, z) => Math.max(o.baseY + ((zBack - z) / o.len) * o.h,
+                                      terrainY(x, z) + 0.06);
+      /* base del faldón: el terreno de ahí mismo, hundido; nunca por encima
+         de la cara (si no, el faldón asomaría por la pista) */
+      const pie = (x, z, yTop) => Math.min(terrainY(x, z) - HUNDE, yTop - 0.4);
+      _tono(rng, _t, 0.9);
+      const cc = new THREE.Color();
+
+      /* --- cara superior en losetas --- */
+      for(let j = 0; j < NZ; j++){
+        for(let i = 0; i < NX; i++){
+          const xa = x0 + o.w * (i / NX), xb = x0 + o.w * ((i+1) / NX);
+          const za = zBack - o.len * (j / NZ), zb = zBack - o.len * ((j+1) / NZ);
+          /* loseta: tono propio + un pelo más claro cuanto más arriba, que es
+             lo que hace que se lea la rampa como rampa y no como mancha */
+          const lt = 0.90 + 0.20 * _hashCelda(i * 7.3, j * 3.1, o.z * 0.13)
+                   + 0.10 * (j / NZ);
+          cc.copy(cCara).multiply(_t).multiplyScalar(lt);
+          const A = cara(xa, za), B = cara(xb, za), C = cara(xb, zb), D = cara(xa, zb);
+          tri3(xa,A,za, xb,B,za, xa,D,zb, cc);
+          tri3(xb,B,za, xb,C,zb, xa,D,zb, cc);
+        }
+      }
+
+      /* --- FALDÓN: recorrido del perímetro con talud y estratos ---
+         El perímetro se recorre como una lista de puntos con su vector de
+         apertura: hacia fuera en X por los lados, hacia atrás en Z por la
+         trasera, y CERO por delante (zona de aterrizaje). */
+      const per = [];
+      const meteP = (x, z) => {
+        const ox = clamp((x - o.x) / (o.w/2), -1, 1);
+        const oz = Math.max(0, (z - o.z) / (o.len/2));
+        per.push({ x, z, ax: ox * o.w * 0.16, az: oz * o.len * 0.20 });
+      };
+      for(let i = 0; i <= NX; i++) meteP(x0 + o.w * (i / NX), zBack);          // trasera
+      for(let j = 1; j <= NZ; j++) meteP(x0 + o.w, zBack - o.len * (j / NZ));  // lado +x
+      for(let i = NX - 1; i >= 0; i--) meteP(x0 + o.w * (i / NX), zFront);     // frente
+      for(let j = NZ - 1; j >= 1; j--) meteP(x0, zBack - o.len * (j / NZ));    // lado -x
+      per.push(per[0]);                                                        // cerrar
+      for(let k = 0; k < per.length - 1; k++){
+        const A = per[k], B = per[k+1];
+        const tA = cara(A.x, A.z), tB = cara(B.x, B.z);
+        const pA = pie(A.x, A.z, tA), pB = pie(B.x, B.z, tB);
+        for(let b = 0; b < NB; b++){
+          const u0 = b / NB, u1 = (b + 1) / NB;
+          /* MEDIDO por CDP: con factor ~1, el píxel del faldón salía 92 sobre
+             una arena de 210 — una losa oscura pegada a una duna clarísima.
+             Estas caras son casi verticales y con este sol rasante solo les
+             llega el hemisférico, así que el albedo tiene que compensar (el
+             color de vértice MULTIPLICA, puede pasar de 1 sin problema). */
+          const est = 1.62 + 0.16 * _hashCelda(k * 3.7, b * 9.1, o.z * 0.11) - 0.42 * u1;
+          cc.copy(cFalda).multiply(_t).multiplyScalar(est);
+          /* el talud crece con la profundidad: arriba pega al canto, abajo se
+             abre y muere en la duna */
+          const P = (pt, yTop, yPie, u) => [ pt.x + pt.ax * u, yTop + (yPie - yTop) * u,
+                                             pt.z + pt.az * u ];
+          const a0 = P(A, tA, pA, u0), a1 = P(A, tA, pA, u1);
+          const b0 = P(B, tB, pB, u0), b1 = P(B, tB, pB, u1);
+          tri3(a0[0],a0[1],a0[2], a1[0],a1[1],a1[2], b1[0],b1[1],b1[2], cc);
+          tri3(a0[0],a0[1],a0[2], b1[0],b1[1],b1[2], b0[0],b0[1],b0[2], cc);
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(vPos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(vCol, 3));
+    geo.computeVertexNormals();
+    /* DoubleSide a propósito: el faldón se genera cara a cara sobre una ladera
+       y con la cámara orbitable no hay un "fuera" fiable para todas ellas.
+       En r128 el material de dos caras ya invierte la normal en la cara de
+       atrás, así que la luz sigue siendo correcta. */
+    const malla = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+      vertexColors:true, flatShading:true, side:THREE.DoubleSide }));
+    malla.castShadow = true; malla.receiveShadow = true;
+    malla.userData._kickers = ramps.length;      // etiqueta para poder CONTAR en la sonda
+    world.add(malla);
 
     /* LABIO oscuro + jalones: a distancia lo legible es el CANTO. */
     const lip = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
@@ -1695,22 +1907,26 @@ function buildScene(){
     ramps.forEach((o, i) => {
       p.set(o.x, o.baseY + o.h, o.z - o.len/2 + 0.5); q.identity(); s2.set(o.w*1.03, 0.55, 1.1);
       m.compose(p, q, s2); lip.setMatrixAt(i, m);
-      c.setRGB(1, 1, 1).offsetHSL(0, 0, (rng()-0.5)*0.3);
+      _tono(rng, c, 0.7);
       lip.setColorAt(i, c);
     });
     lip.instanceMatrix.needsUpdate = true;
     if(lip.instanceColor) lip.instanceColor.needsUpdate = true;
     world.add(lip);
 
-    const post = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshLambertMaterial({ color:0xff8a3d }), ramps.length*2);
+    const post = new THREE.InstancedMesh(_cajaBandas(5, 0.62, 1.45),
+      new THREE.MeshLambertMaterial({ color:0xff8a3d, vertexColors:true, flatShading:true }),
+      ramps.length*2);
     let pi = 0;
     ramps.forEach(o => { for(const side of [-1,1]){
       p.set(o.x + side*o.w/2, o.baseY + o.h + 1.6, o.z - o.len/2 + 0.5);
       q.identity(); s2.set(0.5, 3.2, 0.5);
-      m.compose(p, q, s2); post.setMatrixAt(pi++, m);
+      m.compose(p, q, s2); post.setMatrixAt(pi, m);
+      _tono(rng, c, 0.55); post.setColorAt(pi, c); pi++;
     }});
-    post.instanceMatrix.needsUpdate = true; world.add(post);
+    post.instanceMatrix.needsUpdate = true;
+    if(post.instanceColor) post.instanceColor.needsUpdate = true;
+    world.add(post);
   }
 
   /* --- RECOGIDAS --- */
