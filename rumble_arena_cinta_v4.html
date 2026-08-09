@@ -9106,13 +9106,17 @@ const GOBLIN_KINDS = {
   sensei:   { glb:'SENSEI_GLB_B64',   h:2.3, walkRef:2.4, max:5, shadow:true,  jitter:false, shootAtk:false, noTint:true },   // ►ORIENTALS: sensei (large melee)
   villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:8, shadow:false, jitter:true,  shootAtk:false, noTint:true },   // ►ORIENTALS: aldeano (small melee)
   /* ►S8ROBOT (Stage 8, la fábrica): robot LaloBOT de la horda. Es la ÚNICA piel del proyecto que no
-     viene de un GLB sino de 3 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack) → los monta
-     _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
+     viene de un GLB sino de 4 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack / jump) → los
+     monta _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
      · type base 'large' (lo fuerza spawnMinion) = HP 60 y melee de 20 → "pega bastante fuerte".
      · SIN noTint: el S8 lo pinta LILA por el mismo camino que a los goblins (m._s7col en gobAttach).
      · fbxWorldBox: el rig Mixamo mide bien con setFromObject (cm), pero MIENTE con la caja LOCAL de
-       la geometría que usa _gobBuildInst para los Synty a escala 0.01 → hay que pedirle la de mundo. */
-  robotm:  { fbx:'RBOTMIN_FBX_B64', fbxClips:['idle','walk','attack'], fbxWorldBox:true, metal:true,
+       la geometría que usa _gobBuildInst para los Synty a escala 0.01 → hay que pedirle la de mundo.
+     · ►RBJUMP: 'jump' va AL FINAL de la lista a propósito. El donante de malla es el PRIMER FBX con
+       piel (o sea 'idle'), y de ese clon salen los materiales que _gobBuildInst cachea con el lila
+       (_s7col). Si el FBX del salto se colara delante, el tinte se calcularía sobre OTRO material y el
+       robot dejaría de salir lila. El clip nuevo NO aporta malla: solo pistas de hueso. */
+  robotm:  { fbx:'RBOTMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, metal:true,
              h:3.0, walkRef:2.3, max:4, shadow:true, jitter:false, shootAtk:false },
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
@@ -9143,8 +9147,13 @@ function _gobFbxLoad(type){
   const anims = [];
   for(const key of names){ const o=parsed[key]; if(!(o && o.animations && o.animations[0])) continue;
     const c = o.animations[0].clone();
+    /* ►RBJUMP: en 'jump' se congela TAMBIÉN la Y. El arco del salto lo pone la física (mn.vel.y) y el
+       clip solo aporta la POSTURA; si se dejara la cadera subir, el robot volaría el doble de alto que
+       su posición lógica y aterrizaría con los pies bajo tierra. En los demás clips la Y se respeta
+       (es el peso del paso, no desplazamiento). */
+    const freezeY = (key==='jump');
     for(const tr of c.tracks){ if(!/\.position$/.test(tr.name)) continue;
-      const v = tr.values; for(let i=0;i<v.length;i+=3){ v[i]=v[0]; v[i+2]=v[2]; } }
+      const v = tr.values; for(let i=0;i<v.length;i+=3){ v[i]=v[0]; if(freezeY) v[i+1]=v[1]; v[i+2]=v[2]; } }
     c.name = key; anims.push(c); }
   if(cfg.metal) meshSrc.traverse(o=>{ if(!o.isMesh && !o.isSkinnedMesh) return;
     /* OJO: FBXLoader (r128) devuelve MeshPhongMaterial, NO Standard — se ajusta lo que exista y no se
@@ -9402,6 +9411,9 @@ function gobUpdate(mn, dt){
       const win = mn.type==='large' ? .92 : .62;          // ventana total = wind+hit+rec (líneas 7469-7472)
       const d = a.getClip().duration;
       a.timeScale = (d > .05) ? Math.max(1, d/win) : 1;   // acelera si el clip es más largo que la ventana; nunca lo ralentiza (clip corto → se congela en su último frame por clampWhenFinished)
+    } else {                                              // ►RBJUMP: mismo truco para el SALTO. Un 'Jumping' de Mixamo dura ~2 s (agacharse, impulso, vuelo, caída, recuperación) y con JUMP=19/GRAV=-36 el minion está ~1.06 s en el aire → sin comprimir solo se le vería la sentadilla del arranque y tocaría suelo aún subiendo. Nunca lo ralentiza: los clips de salto cortos (Synty de los orientales) se quedan a 1×.
+      const d = a.getClip().duration;
+      a.timeScale = (d > 1.05) ? d/1.05 : 1;
     }
     a.play();
   }
@@ -9430,6 +9442,10 @@ function gobClearAll(){ for(const mn of minions) if(mn._gob) gobRemove(mn); }   
    sea: te da tiempo de sobra a reaccionar, pero si lo ignoras te crujue. Y como no huye —solo
    mantiene la distancia con un vaivén de hover— la respuesta correcta siempre es saltar a por él.
 
+   Y APUNTA MAL a propósito (►DRONAIM): su mira te persigue con retraso y con tope de velocidad, así
+   que si corres se queda atrás y el rayo pasa por detrás de ti sin tocarte. Cobra a quien se queda
+   quieto, no a quien está jugando. Con eso + DRONE_HP bajo deja de ser un enemigo pesado.
+
    OJO con las luces: NADA de PointLight por dron. El nº de luces entra en la CLAVE de todos los
    materiales del proyecto, así que encender una en partida recompila TODOS los shaders (medido, ver
    la memoria de rendimiento). El brillo va con mallas aditivas, que salen gratis.
@@ -9439,11 +9455,18 @@ const DRONE_HOVER    = 2.6;   // altura de vuelo sobre el suelo. >VHIT_BAND(1.8)
 const DRONE_STANDOFF = 6.5;   // distancia a la que se planta respecto al objetivo
 const DRONE_RANGE    = 20;    // a partir de aquí ni apunta
 const DRONE_CHARGE   = 1.5;   // s de carga de la luz (el aviso)
-const DRONE_HP       = 26;    // 2-3 golpes en el aire
-const DRONE_DMG      = 20;    // + escala con el caos: "les quita bastante"
+const DRONE_HP       = 12;    // ►DRONFRAG: FRÁGIL a propósito (menos que el goblin pequeño, 14) — el precio de matarlo es SUBIR al aire, no aguantarle golpes; con 26 se hacía pesado
+const DRONE_DMG      = 20;    // + escala con el caos: "les quita bastante" (pero ahora falla si te mueves, ver ►DRONAIM)
 const DRONE_LILA     = 0xb04bff, DRONE_LILA2 = 0xe9c2ff;
+/* ►DRONAIM · el dron NO dispara a donde estás: dispara a donde CREE que estás. Un punto de mira
+   (mn.aim) persigue al objetivo con velocidad LIMITADA y suavizado; el hilo de puntería y el rayo
+   salen de ese punto, no del jugador. Parado te clava; corriendo lo dejas atrás y el rayo pasa por
+   detrás de ti. El fallo es GEOMÉTRICO (se ve venir y se ve fallar), no un dado escondido. */
+const DRONE_AIM_SPD  = 5.0;   // u/s máximos a los que la mira sigue al objetivo. El jugador corre a RUN*spdMul ≈ 6-11 u/s → correr en línea recta la deja atrás siempre
+const DRONE_AIM_LAG  = 0.45;  // s de constante de tiempo del suavizado: también le cuesta ARRANCAR y frenar (no es solo un tope de velocidad)
+const DRONE_HIT_R    = 1.5;   // radio de acierto alrededor de la mira (≈ el ancho del luchador): fuera de ahí el rayo pasa de largo y no hace nada
 const _dronePool = []; let _droneLive = 0, _droneTpl = null, _droneTplTried = false;
-const _DR_FWD = new THREE.Vector3(0,0,1), _drA = new THREE.Vector3(), _drB = new THREE.Vector3();   // el haz se construye tumbado a +Z (ver _droneBuildInst) → la rotación va de +Z a la dirección de tiro, NO de +Y
+const _DR_FWD = new THREE.Vector3(0,0,1), _drA = new THREE.Vector3(), _drB = new THREE.Vector3(), _drC = new THREE.Vector3(), _drD = new THREE.Vector3();   // el haz se construye tumbado a +Z (ver _droneBuildInst) → la rotación va de +Z a la dirección de tiro, NO de +Y
 /* Recolor LILA del OBJ. El modelo no trae texturas, solo Kd planos por material (9), así que el
    recolor es exacto: se conserva la LUMINANCIA de cada Kd (el modelado se mantiene) y se le impone el
    tono lila. Los Kd muy saturados y vivos del original (los pilotos rojos) se quedan como acentos:
@@ -9542,6 +9565,7 @@ function spawnDrone(x, z, y0){
     pos:new THREE.Vector3(x, y0 + DRONE_HOVER + 5, z), vel:new THREE.Vector3(),
     yaw:0, onGround:false, damage:0, hitstun:0, invuln:0.6, atkPhase:'none', atkT:0,
     cd:1.2+Math.random()*1.6, hitCD:0, dead:false, target:null, retargetT:0,
+    aim:new THREE.Vector3(x, y0 + 1, z),   // ►DRONAIM: la mira nace en su vertical (no sobre el jugador) → el primer apuntado ya llega con retraso
     st:'idle', chg:0, beamT:0, ph:Math.random()*Math.PI*2, drift:Math.random()*Math.PI*2,
     animPhase:0, shootT:0, bodyRoll:0, bodyLean:0, aHead:0, aArmL:0, aArmR:0, aLegL:0, aLegR:0 };
   minions.push(mn); droneAttach(mn);
@@ -9551,8 +9575,15 @@ function spawnDrone(x, z, y0){
 function droneFire(mn, tgt){
   const inst = mn._dinst;
   const o = _drA.set(mn.pos.x, mn.pos.y + 1, mn.pos.z);
-  const to = _drB.set(tgt.pos.x, tgt.pos.y + 1.0, tgt.pos.z).sub(o);
-  const len = to.length() || 1; to.multiplyScalar(1/len);
+  /* ►DRONAIM: el rayo sale hacia la MIRA (mn.aim), que viene con retraso, no hacia el jugador. El
+     acierto se decide por geometría: si el objetivo ya no está dentro de DRONE_HIT_R de la mira, el
+     rayo se alarga y pasa de largo — ni daño ni empujón. */
+  const aim = mn.aim || _drC.set(tgt.pos.x, tgt.pos.y + 1.0, tgt.pos.z);
+  const to = _drB.copy(aim).sub(o);
+  let len = to.length() || 1; to.multiplyScalar(1/len);
+  const dxa = tgt.pos.x - aim.x, dya = (tgt.pos.y + 1.0) - aim.y, dza = tgt.pos.z - aim.z;
+  const hit = Math.sqrt(dxa*dxa + dya*dya + dza*dza) <= DRONE_HIT_R;
+  if(!hit) len += 7;                                    // fallo: el rayo NO se corta en el aire, sigue de largo por detrás (se lee "ha fallado", no "no ha disparado")
   if(inst){
     inst.beam.position.copy(o);
     inst.beam.quaternion.setFromUnitVectors(_DR_FWD, to);
@@ -9560,6 +9591,11 @@ function droneFire(mn, tgt){
     inst.beam.visible = true;
   }
   mn.beamT = 0.18;
+  if(!hit){                                             // impacto en el vacío donde apuntaba + el "fiu" del disparo, y se acabó
+    burst(_drD.copy(o).addScaledVector(to, len).clone(), DRONE_LILA2, 8, 5, 3, .5);
+    sfx.throwS();
+    return;
+  }
   if(!tgt.dead && !(tgt.invuln>0)){
     if(tgt.block){ tgt.damage += 6*defMul(tgt); tgt.shieldFlash = .2; sfx.chip(); }
     else {
@@ -9595,11 +9631,22 @@ function updateDrone(mn, dt){
   const wantY = fy + DRONE_HOVER + bob;
   /* MOVIMIENTO: nunca huye (petición) — se acerca hasta DRONE_STANDOFF y a partir de ahí solo
      ORBITA despacio. El resultado es el "hovering en movimiento constante y suave" sin alejarse. */
+  /* ►DRONAIM: la MIRA persigue al objetivo con tope de velocidad + suavizado. Se actualiza SIEMPRE
+     (también fuera de la carga) para que el morro del dron vaya visiblemente por detrás de ti. */
+  if(!mn.aim) mn.aim = new THREE.Vector3(mn.pos.x, mn.pos.y + 1, mn.pos.z);
+  if(tgt){
+    _drD.set(tgt.pos.x - mn.aim.x, (tgt.pos.y + 1.0) - mn.aim.y, tgt.pos.z - mn.aim.z)
+        .multiplyScalar(1 - Math.exp(-dt/DRONE_AIM_LAG));
+    const step = _drD.length(), cap = DRONE_AIM_SPD*dt;
+    if(step > cap) _drD.multiplyScalar(cap/step);        // el tope de velocidad es lo que hace que CORRER funcione: la mira no puede acelerar contigo
+    mn.aim.add(_drD);
+  }
   let wx = 0, wz = 0;
   if(tgt){
     const dx = tgt.pos.x - mn.pos.x, dz = tgt.pos.z - mn.pos.z;
     const d = Math.hypot(dx, dz) || 1;
-    mn.yaw = Math.atan2(dx, dz);
+    const ax = mn.aim.x - mn.pos.x, az = mn.aim.z - mn.pos.z;
+    mn.yaw = Math.atan2(ax, az);                         // ►DRONAIM: encara la MIRA, no al jugador — el cuerpo delata el retraso antes de disparar
     const closing = (d - DRONE_STANDOFF);
     const approach = THREE.MathUtils.clamp(closing*0.9, -1.6, 3.4);   // si se pasa de cerca retrocede MUY poco: mantiene sitio, no kitea
     wx = dx/d*approach; wz = dz/d*approach;
@@ -9647,7 +9694,7 @@ function updateDrone(mn, dt){
       inst.beam.visible = true;
     } else if(ch > 0 && tgt){
       const o = _drA.set(mn.pos.x, mn.pos.y + 1, mn.pos.z);
-      const to = _drB.set(tgt.pos.x, tgt.pos.y + 1.0, tgt.pos.z).sub(o);
+      const to = _drB.copy(mn.aim).sub(o);               // ►DRONAIM: el hilo enseña la MIRA retrasada → ves en tiempo real que se te queda atrás mientras corres
       const len = to.length() || 1; to.multiplyScalar(1/len);
       inst.beam.position.copy(o);
       inst.beam.quaternion.setFromUnitVectors(_DR_FWD, to);
