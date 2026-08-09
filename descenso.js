@@ -39,13 +39,13 @@
 
    ---------------------------------------------------------------------
    CONTROLES
-     Stick ←/→ · A/D ....... GIRAR (el board apunta; la velocidad le sigue)
+     Stick ←/→ · A/D ....... GIRAR. Suave de entrada; SOSTENIÉNDOLO se abre
+                             hasta K.steerHold (ver ►CANTOS en K)
+     LB / RB   · Q/E ....... CLAVAR CANTO izquierda / derecha: el giro bestia
      A         · Espacio ... OLLIE: mantén para cargar, suelta para saltar
-     RT        · Shift ..... turbo
-     X         · J ......... ATAQUE: dash-meteorito con tu color (cooldown)
-     LT        · L ......... AGARRAR — y el MISMO botón es el CONTRA
-     RB        · U ......... usar objeto
-     Stick der.· Q/E/ratón . girar la CÁMARA (vuelve sola detrás)
+     RT        · Shift ..... TURBO (3 s de depósito, 6 s de espera)
+     LT        · S ......... frenar
+     Stick der.· ratón ..... girar la CÁMARA (vuelve sola detrás)
 
      TRUCOS (en el aire, duración FIJA — si aterrizas a medias, te caes):
      B  · 1 .. Indy 0,40 s · 40    |  Y  · 2 .. Mortal atrás 0,80 s · 130
@@ -250,17 +250,34 @@ const K = {
      con la montaña. Medido: tallando se tardaba 245 s contra 38 s yendo recto.
      Ahora el stick PIDE UN ÁNGULO: a fondo = K.steerMax respecto de la línea
      de máxima pendiente, y al soltar vuelve solo. Apuntas y se queda. */
-  steerMax:   58 * RAD,// ángulo que pide el stick a fondo
+  /* ►CANTOS EN Q/E Y VOLANTE MÁS BLANDO (Toni). El stick a secas ya no te
+     cruza la ladera de golpe: pide un ángulo MODESTO (steerMax) y lo persigue
+     despacio. Hay dos formas de conseguir un giro bestia, y las dos cuestan
+     algo — que es lo que hace que el volante tenga tacto:
+       · SOSTENER el giro: aguantando en el mismo lado, el ángulo que puedes
+         pedir crece de steerMax a steerHold en steerHoldT segundos.
+       · CLAVAR CANTO (Q izquierda / E derecha): cantoYaw de golpe y a
+         cantoTurn rad/s. Inmediato, pero cruzas la tabla y pierdes velocidad
+         (de eso ya se encarga el modelo de agarre). */
+  steerMax:   38 * RAD,// ángulo que pide el stick a fondo... de entrada
+  steerHold:  72 * RAD,// ...y aguantando el giro (ver steerHoldT)
+  steerHoldT: 1.10,    // segundos de giro sostenido para llegar a steerHold
+  cantoYaw:   80 * RAD,// ángulo que clava un canto (Q/E)
+  cantoTurn:  4.6,     // rad/s con que lo clava: esto es lo "bestia"
   steerBack:  0.55,    // rad/s con que vuelve a la línea al soltar. Toni: "la
                        // vuelta es brusca, tiende a la línea recta él solo".
                        // Con 2,0 se enderezaba en medio segundo y parecía que
                        // el juego te quitaba el volante de las manos.
-  turnLow:    3.4,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
-  turnHigh:   2.1,     // ...y a tope (Toni: "los giros más suaves")
+  turnLow:    2.0,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
+  turnHigh:   1.25,    // ...y a tope (Toni: "que no sea tan abrupto")
   airTurn:    2.6,     // en el aire se gira mucho: deja encarar la caída
   turboThrust:22,
-  dashMax:    2.4,
-  dashRegen:  0.34,
+  /* ►TURBO CON FONDO. Toni: "no puede ser infinito: 3 segundos seguidos y 6
+     en poder volver a usarse". Se gasta mientras lo mantienes; al agotarse
+     empieza la espera y solo al acabarla se recarga ENTERO. No hay regen
+     mientras te queda: si no, a base de toquecitos volvería a ser infinito. */
+  dashMax:    3.0,
+  turboCd:    6.0,
   /* ►TOPE DE VELOCIDAD (Toni: "no quiero velocidades no realistas" — se
      llegaba a 104 u/s). Doble freno: uno SUAVE progresivo desde velSuave (el
      aire a esa velocidad es un muro que crece) y un clamp duro en velMax. */
@@ -360,9 +377,8 @@ const K = {
   grindPts:   26,      // puntos por segundo aguantando
   grindOut:   11,      // impulso vertical al salir del raíl
 
-  /* --- ataque / agarre --- */
-  atkSpeed:   30, atkTime:0.55, atkCd:4.2, atkPush:30, atkPts:45,
-  grabRange:  7.0, grabTime:0.5, grabSlow:0.55, grabCd:1.2, grabPts:60, counterPts:120,
+  /* (ATAQUE METEORITO y AGARRE retirados a petición de Toni: el descenso va de
+     bajar bien y de coger globos, no de pelearse.) */
 
   /* PREMIO POR PUESTO. Toni: "quedar el primero te da un extra de puntos,
      segundo un poco menos y tercero un poco menos; debajo de tercero no te dan
@@ -403,11 +419,13 @@ const K = {
                        // La rueda del ratón sigue moviendo esto.
   camDistMin: 6,
   camDistMax: 20,
-  camDistFast:0,       // ►FIJA. Toni: "cuando corres mucho no quiero que la
-                       // cámara se aleje tanto". No se movía por velocidad
-                       // (se acercaba), pero el FOV subía 28° con la velocidad
-                       // y el efecto era exactamente ese: alejarse. Ahora la
-                       // distancia es tuya (rueda) y solo tuya.
+  camDistFast:3.2,     // ►PERSPECTIVA CON LA VELOCIDAD (Toni, 9/08): "contra más
+                       // velocidad más se aleja la cámara, pero tampoco
+                       // demasiado". 13 → 16,2 u a tope: un 25%, se nota y no
+                       // te deja al jinete de miniatura. En la v12 estaba a 0
+                       // porque el que alejaba de verdad era el FOV (+28°); ese
+                       // ya está en +7, así que ahora el trabajo lo hace la
+                       // distancia, que es lo que da perspectiva de verdad.
   camAireY:   0.55,    // cuánto sigue la MIRA al jinete cuando VUELA
   camAireMax: 12,      // tope de subida. Con 26 y aplicándolo también a la
                        // POSICIÓN de la cámara, un lomo cualquiera la mandaba
@@ -429,8 +447,8 @@ const K = {
                        // y a tope de velocidad la imagen no paraba quieta.
   leash:      70,
   orbitaOn:   false,   // ►SIN ÓRBITA (Toni, v12: "que no puedas rotarla").
-                       // Ratón/stick/Q/E quedan muertos; la RUEDA (zoom) vive.
-  orbSpeed:   2.3,     // rad/s del stick derecho / Q / E (con orbitaOn)
+                       // Ratón y stick derecho quedan muertos; la RUEDA (zoom) vive.
+  orbSpeed:   2.3,     // rad/s del stick derecho (con orbitaOn). Q/E ya no: son los CANTOS
   orbMouse:   0.0042,  // rad por píxel de ratón (con orbitaOn)
   orbLibre:   true,    // el ratón rota SIN arrastrar (con orbitaOn)
   orbYawMax:  75 * RAD,// cuánto se puede girar la vista a cada lado
@@ -491,6 +509,8 @@ const K = {
      TABLA se cruce mientras el TORSO sigue mirando cuesta abajo. Eso se compone
      girando el modelo en contra del board, y se lee exactamente como un
      frenazo. Se suma agacharse y tumbarse hacia dentro de la curva. */
+  crouchYaw: -Math.PI/2,  // ►corrección de los clips de crouch (ver ►EL CROUCH
+                          // VENÍA GIRADO 90° en la postura procedural)
   torsoSigue: 0.80,    // cuánto se queda el torso mirando la bajada (0..1)
   torsoDesde: 0.22,    // rad de giro a partir del cual empieza a notarse
   agachaMax:  0.34,    // cuánto se agacha en el cruce máximo
@@ -2702,6 +2722,10 @@ function animEstado(r){
      (model.rotation.y contra-gira el torso y body.rotation.z ya tumba hacia el
      lado del giro) el clip que LEE bien es el del lado contrario. Manda lo que
      se ve. Si algún día se vuelve a tocar: mídelo así, no lo razones. */
+  /* CANTO CLAVADO (Q/E) o giro MUY pronunciado: los dos piden el crouch
+     (Toni). El canto manda sobre `_cruce` porque se nota antes de que la tabla
+     llegue a cruzarse del todo — que es justo la sensación de clavar canto. */
+  else if(r._canto)               animA(r, r._canto > 0 ? 'carve' : 'carveM');
   else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carve' : 'carveM');
   else                      animA(r, 'board');
 }
@@ -2730,10 +2754,6 @@ function makeRacer(i, human){
   body.add(capsula);
   g.add(body);
 
-  const meteor = new THREE.Mesh(new THREE.SphereGeometry(2.1, 14, 10),
-    new THREE.MeshBasicMaterial({ color: col, transparent:true, opacity:0.5 }));
-  meteor.position.y = 1.5; meteor.visible = false; g.add(meteor);
-
   const sh = new THREE.Mesh(new THREE.CircleGeometry(1.5, 16),
     new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.3, depthWrite:false }));
   sh.rotation.x = -Math.PI / 2;
@@ -2744,7 +2764,7 @@ function makeRacer(i, human){
   return {
     i, human, col,
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
-    gfx:g, body, capsula, board, meteor, shadow:sh,
+    gfx:g, body, capsula, board, shadow:sh,
     clase, montado:false, model:null, mixer:null,
     acts:null, animCur:null, tabla:null,
     padIndex: human ? (HUMANS === 1 ? 0 : i) : -1,
@@ -2757,8 +2777,7 @@ function makeRacer(i, human){
     air:false, airVy0:0, fall:0, crash:0, crashN:0, crashT:0, charge:0,
     grind:null, gBal:0, voids:0, chat:0,
     trick:null, trickT:0, combo:0,
-    dash:K.dashMax, turbo:false,
-    atk:0, atkCd:0, grabCd:0, grabbed:0, grabbedBy:null,
+    dash:K.dashMax, turboCd:0, turbo:false,
     pts:0, tricks:0, falls:0, crashes:0,
     done:false, place:0, time:0,
     _inp:null, _ai:{ targetMul:1, plan:null, tx:0 },
@@ -2776,15 +2795,17 @@ function addSpeed(r, v){
    ===================================================================== */
 const TRICK_KEYS = { indy:'Digit1', flipB:'Digit2', flipF:'Digit3', spin:'Digit4', flipB2:'Digit5', super:'Digit6' };
 function readDesc(r){
-  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null, freno:false };
+  const o = { ax:0, canto:0, jump:false, turbo:false, trick:null, freno:false };
   if(!r.human) return o;
   const kk = GAME_KEYS() || {};
   if(r.kb){
     if(kk['KeyD'] || kk['ArrowRight']) o.ax += 1;
     if(kk['KeyA'] || kk['ArrowLeft'])  o.ax -= 1;
+    /* ►CANTOS: Q izquierda, E derecha (Toni). Pulsar los dos se anula solo. */
+    if(kk['KeyQ']) o.canto -= 1;
+    if(kk['KeyE']) o.canto += 1;
     o.freno = !!(kk['KeyS'] || kk['ArrowDown']);
     o.jump = !!kk['Space']; o.turbo = !!(kk['ShiftLeft']||kk['ShiftRight']);
-    o.atk = !!kk['KeyJ']; o.grab = !!kk['KeyL'];
     for(const t in TRICK_KEYS) if(kk[TRICK_KEYS[t]]){ o.trick = t; break; }
   }
   if(r.padIndex >= 0 && navigator.getGamepads){
@@ -2794,22 +2815,27 @@ function readDesc(r){
       if(Math.abs(lx) > 0.22) o.ax += lx;
       const B = i => !!(pad.buttons[i] && pad.buttons[i].pressed);
       o.jump = o.jump || B(0); o.turbo = o.turbo || B(7);
-      o.atk = o.atk || B(2); o.grab = o.grab || B(6);
-      o.freno = o.freno || B(4);
+      /* LB/RB = cantos (simétricos, como Q/E) · LT = frenar (era el agarre,
+         que ya no existe) · el truco 'flipF' se muda de LB a X, que lo ha
+         dejado libre el meteorito. */
+      if(B(4)) o.canto -= 1;
+      if(B(5)) o.canto += 1;
+      o.freno = o.freno || B(6);
       if(!o.trick){
         if(B(1)) o.trick='indy'; else if(B(3)) o.trick='flipB';
-        else if(B(4)) o.trick='flipF'; else if(B(12)) o.trick='flipB2';
+        else if(B(2)) o.trick='flipF'; else if(B(12)) o.trick='flipB2';
         else if(B(13)) o.trick='super'; else if(B(14)||B(15)) o.trick='spin';
       }
     }
   }
   o.ax = clamp(o.ax, -1, 1);
+  o.canto = clamp(o.canto, -1, 1);
   return o;
 }
 
 /* IA: elige un objetivo lateral y GIRA hacia él (ya no empuja una x). */
 function aiInput(r, dt){
-  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null };
+  const o = { ax:0, canto:0, jump:false, turbo:false, trick:null };
   const skill = K.aiSkill[Math.min(K.aiSkill.length-1, Math.max(0, r.i - HUMANS))] || 0.85;
   const lead = DESC.racers.find(q => q.human) || DESC.racers[0];
   const gap = r.z - lead.z;
@@ -2930,18 +2956,15 @@ function aiInput(r, dt){
      el que quiere en vez de perseguirlo a base de correcciones (que era lo que
      la dejaba derrapando a media velocidad). */
   o.ax = clamp(wantYaw / K.steerMax, -1, 1);
+  /* ►CANTO DE LA IA: si el ángulo que necesita se sale de lo que da el stick,
+     clava canto — igual que tendrá que hacer el jugador con Q/E. Sin esto la
+     CPU se queda corta en las curvas cerradas desde que el volante es más
+     blando, y se sale por el borde. */
+  if(!r.air && Math.abs(wantYaw) > K.steerMax * 1.15 && skill > 0.55) o.canto = Math.sign(wantYaw);
 
   const s = surfaceAt(r.x, r.z);
   if(s.ramp && skill > 0.75) o.jump = true;                 // carga el ollie en la rampa
   o.turbo = gap > 35 && skill > 0.82;
-  for(const q of DESC.racers){
-    if(q === r || q.done) continue;
-    if(Math.abs(q.z-r.z) < K.grabRange && Math.abs(q.x-r.x) < K.grabRange){
-      if(skill > 0.85 && Math.random() < 0.012) o.grab = true;
-      else if(Math.random() < 0.006) o.atk = true;
-      break;
-    }
-  }
   return o;
 }
 
@@ -3028,7 +3051,6 @@ function fall(r){
   /* NO se para en seco: sigue deslizando con parte de lo que llevaba */
   r.vx *= K.fallMul; r.vz *= K.fallMul; r.vy = 0; r.air = false; r.charge = 0;
   r.trick = null; r.combo = 0; r.crashN = 0;
-  r.meteor.visible = false; r.atk = 0;
   spray(r, 40, 4.2);
 }
 function spray(r, n, force){
@@ -3047,7 +3069,8 @@ const _srf = { y:0, nx:0, ny:1, nz:0, ramp:null };
 
 function stepRacer(r, dt){
   if(r.done) return;
-  const inp = r._inp || { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null };
+  r.turboCd = Math.max(0, (r.turboCd || 0) - dt);   // la espera del turbo corre SIEMPRE, también caído
+  const inp = r._inp || { ax:0, canto:0, jump:false, turbo:false, trick:null, freno:false };
 
   /* --- caído: se desliza sin control --- */
   if(r.fall > 0){
@@ -3085,17 +3108,16 @@ function stepRacer(r, dt){
     if(r.crash <= 0) r.body.rotation.y = 0;
   }
 
-  if(r.grabbed > 0){
-    r.grabbed -= dt;
-    if(inp.grab && r.grabbedBy && r.grabCd <= 0){
-      fall(r.grabbedBy); r.pts += K.counterPts;
-      r.grabbed = 0; r.grabbedBy = null; r.grabCd = K.grabCd;
-    }
+  /* ►TURBO CON FONDO (3 s de uso / 6 s de espera). Ver K.dashMax/K.turboCd.
+     El reloj de la espera corre ARRIBA DEL TODO (ver stepRacer): si se
+     descontara aquí, una caída lo congelaría — el fall hace return antes. */
+  r.turbo = inp.turbo && r.dash > 0 && r.turboCd <= 0 && r.crash <= 0;
+  if(r.turbo){
+    r.dash -= dt;
+    if(r.dash <= 0){ r.dash = 0; r.turboCd = K.turboCd; }   // agotado → a esperar
+  } else if(r.turboCd <= 0 && r.dash <= 0){
+    r.dash = K.dashMax;                                      // cumplida la espera, depósito lleno
   }
-
-  r.turbo = inp.turbo && r.dash > 0 && r.crash <= 0;
-  if(r.turbo) r.dash = Math.max(0, r.dash - dt);
-  else        r.dash = Math.min(K.dashMax, r.dash + dt * K.dashRegen);
 
   /* ---------- GIRO DEL BOARD ----------
      El giro es del BOARD, no de la velocidad: la velocidad le sigue (o no)
@@ -3103,18 +3125,38 @@ function stepRacer(r, dt){
      límite de 180° de la pista. */
   const kSpd = clamp(r.spd / 90, 0, 1);
   const turn = (r.air ? K.airTurn : lerp(K.turnLow, K.turnHigh, kSpd));
-  /* el stick pide un ÁNGULO (no suma ángulo): a fondo, K.steerMax respecto de
-     la línea de máxima pendiente. Al soltar, vuelve solo. */
-  /* con FRENO se pide un ángulo mucho mayor: la tabla se pone de través y
-     raspa. Si no tocas el stick, derrapa hacia el último lado usado. */
-  let wantYaw = inp.ax * K.steerMax;
-  if(inp.freno && !r.air && r.fall <= 0){
+  /* el stick pide un ÁNGULO (no suma ángulo). Al soltar, vuelve solo. */
+  /* ►SOSTENER EL GIRO LO AMPLÍA. El stick de entrada solo llega a steerMax
+     (38°); aguantando en el MISMO lado, el ángulo que puede pedir crece hasta
+     steerHold (72°) en steerHoldT. Así un giro cerrado se GANA — o lo pides de
+     golpe con el canto. Al cambiar de lado o soltar, el crédito se cae rápido:
+     si no, el primer giro largo te dejaba el volante afilado para siempre. */
+  const dir = Math.abs(inp.ax) > 0.35 ? Math.sign(inp.ax) : 0;
+  if(dir && dir === (r._holdSide || dir)){
+    r._holdSide = dir;
+    r._hold = Math.min(1, (r._hold || 0) + dt / K.steerHoldT);
+  } else {
+    r._holdSide = dir;
+    r._hold = Math.max(0, (r._hold || 0) - dt * 2.4);
+  }
+  let wantYaw = inp.ax * lerp(K.steerMax, K.steerHold, r._hold);
+  let vel = (Math.abs(inp.ax) > 0.05 ? turn : K.steerBack);
+  /* ►CANTO (Q/E): el ángulo grande de golpe. Manda sobre el stick — es la
+     herramienta para el giro bestia — y no se puede clavar en el aire. */
+  r._canto = (!r.air && r.fall <= 0) ? (inp.canto || 0) : 0;
+  if(r._canto){
+    wantYaw = r._canto * K.cantoYaw;
+    vel = K.cantoTurn;
+    r._ladoFreno = r._canto;
+  } else if(inp.freno && !r.air && r.fall <= 0){
+    /* con FRENO se pide un ángulo mucho mayor: la tabla se pone de través y
+       raspa. Si no tocas el stick, derrapa hacia el último lado usado. */
     const lado = Math.abs(inp.ax) > 0.05 ? Math.sign(inp.ax) : (r._ladoFreno || 1);
     r._ladoFreno = lado;
     wantYaw = lado * K.frenoYaw;
+    vel = turn;
   }
   const dYaw = wantYaw - r.yaw;
-  const vel = ((Math.abs(inp.ax) > 0.05 || inp.freno) ? turn : K.steerBack);
   r.yaw = clamp(r.yaw + clamp(dYaw, -vel * dt, vel * dt), -K.yawLimit, K.yawLimit);
   const fx = Math.sin(r.yaw), fz = -Math.cos(r.yaw);       // eje largo del board
   const rx = Math.cos(r.yaw), rz = Math.sin(r.yaw);        // eje transversal
@@ -3178,7 +3220,6 @@ function stepRacer(r, dt){
     /* tope suave: pasado velSuave el aire crece al cuadrado del exceso */
     const exceso = Math.max(0, r.spd - K.velSuave);
     aFric += K.velCapK * exceso * exceso;
-    if(r.grabbed > 0) aFric += 8;
     const vm = Math.hypot(r.vx, r.vz);
     if(vm > 0.01){
       const f = Math.min(aFric, vm / dt) / vm;          // nunca te empuja hacia atrás
@@ -3340,42 +3381,9 @@ function stepRacer(r, dt){
     }
   }
 
-  /* ataque */
-  r.atkCd = Math.max(0, r.atkCd - dt);
-  if(inp.atk && r.atkCd <= 0 && r.crash <= 0 && r.atk <= 0){
-    r.atk = K.atkTime; r.atkCd = K.atkCd; addSpeed(r, K.atkSpeed); r.meteor.visible = true;
-  }
-  if(r.atk > 0){
-    r.atk -= dt;
-    const k = Math.max(0, r.atk / K.atkTime);
-    r.meteor.material.opacity = 0.20 + 0.55*k;
-    r.meteor.scale.setScalar(1 + (1-k)*0.8);
-    if(Math.random() < 0.5) emit(r.x + (Math.random()-0.5)*1.6, r.y + 1 + Math.random()*1.6, r.z + 1.5,
-                                 (Math.random()-0.5)*6, Math.random()*5, 14 + Math.random()*10, 0.3);
-    for(const q of DESC.racers){
-      if(q === r || q.done || q.fall > 0) continue;
-      if(Math.abs(q.z-r.z) < 4.5 && Math.abs(q.x-r.x) < 4.5){
-        const s = Math.sign(q.x - r.x || 1);
-        q.vx += s * K.atkPush; crash(q, 'rival'); r.pts += K.atkPts;
-      }
-    }
-    if(r.atk <= 0) r.meteor.visible = false;
-  }
-
-  /* (los OBJETOS se han retirado a petición de Toni: lo que hay que recoger
-     ahora son GLOBOS, y dan puntos en el momento — no hay inventario ni tecla
-     de uso.) */
-
-  /* agarre */
-  r.grabCd = Math.max(0, r.grabCd - dt);
-  if(inp.grab && r.grabCd <= 0 && r.grabbed <= 0 && r.crash <= 0){
-    r.grabCd = K.grabCd;
-    for(const q of DESC.racers){
-      if(q === r || q.done || q.fall > 0) continue;
-      if(Math.abs(q.z-r.z) > K.grabRange || Math.abs(q.x-r.x) > K.grabRange) continue;
-      q.grabbed = K.grabTime; q.grabbedBy = r; r.pts += K.grabPts; break;
-    }
-  }
+  /* (OBJETOS, METEORITO y AGARRE retirados a petición de Toni. Lo que hay que
+     recoger son GLOBOS, y dan puntos en el momento; y contra los rivales solo
+     queda el choque, que ya existe.) */
 
   /* ---------- LÍMITE DEL ABANICO ----------
      No hay muro: el cuenco ya te empuja al centro. Esto es solo el tope duro. */
@@ -3391,7 +3399,11 @@ function stepRacer(r, dt){
     r.spd = Math.abs(r.vz);
     /* el equilibrio se tuerce solo y se corrige con el stick */
     r.gBal += (R.dir * K.grindDrift + inp.ax * K.grindFix) * dt;
-    r.pts += K.grindPts * dt;
+    /* ►PUNTOS ENTEROS. Sumar `K.grindPts * dt` dejaba cosas como
+       "1697.0500000000015 pts" en el HUD y en el ranking. Se acumula la
+       fracción aparte y solo pasan enteros a r.pts. */
+    r._ptsAcc = (r._ptsAcc || 0) + K.grindPts * dt;
+    if(r._ptsAcc >= 1){ const n = Math.floor(r._ptsAcc); r.pts += n; r._ptsAcc -= n; }
     r._grindT = (r._grindT || 0) + dt;
     if(Math.random() < 0.5) emit(r.x + (Math.random()-0.5)*0.8, r.y + 0.2, r.z + 1.2,
         (Math.random()-0.5)*5, 1 + Math.random()*3, 4 + Math.random()*6, 0.13);
@@ -3602,8 +3614,23 @@ function stepRacer(r, dt){
     const lado = Math.sign(r.yaw) || 1;
     /* con el clip 'carve' sonando, la postura procedural se ATENÚA al 60%:
        el clip ya pone el cuerpo; lo procedural solo orienta y remata */
-    const pf = (r.animCur === 'carve' || r.animCur === 'carveM') ? 0.6 : 1;
-    if(r.model) r.model.rotation.y = K.charYaw - r.yaw * K.torsoSigue * r._cruce * pf;
+    const enCanto = (r.animCur === 'carve' || r.animCur === 'carveM');
+    const pf = enCanto ? 0.6 : 1;
+    /* ►EL CROUCH VENÍA GIRADO 90°, y por eso "los pies se salen de la tabla".
+       MEDIDO leyendo los huesos de los pies en el espacio de la tabla (que va
+       a lo largo de Z, media anchura 0,24):
+         board  → pieI z=-0,29 · pieD z=+0,24 · |x|<0,07   = de lado, BIEN
+         carve  → pieI x=-0,31 · pieD x=+0,41 · z≈0        = de frente, MAL
+       Los clips de crouch son Mixamo de PIE MIRANDO AL FRENTE: no traen la
+       postura de tabla que sí trae 'board', así que el muñeco quedaba a
+       horcajadas sobre el board con un pie fuera. Con -90° los pies vuelven a
+       caer a lo largo de la tabla y dentro de su ancho (comprobado: pieI
+       z=-0,31 x=0,11 · pieD z=+0,41 x=0,06) y el pie izquierdo delante, igual
+       que en 'board'. Se mezcla con `_cq` para que no pegue un tirón al
+       entrar/salir del clip. */
+    r._cq = lerp(r._cq || 0, enCanto ? 1 : 0, Math.min(1, dt * 7));
+    if(r.model) r.model.rotation.y = K.charYaw + K.crouchYaw * r._cq
+                                   - r.yaw * K.torsoSigue * r._cruce * pf;
     r.body.rotation.set((r.air ? -0.14 : 0.04) + pitch*0.8 + (Math.random()-0.5)*tmb,
                         (Math.random()-0.5)*tmb*0.6,
                         -roll*0.7 - lado * K.tumbaMax * r._cruce * pf + (Math.random()-0.5)*tmb*1.1);
@@ -3651,8 +3678,9 @@ function orbitInput(dt){
     K.camDist = clamp(K.camDist + o.wheel * K.zoomPaso, K.camDistMin, K.camDistMax);
     o.wheel = 0;
   }
-  if(kk['KeyQ']) dy -= 1;
-  if(kk['KeyE']) dy += 1;
+  /* Q/E YA NO GIRAN LA CÁMARA: desde que son los CANTOS, cada canto giraba
+     también la vista y el jinete se te iba de plano justo cuando más falta
+     hace verlo. La cámara se orbita con el RATÓN y con el stick derecho. */
   if(navigator.getGamepads){
     const gp = navigator.getGamepads(), pad = gp && gp[0];
     if(pad){
@@ -3896,13 +3924,13 @@ function buildHud(){
    NO hay enfriamiento, así que todos llevan el anillo tenue fijo (.util).
    Los códigos de mando son los que lee readDesc(): A=0, X=2, LB=4, LT=6, RT=7. */
 const DESC_CTRL = [
-  { key:'A / D', pad:'⇆',  name:'Girar',    col:'#7affc8' },
-  { key:'ESP',   pad:'A',  name:'Saltar',   col:'#3ad06a' },
-  { key:'SHIFT', pad:'RT', name:'Turbo',    col:'#ff9f6b' },
-  { key:'S',     pad:'LB', name:'Cantos',   col:'#7fd0ff' },
-  { key:'J',     pad:'X',  name:'Meteorito',col:'#5ec8ff' },
-  { key:'L',     pad:'LT', name:'Agarrar',  col:'#9fe0a0' },
-  { key:'1..6',  pad:'B/Y',name:'Trucos',   col:'#ffd84f' },
+  { key:'Q',     pad:'LB', name:'Canto izq.', col:'#c299ff' },
+  { key:'A / D', pad:'⇆',  name:'Girar',      col:'#7affc8' },
+  { key:'E',     pad:'RB', name:'Canto dcha.',col:'#c299ff' },
+  { key:'ESP',   pad:'A',  name:'Saltar',     col:'#3ad06a' },
+  { key:'SHIFT', pad:'RT', name:'Turbo',      col:'#ff9f6b', id:'turbo' },
+  { key:'S',     pad:'LT', name:'Frenar',     col:'#7fd0ff' },
+  { key:'1..6',  pad:'B/Y',name:'Trucos',     col:'#ffd84f' },
 ];
 function buildAtkBar(){
   const el = DESC.hud && DESC.hud.atk; if(!el) return;
@@ -3910,7 +3938,7 @@ function buildAtkBar(){
     '<div class="hbtn util" style="--pc:' + c.col + '">' +
       '<div class="hDisc">' +
         '<i class="hFill"></i>' +
-        '<span class="hLab" id="dctl_' + c.name + '"></span>' +
+        '<span class="hLab"' + (c.id ? ' id="dctl_' + c.id + '"' : '') + '></span>' +
         '<div class="hInner">' +
           '<div class="hPad' + (/^[ABXY]$/.test(c.pad) ? ' round' : '') + '">' + c.pad + '</div>' +
           '<span class="hKey">' + c.key + '</span>' +
@@ -3918,10 +3946,10 @@ function buildAtkBar(){
       '</div>' +
       '<span class="hName">' + c.name + '</span>' +
     '</div>').join('');
-  /* el meteorito es lo ÚNICO con espera: no lleva anillo (aquí no hay
-     cooldowns), se APAGA mientras enfría y enseña los segundos que faltan */
-  DESC.hud.meteor = el.children[4] || null;
-  DESC.hud.meteorLab = el.querySelector('#dctl_Meteorito');
+  /* el TURBO es lo único con espera: no lleva anillo (Toni no quiere anillos de
+     enfriamiento aquí), se APAGA mientras se recarga y enseña los segundos */
+  DESC.hud.bTurbo = el.querySelector('#dctl_turbo') ? el.querySelector('#dctl_turbo').closest('.hbtn') : null;
+  DESC.hud.bTurboLab = el.querySelector('#dctl_turbo');
 }
 
 /* ►RANKPTS: una fila por corredor, colocada en absoluto y movida con transform
@@ -4011,7 +4039,10 @@ function updateHud(dt){
     '<div style="font-size:26px;font-weight:900;line-height:1">' + place + 'º</div>' +
     '<div style="font-size:18px;font-weight:800;color:' + (me.turbo ? '#ffd23f' : '#fff') + '">' +
       Math.round(me.spd*1.6) + ' km/h</div>' +
-    '<div style="opacity:.8">turbo ' + '▮'.repeat(tb) + '▯'.repeat(6-tb) + '</div>' +
+    '<div style="opacity:.8">turbo ' + ((me.turboCd||0) > 0
+        ? '<b style="color:#ff8a3d">recargando ' + me.turboCd.toFixed(1) + 's</b>'
+        : '▮'.repeat(tb) + '▯'.repeat(6-tb)) + '</div>' +
+    (me._canto ? '<div style="color:#c299ff;font-weight:800">◄ CANTO ' + (me._canto < 0 ? 'IZQ' : 'DCHA') + ' ►</div>' : '') +
     (me._pump > 1.5 ? '<div style="color:#7bf06a;font-weight:800">◄ TALLANDO +' +
         Math.round(me._pump) + ' ►</div>' : '') +
     (me.charge > 0 ? '<div style="color:#7bf06a">ollie ' + '▮'.repeat(ch) + '▯'.repeat(6-ch) + '</div>' : '') +
@@ -4027,12 +4058,12 @@ function updateHud(dt){
 
   /* ►RANKPTS: quién va primero EN PUNTOS, a la izquierda */
   updateRank();
-  /* el meteorito, lo único con espera: el botón se apaga y enseña los segundos
-     (sin anillo de enfriamiento — aquí no los hay) */
-  if(h.meteor){
-    const listo = me.atkCd <= 0;
-    h.meteor.style.opacity = listo ? '' : '.42';
-    if(h.meteorLab) h.meteorLab.textContent = listo ? '' : Math.ceil(me.atkCd);
+  /* el TURBO, lo único con espera: el botón se apaga mientras se recarga y
+     enseña los segundos que faltan (sin anillo — aquí no los hay) */
+  if(h.bTurbo){
+    const esperando = (me.turboCd || 0) > 0;
+    h.bTurbo.style.opacity = esperando ? '.42' : '';
+    if(h.bTurboLab) h.bTurboLab.textContent = esperando ? Math.ceil(me.turboCd) : '';
   }
 
   /* ►CHULETA DE TRUCOS EN EL AIRE. Toni: "soy incapaz de lanzar trucos, no sé
