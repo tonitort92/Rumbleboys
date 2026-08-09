@@ -39,8 +39,9 @@
 
    ---------------------------------------------------------------------
    CONTROLES
-     Stick ←/→ · A/D ....... GIRAR. Suave de entrada; SOSTENIÉNDOLO se abre
-                             hasta K.steerHold (ver ►CANTOS en K)
+     Stick ←/→ · A/D ....... GIRAR. Es un VOLANTE, no un mando de ángulo: gira
+                             mientras lo empujas y al soltar SE QUEDA donde
+                             apunta (ver ►VOLANTE NATURAL en K)
      LB / RB   · Q/E ....... CLAVAR CANTO izquierda / derecha: el giro bestia
      A         · Espacio ... OLLIE: mantén para cargar, suelta para saltar
      RT        · Shift ..... TURBO (3 s de depósito, 6 s de espera)
@@ -243,32 +244,36 @@ const K = {
   floorFrac:  0.52,    // suelo de velocidad = esta fracción del equilibrio ←(4)
   floorPush:  16,      // con cuánta fuerza se empuja hacia ese suelo
 
-  /* ►VOLANTE POR OBJETIVO, no por integración. EL cambio de tacto.
-     Hasta aquí el stick SUMABA ángulo: mantener a la derecha te cruzaba la
-     ladera entera y había que contra-girar sin parar para sostener una línea.
-     Eso es lo que se sentía "duro" — estabas peleándote con el volante, no
-     con la montaña. Medido: tallando se tardaba 245 s contra 38 s yendo recto.
-     Ahora el stick PIDE UN ÁNGULO: a fondo = K.steerMax respecto de la línea
-     de máxima pendiente, y al soltar vuelve solo. Apuntas y se queda. */
-  /* ►CANTOS EN Q/E Y VOLANTE MÁS BLANDO (Toni). El stick a secas ya no te
-     cruza la ladera de golpe: pide un ángulo MODESTO (steerMax) y lo persigue
-     despacio. Hay dos formas de conseguir un giro bestia, y las dos cuestan
-     algo — que es lo que hace que el volante tenga tacto:
-       · SOSTENER el giro: aguantando en el mismo lado, el ángulo que puedes
-         pedir crece de steerMax a steerHold en steerHoldT segundos.
-       · CLAVAR CANTO (Q izquierda / E derecha): cantoYaw de golpe y a
-         cantoTurn rad/s. Inmediato, pero cruzas la tabla y pierdes velocidad
-         (de eso ya se encarga el modelo de agarre). */
-  steerMax:   38 * RAD,// ángulo que pide el stick a fondo... de entrada
-  steerHold:  72 * RAD,// ...y aguantando el giro (ver steerHoldT)
-  steerHoldT: 1.10,    // segundos de giro sostenido para llegar a steerHold
+  /* ►VOLANTE NATURAL — el stick manda VELOCIDAD DE GIRO, y al soltar el board
+     SE QUEDA DONDE APUNTA (Toni: "cuando giras el personaje que no se enderece;
+     si gira de lado, de lado se queda hasta que lo corriges tú, y si se tiene
+     que frenar porque ahí hay pendiente, pues se frena").
+
+     TRES MODELOS Y POR QUÉ ESTE. El primero integraba el ángulo pero SIN tope
+     ni ayudas: mantener a la derecha te cruzaba la ladera entera. Se cambió a
+     "el stick pide un ÁNGULO absoluto y al soltar vuelve solo" (steerBack), y
+     eso arregló la línea a costa de un autopiloto: el morro se iba a la máxima
+     pendiente aunque no tocaras nada. Lo que fallaba en el primero NO era
+     integrar: era que integrar sin límite y sin coste no tiene tacto.
+     Hoy el límite y el coste ya existen y son físicos — K.yawLimit corta a ±88°
+     y cruzado la gravedad proyectada te frena sola (el coseno del ángulo) —,
+     así que el integrador vuelve, ahora sí con la montaña haciendo de freno.
+
+     De paso se cae el crédito artificial de "sostener el giro lo amplía"
+     (steerHold/steerHoldT): en un integrador, aguantar YA abre el ángulo. A
+     turnHigh (1,25 rad/s) llegar a los 72° que daba el crédito cuesta ~1,0 s,
+     prácticamente los steerHoldT=1,10 de antes → el tacto de MANTENER es el
+     mismo, y encima un toque corto ahora corrige de verdad en vez de saltar al
+     ángulo absoluto que tocara.
+
+     El CANTO (Q/E) y el FRENO (S) siguen pidiendo un ángulo: no son volante,
+     son gestos puntuales — clavas la tabla ahí y se acabó. */
+  steerMax:   38 * RAD,// ángulo de referencia. Ya NO lo usa el stick: es la
+                       // escala con que la IA convierte "me falta este ángulo"
+                       // en eje (ver aiInput) y el umbral con que decide canto
   cantoYaw:   80 * RAD,// ángulo que clava un canto (Q/E)
   cantoTurn:  4.6,     // rad/s con que lo clava: esto es lo "bestia"
-  steerBack:  0.55,    // rad/s con que vuelve a la línea al soltar. Toni: "la
-                       // vuelta es brusca, tiende a la línea recta él solo".
-                       // Con 2,0 se enderezaba en medio segundo y parecía que
-                       // el juego te quitaba el volante de las manos.
-  turnLow:    2.0,     // rad/s con que PERSIGUE ese ángulo, a poca velocidad
+  turnLow:    2.0,     // rad/s de giro del stick a fondo, a poca velocidad
   turnHigh:   1.25,    // ...y a tope (Toni: "que no sea tan abrupto")
   airTurn:    2.6,     // en el aire se gira mucho: deja encarar la caída
   turboThrust:22,
@@ -1137,7 +1142,7 @@ const DESC = window.DESC = {
   scene:null, cam:null, world:null, backdrop:null,
   seed:0, rng:null, noise:null, noiseH:null,
   racers:[], obst:[], buckets:null, picks:null,
-  t:0, phase:'countdown', count:3.2,
+  t:0, phase:'intro', introT:0,   // ►DESCINTRO: intro → race → finish
   finishOrder:[], hud:null, _built:false, _why:{},
   orb:{ yaw:0, pitch:0, idle:9, mx:0, my:0, down:false, wheel:0 },
   kick:{ y:0, v:0 },
@@ -2393,11 +2398,12 @@ function updateAudio(dt){
   if(r.turbo && !S.turbo) sndRafagaSnd(2400, 0.3, 0.22);
   if(r.grind && !S.grind){ sndBip(2100, 0.06, 0.2); sndBip(2600, 0.06, 0.14); }
   if((r._lastTrickT || 0) > S.trickT + 0.5) sndDing(r.combo);
-  if(DESC.phase === 'countdown'){
-    const n = Math.ceil(DESC.count);
-    if(n !== S.cuenta && n > 0){ sndBip(560, 0.11); S.cuenta = n; }
+  /* ►DESCINTRO: el bip de la cuenta cuelga de lo que QUEDA de presentación (el
+     mismo reloj que los números y el travelling), no de un contador propio */
+  if(DESC.phase === 'intro' && DESC._introGo){
+    const n = Math.ceil(INTRO.dur - DESC.introT);
+    if(n !== S.cuenta && n > 0 && n <= 3){ sndBip(560, 0.11); S.cuenta = n; }
   }
-  if(DESC.phase === 'race' && S.fase === 'countdown') sndBip(880, 0.28, 0.22);
   if(DESC.phase === 'finish' && S.fase === 'race'){ sndDing(0); sndDing(2); }
   S.air = r.air; S.turbo = r.turbo; S.grind = !!r.grind;
   S.trickT = r._lastTrickT || 0; S.fase = DESC.phase;
@@ -2761,6 +2767,14 @@ function makeRacer(i, human){
   DESC.world.add(g); DESC.world.add(sh);
 
   const x0 = (i - 1.5) * 9;
+  /* ►DESCINTRO: COLOCARLOS YA EN LA PARRILLA. r.gfx solo se movía dentro de
+     stepRacer, y stepRacer no corre hasta que empieza la carrera → durante toda
+     la presentación los cuatro estaban APILADOS en el origen. No se notaba con
+     una cuenta atrás de 3 s mirando al jugador; con un travelling que pasa por
+     delante de la línea de salida, se nota mucho. */
+  const y0 = terrainY(x0, 0);
+  g.position.set(x0, y0, 0);
+  sh.position.set(x0, y0 + 0.07, 0);
   return {
     i, human, col,
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
@@ -2778,8 +2792,8 @@ function makeRacer(i, human){
     grind:null, gBal:0, voids:0, chat:0,
     trick:null, trickT:0, combo:0,
     dash:K.dashMax, turboCd:0, turbo:false,
-    pts:0, tricks:0, falls:0, crashes:0,
-    done:false, place:0, time:0,
+    pts:0, tricks:0, falls:0, crashes:0, globos:0, vmax:0,
+    done:false, parado:false, rollT:0, place:0, time:0,
     _inp:null, _ai:{ targetMul:1, plan:null, tx:0 },
   };
 }
@@ -2876,7 +2890,7 @@ function aiInput(r, dt){
     /* el ancho del hueco decide si hace falta el kicker del centro */
     const tx0 = hAhead.grande ? 0 : r.x * 0.5;
     const wy = clamp(Math.atan2(tx0 - r.x, Math.max(24, d)), -0.7, 0.7);
-    o.ax = clamp((d < 34 ? 0 : wy) / K.steerMax, -1, 1);
+    o.ax = clamp(((d < 34 ? 0 : wy) - r.yaw) / K.steerMax, -1, 1);   // ►VOLANTE NATURAL: el eje es RITMO de giro → se manda el ERROR de ángulo
     if(!hAhead.grande && d < 5 && !r.air) o.jump = true;   // los cortos, a ollie
     r._ai.tx = tx0;
     return o;
@@ -2952,10 +2966,12 @@ function aiInput(r, dt){
      Si va lento, lo único sensato es apuntar cuesta abajo y coger velocidad. */
   const wantYaw = r.spd < 13 ? 0
                 : clamp(Math.atan2(tx - r.x, Math.max(20, K.aiLook * 0.7)), -1.1, 1.1);
-  /* con el volante POR OBJETIVO, el eje ES el ángulo: la IA pide directamente
-     el que quiere en vez de perseguirlo a base de correcciones (que era lo que
-     la dejaba derrapando a media velocidad). */
-  o.ax = clamp(wantYaw / K.steerMax, -1, 1);
+  /* ►VOLANTE NATURAL: el eje ya no ES el ángulo, es el RITMO con que se gira.
+     La IA manda el ERROR (lo que le falta para apuntar donde quiere) escalado
+     por steerMax: a 38° de diferencia empuja a fondo y al llegar suelta sola.
+     Con un lazo así el ángulo se sostiene igual que antes — pero por la misma
+     vía que el jugador, sin volante propio. */
+  o.ax = clamp((wantYaw - r.yaw) / K.steerMax, -1, 1);
   /* ►CANTO DE LA IA: si el ángulo que necesita se sale de lo que da el stick,
      clava canto — igual que tendrá que hacer el jugador con Q/E. Sin esto la
      CPU se queda corta en las curvas cerradas desde que el volante es más
@@ -3068,7 +3084,7 @@ function spray(r, n, force){
 const _srf = { y:0, nx:0, ny:1, nz:0, ramp:null };
 
 function stepRacer(r, dt){
-  if(r.done) return;
+  if(r.parado) return;                              // ►META: ya rodó hasta pararse (ver el final de esta función)
   r.turboCd = Math.max(0, (r.turboCd || 0) - dt);   // la espera del turbo corre SIEMPRE, también caído
   const inp = r._inp || { ax:0, canto:0, jump:false, turbo:false, trick:null, freno:false };
 
@@ -3125,25 +3141,11 @@ function stepRacer(r, dt){
      límite de 180° de la pista. */
   const kSpd = clamp(r.spd / 90, 0, 1);
   const turn = (r.air ? K.airTurn : lerp(K.turnLow, K.turnHigh, kSpd));
-  /* el stick pide un ÁNGULO (no suma ángulo). Al soltar, vuelve solo. */
-  /* ►SOSTENER EL GIRO LO AMPLÍA. El stick de entrada solo llega a steerMax
-     (38°); aguantando en el MISMO lado, el ángulo que puede pedir crece hasta
-     steerHold (72°) en steerHoldT. Así un giro cerrado se GANA — o lo pides de
-     golpe con el canto. Al cambiar de lado o soltar, el crédito se cae rápido:
-     si no, el primer giro largo te dejaba el volante afilado para siempre. */
-  const dir = Math.abs(inp.ax) > 0.35 ? Math.sign(inp.ax) : 0;
-  if(dir && dir === (r._holdSide || dir)){
-    r._holdSide = dir;
-    r._hold = Math.min(1, (r._hold || 0) + dt / K.steerHoldT);
-  } else {
-    r._holdSide = dir;
-    r._hold = Math.max(0, (r._hold || 0) - dt * 2.4);
-  }
-  let wantYaw = inp.ax * lerp(K.steerMax, K.steerHold, r._hold);
-  let vel = (Math.abs(inp.ax) > 0.05 ? turn : K.steerBack);
-  /* ►CANTO (Q/E): el ángulo grande de golpe. Manda sobre el stick — es la
-     herramienta para el giro bestia — y no se puede clavar en el aire. */
+  /* ►CANTO (Q/E) y ►FRENO (S): los dos ÚNICOS que piden un ángulo absoluto.
+     Son gestos, no volante: clavas la tabla en ese ángulo y ahí se queda.
+     El canto manda sobre el stick y no se puede clavar en el aire. */
   r._canto = (!r.air && r.fall <= 0) ? (inp.canto || 0) : 0;
+  let wantYaw = null, vel = 0;
   if(r._canto){
     wantYaw = r._canto * K.cantoYaw;
     vel = K.cantoTurn;
@@ -3156,8 +3158,16 @@ function stepRacer(r, dt){
     wantYaw = lado * K.frenoYaw;
     vel = turn;
   }
-  const dYaw = wantYaw - r.yaw;
-  r.yaw = clamp(r.yaw + clamp(dYaw, -vel * dt, vel * dt), -K.yawLimit, K.yawLimit);
+  if(wantYaw !== null){
+    const dYaw = wantYaw - r.yaw;
+    r.yaw = clamp(r.yaw + clamp(dYaw, -vel * dt, vel * dt), -K.yawLimit, K.yawLimit);
+  } else {
+    /* ►VOLANTE NATURAL (ver K): el stick INTEGRA ángulo mientras lo empujas y
+       al soltarlo NO pasa nada — el board se queda apuntando donde apunta. El
+       freno de ir cruzado no lo pone un muelle inventado: lo pone la gravedad
+       proyectada, que ahí abajo empuja por el coseno del ángulo. */
+    r.yaw = clamp(r.yaw + inp.ax * turn * dt, -K.yawLimit, K.yawLimit);
+  }
   const fx = Math.sin(r.yaw), fz = -Math.cos(r.yaw);       // eje largo del board
   const rx = Math.cos(r.yaw), rz = Math.sin(r.yaw);        // eje transversal
 
@@ -3244,7 +3254,7 @@ function stepRacer(r, dt){
        Por debajo de una fracción del equilibrio de ESTA zona, empuja. */
     const eq = 26 + zoneProp(r.z, 'deg') * 1.5;         // aproximación del equilibrio
     const piso = eq * K.floorFrac;
-    if(r.spd < piso && r.fall <= 0){
+    if(r.spd < piso && r.fall <= 0 && !r.done){   // ►META: al que ya ha llegado no se le vuelve a empujar
       const k2 = (piso - r.spd) / piso;
       ax += K.floorPush * k2 * fx; az += K.floorPush * k2 * fz;
     }
@@ -3324,6 +3334,7 @@ function stepRacer(r, dt){
 
   r.x += r.vx * dt; r.z += r.vz * dt;
   r.spd = Math.hypot(r.vx, r.vz);
+  if(r.spd > r.vmax) r.vmax = r.spd;                  // ►DESCFIN: "punta" de la tabla final
   /* clamp duro: nada por encima de velMax, ni con turbo ni cayendo de un salto */
   if(r.spd > K.velMax){ const fcap = K.velMax / r.spd; r.vx *= fcap; r.vz *= fcap; r.spd = K.velMax; }
 
@@ -3570,7 +3581,7 @@ function stepRacer(r, dt){
       if(dx*dx + dz*dz + dy*dy > 3.2*3.2) continue;
       o.taken = true;
       const g = GLOBO[o.tier];
-      r.pts += g.pts;
+      r.pts += g.pts; r.globos++;   // ►DESCFIN: los globos son columna propia en la tabla final
       popGlobo(o);
       if(r.human){ r._lastTrick = g.nombre + ' +' + g.pts; r._lastTrickT = 1.0; }
       sndDing(o.tier === 'amarillo' ? 3 : o.tier === 'rojo' ? 1 : 0);
@@ -3585,9 +3596,25 @@ function stepRacer(r, dt){
   }
 
   if(r.z <= -K.len && !r.done){
-    r.done = true; r.time = DESC.t;
+    r.done = true; r.time = DESC.t; r.rollT = 0;
     DESC.finishOrder.push(r); r.place = DESC.finishOrder.length;
     r.pts += K.ptsPos[Math.min(K.ptsPos.length-1, r.place-1)];
+    metaCruzada(r);
+  }
+  /* ►META SIN FRENAZO (Toni: "que no acabe abruptamente"). Cruzar la línea te
+     quita el CONTROL, no la inercia: sigues rodando y frenas de cantos hasta
+     pararte, como cualquiera que cruza una meta. Antes `done` hacía return en
+     la primera línea de stepRacer y el jinete se quedaba CLAVADO a mitad de
+     zancada, que es justo lo abrupto.
+     La frenada la hace `inp.freno` (ver arriba: pone la tabla de través y
+     aplica frenoFuerza) — no hay una frenada nueva que mantener. Se le suma
+     este rozamiento para garantizar el cero: frenoFuerza (34) le gana a la
+     gravedad de la banda negra (≈21) pero no por mucho, y esto lo cierra. */
+  if(r.done){
+    r.rollT = (r.rollT || 0) + dt;
+    const fr = Math.pow(0.55, dt);
+    r.vx *= fr; r.vz *= fr;
+    if(r.rollT > 0.9 && r.spd < 2.5){ r.parado = true; r.vx = r.vz = 0; r.spd = 0; }
   }
 
   /* ---------- gráficos ---------- */
@@ -3856,6 +3883,338 @@ function stepCamera(dt){
 }
 
 /* =====================================================================
+   ►DESCINTRO — la presentación del minijuego, hecha CON LO DEL JUEGO
+
+   Toni: "presentación de stage como siempre, con la voz en off, el mismo tipo
+   de letras y contador antes de empezar", "que los personajes ya estén
+   renderizados", "un travelling de cámara pasando por delante de todos los
+   personajes que están listos en la salida, con 2 o 3 planos distintos" y "un
+   pop-up como en otros stages".
+
+   Nada de esto se inventa aquí: el juego YA lo tiene y sus declaraciones de
+   nivel superior son visibles POR NOMBRE desde este fichero (son const/función
+   de un <script> clásico → ámbito léxico global, aunque NO estén en window; es
+   el mismo truco por el que este fichero puede leer `renderer` y `keys`).
+     · voz ....... voiceStart = narrator/starting-match.mp3, el MISMO clip con
+                   que el juego presenta cada stage (ver narrateStageStart)
+     · letras .... #banner (84 px itálica) y #count321 (150 px) con showCount()
+     · pop-up .... #stageCaution, el aviso de peligro de los stages
+
+   ►TRAMPA CAZADA Y CERRADA: los tres nodos viven DENTRO de #hud... y boot()
+   oculta #hud cada 250 ms durante los primeros 30 s. La presentación se
+   ejecutaba entera sin que se viera NADA. Por eso buildHud() se los TRAE al
+   HUD del descenso (ver ►DESCINTRO-DOM): los tres son position:absolute y
+   #descHud es position:fixed;inset:0, así que caen exactamente en el mismo
+   sitio de la pantalla.
+
+   ►Y LA VOZ PUEDE NO SONAR, y da igual: con ?descenso no hay clic previo en la
+   home, así que el navegador puede rechazar el play() por autoplay. El reloj de
+   la presentación NO cuelga del audio (igual que stageIntroT en el juego): si
+   la voz no suena, el travelling y la cuenta van igual de sincronizados.
+   ===================================================================== */
+const INTRO = {
+  dur:   6.5,     // se ajusta a la duración REAL del clip (12,5 s) en cuanto la conoce
+  mudo:  6.5,     // ...pero si el navegador RECHAZA el audio, se acorta: ver introGo()
+  espera:12.0,    // tope esperando a que carguen los cuatro GLB (►PARRILLA LISTA)
+  titulo:2.2,     // segundos del rótulo de cabecera
+  popMs: 3400,    // lo mismo que STAGE_CAUTION_MS del juego
+};
+/* rótulo y frase por PIEL. La de arena es literal de Toni. */
+const INTRO_TXT = {
+  arena: { titulo:'DESCENSO DE ARENA', frase:'Hora de surfear la arena, ¡hazlo lo mejor que puedas!', ico:'🏄' },
+  nieve: { titulo:'DESCENSO NEVADO',   frase:'Hora de bajar la montaña, ¡hazlo lo mejor que puedas!', ico:'🏂' },
+  mar:   { titulo:'SURF',              frase:'Hora de surfear las olas, ¡hazlo lo mejor que puedas!', ico:'🏄' },
+};
+function introTxt(){ return INTRO_TXT[SKIN] || INTRO_TXT.arena; }
+
+/* accesos al script del juego, con el mismo patrón que GAME_RENDERER(). En
+   try/catch porque `typeof` sobre un const en zona muerta temporal NO devuelve
+   'undefined': lanza (aquí no puede pasar — este fichero carga después de que
+   el script grande haya terminado —, pero un guard de una línea no se discute). */
+function GAME_VOZ(){ try { return (typeof voiceStart !== 'undefined') ? voiceStart : null; } catch(e){ return null; } }
+function GAME_SHOWCOUNT(){ try { return (typeof showCount === 'function') ? showCount : null; } catch(e){ return null; } }
+
+/* ►LETRAS: el #banner del juego. NO se usa showBanner() porque su temporizador
+   (bannerT) lo descuenta frame(), y frame() sale antes de tiempo cuando corre
+   el descenso → el rótulo se quedaría clavado en pantalla para siempre. */
+let _bannerT = null;
+function descBanner(txt, segs){
+  const b = document.getElementById('banner'); if(!b) return;
+  if(_bannerT) clearTimeout(_bannerT);
+  b.textContent = txt; b.classList.add('show');
+  _bannerT = setTimeout(() => { b.classList.remove('show'); _bannerT = null; }, segs * 1000);
+}
+/* ►POP-UP: el #stageCaution del juego, con el icono y el texto del minijuego.
+   Dos líneas (rótulo + frase) dentro del mismo .cauTxt: la caja es flex-column
+   y centra igual, y así no se toca el CSS del juego. */
+let _popT = null;
+function descPopup(){
+  const el = document.getElementById('stageCaution'); if(!el) return;
+  const t = introTxt();
+  const ico = el.querySelector('.cauIco'), tx = el.querySelector('.cauTxt');
+  if(ico) ico.textContent = t.ico;
+  if(tx) tx.innerHTML = 'MINIJUEGO<br><span style="font-size:.56em;letter-spacing:1px;text-transform:none;font-style:italic">' +
+                        t.frase + '</span>';
+  el.classList.add('show');
+  if(_popT) clearTimeout(_popT);
+  _popT = setTimeout(descPopupOff, INTRO.popMs);
+}
+function descPopupOff(){
+  const el = document.getElementById('stageCaution'); if(el) el.classList.remove('show');
+  if(_popT){ clearTimeout(_popT); _popT = null; }
+}
+
+/* arranca la presentación: solo cuando los cuatro están montados (Toni: "que
+   los personajes ya estén renderizados"), o al agotarse el tope de espera */
+function introGo(){
+  DESC._introGo = true;
+  DESC.introT = 0;
+  const v = GAME_VOZ();
+  INTRO.dur = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
+  descBanner(introTxt().titulo, INTRO.titulo);
+  descPopup();
+  if(v){
+    try {
+      v.onended = null;              // que NO reentre en la cadena del intro del juego
+      v.pause(); v.currentTime = 0;
+      const p = v.play();
+      if(p && p.catch) p.catch(() => {});
+    } catch(e){}
+  }
+}
+/* ►SI LA VOZ NO SUENA, LA PRESENTACIÓN SE ACORTA. El clip dura 12,5 s y la
+   presentación se mide con él — eso es lo que la hace "como en el juego" —,
+   pero entrando por ?descenso no hay un clic previo en la home, así que el
+   navegador puede rechazar el play() por autoplay: y 12,5 s de travelling MUDO
+   son una eternidad.
+   Se comprueba MIRANDO EL AUDIO, no la promesa de play(): esa promesa resuelve
+   bien en casos en los que el clip luego no avanza, y encima llega en otro tick
+   (con la presentación ya empezada). A los 0,6 s el reloj del audio dice la
+   verdad, y recortar ahí es indoloro: la cuenta 3·2·1 cuelga de lo que QUEDA. */
+function introVozCheck(){
+  if(DESC._vozVista || DESC.introT < 0.6) return;
+  DESC._vozVista = true;
+  const v = GAME_VOZ();
+  if(!v || v.paused || v.currentTime < 0.05) INTRO.dur = Math.min(INTRO.dur, INTRO.mudo);
+}
+/* cuenta 3·2·1 con los MISMOS números y colores del juego, gobernada por lo que
+   queda de presentación (mismo reloj que el travelling: no se desincronizan) */
+function introCue(){
+  const queda = INTRO.dur - DESC.introT;
+  const n = queda <= 0 ? 0 : queda <= 0.8 ? 1 : queda <= 1.7 ? 2 : queda <= 2.6 ? 3 : -1;
+  if(n === DESC._introN) return;
+  DESC._introN = n;
+  const sc = GAME_SHOWCOUNT(); if(!sc) return;
+  if(n === 3) sc('3', '#ffd84f');
+  else if(n === 2) sc('2', '#ff9100');
+  else if(n === 1) sc('1', '#ff3b3b');
+}
+function raceGo(){
+  DESC.phase = 'race';
+  descPopupOff();
+  descBanner('¡YA!', 1.0);
+  try { sndBip(880, 0.20, 0.5); } catch(e){}
+  if(DESC.hud && DESC.hud.root) DESC.hud.root.classList.remove('cine');
+}
+
+/* ---------------------------------------------------------------------
+   ►TRAVELLING · TRES PLANOS con corte seco entre ellos (un fundido entre
+   posiciones de cámara no es un plano nuevo: es un viaje, y se ve caro y
+   lento). Las alturas van SOBRE EL SUELO de ese punto, no sobre el horizonte
+   — la salida está en una ladera, y con Y absolutas el plano 2 acababa
+   enterrado en cuanto cambiaba la pendiente de la primera banda.
+
+   El plano 3 no termina en una pose inventada: se FUNDE a la cámara de juego
+   (que stepCamera ya deja convergida detrás del jinete), así que el corte a
+   "carrera" no existe — la grúa aterriza justo donde vas a jugar.
+   --------------------------------------------------------------------- */
+const _ciP = new THREE.Vector3(), _ciL = new THREE.Vector3();
+function introCam(dt){
+  const me = DESC.racers[0]; if(!me) return;
+  const u = clamp(DESC.introT / Math.max(0.1, INTRO.dur), 0, 1);
+  let px, pz, py, lx, lz, ly, w = 1;
+
+  if(u < 0.34){
+    /* 1 · TRAVELLING LATERAL por delante de la parrilla, a ras de suelo: la
+       cámara barre la línea de salida y la mirada va con ella. */
+    const s = smooth(u / 0.34);
+    px = lerp(-32, 32, s); pz = -13; py = 2.4;
+    lx = clamp(px * 0.62, -14, 14); lz = 0.6; ly = 1.9;
+  } else if(u < 0.68){
+    /* 2 · CONTRAPICADO desde abajo, empujando: los cuatro recortados contra el
+       cielo en lo alto de la bajada. */
+    const s = smooth((u - 0.34) / 0.34);
+    px = lerp(17, 7, s); pz = lerp(-56, -32, s); py = 2.8;
+    lx = 0; lz = 0; ly = 2.3;
+  } else {
+    /* 3 · GRÚA por detrás que baja al hombro del jugador y se funde con la
+       cámara de juego en el último tercio del plano. */
+    const s = smooth((u - 0.68) / 0.32);
+    px = me.x + lerp(9, K.camHombro, s);
+    pz = me.z + lerp(44, K.camDist, s);
+    py = lerp(23, K.camAlto, s);
+    lx = me.x; lz = me.z - 3; ly = 1.8;
+    w = 1 - smooth(clamp((s - 0.62) / 0.38, 0, 1));
+  }
+
+  _ciP.set(px, groundYAt(px, pz) + py, pz);
+  _ciL.set(lx, groundYAt(lx, lz) + ly, lz);
+  if(DESC.world && K.tilt){                    // el surf inclina el mundo entero
+    DESC.world.updateMatrixWorld();
+    DESC.world.localToWorld(_ciP); DESC.world.localToWorld(_ciL);
+  }
+  if(w <= 0.001) return;                       // ya es la cámara de juego: no tocar
+
+  DESC.cam.position.lerp(_ciP, w);
+  _camLook.lerp(_ciL, w);
+  DESC.cam.lookAt(_camLook);
+  DESC.cam.updateMatrixWorld();
+  /* el cielo y el telón de fondo van PEGADOS a la cámara (stepCamera los
+     coloca); moverla después sin re-sincronizarlos deja ver el borde del mundo */
+  if(DESC.backdrop) DESC.backdrop.position.copy(DESC.cam.position);
+  if(DESC.sky)      DESC.sky.position.copy(DESC.cam.position);
+  if(DESC.cielo)    DESC.cielo.position.copy(DESC.cam.position);
+}
+
+/* =====================================================================
+   ►DESCFIN — el final de carrera, que ya no es un corte seco
+
+   Toni: "cuando se termine la carrera que no acabe abruptamente: al pasar la
+   línea de meta ya no controlas al personaje, salta confeti, y te sale la tabla
+   finish y el leaderboard adaptado a este minijuego".
+
+   Tres tiempos, y ese ORDEN es el punto:
+     1. cruzas   → se te quita el control (no la inercia: ver ►META SIN FRENAZO
+                   en stepRacer) + confeti + rótulo con el puesto
+     2. ruedas   → frenas de cantos hasta parar, con la cámara siguiéndote
+     3. paras    → y SOLO entonces aparece la tabla, con todos ya quietos
+
+   El aspecto sale entero de las clases del juego (.overlay/.lb/.confetti/.btn):
+   aquí no se inventa una pantalla de resultados nueva, se usa la que ya hay.
+
+   ►PENDIENTE (Toni: "lo de la tienda anótalo pero no lo pongas aún"): entre el
+   descenso y el stage siguiente irá una TIENDA. Cuando toque, no se hace otra:
+   el juego ya tiene la de entre stages (RUN_PERKS + openShop, ►PERKS/►SHOP en
+   el HTML) con su cartera por jugador; lo que hará falta es convertir los
+   PUNTOS del descenso en EXP de esa cartera y abrirla desde aquí.
+   ===================================================================== */
+/* nota D-…S+ con las etiquetas y los colores del juego, pero con los umbrales
+   de ESTE minijuego: aquí una bajada buena ronda los 2.000 puntos (400 del
+   puesto + globos + trucos), no los 3.200 de una partida de lucha. */
+const DESC_NOTAS = [
+  [2400,'S+'],[2000,'S'],[1700,'A+'],[1450,'A'],[1250,'A-'],
+  [1050,'B+'],[880,'B'],[730,'B-'],[590,'C+'],[460,'C'],[340,'C-'],[200,'D+'],[110,'D'],
+];
+function notaDe(pts){
+  for(const t of DESC_NOTAS) if(pts >= t[0]) return { label:t[1], color:notaColor(t[1]) };
+  return { label:'D-', color:'#ff8d8d' };
+}
+function notaColor(label){
+  try { if(typeof gradeColorOf === 'function') return gradeColorOf(label); } catch(e){}
+  return label[0] === 'S' ? '#ffd84f' : label[0] === 'A' ? '#7affc8'
+       : label[0] === 'B' ? '#6fa8ff' : label[0] === 'C' ? '#c299ff' : '#ff8d8d';
+}
+function hexDe(r){ return '#' + r.col.toString(16).padStart(6, '0'); }
+
+/* ---- confeti: el mismo componente del juego (.confetti + sus animaciones CSS
+   ya definidas), en una capa propia por ENCIMA del 3D. La del juego va a
+   z-index −1 porque vive dentro de un overlay; aquí cuelga del body y detrás
+   está el canvas, así que necesita subir. ---- */
+let _confEl = null;
+function descConfeti(){
+  if(_confEl){ _confEl.style.display = ''; return; }
+  const d = document.createElement('div');
+  d.className = 'confetti'; d.id = 'descConf';
+  d.style.cssText = 'z-index:118;pointer-events:none';
+  const n = 46;
+  for(let i = 0; i < n; i++){
+    const e = document.createElement('i');
+    const hue = Math.round((i / n) * 360 + Math.random() * 22);
+    const dur = 6 + Math.random() * 6, size = 7 + Math.random() * 10;
+    e.style.left = (Math.random() * 100).toFixed(2) + '%';
+    e.style.width = e.style.height = size.toFixed(1) + 'px';
+    e.style.color = 'hsl(' + hue + ',92%,66%)';
+    e.style.setProperty('--dur', dur.toFixed(2) + 's');
+    e.style.setProperty('--delay', (-Math.random() * dur).toFixed(2) + 's');
+    e.style.setProperty('--drift', (((Math.random() * 2 - 1) * 46) | 0) + 'px');
+    e.style.setProperty('--tw', (1 + Math.random() * 1.6).toFixed(2) + 's');
+    const m = i % 3; if(m === 0) e.className = 'dot'; else if(m === 1) e.className = 'star';
+    d.appendChild(e);
+  }
+  document.body.appendChild(d);
+  _confEl = d;
+}
+
+/* PASO 1 · alguien cruza la línea */
+function metaCruzada(r){
+  if(!r.human) return;                       // el confeti y el rótulo son del que juega
+  descConfeti();
+  descBanner(r.place === 1 ? '¡PRIMERO!' : r.place + 'º', 2.0);
+  try { sndDing(3); } catch(e){}
+}
+
+/* PASO 3 · la tabla, con todos ya parados */
+let _finEl = null;
+function descFin(){
+  if(DESC._finShown) return;
+  DESC._finShown = true;
+  descConfeti();
+  /* el HUD de carrera se aparta: debajo de la tabla se seguirían viendo el
+     velocímetro y los botones a medio tapar por el desenfoque del overlay */
+  if(DESC.hud && DESC.hud.root) DESC.hud.root.classList.add('cine');
+  const orden = DESC.finishOrder.slice();
+  for(const r of DESC.racers) if(!orden.includes(r)) orden.push(r);
+  const me = DESC.racers[0];
+  const mio = notaDe(me.pts);
+
+  if(!_finEl){
+    _finEl = document.createElement('div');
+    _finEl.className = 'overlay';
+    _finEl.id = 'descFin';
+    _finEl.style.cssText = 'z-index:122;pointer-events:auto';
+    document.body.appendChild(_finEl);
+  }
+  /* CLASIFICACIÓN por PUESTO (quien llega antes), y la columna de PUNTOS aparte:
+     en este minijuego se puede llegar el último y ser el que más puntúa, y esa
+     tensión es justo lo que hace que merezca la pena reventar globos. */
+  let tab = '<table class="lb"><tr><th class="nm">#</th><th class="nm">Corredor</th>' +
+            '<th class="pts">Puntos</th><th>Nota</th><th>Tiempo</th>' +
+            '<th>Trucos</th><th>Globos</th><th>Caídas</th><th>Máx.</th></tr>';
+  orden.forEach((r, i) => {
+    const g = notaDe(r.pts);
+    tab += '<tr class="' + (r.human && r.i === 0 ? 'me ' : '') + (i === 0 ? 'top' : '') + '">' +
+      '<td>' + (i === 0 ? '👑' : (i + 1)) + '</td>' +
+      '<td class="nm"><span class="dot" style="color:' + hexDe(r) + '"></span>' + r.name + '</td>' +
+      '<td class="pts">' + r.pts + '</td>' +
+      '<td class="gr" style="color:' + g.color + '">' + g.label + '</td>' +
+      '<td>' + r.time.toFixed(1) + 's</td>' +
+      '<td>' + r.tricks + '</td><td>' + (r.globos || 0) + '</td><td>' + r.falls + '</td>' +
+      '<td>' + Math.round((r.vmax || 0) * 1.6) + '</td></tr>';
+  });
+  tab += '</table>';
+
+  const puesto = (DESC.finishOrder.indexOf(me) + 1) || DESC.racers.length;
+  _finEl.innerHTML =
+    '<h2 id="dFinT" style="margin-bottom:6px">META</h2>' +
+    '<div style="font-size:19px;font-weight:900;font-style:italic;letter-spacing:2px;margin-bottom:2px;color:' + hexDe(me) + '">' +
+      puesto + 'º · ' + me.name + '</div>' +
+    '<div style="font-size:15px;opacity:.85;margin-bottom:10px">' + me.pts + ' puntos · nota ' +
+      '<b style="color:' + mio.color + ';font-style:italic">' + mio.label + '</b></div>' +
+    '<div class="endPanel" style="opacity:1">' + tab + '</div>' +
+    '<button class="btn" id="dFinR">OTRA VEZ <span style="opacity:.55;font-size:13px;font-weight:700">(R)</span></button>' +
+    '<button class="btn" id="dFinT2" style="margin-top:8px">OTRA PISTA <span style="opacity:.55;font-size:13px;font-weight:700">(T)</span></button>';
+  _finEl.style.display = 'flex';
+  const bR = _finEl.querySelector('#dFinR'), bT = _finEl.querySelector('#dFinT2');
+  if(bR) bR.onclick = () => start(DESC.seed);
+  if(bT) bT.onclick = () => start((Math.random() * 1e9) | 0);
+}
+function descFinOff(){
+  DESC._finShown = false; DESC._finT = 0;
+  if(_finEl) _finEl.style.display = 'none';
+  if(_confEl) _confEl.style.display = 'none';
+}
+
+/* =====================================================================
    HUD
    ===================================================================== */
 function buildHud(){
@@ -3908,8 +4267,25 @@ function buildHud(){
       'transform-origin:bottom center;display:flex;align-items:flex-start;justify-content:center;gap:9px;' +
       'pointer-events:none;font-family:"Segoe UI",system-ui,sans-serif;text-shadow:none;max-width:96vw;flex-wrap:wrap}' +
     /* la barra de progreso de la bajada se sube para no chocar con los botones */
-    '#dBar{bottom:104px !important}';
+    '#dBar{bottom:104px !important}' +
+    /* ►DESCINTRO: durante la presentación el HUD se aparta — un travelling con
+       velocímetro y botones encima no es una cinemática, es una pausa */
+    '#descHud #dTop,#descHud #dLeft,#descHud #dRight,#descHud #dBar,#descHud #dRank,' +
+      '#descHud #dAtk,#descHud #dHelp{transition:opacity .4s ease}' +
+    '#descHud.cine #dTop,#descHud.cine #dLeft,#descHud.cine #dRight,#descHud.cine #dBar,' +
+      '#descHud.cine #dRank,#descHud.cine #dAtk,#descHud.cine #dHelp,' +
+      '#descHud.cine #dZone,#descHud.cine #dSalta,#descHud.cine #dAire,#descHud.cine #dTrick{opacity:0 !important}';
   document.head.appendChild(st);
+  /* ►DESCINTRO-DOM: los nodos de presentación del juego (#count321, #banner y
+     #stageCaution) viven dentro de #hud, y boot() oculta #hud cada 250 ms
+     durante los primeros 30 s → la presentación corría sin verse. Se los trae
+     aquí: son position:absolute y #descHud es position:fixed;inset:0, así que
+     caen en el mismo punto de la pantalla. Las referencias del juego (el const
+     count321, los getElementById) siguen valiendo: el nodo es el mismo. */
+  for(const id of ['count321', 'banner', 'stageCaution']){
+    const el = document.getElementById(id);
+    if(el && el.parentNode !== d) d.appendChild(el);
+  }
   DESC.hud = { root:d, top:d.querySelector('#dTop'), left:d.querySelector('#dLeft'),
     right:d.querySelector('#dRight'), big:d.querySelector('#dBig'), fill:d.querySelector('#dFill'),
     vig:d.querySelector('#dVig'), blur:d.querySelector('#dBlur'),
@@ -4096,19 +4472,9 @@ function updateHud(dt){
   if(me._lastTrickT > 0) h.trick.textContent = me._lastTrick || '';
   h.fill.style.width = Math.min(100, (-me.z/K.len)*100) + '%';
 
-  if(DESC.phase === 'countdown'){
-    const n = Math.ceil(DESC.count);
-    h.big.style.fontSize = '84px';
-    h.big.textContent = n > 0 ? n : '¡YA!'; h.big.style.opacity = 1;
-  } else if(DESC.phase === 'finish'){
-    h.big.style.fontSize = '34px';
-    h.big.innerHTML = 'META<br>' + DESC.finishOrder.map((r,i) =>
-      '<div style="font-size:17px;margin-top:6px;color:#' + r.col.toString(16).padStart(6,'0') + '">' +
-      (i+1) + 'º ' + r.name + ' — ' + r.time.toFixed(1) + 's · ' + r.pts + ' pts · ' +
-      r.tricks + ' trucos · ' + r.falls + ' caídas</div>').join('') +
-      '<div style="font-size:12px;opacity:.6;margin-top:14px">R reiniciar · T semilla nueva</div>';
-    h.big.style.opacity = 1;
-  } else h.big.style.opacity = 0;
+  /* el numerón del centro ya no lo pinta el descenso: la cuenta atrás la lleva
+     el #count321 del juego (►DESCINTRO) y el resultado, la tabla (►DESCFIN) */
+  h.big.style.opacity = 0;
 }
 
 /* =====================================================================
@@ -4141,7 +4507,12 @@ function start(seed){
   buildScene();
   DESC.racers = [];
   for(let i = 0; i < 4; i++) DESC.racers.push(makeRacer(i, i < HUMANS));
-  DESC.t = 0; DESC.phase = 'countdown'; DESC.count = 3.2;
+  /* ►DESCINTRO: la partida arranca en PRESENTACIÓN (voz + travelling + 3·2·1),
+     no en una cuenta atrás pelada */
+  DESC.t = 0; DESC.phase = 'intro';
+  DESC.introT = 0; DESC._introGo = false; DESC._introN = -1; DESC._vozVista = false;
+  descPopupOff(); descFinOff();
+  if(DESC.hud && DESC.hud.root) DESC.hud.root.classList.add('cine');
   DESC.finishOrder = []; _camInit = false; DESC._acc = 0; DESC._why = {};
   DESC.kick.y = DESC.kick.v = 0;
   DESC.orb.yaw = DESC.orb.pitch = 0; DESC.orb.idle = 9; DESC._camYaw = null; DESC._espera = 0; DESC._nSuave = null; DESC._vuelo = 0;
@@ -4156,19 +4527,32 @@ DESC.tick = function(dt){
   if(!DESC.scene) return;
   dt = Math.min(0.05, dt);
 
-  if(DESC.phase === 'countdown'){
-    /* ►SALIR YA PREPARADOS. Toni: "cuando se inicia la partida deben estar ya
+  if(DESC.phase === 'intro'){
+    /* ►PARRILLA LISTA. Toni: "cuando se inicia la partida deben estar ya
        preparados los personajes". Los GLB son 12 MB y llegan async, así que la
-       cuenta atrás podía acabar con cápsulas grises en la línea. Ahora la
-       cuenta ESPERA a que los cuatro estén montados (con tope de 12 s, para
-       que un fallo de carga no cuelgue la salida). */
+       presentación podía acabar con cápsulas grises en la línea — y ahora,
+       además, el travelling pasa por delante de ellos. La presentación ESPERA a
+       que los cuatro estén montados (con tope, para que un fallo de carga no
+       cuelgue la salida) y solo entonces arranca la voz y el reloj. */
     const listos = DESC.racers.length && DESC.racers.every(r => r.montado);
     DESC._espera = (DESC._espera || 0) + dt;
-    if(listos || DESC._espera > 12) DESC.count -= dt;
-    if(DESC.count <= 0) DESC.phase = 'race';
-  } else if(DESC.phase === 'race'){
-    /* input UNA vez por frame (leer el gamepad 120 veces sería absurdo) */
-    for(const r of DESC.racers) r._inp = (r.human && !r.aiDrive) ? readDesc(r) : aiInput(r, dt);
+    if(!DESC._introGo && (listos || DESC._espera > INTRO.espera)) introGo();
+    if(DESC._introGo){
+      DESC.introT += dt;
+      introVozCheck();
+      introCue();
+      if(DESC.introT >= INTRO.dur) raceGo();
+    }
+  } else if(DESC.phase === 'race' || DESC.phase === 'finish'){
+    /* input UNA vez por frame (leer el gamepad 120 veces sería absurdo).
+       ►META: al que ya ha cruzado se le da un input NEUTRO con el freno puesto
+       — sigue simulándose (rueda y frena de cantos) pero ya no lo maneja nadie,
+       ni el jugador ni la IA. La fase 'finish' sigue pisando el bucle para que
+       el ÚLTIMO en llegar también ruede en vez de congelarse en el aire. */
+    for(const r of DESC.racers){
+      r._inp = r.done ? { ax:0, canto:0, jump:false, turbo:false, trick:null, freno:true }
+             : (r.human && !r.aiDrive) ? readDesc(r) : aiInput(r, dt);
+    }
 
     /* PASO FIJO: estabilidad del modelo de canto y determinismo para el online */
     DESC._acc += dt;
@@ -4182,13 +4566,23 @@ DESC.tick = function(dt){
     if(guard >= 12) DESC._acc = 0;
 
     if(DESC.racers.every(r => r.done)) DESC.phase = 'finish';
-    if(DESC.finishOrder.length && DESC.t - DESC.finishOrder[0].time > 10){
+    /* al rezagado no se le espera eternamente: 8 s después del primero se le da
+       la carrera por terminada donde esté (y desde ahí también rueda) */
+    if(DESC.finishOrder.length && DESC.t - DESC.finishOrder[0].time > 8){
       for(const r of DESC.racers) if(!r.done){
-        r.done = true; r.time = DESC.t; DESC.finishOrder.push(r);
+        r.done = true; r.time = DESC.t; r.rollT = 0; DESC.finishOrder.push(r);
         r.place = DESC.finishOrder.length;
         r.pts += K.ptsPos[Math.min(K.ptsPos.length-1, r.place-1)];
       }
       DESC.phase = 'finish';
+    }
+    /* ►DESCFIN: la tabla no salta en el mismo fotograma que la meta — primero
+       se ve al jinete rodar y frenar, y con TODOS parados aparece el resultado */
+    if(DESC.phase === 'finish'){
+      DESC._finT = (DESC._finT || 0) + dt;
+      /* el backstop no es paranoia: quien cruza la meta CAÍDO entra por la rama
+         de `fall`, que sale de stepRacer antes de poder marcarse `parado` */
+      if(DESC.racers.every(r => r.parado) || DESC._finT > 6) descFin();
     }
   }
 
@@ -4221,6 +4615,10 @@ DESC.tick = function(dt){
   updateGlobos(dt);
   updatePop(dt);
   stepCamera(dt);
+  /* ►DESCINTRO: la cinemática va DESPUÉS de la cámara de juego, no en su lugar
+     — así stepCamera converge por debajo y el último plano puede fundirse con
+     ella sin corte (ver introCam) */
+  if(DESC.phase === 'intro') introCam(dt);
   updateParts(dt);
   updateTrail(dt);
   updateStreaks(dt, DESC._spdK || 0);
