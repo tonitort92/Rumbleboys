@@ -364,7 +364,10 @@ const K = {
   atkSpeed:   30, atkTime:0.55, atkCd:4.2, atkPush:30, atkPts:45,
   grabRange:  7.0, grabTime:0.5, grabSlow:0.55, grabCd:1.2, grabPts:60, counterPts:120,
 
-  ptsPos:     [300, 200, 120, 60],
+  /* PREMIO POR PUESTO. Toni: "quedar el primero te da un extra de puntos,
+     segundo un poco menos y tercero un poco menos; debajo de tercero no te dan
+     nada extra". El 4º ya no cobra: llegar el último no es un logro. */
+  ptsPos:     [400, 240, 110, 0],
   comboMul:   [1, 1.5, 2, 2.5],
 
   /* --- cámara --- */
@@ -1214,21 +1217,54 @@ function genTrack(rng){
       obst.push({ type:'rock', x:rx2, z:rz2, r: 2.2 + rng()*1.6 + zn.rock * 1.1 });
     }
 
-    if(rng() < 0.42) obst.push({ type:'pick', x:(rng()*2-1)*hw*0.9, z:z - 12, taken:false });
+    /* ►GLOBOS. Sustituyen a las cápsulas de objeto (petición de Toni: fuera los
+       objetos). Lo que decide el color es LA ALTURA a la que cuelgan, porque es
+       lo que decide lo que cuesta cogerlo:
+         VERDE   a ras: te lo llevas rodando, es la línea buena.
+         ROJO    a media altura: hace falta un ollie, o pillar un lomo.
+         AMARILLO arriba del todo: solo se llega volando desde una rampa — por
+                  eso se siembran DETRÁS de las rampas grandes (ver abajo), no
+                  al azar, o serían puntos imposibles y no un reto.
+
+       VAN EN CADENA, no sueltos. Medido con uno suelto por sitio: de ~90
+       globos por los que se pasaba solo se cogían 6 (7%), porque a 150 km/h en
+       un abanico de 200 u de ancho aciertas un punto por casualidad. Una
+       cadena no es "más globos": es una LÍNEA que se lee desde lejos y que
+       puedes decidir seguir — que es de lo que va el juego. */
+    if(rng() < 0.34) cadena(obst, 'verde', (rng()*2-1)*hw*0.85, z - 12, 3 + ((rng()*3)|0), rng);
+    if(rng() < 0.20) cadena(obst, 'rojo',  (rng()*2-1)*hw*0.75, z - 20, 3 + ((rng()*2)|0), rng);
     z -= 26 + rng() * 16;
+  }
+
+  /* AMARILLOS: en la trayectoria de las rampas grandes. En fila y SUBIENDO
+     (más lejos = más alto) para que premien el salto LARGO, no el de rebote; y
+     en la x de la rampa, que es por donde vas a salir. */
+  for(const rp of obst.filter(o => o.type === 'ramp' && (o.size === 'l' || o.size === 'xl'))){
+    const n = rp.size === 'xl' ? 3 : 2;
+    for(let k = 0; k < n; k++){
+      obst.push({ type:'globo', tier:'amarillo', x: rp.x + (rng()-0.5)*3, z: rp.z - (20 + k * 11),
+                  dy: GLOBO.amarillo.alto + k * 2.2, taken:false });
+    }
   }
   return obst;
 }
 
-const ITEMS = {
-  turbo: { name:'TURBO', col:0x7bf06a, use(r){ r.dash = K.dashMax; addSpeed(r, 22); } },
-  rayo:  { name:'RAYO',  col:0xffd23f, use(r){
-    let lider = null;
-    for(const q of DESC.racers) if(!q.done && q !== r && (!lider || q.z < lider.z)) lider = q;
-    if(lider && lider.z < r.z){ fall(lider); r.pts += 80; }
-  } },
+/* una cadena de globos que se curva suavemente: invita a trazar, no a ir recto */
+function cadena(obst, tier, x0, z0, n, rng){
+  const curva = (rng() - 0.5) * 0.9;      // deriva lateral por eslabón
+  for(let k = 0; k < n; k++){
+    obst.push({ type:'globo', tier, x: x0 + curva * k * 7, z: z0 - k * 8,
+                dy: GLOBO[tier].alto, taken:false });
+  }
+}
+
+/* ►GLOBOS: los tres niveles. `alto` es sobre el suelo, y es lo que hace que uno
+   sea fácil y otro difícil; los puntos van con eso. */
+const GLOBO = {
+  verde:    { col:0x35d861, pts:30,  alto:2.0,  nombre:'GLOBO' },
+  rojo:     { col:0xff4d3d, pts:80,  alto:6.0,  nombre:'GLOBO ALTO' },   // 6,0 = al alcance de un ollie CARGADO (vy 23 → 5,1 u), no de un toque seco
+  amarillo: { col:0xffd23f, pts:180, alto:15.0, nombre:'¡GLOBO DE ORO!' },
 };
-const ITEM_KEYS = Object.keys(ITEMS);
 
 function bucketize(obst){
   const b = new Map();
@@ -1980,17 +2016,59 @@ function buildScene(){
     world.add(post);
   }
 
-  /* --- RECOGIDAS --- */
+  /* --- ►GLOBOS ---
+     UNA InstancedMesh por color: 3 draw calls para los ~250 globos de la pista.
+     La forma sale de UNA LatheGeometry (perfil de globo, del nudo a la copa):
+     una esfera + un cono serían dos mallas y dos llamadas, y aquí el perfil
+     torneado da la silueta buena —panza, hombro y nudo— con una sola.
+     El cordel va en la MISMA malla: los últimos puntos del perfil bajan a un
+     radio casi cero por debajo del nudo, así que se lee como hilo sin costar
+     otra geometría. */
   {
-    const picks = DESC.obst.filter(o => o.type === 'pick');
-    const geo = new THREE.OctahedronGeometry(1.25, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x776633 });
-    for(const o of picks){
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(o.x, terrainY(o.x, o.z) + 2.4, o.z);
-      o._m = mesh; world.add(mesh);
+    const perfil = [
+      [0.00, 0.00], [0.055, 0.02], [0.055, 0.62],      // el hilo (radio casi 0)
+      [0.14, 0.74], [0.34, 0.90],                       // el nudo
+      [0.66, 1.20], [0.86, 1.62], [0.90, 2.06],         // la panza
+      [0.80, 2.48], [0.52, 2.82], [0.00, 3.00],         // el hombro y la copa
+    ].map(p => new THREE.Vector2(p[0], p[1]));
+    const geo = new THREE.LatheGeometry(perfil, 12);
+    geo.computeVertexNormals();
+    const globos = DESC.obst.filter(o => o.type === 'globo');
+    DESC.globos = { lista: globos, ims: {}, t: 0 };
+    for(const tier in GLOBO){
+      const mios = globos.filter(o => o.tier === tier);
+      if(!mios.length) continue;
+      const g = GLOBO[tier];
+      /* emissive suave: un globo tiene que VERSE contra la arena a contraluz,
+         pero sin bloom ni material propio (aquí se pinta en Lambert como todo) */
+      const mat = new THREE.MeshLambertMaterial({ color: g.col, emissive: g.col, emissiveIntensity: 0.34 });
+      const im = new THREE.InstancedMesh(geo, mat, mios.length);
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.frustumCulled = false;
+      im.castShadow = false; im.receiveShadow = false;
+      for(let i = 0; i < mios.length; i++){
+        const o = mios[i];
+        o._im = im; o._i = i;
+        o.y = terrainY(o.x, o.z) + o.dy;
+        o.fase = Math.random() * TAU;
+        /* ►r128: DARLES instanceColor NO ES DECORATIVO, ES OBLIGATORIO AQUÍ.
+           En esta versión la clave de caché de programa NO incluye
+           `instancingColor`, así que dos MeshLambertMaterial con los mismos
+           PARÁMETROS (los colores son uniforms, no defines) comparten programa
+           — y el confeti de globo sí lleva instanceColor. Los globos heredaban
+           su programa compilado con USE_INSTANCING_COLOR y three les pedía un
+           atributo que era null: `Cannot read properties of null (reading
+           'isInterleavedBufferAttribute')` y el frame entero sin pintar.
+           Verificado: dárselo lo arregla en el acto.
+           Y ya puestos, sirve para el multitono por copia. */
+        _c3.setHex(g.col).offsetHSL(0, 0, (Math.random() - 0.5) * 0.10);
+        im.setColorAt(i, _c3);
+      }
+      if(im.instanceColor) im.instanceColor.needsUpdate = true;
+      DESC.globos.ims[tier] = im;
+      world.add(im);
     }
-    DESC.picks = picks;
+    DESC.picks = null;
   }
 
   /* --- META: cruza TODO el abanico --- */
@@ -2081,6 +2159,24 @@ function buildScene(){
       x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N),
       vx:new Float32Array(N), vy:new Float32Array(N), vz:new Float32Array(N),
       life:new Float32Array(N), size:new Float32Array(N) };
+  }
+
+  /* --- CONFETI DE GLOBO (pool propio: el color ES la información) --- */
+  {
+    const N = 96;
+    const im = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(1, 0),
+      new THREE.MeshLambertMaterial({ vertexColors:false, emissiveIntensity:0.5 }), N);
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    im.frustumCulled = false;
+    /* r128: instanceColor NACE con el tamaño de this.count → hay que sembrarlo
+       con el cupo COMPLETO antes de tocar nada, o las copias salen negras */
+    for(let i = 0; i < N; i++){ im.setColorAt(i, _c3.setHex(0xffffff)); _m4.makeScale(0,0,0); im.setMatrixAt(i, _m4); }
+    im.instanceColor.needsUpdate = true; im.instanceMatrix.needsUpdate = true;
+    world.add(im);
+    DESC.pop = { im, N, i:0,
+      x:new Float32Array(N), y:new Float32Array(N), z:new Float32Array(N),
+      vx:new Float32Array(N), vy:new Float32Array(N), vz:new Float32Array(N),
+      life:new Float32Array(N), col:new Uint32Array(N), _on:new Uint8Array(N) };
   }
 
   /* --- RASTRO DE LA TABLA --- */
@@ -2297,7 +2393,8 @@ function emit(x, y, z, vx, vy, vz, size){
   P.life[i] = 0.55 + Math.random()*0.45; P.size[i] = size;
 }
 const _m4 = new THREE.Matrix4(), _qt = new THREE.Quaternion(),
-      _v3 = new THREE.Vector3(), _sc3 = new THREE.Vector3(), _eu = new THREE.Euler();
+      _v3 = new THREE.Vector3(), _sc3 = new THREE.Vector3(), _eu = new THREE.Euler(),
+      _c3 = new THREE.Color();
 
 function updateParts(dt){
   const P = DESC.parts; if(!P) return;
@@ -2317,6 +2414,72 @@ function updateParts(dt){
     P.im.setMatrixAt(i, _m4);
   }
   P.im.instanceMatrix.needsUpdate = true;
+}
+
+/* ►GLOBOS: flotar y reventar.
+   Los globos NO se ocultan poniéndoles visible=false uno a uno (van todos en
+   una InstancedMesh): el cogido se escala a 0 en su matriz, que es la forma de
+   apagar una copia. */
+function updateGlobos(dt){
+  const G = DESC.globos; if(!G) return;
+  G.t += dt;
+  const zc = DESC.racers && DESC.racers[0] ? DESC.racers[0].z : 0;
+  let toca = false;
+  for(const o of G.lista){
+    if(!o._im) continue;
+    /* fuera de la ventana visible (o ya cogido) se ESCALA A 0: son ~480 globos
+       y la InstancedMesh no se puede frustum-cullear por copia, así que sin
+       esto se rasterizarían los 480 en cada frame. Escalados a 0 son
+       triángulos degenerados: el rasterizador los descarta. */
+    const fuera = o.taken || Math.abs(o.z - zc) > 300;
+    if(fuera){
+      if(!o._off){ o._off = true; _m4.makeScale(0,0,0); o._im.setMatrixAt(o._i, _m4); toca = true; }
+      continue;
+    }
+    o._off = false;
+    const b = Math.sin(G.t * 1.7 + o.fase);
+    _v3.set(o.x + b * 0.35, o.y + b * 0.55, o.z);
+    _qt.setFromEuler(_eu.set(b * 0.09, G.t * 0.5 + o.fase, b * 0.13));
+    _sc3.setScalar(o.tier === 'amarillo' ? 1.5 : o.tier === 'rojo' ? 1.3 : 1.15);
+    _m4.compose(_v3, _qt, _sc3);
+    o._im.setMatrixAt(o._i, _m4);
+    toca = true;
+  }
+  if(toca) for(const t in G.ims) G.ims[t].instanceMatrix.needsUpdate = true;
+}
+
+/* pinchazo: confeti DEL COLOR DEL GLOBO. Pool propio con instanceColor porque
+   el de arena tiene un único color de material y aquí el color ES la
+   información (qué globo has cogido). */
+function popGlobo(o){
+  const P = DESC.pop; if(!P) return;
+  const col = GLOBO[o.tier].col;
+  for(let k = 0; k < 12; k++){
+    const i = P.i = (P.i + 1) % P.N;
+    const a = Math.random() * TAU, e = Math.random() * 1.6 - 0.2;
+    P.x[i]=o.x; P.y[i]=o.y; P.z[i]=o.z;
+    P.vx[i]=Math.cos(a)*(3+Math.random()*7); P.vy[i]=4+e*5; P.vz[i]=Math.sin(a)*(3+Math.random()*7);
+    P.life[i]=0.5+Math.random()*0.4; P.col[i]=col;
+    _c3.setHex(col); P.im.setColorAt(i, _c3);
+  }
+  if(P.im.instanceColor) P.im.instanceColor.needsUpdate = true;
+}
+function updatePop(dt){
+  const P = DESC.pop; if(!P) return;
+  let vivo = false;
+  for(let i = 0; i < P.N; i++){
+    if(P.life[i] <= 0){ if(P._on[i]){ P._on[i]=0; _m4.makeScale(0,0,0); P.im.setMatrixAt(i, _m4); vivo = true; } continue; }
+    P._on[i] = 1; vivo = true;
+    P.life[i] -= dt;
+    P.vy[i] -= K.grav * 0.5 * dt;
+    P.x[i] += P.vx[i]*dt; P.y[i] += P.vy[i]*dt; P.z[i] += P.vz[i]*dt;
+    _v3.set(P.x[i], P.y[i], P.z[i]);
+    _qt.setFromEuler(_eu.set(P.x[i], P.y[i]*2, P.z[i]));
+    _sc3.setScalar(0.42 * clamp(P.life[i] * 2.4, 0, 1));
+    _m4.compose(_v3, _qt, _sc3);
+    P.im.setMatrixAt(i, _m4);
+  }
+  if(vivo) P.im.instanceMatrix.needsUpdate = true;
 }
 
 function dropTrail(x, z, rot, w){
@@ -2526,12 +2689,20 @@ function animEstado(r){
   if(r.air)                 animA(r, 'jump');    // animA ya reinicia al entrar
   else if(r.grind)          animA(r, 'board');
   else if(r.turbo)          animA(r, 'turbo');
-  /* el clip de giro tiene LADO, y estaba AL REVÉS (Toni, dos veces: "la del
-     giro a la derecha va a la izquierda y viceversa"). El cuerpo va rotado
-     K.charYaw respecto al eje del clip, así que el que "mira bien" a cada lado
-     es el contrario: yaw>0 es girar a la DERECHA (fx=sin(yaw)>0 → +X, que en
-     esta cámara es la derecha de la pantalla) y le toca el ESPEJADO. */
-  else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carveM' : 'carve');
+  /* ►EL CLIP DE GIRO Y SU LADO — CERRADO CON UNA MEDIDA, no con un argumento.
+     Toni lo ha pedido TRES veces ("la de la izquierda va a la derecha").
+     Medido leyendo el hueso de la cabeza en el espacio de la TABLA (r.body),
+     donde +X es la derecha de la pantalla yendo recto, y restando la postura
+     de 'board' (+0,07..+0,16):
+         carve   → cabeza en -0,31 / -0,25 / -0,20  ⇒ se inclina a la IZQUIERDA
+         carveM  → cabeza en +0,31 / +0,25 / +0,20  ⇒ se inclina a la DERECHA
+     Y yaw>0 es girar a la DERECHA (ax=+1 → wantYaw=+steerMax → fx=sin(yaw)>0).
+     O sea que "inclinarse hacia dentro del giro" daba carveM a la derecha, que
+     es lo que había y lo que Toni ve MAL: con la postura procedural encima
+     (model.rotation.y contra-gira el torso y body.rotation.z ya tumba hacia el
+     lado del giro) el clip que LEE bien es el del lado contrario. Manda lo que
+     se ve. Si algún día se vuelve a tocar: mídelo así, no lo razones. */
+  else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carve' : 'carveM');
   else                      animA(r, 'board');
 }
 
@@ -2588,7 +2759,6 @@ function makeRacer(i, human){
     trick:null, trickT:0, combo:0,
     dash:K.dashMax, turbo:false,
     atk:0, atkCd:0, grabCd:0, grabbed:0, grabbedBy:null,
-    item:null,
     pts:0, tricks:0, falls:0, crashes:0,
     done:false, place:0, time:0,
     _inp:null, _ai:{ targetMul:1, plan:null, tx:0 },
@@ -2606,7 +2776,7 @@ function addSpeed(r, v){
    ===================================================================== */
 const TRICK_KEYS = { indy:'Digit1', flipB:'Digit2', flipF:'Digit3', spin:'Digit4', flipB2:'Digit5', super:'Digit6' };
 function readDesc(r){
-  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, item:false, trick:null, freno:false };
+  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null, freno:false };
   if(!r.human) return o;
   const kk = GAME_KEYS() || {};
   if(r.kb){
@@ -2614,7 +2784,7 @@ function readDesc(r){
     if(kk['KeyA'] || kk['ArrowLeft'])  o.ax -= 1;
     o.freno = !!(kk['KeyS'] || kk['ArrowDown']);
     o.jump = !!kk['Space']; o.turbo = !!(kk['ShiftLeft']||kk['ShiftRight']);
-    o.atk = !!kk['KeyJ']; o.grab = !!kk['KeyL']; o.item = !!kk['KeyU'];
+    o.atk = !!kk['KeyJ']; o.grab = !!kk['KeyL'];
     for(const t in TRICK_KEYS) if(kk[TRICK_KEYS[t]]){ o.trick = t; break; }
   }
   if(r.padIndex >= 0 && navigator.getGamepads){
@@ -2624,7 +2794,7 @@ function readDesc(r){
       if(Math.abs(lx) > 0.22) o.ax += lx;
       const B = i => !!(pad.buttons[i] && pad.buttons[i].pressed);
       o.jump = o.jump || B(0); o.turbo = o.turbo || B(7);
-      o.atk = o.atk || B(2); o.grab = o.grab || B(6); o.item = o.item || B(5);
+      o.atk = o.atk || B(2); o.grab = o.grab || B(6);
       o.freno = o.freno || B(4);
       if(!o.trick){
         if(B(1)) o.trick='indy'; else if(B(3)) o.trick='flipB';
@@ -2639,7 +2809,7 @@ function readDesc(r){
 
 /* IA: elige un objetivo lateral y GIRA hacia él (ya no empuja una x). */
 function aiInput(r, dt){
-  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, item:false, trick:null };
+  const o = { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null };
   const skill = K.aiSkill[Math.min(K.aiSkill.length-1, Math.max(0, r.i - HUMANS))] || 0.85;
   const lead = DESC.racers.find(q => q.human) || DESC.racers[0];
   const gap = r.z - lead.z;
@@ -2694,7 +2864,7 @@ function aiInput(r, dt){
   const vz = Math.max(12, Math.abs(r.vz));
   for(const ob of ahead){
     const d = r.z - ob.z;
-    if(d < 2 || d > K.aiLook || ob.type === 'ramp' || ob.type === 'pick') continue;
+    if(d < 2 || d > K.aiLook || ob.type === 'ramp' || ob.type === 'globo') continue;   // los globos no se esquivan: se cogen
     const px = r.x + r.vx * (d / vz);
     if(Math.abs(ob.x - px) > ob.r + 3.4) continue;
     if(d < dz){ dz = d; danger = ob; }
@@ -2708,7 +2878,28 @@ function aiInput(r, dt){
       const d = r.z - ob.z;
       if(d > 6 && d < K.aiLook && d < bd){ bd = d; best = ob; }
     }
-    if(best && skill > 0.78) tx = best.x;
+    /* ►GLOBOS: la CPU también compite POR PUNTOS, si no el ranking de la
+       izquierda lo gana el humano sin oponente. Solo desvía la línea si el
+       globo está CERCA de ella (12 u): barrer la ladera para ir a por uno
+       cuesta más velocidad de lo que vale. Los amarillos van por el aire, así
+       que solo los persigue si ya está volando. */
+    let glo = null, gd = 1e9;
+    for(const ob of ahead){
+      if(ob.type !== 'globo' || ob.taken) continue;
+      if(ob.tier === 'amarillo' && !r.air) continue;
+      const d = r.z - ob.z;
+      if(d < 6 || d > K.aiLook) continue;
+      const px = r.x + r.vx * (d / vz);
+      if(Math.abs(ob.x - px) > 12) continue;
+      const coste = d - GLOBO[ob.tier].pts * 0.05;        // uno gordo compensa más desvío
+      if(coste < gd){ gd = coste; glo = ob; }
+    }
+    if(glo && skill > 0.6){ tx = glo.x;
+      /* los rojos cuelgan a 6 u: hay que SALTAR. La CPU carga el ollie al
+         acercarse, si no el ranking de puntos lo gana el humano sin rival. */
+      if(glo.tier === 'rojo' && !r.air && (r.z - glo.z) < 26) o.jump = true;
+    }
+    else if(best && skill > 0.78) tx = best.x;
     else if(Math.abs(r.x) > hw * 0.72) tx = r.x * 0.55;   // solo si se sale
     else tx = r.x;                    // MANTENER LA LÍNEA: barrer la ladera en
                                       // diagonal cuesta velocidad de verdad
@@ -2743,7 +2934,6 @@ function aiInput(r, dt){
   const s = surfaceAt(r.x, r.z);
   if(s.ramp && skill > 0.75) o.jump = true;                 // carga el ollie en la rampa
   o.turbo = gap > 35 && skill > 0.82;
-  if(r.item && Math.random() < 0.02*skill) o.item = true;
   for(const q of DESC.racers){
     if(q === r || q.done) continue;
     if(Math.abs(q.z-r.z) < K.grabRange && Math.abs(q.x-r.x) < K.grabRange){
@@ -2857,7 +3047,7 @@ const _srf = { y:0, nx:0, ny:1, nz:0, ramp:null };
 
 function stepRacer(r, dt){
   if(r.done) return;
-  const inp = r._inp || { ax:0, jump:false, turbo:false, atk:false, grab:false, item:false, trick:null };
+  const inp = r._inp || { ax:0, jump:false, turbo:false, atk:false, grab:false, trick:null };
 
   /* --- caído: se desliza sin control --- */
   if(r.fall > 0){
@@ -3172,12 +3362,9 @@ function stepRacer(r, dt){
     if(r.atk <= 0) r.meteor.visible = false;
   }
 
-  /* objeto */
-  if(inp.item && r.item && !r._itemHeld && r.fall <= 0){
-    ITEMS[r.item].use(r);
-    r._lastTrick = ITEMS[r.item].name; r._lastTrickT = 1.0; r.item = null;
-  }
-  r._itemHeld = inp.item;
+  /* (los OBJETOS se han retirado a petición de Toni: lo que hay que recoger
+     ahora son GLOBOS, y dan puntos en el momento — no hay inventario ni tecla
+     de uso.) */
 
   /* agarre */
   r.grabCd = Math.max(0, r.grabCd - dt);
@@ -3361,13 +3548,20 @@ function stepRacer(r, dt){
     if(r.crash <= 0 && r.fall <= 0) crash(r, 'roca');
   }
   if(r.crash <= 0 && r.fall <= 0){
-    for(const o of nearObst(r.z, 18)){
-      if(o.type === 'pick' && !o.taken){
-        if(Math.abs(o.z-r.z) < 3.4 && Math.abs(o.x-r.x) < 3.4 && r.y - terrainY(r.x,r.z) < 4.6){
-          o.taken = true; if(o._m) o._m.visible = false;
-          r.item = ITEM_KEYS[(Math.random()*ITEM_KEYS.length)|0];
-        }
-      }
+    /* ►GLOBOS: se cogen ATRAVESÁNDOLOS, y eso incluye la ALTURA — es lo único
+       que separa un globo verde de uno amarillo, así que la Y cuenta igual que
+       la X y la Z. El radio es generoso (3,2) porque a 150 km/h pedir puntería
+       de píxel no es un reto, es una lotería. */
+    for(const o of nearObst(r.z, 22)){
+      if(o.type !== 'globo' || o.taken) continue;
+      const dx = o.x - r.x, dz = o.z - r.z, dy = o.y - (r.y + 1.2);
+      if(dx*dx + dz*dz + dy*dy > 3.2*3.2) continue;
+      o.taken = true;
+      const g = GLOBO[o.tier];
+      r.pts += g.pts;
+      popGlobo(o);
+      if(r.human){ r._lastTrick = g.nombre + ' +' + g.pts; r._lastTrickT = 1.0; }
+      sndDing(o.tier === 'amarillo' ? 3 : o.tier === 'rojo' ? 1 : 0);
     }
     for(const q of DESC.racers){
       if(q === r || q.done || q.fall > 0) continue;
@@ -3656,21 +3850,112 @@ function buildHud(){
     '<div id="dRight" style="position:absolute;top:14px;right:16px;background:rgba(6,10,20,.5);padding:9px 13px;border-radius:9px;text-align:right"></div>' +
     '<div id="dTrick" style="position:absolute;top:31%;left:50%;transform:translate(-50%,-50%);font-size:34px;font-weight:900;opacity:0;color:#ffe14d"></div>' +
     '<div id="dSalta" style="position:absolute;top:22%;left:50%;transform:translate(-50%,-50%);font-size:44px;font-weight:900;opacity:0;color:#ff5a3d;letter-spacing:1px"></div>' +
-    '<div id="dAire" style="position:absolute;left:50%;bottom:74px;transform:translateX(-50%);opacity:0;' +
+    /* la chuleta de trucos sube por encima de la fila de botones (antes se
+       solapaban: ►BOTHUD ocupa los 90 px de abajo) */
+    '<div id="dAire" style="position:absolute;left:50%;bottom:158px;transform:translateX(-50%);opacity:0;' +
       'background:rgba(6,10,20,.72);padding:10px 16px;border-radius:12px;font-size:15px;line-height:1.7;white-space:nowrap"></div>' +
     '<div id="dBig" style="position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:84px;font-weight:900;letter-spacing:-2px"></div>' +
     '<div id="dBar" style="position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:min(620px,72vw);height:9px;background:rgba(0,0,0,.42);border-radius:6px;overflow:hidden">' +
       '<div id="dFill" style="height:100%;width:0;background:#fff;border-radius:6px"></div></div>' +
-    '<div id="dHelp" style="position:absolute;left:16px;bottom:14px;opacity:.5;font-size:11px;line-height:1.5">' +
-      '<b>A/D</b> girar · <b>S</b> CLAVAR CANTOS (frena y derrapa) · <b>ESPACIO</b> saltar · <b>SHIFT</b> turbo<br>' +
-      '<b>RUEDA</b> acerca/aleja la cámara · <b>J</b> meteorito · <b>L</b> agarrar · <b>U</b> objeto<br>' +
-      '<b>EN EL AIRE: 1..6 = TRUCOS</b> (te los recuerda en pantalla) · R reiniciar · T semilla</div>';
+    /* ►RANKPTS: el ranking de PUNTOS, a la izquierda y deslizante — el mismo
+       componente que el de EXP del juego (clases .rkRow/.rkPos/.rkDot/...).
+       Id propio (#dRank, no #rank) porque pollMoveSheet() oculta el del juego
+       cuando `running` es false, y aquí siempre lo es. */
+    '<div id="dRank"></div>' +
+    /* ►CONTROLES ABAJO-CENTRO, como la fila de botones del juego. Se reutilizan
+       sus clases (.hbtn/.hDisc/.hFill/.hInner/.hKey/.hPad/.hName): aquí no se
+       inventa un HUD nuevo, se usa el que ya existe. Todos van con el anillo
+       tenue de .util porque en el descenso no hay enfriamientos (Toni). */
+    '<div id="dAtk"></div>' +
+    '<div id="dHelp" style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%);opacity:.45;font-size:10px;white-space:nowrap">' +
+      'RUEDA / stick derecho: cámara · R reiniciar · T semilla nueva</div>';
   document.body.appendChild(d);
+  /* posicionamiento propio de los dos contenedores nuevos (el ASPECTO lo ponen
+     las clases del juego; esto solo dice DÓNDE van) */
+  const st = document.createElement('style');
+  st.textContent =
+    '#dRank{position:absolute;left:16px;top:50%;width:186px;transform:translateY(-50%) scale(var(--hudScale,1));' +
+      'transform-origin:left center;pointer-events:none;font-family:"Segoe UI",system-ui,sans-serif;text-shadow:none}' +
+    '#dAtk{position:absolute;left:50%;bottom:26px;transform:translateX(-50%) scale(var(--hudScale,1));' +
+      'transform-origin:bottom center;display:flex;align-items:flex-start;justify-content:center;gap:9px;' +
+      'pointer-events:none;font-family:"Segoe UI",system-ui,sans-serif;text-shadow:none;max-width:96vw;flex-wrap:wrap}' +
+    /* la barra de progreso de la bajada se sube para no chocar con los botones */
+    '#dBar{bottom:104px !important}';
+  document.head.appendChild(st);
   DESC.hud = { root:d, top:d.querySelector('#dTop'), left:d.querySelector('#dLeft'),
     right:d.querySelector('#dRight'), big:d.querySelector('#dBig'), fill:d.querySelector('#dFill'),
     vig:d.querySelector('#dVig'), blur:d.querySelector('#dBlur'),
     trick:d.querySelector('#dTrick'), zone:d.querySelector('#dZone'),
-    salta:d.querySelector('#dSalta'), aire:d.querySelector('#dAire') };
+    salta:d.querySelector('#dSalta'), aire:d.querySelector('#dAire'),
+    rank:d.querySelector('#dRank'), atk:d.querySelector('#dAtk') };
+  buildAtkBar();
+}
+
+/* ►CONTROLES (abajo-centro). Un disco por acción con la TECLA grande y el
+   BOTÓN DE MANDO debajo, en el color del mando — igual que en el juego. Aquí
+   NO hay enfriamiento, así que todos llevan el anillo tenue fijo (.util).
+   Los códigos de mando son los que lee readDesc(): A=0, X=2, LB=4, LT=6, RT=7. */
+const DESC_CTRL = [
+  { key:'A / D', pad:'⇆',  name:'Girar',    col:'#7affc8' },
+  { key:'ESP',   pad:'A',  name:'Saltar',   col:'#3ad06a' },
+  { key:'SHIFT', pad:'RT', name:'Turbo',    col:'#ff9f6b' },
+  { key:'S',     pad:'LB', name:'Cantos',   col:'#7fd0ff' },
+  { key:'J',     pad:'X',  name:'Meteorito',col:'#5ec8ff' },
+  { key:'L',     pad:'LT', name:'Agarrar',  col:'#9fe0a0' },
+  { key:'1..6',  pad:'B/Y',name:'Trucos',   col:'#ffd84f' },
+];
+function buildAtkBar(){
+  const el = DESC.hud && DESC.hud.atk; if(!el) return;
+  el.innerHTML = DESC_CTRL.map(c =>
+    '<div class="hbtn util" style="--pc:' + c.col + '">' +
+      '<div class="hDisc">' +
+        '<i class="hFill"></i>' +
+        '<span class="hLab" id="dctl_' + c.name + '"></span>' +
+        '<div class="hInner">' +
+          '<div class="hPad' + (/^[ABXY]$/.test(c.pad) ? ' round' : '') + '">' + c.pad + '</div>' +
+          '<span class="hKey">' + c.key + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<span class="hName">' + c.name + '</span>' +
+    '</div>').join('');
+  /* el meteorito es lo ÚNICO con espera: no lleva anillo (aquí no hay
+     cooldowns), se APAGA mientras enfría y enseña los segundos que faltan */
+  DESC.hud.meteor = el.children[4] || null;
+  DESC.hud.meteorLab = el.querySelector('#dctl_Meteorito');
+}
+
+/* ►RANKPTS: una fila por corredor, colocada en absoluto y movida con transform
+   → al adelantar, la fila SE DESLIZA a su puesto en vez de saltar. Es
+   exactamente el patrón del ranking de EXP del juego. */
+function updateRank(){
+  const h = DESC.hud; if(!h || !h.rank) return;
+  const rs = DESC.racers; if(!rs || !rs.length) return;
+  if(!h._rkRows || h._rkRows.length !== rs.length){
+    h.rank.innerHTML = '';
+    h._rkRows = rs.map(r => {
+      const row = document.createElement('div');
+      row.className = 'rkRow' + (r.human && r.i === 0 ? ' me' : '');
+      row.style.setProperty('--pc', '#' + r.col.toString(16).padStart(6, '0'));
+      row.innerHTML = '<span class="rkPos"></span><i class="rkDot"></i>' +
+                      '<span class="rkName">' + r.name + '</span><span class="rkXP"></span>';
+      h.rank.appendChild(row);
+      return { row, pos:row.querySelector('.rkPos'), pts:row.querySelector('.rkXP'), last:-1 };
+    });
+    h.rank.style.height = (rs.length * 31) + 'px';
+  }
+  /* orden por PUNTOS; a igualdad, va delante quien está más abajo en la pista */
+  const orden = rs.slice().sort((a, b) => (b.pts - a.pts) || (a.z - b.z));
+  for(let p = 0; p < orden.length; p++){
+    const r = orden[p], w = h._rkRows[r.i];
+    w.row.style.transform = 'translateY(' + (p * 31) + 'px)';
+    w.pos.textContent = (p + 1);
+    w.row.classList.toggle('lead', p === 0);
+    if(w.last !== r.pts){
+      w.pts.textContent = r.pts;
+      if(w.last >= 0){ w.pts.classList.remove('bump'); void w.pts.offsetWidth; w.pts.classList.add('bump'); }
+      w.last = r.pts;
+    }
+  }
 }
 
 function updateHud(dt){
@@ -3733,15 +4018,22 @@ function updateHud(dt){
     '<div style="opacity:.7">suelo ' + (hard > 0.62 ? '<b style="color:#7bf06a">DURO</b>'
       : hard < 0.38 ? '<b style="color:#ff8a3d">PROFUNDO</b>' : 'normal') +
       (me.skid > 0.02 ? ' · <b style="color:#ff8a3d">DERRAPE</b>' : '') + '</div>' +
-    (me.atkCd > 0 ? '<div style="opacity:.5">meteorito ' + me.atkCd.toFixed(1) + 's</div>'
-                  : '<div style="color:#7bf06a">meteorito LISTO</div>') +
-    (me.item ? '<div style="margin-top:4px;font-weight:800;color:#' + ITEMS[me.item].col.toString(16).padStart(6,'0') + '">◆ ' + ITEMS[me.item].name + ' (U)</div>'
-             : '<div style="opacity:.35;margin-top:4px">sin objeto</div>');
+    '';
 
   h.right.innerHTML =
     '<div style="font-size:20px;font-weight:800">' + me.pts + ' pts</div>' +
     '<div style="opacity:.8">' + me.tricks + ' trucos · ' + me.falls + ' caídas</div>' +
     '<div style="opacity:.8">' + DESC.t.toFixed(1) + ' s</div>';
+
+  /* ►RANKPTS: quién va primero EN PUNTOS, a la izquierda */
+  updateRank();
+  /* el meteorito, lo único con espera: el botón se apaga y enseña los segundos
+     (sin anillo de enfriamiento — aquí no los hay) */
+  if(h.meteor){
+    const listo = me.atkCd <= 0;
+    h.meteor.style.opacity = listo ? '' : '.42';
+    if(h.meteorLab) h.meteorLab.textContent = listo ? '' : Math.ceil(me.atkCd);
+  }
 
   /* ►CHULETA DE TRUCOS EN EL AIRE. Toni: "soy incapaz de lanzar trucos, no sé
      qué botones son". Estaban en una línea de ayuda de 11 px abajo a la
@@ -3895,9 +4187,8 @@ DESC.tick = function(dt){
     if(r.mixer) r.mixer.update(dt);
   }
 
-  if(DESC.picks) for(const o of DESC.picks)
-    if(o._m && o._m.visible){ o._m.rotation.y += dt*2.4; o._m.rotation.x += dt*1.1; }
-
+  updateGlobos(dt);
+  updatePop(dt);
   stepCamera(dt);
   updateParts(dt);
   updateTrail(dt);
