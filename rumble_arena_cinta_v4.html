@@ -1536,7 +1536,7 @@ const VISUAL = {
   partInst: true,            // ►PARTINST: cubos del burst en 1 InstancedMesh (1 draw call). false = mallas sueltas de siempre (toggle en F2)
   maskRetag: false,          // ►MASKMEMO: true = re-marcar interactivos CADA frame (modo antiguo, para bisecar si algo sale desaturado)
   ao: { on:true, radius:1.1, min:0.0015, max:0.006 },   // ►AO-FIX3 (2/08): min/max van en profundidad NORMALIZADA 0..1 (¡no en unidades! el shader compara viewZToOrthographicDepth). Con far~300: 0.0015=0.45u, 0.006=1.8u → SOLO contacto. Mis dos 'fixes' anteriores usaban la unidad equivocada: el AO ocluía contra fondos a decenas de unidades = las manchas de los puentes de Toni
-  ink: { on:true, strength:0.45, umbral:0.30 },     // ►INK: tinta del MUNDO (subida el 1/08 a peticion de Toni)
+  ink: { on:true, strength:0.45, umbral:0.30, skipDecor:true },   // ►INK: tinta del MUNDO (subida el 1/08 a peticion de Toni) · skipDecor = ►NOINK: el decorado de FONDO (nubes/montañas/icebergs/mesetas/árboles de horizonte) sale de la tinta. false = como antes
   minOutline: { on:true },                          // ►MINSIL: outline sutil de minions con el color del mapa
   halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
@@ -2010,6 +2010,44 @@ const _minSil = [];
 function registerMinionSil(root){ if(root) root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } }); }
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
+/* ►NOINK (9/08, pedido de Toni: "quita el outline de los assets de decoración de los fondos").
+   La tinta del mundo (inkPass) es un detector de bordes por PROFUNDIDAD a pantalla completa: no
+   sabe qué es un prop lejano, así que subrayaba cada faceta de una montaña de 6 lados igual que
+   el canto de una plataforma — nubes, montañas de Japón, picos e icebergs del hielo, mesetas del
+   cañón western, árboles de horizonte de la jungla y los backdrops de las arenas de jefe salían
+   todos entintados. Bajar VISUAL.ink.strength por stage (lo que se hizo en ►SWFIX) apaga TAMBIÉN
+   las siluetas que sí se quieren, así que el decor se excluye por OBJETO: se marca en NOINK_LAYER
+   y se pinta en su propia máscara (noInkRT) con UN render extra por frame a media resolución,
+   vía scene.overrideMaterial — sin listas por objeto ni swap de materiales.
+
+   LA MÁSCARA GUARDA DISTANCIA, NO SÓLO PRESENCIA, y esa es la parte que importa. El primer
+   intento marcaba "aquí hay decor" y ya está; como la máscara se pinta con SÓLO el decor dentro,
+   una montaña se marcaba TAMBIÉN en los píxeles donde en la escena real la tapa una plataforma
+   → la plataforma perdía su tinta. Ahora el rojo lleva la distancia del decor normalizada a
+   cameraFar y el shader sólo se salta el píxel si lo que hay pintado está TAN LEJOS como el decor
+   (z >= decorZ - tolerancia): el decorado sale sin tinta y todo lo que se recorta por delante la
+   conserva. La tolerancia es relativa (3%) porque las dos profundidades se muestrean a
+   resoluciones distintas. */
+const NOINK_LAYER = 3;
+let noInkRT = null, _noInkMat = null, _noInkCount = 0, _noInkReady = false;
+function markNoInk(root){ if(!root) return; root.traverse(o=>{ if(o.isMesh){ o.layers.enable(NOINK_LAYER); _noInkCount++; } }); }
+/* material de la máscara: rojo = distancia a cámara / cameraFar, alfa = 1 (presencia).
+   Sin niebla, sin luces y sin sorting especial: sólo hace falta la geometría y su profundidad. */
+function _noInkMaterial(){
+  if(_noInkMat) return _noInkMat;
+  _noInkMat = new THREE.ShaderMaterial({
+    uniforms:{ cameraFar:{ value:1000 } },
+    vertexShader:[
+      'varying float vZ;',
+      'void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vZ = -mv.z; gl_Position = projectionMatrix * mv; }'
+    ].join('\n'),
+    fragmentShader:[
+      'uniform float cameraFar; varying float vZ;',
+      'void main(){ gl_FragColor = vec4(clamp(vZ/cameraFar, 0.0, 1.0), 0.0, 0.0, 1.0); }'
+    ].join('\n')
+  });
+  return _noInkMat;
+}
 /* marca los elementos interactivos del mapa para que conserven su saturación.
    ►MASKMEMO (31/07): antes hacía traverse() COMPLETO de cada cápsula/ítem/saltador/pad CADA frame
    aunque nada hubiera cambiado. Los layers PERSISTEN en el objeto → basta marcar una vez, y
@@ -2155,6 +2193,25 @@ try {
         renderer.clear();
         renderer.render(scene, camera);
         for(let i=0;i<_swapped.length;i+=2) _swapped[i].material = _swapped[i+1];   // restaura materiales originales
+        /* 1a-bis) ►NOINK: máscara del DECORADO DE FONDO en su propio target. El clear a alfa 0 es
+           lo que marca "aquí no hay decor"; donde sí lo hay, el rojo lleva su distancia. */
+        if(noInkRT && _noInkCount && (typeof VISUAL === 'undefined' || !VISUAL.ink || VISUAL.ink.skipDecor !== false)){
+          const _nm = _noInkMaterial(); _nm.uniforms.cameraFar.value = camera.far;
+          const _prevOv = scene.overrideMaterial;
+          scene.overrideMaterial = _nm;
+          camera.layers.set(NOINK_LAYER);
+          renderer.setRenderTarget(noInkRT);
+          renderer.clear();
+          renderer.render(scene, camera);
+          scene.overrideMaterial = _prevOv;
+          camera.layers.set(OUTLINE_LAYER);   // la máscara de abajo cuenta con ver SÓLO capa 1 (+2)
+          _noInkReady = true;
+        } else _noInkReady = false;
+        /* el uniform se ata AQUÍ y no en drawScene: el inkPass va justo detrás de este pase en el
+           composer, así que la máscara que acaba de pintarse es la de ESTE frame (desde drawScene
+           iría siempre un frame por detrás, y en una sonda que llama a composer.render() a pelo
+           no llegaría a atarse nunca). */
+        if(inkPass && inkPass.uniforms.tNoInk) inkPass.uniforms.tNoInk.value = (_noInkReady && noInkRT) ? noInkRT.texture : null;
         /* 1b) máscara "NO DESATURAR": personajes (capa 1) + interactivos (capa 2) → maskRT.
            Sólo renderiza esas capas (objetos del resto de la escena se saltan) → barato.
            ►HALFMASK: va ANTES de restaurar clearColor/background — el grade ahora lee el ALPHA de
@@ -2184,20 +2241,36 @@ try {
          La profundidad se elige por frame en drawScene: con SSAO activo, la del pase de normales
          (que además ya excluye transparencias); si no, la del RenderPass (composer.renderTarget2). */
       inkPass = new THREE.ShaderPass({
-        uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null},
+        uniforms:{ tDiffuse:{value:null}, tDepth:{value:null}, tSil:{value:null}, tNoInk:{value:null},
                    cameraNear:{value:0.1}, cameraFar:{value:1000}, texel:{value:new THREE.Vector2(1/1280,1/720)},
                    fogNear:{value:72}, fogFar:{value:142},   // ►TINTANIEBLA: se rellenan de scene.fog (ver applyFogToInk)
                    strength:{value:0.45}, umbral:{value:0.30}, limGrow:{value:0.06} },   // ►(1/08) Toni pidio mas presencia · ►SWFIX: limGrow = cuánto sube el umbral con la distancia (era una constante en el shader)
         vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
         fragmentShader:[
           '#include <packing>',
-          'uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tSil;',
+          'uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tSil; uniform sampler2D tNoInk;',
           'uniform float cameraNear, cameraFar, strength, umbral, fogNear, fogFar, limGrow; uniform vec2 texel; varying vec2 vUv;',
           'float vz(vec2 uv){ float d=texture2D(tDepth, uv).x; return -perspectiveDepthToViewZ(d, cameraNear, cameraFar); }',
           'void main(){',
           '  vec4 col=texture2D(tDiffuse, vUv);',
           '  if(texture2D(tSil, vUv).a>0.4){ gl_FragColor=col; return; }',   // jugadores/minions: su outline manda
           '  float z=vz(vUv);',
+          /* ►NOINK · el decorado de fondo (nubes, montañas, icebergs, mesetas, árboles de horizonte)
+             no lleva tinta. La máscara trae su distancia: sólo se salta el píxel si lo pintado está
+             tan lejos como el decor — así una plataforma recortada por delante conserva su línea. */
+          /* se consulta el PÍXEL Y SUS 4 VECINOS y se toma el decor MÁS CERCANO de todos. La máscara
+             va a media resolución: justo en la silueta exterior de una montaña, el téxel que toca al
+             píxel es a menudo el del CIELO (sin decor) y el contorno se salvaba — que es la línea que
+             más se ve. Coger el mínimo también deja intacta la tinta de lo que pasa por delante:
+             una plataforma a 20 u sigue muy por debajo del umbral de una montaña a 80. */
+          '  float nz=1e9;',
+          '  vec2 nt=texel*2.0;',
+          '  vec4 n0=texture2D(tNoInk, vUv);                    if(n0.a>0.5) nz=min(nz, n0.r*cameraFar);',
+          '  vec4 n1=texture2D(tNoInk, vUv+vec2( nt.x,0.0));    if(n1.a>0.5) nz=min(nz, n1.r*cameraFar);',
+          '  vec4 n2=texture2D(tNoInk, vUv+vec2(-nt.x,0.0));    if(n2.a>0.5) nz=min(nz, n2.r*cameraFar);',
+          '  vec4 n3=texture2D(tNoInk, vUv+vec2(0.0, nt.y));    if(n3.a>0.5) nz=min(nz, n3.r*cameraFar);',
+          '  vec4 n4=texture2D(tNoInk, vUv+vec2(0.0,-nt.y));    if(n4.a>0.5) nz=min(nz, n4.r*cameraFar);',
+          '  if(nz<1e8 && z >= nz - max(1.0, nz*0.03)){ gl_FragColor=col; return; }',
           '  if(z>cameraFar*0.85){ gl_FragColor=col; return; }',             // cielo/fondo lejano: sin tinta
           '  float dx=abs(vz(vUv+vec2(texel.x,0.0))-z), dy=abs(vz(vUv+vec2(0.0,texel.y))-z);',
           '  float edge=max(dx,dy);',
@@ -2288,6 +2361,13 @@ function attachComposerDepth(){
   else maskRT.setSize(w2, h2);
   if(maskRT.depthTexture){ if(maskRT.depthTexture.dispose) maskRT.depthTexture.dispose(); maskRT.depthTexture = null; }
   maskRT.dispose();
+  /* ►NOINK: máscara del DECORADO DE FONDO. Va a MEDIA resolución como las otras dos, pero con
+     filtro NEAREST a propósito: aquí el rojo lleva una DISTANCIA, y un filtro lineal inventaría
+     distancias intermedias en el borde del prop (mezcla de "montaña a 180" con "vacío a 0") que
+     harían saltar la comparación del shader justo donde una plataforma se recorta contra el cielo. */
+  if(!noInkRT) noInkRT = new THREE.WebGLRenderTarget(w2, h2, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, depthBuffer:true });
+  else noInkRT.setSize(w2, h2);
+  noInkRT.dispose();
 }
 
 /* ===== RENDIMIENTO: resolución dinámica (DRS) + tiers de calidad + HUD de métricas =====
@@ -3569,8 +3649,8 @@ function addCloud(x,y,z, scale, drift){
   if(!c) return;                                           // sin modelo: no dibuja (quitadas las procedurales)
   c.scale.multiplyScalar((scale||1) * (key===CUMULUS_KEY ? CUMULUS_MUL : 1));   // el cúmulo 2×; SIN rotación aleatoria
   if(key===CUMULUS_KEY && Math.random()<0.5) c.scale.x *= -1;   // FLIP horizontal (espejo) a la mitad de los cúmulos: misma silueta en línea, pero variada
-  c.position.set(x,y,z); scene.add(c);
-  cloudOccluders.push(c);                       // se registra como oclusor tras construir la cinta (se funde si tapa al jugador)
+  c.position.set(x,y,z); scene.add(c); markNoInk(c);   // ►NOINK: las nubes del prado van sueltas en la escena (no cuelgan de ningún *_SCENERY), hay que marcarlas una a una
+  cloudOccluders.push(c);                     // se registra como oclusor tras construir la cinta (se funde si tapa al jugador)
   if(drift) drifters.push({ m:c, y, sp:.1, ph:Math.random()*6, drift });
 }
 function scatterClouds(){
@@ -11306,8 +11386,10 @@ function buildBossBackdrop(gArena){
       }
     }
   }
-  /* el horizonte es pura silueta: fuera del shadow map (ni proyecta ni recibe) */
+  /* el horizonte es pura silueta: fuera del shadow map (ni proyecta ni recibe) y ►NOINK fuera de
+     la tinta del mundo (nubes, montañas de Japón, picos e icebergs del hielo, pirámides, cohetes…) */
   g.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+  markNoInk(g);
 }
 /* ►S2BOSS · STAGE 2: horizonte del jefe = EL MISMO bosque del stage 2 (buildS2Scenery) alrededor de la
    arena del cielo, en vez de las islas de tierra + conos verdes inventados. Tres capas heredadas de la
@@ -20860,7 +20942,7 @@ function buildSWScenery(){
   /* Sin planos de calima: se probaron dos (MeshBasic con fog:false) y se veían como RECTÁNGULOS
      translúcidos con el borde recortado cruzando el cielo. La niebla del stage ya funde el pie de
      las mesetas; añadir un plano encima solo mete un canto duro que no existe en la naturaleza. */
-  scene.add(G);
+  scene.add(G); markNoInk(G);   // ►NOINK: las mesetas del cañón fuera de la tinta (es el caso que lo destapó: ►SWFIX bajó la tinta de TODO el stage para tapar su rayado)
   SW_SCENERY.group = G; SW_SCENERY.on = true;
 }
 function enableSWScenery(on){
@@ -22799,7 +22881,7 @@ function buildS2Scenery(){
        exactamente la "superficie de impacto" que sobraba — remataba el haz con un círculo y contaba
        dónde aterrizaba la luz. Ahora el haz solo se ve caer, y desaparece antes de llegar a nada. */
   });
-  scene.add(G); S2_SCENERY.group = G;
+  scene.add(G); S2_SCENERY.group = G; markNoInk(G);   // ►NOINK: árboles de horizonte, mares de nubes y brumas del bosque
 }
 function enableS2Scenery(on){
   if(on) buildS2Scenery();
@@ -24521,7 +24603,7 @@ function buildSJScenery(){
     pl.lookAt(0, pl.position.y, 0);
     pl.renderOrder = 1; G.add(pl);
   }
-  scene.add(G); SJ_SCENERY.group = G;
+  scene.add(G); SJ_SCENERY.group = G; markNoInk(G);   // ►NOINK: montañas (Fuji + los 3 anillos) y nubes de Japón
 }
 function enableSJScenery(on){
   if(on) buildSJScenery();
@@ -25678,7 +25760,7 @@ function buildS4Scenery(){
     pl.lookAt(0, pl.position.y, 0);
     pl.renderOrder = 1; G.add(pl);
   }
-  scene.add(G); S4_SCENERY.group = G;
+  scene.add(G); S4_SCENERY.group = G; markNoInk(G);   // ►NOINK: dunas, pirámides de horizonte y manta de polvo
 }
 function enableS4Scenery(on){
   if(on) buildS4Scenery();
@@ -27452,7 +27534,7 @@ gl_FragColor.rgb *= smoothstep(0.11, 0.19, vGlyphT) * (1.0 - smoothstep(0.62, 0.
     const pts = new THREE.Points(geo, pm); pts.frustumCulled = false; pts.userData.noOcc = true; G.add(pts);
     S5_SCENERY.smoke = pts; S5_SCENERY.smokeGeo = geo; S5_SCENERY.smokeVel = vel;
   }
-  scene.add(G); S5_SCENERY.group = G;
+  scene.add(G); S5_SCENERY.group = G; markNoInk(G);   // ►NOINK: cilindro de glifos y mar de lava del fondo
 }
 function enableS5Scenery(on){
   if(on) buildS4Chamber();
@@ -29396,7 +29478,7 @@ function buildS5Tube(){
     const pm = new THREE.PointsMaterial({ color:0xff7a22, size:0.4, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false, fog:true });
     const pts = new THREE.Points(geo, pm); pts.frustumCulled = false; pts.userData.noOcc = true; G.add(pts);
     S6_SCENERY.embers = pts; S6_SCENERY.emberGeo = geo; S6_SCENERY.emberVel = vel; }
-  scene.add(G); S6_SCENERY.group = G;
+  scene.add(G); S6_SCENERY.group = G; markNoInk(G);   // ►NOINK: muros de glifos y lava del tubo
 }
 function enableS6Scenery(on){
   if(on) buildS5Tube();
@@ -29700,7 +29782,7 @@ function buildS7Scenery(){
     const mg=new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(PA,3)); mg.computeVertexNormals();
     const ice=new THREE.Mesh(mg, iceMat); ice.userData.noOcc=true; G.add(ice);
   }
-  scene.add(G); S7_SCENERY.group = G;
+  scene.add(G); S7_SCENERY.group = G; markNoInk(G);   // ►NOINK: montañas nevadas (PKS + cordillera del abismo) e icebergs
 }
 function enableS7Scenery(on){
   if(on) buildS7Scenery();
@@ -30549,7 +30631,7 @@ function buildS8Scenery(){
     g.traverse(o=>{ o.userData.noOcc = true; o.frustumCulled = false; });
     g.visible = false; G.add(g);
     S8_SCENERY.launch = { g, plume, plumeMat, st:'wait', t:6, site:0 }; }
-  scene.add(G); S8_SCENERY.group = G;
+  scene.add(G); S8_SCENERY.group = G; markNoInk(G);   // ►NOINK: skyline del spaceport (cohetes, hangares, tanques) y bruma de horizonte
 }
 function enableS8Scenery(on){
   if(on) buildS8Scenery();
@@ -31530,7 +31612,7 @@ function buildS9Scenery(){
     mg.setAttribute('normal',   new THREE.Float32BufferAttribute(NA,3));
     const mesh=new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ color:0xbcd0ec, emissive:0x5a7aa8, emissiveIntensity:0.25, roughness:1, transparent:true, opacity:0.42, depthWrite:false }));
     mesh.userData.noOcc=true; G.add(mesh); }
-  scene.add(G); S9_SCENERY.group = G;
+  scene.add(G); S9_SCENERY.group = G; markNoInk(G);   // ►NOINK: auroras y mar de nubes de las cumbres
 }
 function enableS9Scenery(on){
   if(on) buildS9Scenery();
@@ -31788,7 +31870,7 @@ function buildS10Scenery(){
   dio(140, 38, -140, g=>{ ball(g, 8.5, 0x565c64); const bx=new THREE.Mesh(new THREE.BoxGeometry(6,4,5), new THREE.MeshStandardMaterial({ color:0x3a4048, roughness:0.9, flatShading:true })); bx.position.y=8.5; g.add(bx);
     const ch=cone(g, 1.2, 5, 0x2c3038, 2.5, 12.5, 1); ch.geometry = new THREE.CylinderGeometry(0.8,1.1,5,6);
     const wm=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.2,0.2), new THREE.MeshStandardMaterial({ color:0x181a1e, emissive:0xff9a30, emissiveIntensity:1.5 })); wm.position.set(-1,8.5,2.6); g.add(wm); });   // ►FÁBRICA (ventana naranja + chimenea; el palacio quedó retirado)
-  scene.add(G); S10_SCENERY.group = G;
+  scene.add(G); S10_SCENERY.group = G; markNoInk(G);   // ►NOINK: nebulosas y dioramas lejanos de la vía arcoíris
 }
 function enableS10Scenery(on){
   if(on) buildS10Scenery();
