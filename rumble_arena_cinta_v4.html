@@ -1464,6 +1464,7 @@ window.addEventListener('load', function(){
 <script src="stage_japan_models.js?v=1"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
 <script src="western_anims.js?v=1"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
 <script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
+<script src="stage_pirate_models.js?v=1"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260711a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar -->
@@ -6654,6 +6655,7 @@ const STAGE_CAUTION = {
   11:'¡CUIDADO: BARRILES EXPLOSIVOS Y MUCHO VACÍO!',   // ►WEST: añadir "Y ESTAMPIDAS" cuando entren los animales en desbandada
   4:'¡CUIDADO: TE HUNDES EN LA ARENA Y HAY RÁFAGAS DE VIENTO!',
   5:'¡CUIDADO: BOLAS DE FUEGO Y MUCHAS TRAMPAS!',
+  12:'¡CUIDADO: CAÑONAZOS, Y SI CAES AL MAR MUERES!',   // ►PIRATA: las dos cosas que matan aquí, en ese orden
   7:'¡CUIDADO: SUELO RESBALADIZO!',
   8:'¡CUIDADO: TERREMOTOS AL DESPEGAR LOS COHETES!',
   10:'¡CUIDADO: MENOS GRAVEDAD!',
@@ -7397,6 +7399,7 @@ function scatterModelDecor(startIdx){
   if(!_modelAvailable()) return;
   if(STAGE===2){ scatterModelDecorStage2(startIdx); return; }   // bosque: setas/helechos/hierba/barriles/batalla/muros aéreos
   if(STAGE===3){ if(typeof scatterModelDecorSJ==='function') scatterModelDecorSJ(startIdx); return; }   // ►JAPAN: flores/dientes de león/hierba/linternas/farolillos
+  if(STAGE===12) return;   // ►PIRATA: los islotes ya se visten en pirIsle (palmeras y rocas del kit); el scatter de PRADO les plantaría flores y una carpa en mitad del mar
   if(STAGE===11){ if(typeof scatterModelDecorW==='function') scatterModelDecorW(startIdx); return; }   // ►WEST: props del cañón (sin esto caería al scatter de PRADO: flores y tienda de campaña en el desierto rojo)
   if(STAGE===4){ scatterModelDecorStage3(startIdx); return; }// desierto: aloe/agave/cactus/rocas/alfombras
   if(STAGE===5 || STAGE===6){ if(typeof scatterModelDecorStage4==='function') scatterModelDecorStage4(startIdx); return; }   // pirámide/pozo: SOLO escombros de arenisca + antorchas (sin plantas/árboles de prado)
@@ -9371,6 +9374,9 @@ function gobAttach(mn){
     for(const m of inst.mats){
       let c, emi = 0x000000;
       if(STAGE===10){ c = _rbTmp.copy(m._s1col||m.color).lerp(rbCol, 0.9); emi = 0x0a0a12; }  // ►RECOLOR38: arcoíris (color fijo por goblin) con brillo tenue
+      /* ►PIRATA: los ESQUELETOS se quedan con su hueso (una tripulación de muertos no se tiñe de
+         nada), y solo los goblins pasan a verde-mar salobre para que no canten a prado en el océano. */
+      else if(STAGE===12){ c = /^skel/.test(kin) ? (m._s1col||m.color) : (m._s2col||m._s1col||m.color); }
       else if(STAGE===8){ c = m._s7col||m._s3col||m._s1col; emi = 0x160630; }        // lila con leve brillo
       else if(STAGE===7){                                                        // ►FROZEN-MULTI: AZUL directo por minion (hue de ICE_HUES) con claridad = luminancia original → horda multi-azul congelada
         const oc = m._s1col||m.color; const L = 0.30*oc.r+0.59*oc.g+0.11*oc.b;
@@ -9791,6 +9797,13 @@ function spawnMinion(){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
   }
+  /* ►PIRATA (STAGE 12): la tripulación de los barcos es de ESQUELETOS — el kit de Kenney es solo
+     escenario, no trae personajes, y unos muertos con espada son lo que mejor encaja aquí sin
+     inventar assets. Salen más que en el desierto (0.65) y los goblins hacen de grumetes. */
+  if(STAGE===12 && Math.random() < 0.65){
+    const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
+    if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  }
   /* ►ORIENTALS: en S3 (Japón, jardín sakura) la horda mezcla ~50/50 goblins + minions orientales (textura
      natural), con el mismo type/comportamiento: small→aldeano · shooter→ninja (lanza) · large→sensei (melee).
      Si su pool está lleno cae al goblin (evita caja sin textura). */
@@ -10157,6 +10170,7 @@ const S5_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el St
 const S5_BELT_MUL = 1.34;           // la cinta corre un 34% más rápido en Stage 5 (interior técnico)
 const S6_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 (stage dormido) (antes 8)
 const S6_BELT_MUL = 0;              // ►P5: en el pozo la cinta X está CONGELADA — la "cinta" es VERTICAL (pisos que se hunden, updateStage5)
+const PIR_CHAOS_START = 0;          // ►PIRATA: como todos — cada stage re-rampa 0→10
 const S7_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 8)
 const S7_BELT_MUL = 1.6;            // ►P6: la cinta VUELVE horizontal y MUY rápida (te obliga a correr — pedido)
 const S8_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 8)
@@ -10928,6 +10942,7 @@ const PORTAL_PAL = {
     11: [0x5a1a08, 0xff6a2a, 0xe04a18, 0xffb07a],   // ►WEST western: ROJO ATARDECER (terracota del cañón)
     4:  [0x5a3a12, 0xffb040, 0xe0982e, 0xffd98a],   // desierto: ARENA MARRÓN
     5:  [0x3e2708, 0xc47a1e, 0x9c6218, 0xe0aa55],   // pirámide: MARRÓN DESIERTO OSCURO
+    12: [0x063a3a, 0x18d6c0, 0x0fae9c, 0x8ffff0],   // ►PIRATA mar: TURQUESA (no el azul del hielo, que va justo después)
     7:  [0x123a5a, 0x40b0ff, 0x2b8ae0, 0xa8e4ff],   // hielo: AZUL
     8:  [0x2a0a4e, 0x9b3aff, 0x7a1cff, 0xc98aff],   // fábrica/cañón: MORADO
     10: [0x3a0a4e, 0xff3ad0, 0xff2bd0, 0x2bffe0],   // Vía Arcoíris: base (se cicla en _tickRainbowPortal)
@@ -15394,7 +15409,9 @@ const KB_AIR_DRAG = 2.2;                        // ►rozamiento horizontal MIEN
 const DI_ACC = 24, DI_MINSPD = 2.0;            // DERIVA aérea: cuánto puedes curvar la trayectoria al salir despedido (sin acelerar)
 const BLAST_XZ = 44, BLAST_DOWN = -13, BLAST_UP = 58;
 /* ►P5: el kill-plane inferior es la LAVA en el pozo (sube con ella); resto de stages = -13 de siempre */
-function blastDownY(){ return (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
+/* ►PIRATA: en el mar la muerte NO está en el vacío de −13, está en la SUPERFICIE. El plano se pone
+   justo por encima de la línea de flotación para que el KO coincida con el chapuzón que se ve. */
+function blastDownY(){ return (STAGE===12 && typeof PIR_WL!=='undefined') ? PIR_WL + 0.6 : (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
 /* ►S10ZEROG · GRAVEDAD CERO (Vía Arcoíris, STAGE 10): salto ~3× de alto, caída SUAVE y simétrica,
    sin techo de muerte, y expulsión ~3× más lejos (para volar y planear sin perder vida).
    Todo detrás de constantes ajustables (se afinan mirándolo en juego). */
@@ -16753,6 +16770,10 @@ function doParry(def, att, dir){
 function ko(p){
   if(p.dead) return;
   if(stageIntroT>0) return;   // ►INTERSTAGE VIVO: el spar de presentación no mata ni resta vidas (backstop)
+  /* ►PIRATA: en el mar la muerte de abajo NO es "te has caído al vacío", es un chapuzón — y tiene que
+     verse, o parece que el luchador se ha evaporado a media altura (el plano de muerte está en la
+     superficie, no en el fondo). */
+  if(STAGE===12 && typeof pirSplash==='function' && p.pos.y < PIR_WL + 2.5) pirSplash(p.pos);
   if(p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.out){ p.lastHitBy.sc.kills++; p.lastHitBy._xpBuf=(p.lastHitBy._xpBuf||0)+150; }   // baja causada (puntúa)
   /* ESPECTADOR: si quien ha echado a este superviviente es un eliminado humano, vuelve a la pelea (salvo en BOSS) */
   if(p.lastHitBy && p.lastHitBy.out && !p.lastHitBy.isAI && !bossActive && !demo && !TRAIN.on){ reviveSpectator(p.lastHitBy); }
@@ -17110,7 +17131,8 @@ function stageAdvance(){
   else if(STAGE===3) goToStage11();      // ►WEST: japón → western (mesetas del cañón)
   else if(STAGE===11) goToStage4();      // ►WEST: western → desierto
   else if(STAGE===4) goToStage5();
-  else if(STAGE===5) goToStage7();       // ►REMOVE-S6: pirámide → cumbres (pozo dormido)
+  else if(STAGE===5) goToStage12();      // ►PIRATA: pirámide → mar pirata
+  else if(STAGE===12) goToStage7();      // ►PIRATA: mar pirata → cumbres (pozo dormido)
   else if(STAGE===6) goToStage7();
   else if(STAGE===7) goToStage8();
   else if(STAGE===8) goToStage10();      // ►FÁBRICA: cañón → Vía Arcoíris
@@ -17274,8 +17296,8 @@ function updateShopTimer(dt){ updateInterstage(dt); }   // alias: lo llama _veri
    la lava, updateMinions no genera horda). Renumerar por dentro tampoco hace falta: el ORDEN lo
    da este array y buildRoadmap ya pinta el número por POSICIÓN (i+1), así que el jugador ve
    1..9 correlativos con el western en 4ª posición. */
-const CAMPAIGN_STAGES = [1,2,3,11,4,5,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance)
-const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS' };
+const CAMPAIGN_STAGES = [1,2,3,11,4,5,12,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance) · ►PIRATA: el 12 entra entre la pirámide y el hielo
+const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS' };
 /* ►WEST · el número que VE el jugador es la POSICIÓN en la ruta, no el ID interno. Con el western
    metido en medio, el desierto (ID 4) es el 5º stage de la campaña. buildRoadmap ya pintaba por
    posición; esta función es para todo lo demás que imprime "STAGE N" en pantalla. Los stages
@@ -17310,7 +17332,8 @@ function buildRoadmap(elId){
 function _nextStage(){
   if(STAGE===3) return 11;   // ►WEST
   if(STAGE===11) return 4;   // ►WEST
-  if(STAGE===5) return 7;
+  if(STAGE===5) return 12;   // ►PIRATA
+  if(STAGE===12) return 7;   // ►PIRATA
   if(STAGE===8) return 10;
   return STAGE+1;
 }
@@ -20299,7 +20322,7 @@ function buildSegment(idx){
   const origAdd = scene.add;
   _CAP = true;
   scene.add = function(){ for(let i=0;i<arguments.length;i++) seg.group.add(arguments[i]); return scene; };
-  const _tbl = (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
+  const _tbl = (STAGE===12) ? PIR_SEG_BUILDERS : (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
   const buildVariant = _tbl[((idx % _tbl.length) + _tbl.length) % _tbl.length];
   if(STAGE===3){ _sjSegProps.length = 0; _sjBridgeQ.length = 0; }   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento · ►S3PUENTES: y la cola de puentes pendientes
   if(STAGE===11 && typeof _wSegProps!=='undefined') _wSegProps.length = 0;   // ►WEST: ídem para el western
@@ -20358,7 +20381,7 @@ function _applySegX(seg){
 
 function updateBelt(dt){
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? PIR_BELT_MUL : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -20421,6 +20444,7 @@ function updateBelt(dt){
   if(STAGE===9 && typeof updateStage8==='function') updateStage8(dt);                     // ►P8: corrientes ascendentes + auroras ondulando
   if(STAGE===10 && typeof updateStage9==='function') updateStage9(dt);                     // ►P9: COMETAS que cruzan la carretera + dioramas
   if(STAGE===11 && typeof updateStageW==='function') updateStageW(dt);                     // ►WEST: reservado (trenes, torres de agua, barriles, animales)
+  if(STAGE===12 && typeof updateStagePir==='function') updateStagePir(dt);                 // ►PIRATA: andanadas de cañón sobre la cubierta
 }
 
 /* tierra firme mas cercana para la IA (X esta amurallado: sin sesgo) */
@@ -20624,6 +20648,7 @@ function applyStageTheme(stage){
   _snapStage1Theme();
   _restoreS1Theme();   // SIEMPRE parte del prado limpio → los ajustes RELATIVOS del S2 (multiplyScalar de madera) no se acumulan al ciclar 1→2→3→2
   if(typeof gobClearAll==='function') gobClearAll();   // ►F5-FIX: los minions ya VESTIDOS conservaban el tinte del stage ANTERIOR al cambiar (F9/campaña) — al pool y re-attach con el tinte nuevo en el siguiente tick
+  if(stage!==12 && typeof _pirClearShip==='function') _pirClearShip();   // ►PIRATA: el barco y el mar son de la RAÍZ (no de la cinta) → si no se retiran aquí, viajan al stage siguiente
   if(stage===2){
     M.grass.map = makeFieldTexture(S2_GREENS);  M.grass.map.encoding = THREE.sRGBEncoding;  M.grass.color.setRGB(1,1,1); M.grass.needsUpdate = true;   // sRGB → verde de bosque WYSIWYG (no lima)
     M.grassD.map = makeFieldTexture(S2_GREENSD, 1/16);  M.grassD.map.encoding = THREE.sRGBEncoding; M.grassD.color.setRGB(1,1,1); M.grassD.needsUpdate = true;
@@ -20690,6 +20715,8 @@ function applyStageTheme(stage){
     _buildS2Critters(); setCritterStage(2);                                          // ►ESCULPIR: luciérnagas + cuervos (fuera pájaros/mariposas/motas de prado)
   } else if(stage===3){
     _applySJTheme();                                                                 // ►JAPAN · STAGE 3 · JAPÓN (definido junto al bloque SJ)
+  } else if(stage===12){
+    _applyPirTheme();                                                                // ►PIRATA STAGE 12 · MAR PIRATA (definido junto al bloque del barco)
   } else if(stage===11){
     _applySWTheme();                                                                 // ►WEST STAGE 11 · WESTERN, MESETAS DEL CAÑÓN (definido junto al bloque S4)
   } else if(stage===4){
@@ -22996,6 +23023,11 @@ function rebuildBelt(){
   if(S2_SCENERY.group) S2_SCENERY.group.visible = S2_SCENERY.on && S2_DECOR_ON;   // respeta deco OFF tras un rebuild
   updateBelt(0);                     // ►R6b: pasada de wrap+visibilidad YA (sin esto, 1 frame mostraba los segmentos lejanos antes del primer tick → pop)
   if(renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
+  /* ►PIRATA: el barco NO es de la cinta, pero sus cubiertas viven en platforms[] — y esta función
+     acaba de vaciar el array entero. Hay que re-inscribirlas DESPUÉS de construir los segmentos, en
+     cada reconstrucción; si no, el suelo del stage desaparece al primer rebuild y todo el mundo cae
+     al mar. (El grupo visual se construye una sola vez.) */
+  if(STAGE===12 && typeof buildPirateShip==='function'){ _pirBuildWater(); buildPirateShip(); }
   warmupLigero('cinta reconstruida');   // ►WARMUP: materiales del stage nuevo, compilados AQUÍ y no cuando la plataforma asoma por el horizonte. LIGERO: reconstruir la cinta pasa EN PARTIDA (cambio de stage) y el warmup completo costaba ~1 s.
 }
 
@@ -23155,7 +23187,7 @@ function _updateSandWeather(dt){
 }
 function enableWeather(on){
   WEATHER.on = on;
-  WEATHER.kind = (STAGE===3) ? 'petals' : (STAGE===11) ? 'sand' : (STAGE===4) ? 'sand' : (STAGE>=5 && STAGE!==7) ? 'none' : (STAGE===7) ? 'snow' : 'rain';   // ►JAPAN: PÉTALOS de sakura a la deriva · ►P7/P8/P9: interiores/cielo/espacio SIN clima · S7 nieve · S4 arena · resto = lluvia
+  WEATHER.kind = (STAGE===3) ? 'petals' : (STAGE===11) ? 'sand' : (STAGE===4) ? 'sand' : (STAGE===12) ? 'none' : (STAGE>=5 && STAGE!==7) ? 'none' : (STAGE===7) ? 'snow' : 'rain';   // ►PIRATA: día despejado de mar abierto (la lluvia, para una versión "tormenta" si algún día se pide)   // ►JAPAN: PÉTALOS de sakura a la deriva · ►P7/P8/P9: interiores/cielo/espacio SIN clima · S7 nieve · S4 arena · resto = lluvia
   if(on && WEATHER.kind==='rain' && !WEATHER.lines) _buildRain();
   if(on && WEATHER.kind==='sand' && typeof _buildSand==='function' && !WEATHER.sandLines) _buildSand();
   if(on && WEATHER.kind==='snow' && typeof _buildSnow==='function' && !WEATHER.snowLines) _buildSnow();
@@ -27296,6 +27328,387 @@ function buildWGranMesa(){
 }
 
 const SW_SEG_BUILDERS = [ buildWCanyonRim, buildWPuebloSpawn, buildWRancho, buildWEstacion, buildWMinas, buildWGranMesa ];   // idx1 = escena de spawn (x=0), como en S2/S3/S4
+
+/* =====================================================================
+   =================  STAGE 12 · MAR PIRATA  (►PIRATA)  ================
+   El stage de siempre con UNA diferencia de fondo: aquí SÍ hay un suelo
+   permanente — tu barco. Va FIJO en el centro (no es de la cinta) y es el
+   mundo el que desfila: islotes, pantalanes, atalayas y barcos enemigos
+   pasan por los dos costados. Debajo no hay vacío, hay MAR: tocarla mata.
+
+   Tres decisiones que explican todo lo demás:
+
+   1) EL BARCO NO SE MECE. Es lo único estable del stage y encima es el
+      suelo donde se pelea: un cabeceo vertical convierte cada combate en
+      una lotería de aterrizajes (ya pasó con el hielo). El movimiento se
+      vende con la estela, el mar y el mundo desfilando, no moviéndote los
+      pies. Si algún día se mece, va por updateCarpets (AABB+malla juntos),
+      NUNCA moviendo solo la malla.
+
+   2) LA CINTA PASA POR LOS COSTADOS, no por encima. El casco ocupa
+      z ±8.4, así que TODO lo que construyen los builders vive fuera de
+      |z| > PIR_LANE — si no, un islote atravesaría el barco cada vuelta.
+      Es el único límite que hay que respetar al añadir salas nuevas.
+
+   3) SALTAR FUERA ES UN RIESGO DE VERDAD (pedido de Toni). Lo que pasa lo
+      hace a distancia de salto MEDIDO, no pegado al casco: se llega con
+      carrerilla, y si te quedas corto o te duermes en un islote que se
+      aleja, es cosa tuya. Por eso hay botes y tablones sueltos a media
+      distancia: son el peldaño para quien mide bien, no una acera.
+
+   Cubiertas: medidas con raycast cenital sobre el modelo (p_ship a escala
+   PIR_SHIP_S), no a ojo — proa 11.5 · media 9.8 · principal 7.3 · escalón
+   9.8 · castillo de popa 12.3. El pozo de carga del modelo (5.6) se TAPA
+   con tablones en vez de fingir suelo encima: es un agujero de verdad.
+   ===================================================================== */
+/* LÍNEA DE FLOTACIÓN. No es un número de gusto: es la que hunde el casco lo justo (el modelo va con
+   la quilla en y=0 y la cubierta principal en 7.3, así que a 2.0 se traga ~2u de obra viva y el barco
+   NAVEGA en vez de volar — con el −3.2 del primer intento el casco quedaba 3u por encima del mar).
+   Y manda sobre todo lo demás: los props del kit se apoyan AQUÍ, así que sus superficies pisables
+   (medidas una a una) caen solas en la banda 4.5-5.5, a un salto de la cubierta. */
+const PIR_WL       = 2.0;    // línea del agua = cota de muerte (blastDownY la usa)
+const PIR_BELT_MUL = 0.85;   // algo más lenta que el resto: aquí hay que calcular saltos a cosas que pasan
+const PIR_SHIP_S   = 3.5;    // escala del barco (13.1 nativo → 45.8 de eslora)
+const PIR_LANE     = 13.5;   // |z| mínimo de la cinta — el casco llega a 8.4
+const PIR_DECK     = 7.3;    // cubierta principal (la referencia de altura del stage)
+const PIR = { ship:null, water:null, wake:null, plats:[], cannons:[], balls:[], t:0, volleyT:7 };
+
+/* fichas de los props del kit (size = dimensión MAYOR en unidades de juego) */
+const DECOR_DEFSP = {
+  p_ship:{key:'p_ship', size:13.1*PIR_SHIP_S}, p_shipmed:{key:'p_shipmed', size:26}, p_shipsmall:{key:'p_shipsmall', size:21},
+  p_boat:{key:'p_boat', size:6.4}, p_boatbig:{key:'p_boatbig', size:7.6}, p_wreck:{key:'p_wreck', size:30},
+  p_towerwatch:{key:'p_towerwatch', size:8.4}, p_towersmall:{key:'p_towersmall', size:13.5}, p_towerbig:{key:'p_towerbig', size:20},
+  p_towerbase:{key:'p_towerbase', size:7}, p_towermid:{key:'p_towermid', size:6}, p_towertop:{key:'p_towertop', size:8},
+  p_platform:{key:'p_platform', size:8}, p_platsmall:{key:'p_platsmall', size:7}, p_dock:{key:'p_dock', size:8},
+  p_docksmall:{key:'p_docksmall', size:7}, p_planks:{key:'p_planks', size:7}, p_plate:{key:'p_plate', size:7.5},
+  p_struct:{key:'p_struct', size:8}, p_fence:{key:'p_fence', size:8}, p_roof:{key:'p_roof', size:9},
+  p_sand:{key:'p_sand', size:16}, p_sandfol:{key:'p_sandfol', size:16}, p_grassfol:{key:'p_grassfol', size:11},
+  p_palm:{key:'p_palm', size:8.5}, p_palmbend:{key:'p_palmbend', size:8.5}, p_palm2:{key:'p_palm2', size:7.5}, p_palmbend2:{key:'p_palmbend2', size:7.5},
+  p_rocksand_a:{key:'p_rocksand_a', size:9}, p_rocksand_b:{key:'p_rocksand_b', size:8.5}, p_rocksand_c:{key:'p_rocksand_c', size:7},
+  p_rocks_a:{key:'p_rocks_a', size:8}, p_rocks_b:{key:'p_rocks_b', size:7.5}, p_rocks_c:{key:'p_rocks_c', size:6},
+  p_cannon:{key:'p_cannon', size:3.4}, p_cannonmob:{key:'p_cannonmob', size:4}, p_ball:{key:'p_ball', size:1.5},
+  p_barrel:{key:'p_barrel', size:2.2}, p_crate:{key:'p_crate', size:2.2}, p_chest:{key:'p_chest', size:2.4},
+  p_flag:{key:'p_flag', size:4.2}, p_flaghigh:{key:'p_flaghigh', size:7}, p_pennant:{key:'p_pennant', size:7},
+  p_mast:{key:'p_mast', size:14}, p_mastropes:{key:'p_mastropes', size:14},
+};
+/* coloca un prop del kit con la BASE en `y` (getModel centra también en Y → hay que subir halfH).
+   `sc` reescala sobre la ficha; el halfH se recalcula, que es el error tonto de estos helpers. */
+function pirProp(key, x, y, z, opts){
+  opts = opts || {};
+  const m = (typeof getModel==='function') ? getModel(key, DECOR_DEFSP) : null;
+  if(!m) return null;
+  const sc = opts.sc || 1;
+  if(sc !== 1) m.scale.multiplyScalar(sc);
+  m.position.set(x, y + (m.userData.halfH || 0)*sc, z);
+  m.rotation.y = (opts.yaw !== undefined) ? opts.yaw : Math.random()*Math.PI*2;
+  m.traverse(o=>{ if(o.isMesh){ o.castShadow = (opts.shadow !== false); o.receiveShadow = false; } });
+  if(opts.noOcc) m.userData.noOcc = true;
+  /* OJO con el padre: DENTRO de un builder de segmento `scene.add` está secuestrado y el prop cae en
+     el grupo de la sala (que es lo que queremos). El vestido del BARCO no: ese va colgado de su grupo
+     por `opts.parent`, o al salir del stage se quedarían barriles flotando en el mar del siguiente. */
+  (opts.parent || scene).add(m);
+  return m;
+}
+
+/* ---------- EL BARCO (fijo, fuera de la cinta) ---------- */
+/* Las cubiertas van en coordenadas del MODELO MEDIDO (proa a +x) y se espejan al final: el barco
+   navega hacia −x porque la cinta empuja el mundo hacia +x. Cambiar el signo aquí y en la rotación
+   es lo único que hay que tocar si algún día la cinta cambia de sentido. */
+const PIR_DECKS = [                        // [x0, x1, |z|, topY] en el frame MEDIDO (proa +x)
+  [-22.5, -15.0, 5.5, 12.3],               // castillo de popa
+  [-15.0, -13.5, 5.5,  9.8],               // escalón de bajada a la cubierta
+  [-13.5,  -2.0, 6.0,  7.3],               // CUBIERTA PRINCIPAL (donde se pelea)
+  [ -2.0,   8.0, 5.5,  9.8],               // cubierta media
+  [  8.0,  14.0, 3.5, 11.5],               // proa
+];
+function _pirPushDecks(){                  // (re)inscribe las cubiertas en platforms[] — rebuildBelt lo vacía en cada reconstrucción
+  PIR.plats.length = 0;
+  for(const d of PIR_DECKS){
+    const x0 = -d[1], x1 = -d[0];          // espejo: el frame medido tiene la proa a +x y aquí va a −x
+    const rec = { minX:x0, maxX:x1, minZ:-d[2], maxZ:d[2], topY:d[3], baseY:PIR_WL-1, solid:true, _pirDeck:true };
+    platforms.push(rec); PIR.plats.push(rec);
+  }
+}
+function buildPirateShip(){
+  if(PIR.ship){ _pirPushDecks(); return PIR.ship; }
+  const G = new THREE.Group();
+  const hull = (typeof getModel==='function') ? getModel('p_ship', DECOR_DEFSP) : null;
+  if(hull){
+    hull.rotation.y = -Math.PI/2;          // la eslora del modelo va en su z → al mundo en x, con la PROA hacia −x (el sentido de la marcha)
+    hull.position.set(0, (hull.userData.halfH||0), 0);
+    hull.traverse(o=>{ if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
+    G.add(hull);
+  }
+  /* el POZO DE CARGA del modelo queda 1.7u por debajo de la cubierta: en vez de fingir suelo encima
+     (que es de lo que Toni se queja siempre), se TAPA con tablones de verdad, que además es lo que
+     hay en un barco. Van a la cota de la cubierta principal. */
+  pirProp('p_planks', 9.9, PIR_DECK-0.5, 0, { yaw:0, shadow:false, parent:G });   // el pozo cae en x 8.4..11.4 (medido); el tablón mide 4.9×7 → lo tapa entero de una pieza
+  /* vestido de cubierta: barriles, cajas y un cofre; y los cañones asomando por las bordas */
+  const deco = [[6.5,-4.6],[5.0,4.8],[-4.5,-4.4],[12.5,3.9],[-11.0,4.2]];
+  for(let i=0;i<deco.length;i++) pirProp(i%2 ? 'p_barrel' : 'p_crate', deco[i][0], PIR_DECK, deco[i][1], { parent:G });
+  pirProp('p_chest', -17.5, 12.3, 2.2, { parent:G });
+  for(const zx of [-5.2, 5.2]) for(const x of [3.5, 8.5, -1.5]){
+    pirProp('p_cannon', x, PIR_DECK, zx, { yaw: zx<0 ? Math.PI : 0, shadow:false, parent:G });
+  }
+  pirProp('p_flaghigh', 19.5, 12.3, 0, { yaw:0, shadow:false, parent:G });   // pabellón pirata en la popa
+  /* ►OCC: el barco es a la vez DECORADO que tapa (velas y castillos entre cámara y jugador) y el
+     SUELO donde se pelea. Por eso va con `occFloor`, no como oclusor pelado: la guarda de oclusión
+     respeta el suelo que tienes bajo los pies y solo funde lo que de verdad te tapa. Sin ese flag,
+     asomar por detrás del palo mayor fundía el barco ENTERO, cubierta incluida. */
+  G.userData.occFloor = true;
+  scene.add(G);
+  PIR.ship = G;
+  _pirPushDecks();
+  if(typeof registerOccluder==='function') registerOccluder(G);
+  return G;
+}
+function _pirClearShip(){
+  if(PIR.ship){ scene.remove(PIR.ship); PIR.ship = null; }
+  PIR.plats.length = 0;
+  if(PIR.water){ scene.remove(PIR.water); PIR.water = null; }
+  for(const b of PIR.balls) if(b.m && b.m.parent) b.m.parent.remove(b.m);
+  PIR.balls.length = 0; PIR.cannons.length = 0;
+}
+/* ---------- EL MAR ---------- */
+function _pirBuildWater(){
+  if(PIR.water) return PIR.water;
+  const m = applyWaterLook(mat(0x1f6fa8, { roughness:.45, metalness:.18, depthWrite:false }));   // ►WATER: mismo oleaje en GPU que el resto de mares del juego
+  /* SUBDIVIDIDO (96×64), como el `seaGeo` del prado (48×48): el oleaje de ►WATER desplaza VÉRTICES,
+     así que un plano de 1×1 segmentos sale liso como una mesa — que es como salió el primer intento.
+     Aquí encima el agua es el 80% del encuadre, o sea que es el detalle más visible del stage. */
+  const w = new THREE.Mesh(new THREE.PlaneGeometry(1400, 900, 96, 64), m);
+  w.rotation.x = -Math.PI/2; w.position.y = PIR_WL;
+  w.userData.noOcc = true; w.frustumCulled = false;
+  scene.add(w); PIR.water = w;
+  return w;
+}
+
+/* ---------- TEMA: día de mar abierto ---------- */
+const PIR_SANDS  = ['#e8d7a8','#e0cc98','#f0e2bc','#d8c290','#eddcae'];   // arena clara de playa
+const PIR_SANDSD = ['#c9b184','#bfa678','#d6c096','#b59a6e','#cdb68a'];   // su tono oscuro (faldón/borde)
+const PIR_ROCK   = ['#8d8a80','#7c7a72','#9a968c','#6f6d66','#918d84'];   // roca mojada de los arrecifes
+function _applyPirTheme(){
+  /* materiales pisables → ARENA CLARA de playa (los islotes son de arena; el barco es prop, no material) */
+  M.grass.map  = makeFieldTexture(PIR_SANDS);        M.grass.map.encoding  = THREE.sRGBEncoding; M.grass.color.setRGB(1,1,1);  M.grass.needsUpdate = true;
+  M.grassD.map = makeFieldTexture(PIR_SANDSD, 1/16); M.grassD.map.encoding = THREE.sRGBEncoding; M.grassD.color.setRGB(1,1,1); M.grassD.needsUpdate = true;
+  M.dirt.map   = makeFieldTexture(PIR_ROCK, 1/12);   M.dirt.color.setRGB(1,1,1);  M.dirt.needsUpdate = true;
+  M.brick.map  = makeFieldTexture(PIR_ROCK, 1/6);    M.brick.color.setRGB(1,1,1); M.brick.needsUpdate = true;
+  M.rock.color.setRGB(0.46, 0.44, 0.40); M.rock.needsUpdate = true;
+  for(let i=0;i<_GREENS.length;i++) _GREENS[i].set(PIR_SANDS[i % PIR_SANDS.length]).convertSRGBToLinear();
+  /* CIELO: mediodía de mar abierto. La niebla se casa con `bot` (la misma cifra) — con un mar que
+     llega hasta el infinito, cualquier diferencia de color entre agua lejana y cielo dibuja una RAYA
+     de horizonte; es el mismo arreglo que el de la jungla, y aquí es más visible que en ningún otro
+     stage porque el 80% del encuadre es agua. */
+  scene.background.setHex(0xbfe3f2);
+  skyMat.uniforms.top.value.setHex(0x2f7fc4); skyMat.uniforms.hor.value.setHex(0xa8dcf0); skyMat.uniforms.bot.value.setHex(0xcfe9f2);
+  VISUAL.exposure = 0.78;
+  VISUAL.key.color = 0xfff4dc; VISUAL.key.intensity = 1.15; VISUAL.key.pos = [40, 40, 26];   // sol alto de mediodía
+  VISUAL.hemi.sky = 0xbfe6ff; VISUAL.hemi.ground = 0x2f6a86; VISUAL.hemi.intensity = 0.70;   // el `ground` es AGUA: rebote azul, no tierra
+  VISUAL.rim.color = 0xffe9c0; VISUAL.rim.intensity = 0.30;
+  VISUAL.side.color = 0xd8f0ff; VISUAL.side.intensity = 0.26;
+  /* el casco del barco es una pared vertical enorme y el sol viene de un lado: sin relleno, el
+     costado de sombra se va a negro y parece que el modelo no tiene textura (ya pasó en el western) */
+  VISUAL.fill.color = 0xcfe8f5; VISUAL.fill.intensity = 0.40;
+  VISUAL.fog.color = 0xcfe9f2; VISUAL.fog.near = 62; VISUAL.fog.far = 175;   // ►PIRATA: la niebla empieza LEJOS — con near 46 el propio barco (46u de eslora) ya salía lavado por la punta
+  if(typeof seaMat!=='undefined') seaMat.color.setHex(0x1f6fa8);
+  for(const c of cloudOccluders) c.visible = true;    // cielo abierto: las nubes del prado valen tal cual
+}
+/* ---------- islotes, pantalanes y atalayas (piezas de los builders) ---------- */
+/* ISLOTE: blob de arena que EMERGE del agua (el blob baja 4.5u, o sea muy por debajo de PIR_WL) +
+   su parche de arena del kit, palmeras y rocas. topY bajo a propósito: se salta desde el mar. */
+function pirIsle(cx, cz, r, topY, opts){
+  opts = opts || {};
+  s3Blob(cx, cz, r, r*(0.82+Math.random()*0.3), topY, 'sand');
+  const pl = platforms[platforms.length-1];
+  if(pl && pl.blob){ pl._pours = null; }        // sin chorros de arena (esto es una isla, no una duna)
+  const n = opts.palms !== undefined ? opts.palms : (r > 5 ? 2 : 1);
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, d = r*0.45;
+    pirProp(Math.random()<0.5 ? 'p_palm' : 'p_palmbend', cx+Math.cos(a)*d, topY, cz+Math.sin(a)*d, { sc:0.9+Math.random()*0.35 });
+  }
+  if(r > 4.5 && Math.random()<0.7){ const a=Math.random()*6.28;
+    pirProp('p_rocksand_' + 'abc'[(Math.random()*3)|0], cx+Math.cos(a)*r*0.55, topY-0.3, cz+Math.sin(a)*r*0.55, { sc:0.6 }); }
+  if(opts.barrel) pirProp('p_barrel', cx, topY, cz+1.2, {});
+  return pl;
+}
+/* PLATAFORMA SIN MALLA: el prop del kit ES el suelo, así que la caja va calcada a su superficie
+   MEDIDA y no se dibuja nada encima. (El primer intento usaba addFloating, que pinta sus propios
+   tablones: quedaban dos suelos superpuestos y a distinta altura — el clásico "prop que flota".)
+   `solid` = casco de barco (bloquea de lado); sin él se atraviesa por debajo y solo se aterriza. */
+function pirPlat(cx, cz, sx, sz, topY, solid){
+  const rec = { minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2,
+                topY, baseY: solid ? PIR_WL-2 : topY-0.35, solid: !!solid };
+  platforms.push(rec);                       // dentro de un builder, buildSegment ya le pone belt/lminX
+  return rec;
+}
+/* Alturas PISABLES de cada prop sobre SU BASE, medidas con el área de caras hacia arriba (p16):
+   no son proporciones inventadas, son la cota del tablero de cada modelo ya escalado por DECOR_DEFSP. */
+const PIR_TOP = { p_dock:2.9, p_docksmall:2.5, p_towerwatch:7.7, p_towersmall:12.0, p_towerbig:13.3,
+                  p_shipsmall:4.4, p_shipmed:5.2, p_wreck:5.9 };
+/* PANTALÁN sobre pilotes: se apoya en el AGUA (los pilotes tienen que mojarse) y su tablero cae
+   solo a ~4.5-4.9, o sea a un salto corto de la cubierta del barco (7.3). Ese es el peldaño. */
+function pirDock(cx, cz, big){
+  const key = big ? 'p_dock' : 'p_docksmall';
+  pirProp(key, cx, PIR_WL, cz, { yaw:0, shadow:false });
+  const topY = PIR_WL + PIR_TOP[key];
+  pirPlat(cx, cz, big ? 7.4 : 5.0, big ? 7.4 : 6.4, topY);
+  return topY;
+}
+/* ATALAYA: torre apoyada en el agua. La plataforma es su remate, que queda POR ENCIMA de la cubierta
+   (9.7 / 14 / 15.3): son los puntos altos del stage y por eso los ocupan los tiradores. */
+function pirTower(cx, cz, kind){
+  const K = kind || (Math.random()<0.5 ? 'small' : 'watch');
+  const key = K==='big' ? 'p_towerbig' : K==='small' ? 'p_towersmall' : 'p_towerwatch';
+  pirProp(key, cx, PIR_WL, cz, { yaw:0 });
+  const topY = PIR_WL + PIR_TOP[key];
+  pirPlat(cx, cz, K==='watch' ? 6.5 : 4.6, K==='watch' ? 6.5 : 4.6, topY);
+  if(K==='small') pirPlat(cx, cz, 5.6, 5.6, PIR_WL + 6.3);   // la torre mediana trae un rellano a media altura: peldaño gratis
+  return topY;
+}
+/* BARCO ENEMIGO: casco SÓLIDO (se aborda por arriba, no se atraviesa) con su cubierta a 6.4/7.2 —
+   o sea a la altura de la tuya: es un abordaje, no un salto de fe. El bote de remos NO es pisable a
+   propósito: su borda queda a ras de agua y sería una plataforma-trampa pegada al plano de muerte. */
+function pirBoat(cx, cz, small){
+  if(small){ pirProp('p_boat', cx, PIR_WL, cz, { yaw:-Math.PI/2, shadow:false }); return null; }
+  pirProp('p_shipsmall', cx, PIR_WL, cz, { yaw:-Math.PI/2 });
+  const topY = PIR_WL + PIR_TOP.p_shipsmall;
+  pirPlat(cx, cz, 9.6, 11.0, topY, true);
+  return topY;
+}
+
+/* ---------- las 6 salas de la cinta ---------- */
+/* REGLA DE ORO: nada dentro de |z| < PIR_LANE (ahí está el barco). idx1 cae en x=0 al empezar. */
+/* Cotas: los islotes van a 3.4-4.8 (emergen del agua a 2.0 y su cuerpo llega 4.5u más abajo) y los
+   pantalanes a ~4.5-4.9. Todo ello a menos de 5.0 de la cubierta (7.3), que es lo que sube un salto:
+   se sale y se vuelve. Lo que NO se puede es descuidarse, que era la idea. */
+function buildPirIslas(){                       // idx0 · archipiélago a los dos costados
+  pirIsle(-20, -19, 7, 4.2, { barrel:true }); pirIsle(-4, -24, 5.5, 3.8);
+  pirIsle( 14, -17, 6, 4.6); pirIsle(24, -26, 5, 4.0);
+  pirIsle(-16,  20, 6.5, 4.4); pirIsle(2, 25, 5, 3.9, { barrel:true });
+  pirIsle( 18,  18, 6, 4.8); pirIsle(28, 27, 4.5, 4.0);
+  pirDock(-9, -15); pirDock(9, 15);                     // peldaños de media distancia hacia el barco
+  pirTower(-27, -14, 'watch'); pirTower(26, 15, 'small');
+  addPad(-20, -19); addPad(18, 18);
+}
+function buildPirConvoy(){                      // idx1 · sala de SPAWN: convoy que te escolta (y te ataca)
+  pirBoat(-22, -17); pirBoat(6, -16, true); pirBoat(20, -20);
+  pirBoat(-14, 17); pirBoat(12, 18, true);
+  pirIsle(-2, -26, 6, 4.2); pirIsle(0, 26, 6, 4.2);
+  pirDock(-6, -14.5); pirDock(4, 14.5);
+  addPad(-2, -26); addPad(0, 26);
+}
+function buildPirFuerte(){                      // idx2 · el fuerte: atalayas altas y cañones apuntándote
+  pirTower(-18, -18, 'big'); pirTower(-2, -20, 'small'); pirTower(16, -17, 'watch');
+  pirTower(-10, 19, 'small'); pirTower(14, 20, 'big');
+  pirIsle(-26, -24, 6, 4.4); pirIsle(26, 22, 6, 4.4);
+  pirDock(0, -14.5, true); pirDock(-4, 15, true);
+  for(const t of [[-18,-18],[14,20]]) pirProp('p_cannonmob', t[0]+2.2, PIR_WL+13.3, t[1], { yaw:0, shadow:false });   // el cañón, EN el remate de la torre grande (13.3 = su cota medida)
+  addPad(-26, -24); addPad(26, 22);
+}
+function buildPirNaufragio(){                   // idx3 · el pecio encallado + arrecife
+  pirIsle(-6, -21, 9, 3.6, { palms:3 });
+  pirProp('p_wreck', -6, 3.4, -21, { yaw:-0.5 });       // encallado EN la isla (su base en la arena, no en el agua)
+  pirPlat(-6, -21, 12.0, 15.0, 3.4 + PIR_TOP.p_wreck, true);   // su cubierta rota también se pisa
+  pirIsle(20, -24, 5, 4.2); pirIsle(-24, -18, 5, 4.6);
+  pirIsle(-2, 24, 7, 4.2, { palms:2 }); pirIsle(22, 19, 5.5, 4.8);
+  for(const r of [[-14,-16],[8,-15],[-8,15],[16,16]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:0.8, shadow:false });   // arrecife: rocas medio sumergidas
+  pirDock(2, -15); pirDock(6, 15.5);
+  addPad(-6, -21); addPad(-2, 24);
+}
+function buildPirPuerto(){                      // idx4 · pasarela de pantalanes: el camino largo por los costados
+  for(let i=0;i<4;i++) pirDock(-24+i*11, -16 - (i%2)*3, i%2===0);
+  for(let i=0;i<4;i++) pirDock(-20+i*11,  16 + (i%2)*3, i%2===1);
+  pirIsle(-28, -25, 5, 4.2); pirIsle(28, 25, 5, 4.2);
+  pirTower(0, -25, 'small'); pirTower(-6, 26, 'watch');
+  pirBoat(24, -19, true); pirBoat(-24, 20, true);
+  addPad(-28, -25); addPad(28, 25);
+}
+function buildPirAbordaje(){                    // idx5 · abordaje: dos barcos grandes pegados a tus costados
+  for(const s of [[-8,-18],[10,18]]){
+    pirProp('p_shipmed', s[0], PIR_WL, s[1], { yaw:-Math.PI/2 });
+    pirPlat(s[0], s[1], 11.0, 14.0, PIR_WL + PIR_TOP.p_shipmed, true);   // cubierta a 7.2 = la MISMA cota que la tuya: se salta de una a otra
+  }
+  pirIsle(-26, -22, 5.5, 4.4); pirIsle(26, 21, 5.5, 4.4);
+  pirDock(-20, -14.5); pirDock(22, 15);
+  pirBoat(6, -25, true); pirBoat(-4, 26, true);
+  addPad(-8, -18); addPad(10, 18);
+}
+const PIR_SEG_BUILDERS = [ buildPirIslas, buildPirConvoy, buildPirFuerte, buildPirNaufragio, buildPirPuerto, buildPirAbordaje ];
+
+/* ---------- CAÑONAZOS: el peligro del mundo (►PIRCANNON) ----------
+   Andanada telegrafiada: primero una marca creciente en la cubierta (el punto donde va a caer),
+   después la bola. El aviso es el juego: si te quedas parado en la marca, es tuyo. */
+const PIR_BALL_DMG = 22, PIR_WARN = 1.25;
+function _pirWarnMesh(){
+  const g = new THREE.RingGeometry(0.55, 1.0, 20);
+  g.rotateX(-Math.PI/2);
+  const m = new THREE.MeshBasicMaterial({ color:0xff5a3c, transparent:true, opacity:0.85, depthWrite:false, fog:false });
+  const r = new THREE.Mesh(g, m); r.userData.noOcc = true; r.frustumCulled = false;
+  return r;
+}
+function pirVolley(){
+  const live = players.filter(p => p && !p.out && !p.dead);
+  if(!live.length) return;
+  const n = 1 + (Math.random()*2|0);
+  for(let i=0;i<n;i++){
+    const p = live[(Math.random()*live.length)|0];
+    const tx = p.pos.x + (Math.random()-0.5)*7, tz = THREE.MathUtils.clamp(p.pos.z + (Math.random()-0.5)*7, -7, 7);
+    const ty = (typeof platformTopAt==='function' ? platformTopAt(tx, tz) : null);
+    const y = (ty === null || ty === undefined) ? PIR_DECK : ty;
+    const warn = _pirWarnMesh(); warn.position.set(tx, y+0.06, tz); scene.add(warn);
+    const m = pirProp('p_ball', tx, y + 46, tz, { shadow:false, noOcc:true });
+    PIR.balls.push({ m, warn, x:tx, z:tz, y:y+46, ty:y, t:0, hit:false });
+  }
+  sfx && sfx.bazooka && sfx.bazooka();
+}
+function updateStagePir(dt){
+  if(STAGE !== 12) return;
+  PIR.t += dt;
+  /* andanadas: solo en partida (ni en la home ni con el jefe en marcha) */
+  if(!demo && !bossActive && BELT.on){
+    PIR.volleyT -= dt;
+    if(PIR.volleyT <= 0){ pirVolley(); PIR.volleyT = 5.5 + Math.random()*4 - Math.min(2.5, chaosLvl*0.25); }
+  }
+  for(let i=PIR.balls.length-1;i>=0;i--){
+    const b = PIR.balls[i];
+    b.t += dt;
+    const k = Math.min(1, b.t/PIR_WARN);
+    if(b.warn){ b.warn.scale.setScalar(1 + (1-k)*2.6); b.warn.material.opacity = 0.25 + 0.7*k; }
+    if(b.m){                                            // la bola CAE dentro de la ventana de aviso: llega justo al acabar la marca
+      b.m.position.y = b.ty + 1 + (b.y - b.ty)*(1-k)*(1-k);
+      b.m.rotation.x += dt*6;
+    }
+    if(k >= 1 && !b.hit){
+      b.hit = true;
+      const c = new THREE.Vector3(b.x, b.ty+0.4, b.z);
+      burst(c.clone(), 0xffb070, 18, 8, 6, 1.0); ring(c.clone(), 0xffe0a0, 16, 0.45);
+      shake = Math.max(shake, 0.35); sfx && sfx.smash && sfx.smash();
+      for(const p of players){
+        if(!p || p.out || p.dead || p.invuln>0) continue;
+        if(Math.hypot(p.pos.x-b.x, p.pos.z-b.z) > 3.2 || Math.abs(p.pos.y - b.ty) > 3.5) continue;
+        if(p.block){ p.damage += 7*defMul(p); p.shieldFlash = .2; sfx && sfx.chip && sfx.chip(); continue; }
+        p.damage += PIR_BALL_DMG*defMul(p); p.hitFlash = .2; p.hitstun = Math.max(p.hitstun, .3);
+        p.vel.y = Math.max(p.vel.y, 6); p.onGround = false; jiggle(p, 12); sfx && sfx.hit && sfx.hit(p.damage);
+      }
+      for(const mn of minions){                          // y a la horda también: una bala no distingue
+        if(mn.dead || mn._boss) continue;
+        if(Math.hypot(mn.pos.x-b.x, mn.pos.z-b.z) > 3.2 || Math.abs(mn.pos.y - b.ty) > 3.5) continue;
+        hurtEnemy(mn, 40, false); mn.hitstun = Math.max(mn.hitstun, .25); mn.onGround = false; mn.vel.y = Math.max(mn.vel.y, 5);
+      }
+    }
+    if(b.t > PIR_WARN + 0.25){
+      if(b.warn){ scene.remove(b.warn); }
+      if(b.m){ scene.remove(b.m); }
+      PIR.balls.splice(i,1);
+    }
+  }
+}
+/* chapuzón: se llama desde ko() — el KO por agua tiene que VERSE, si no parece que te has evaporado */
+function pirSplash(pos){
+  const c = new THREE.Vector3(pos.x, PIR_WL+0.2, pos.z);
+  burst(c.clone(), 0xbfe6ff, 20, 7, 5, 1.0);
+  ring(c.clone(), 0xffffff, 14, 0.5);
+}
 
 /* =====================================================================
    ================  STAGE 5 · INTERIOR DE LA PIRÁMIDE  ================
@@ -32525,6 +32938,38 @@ function goToStage6(){
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
 }
 
+/* ►PIRATA · CAMPAÑA: pirámide → MAR PIRATA. Calcada de goToStage7; lo único propio es que aquí no
+   hay clima (mar abierto de día) y que el barco lo levanta rebuildBelt, no esta función. */
+function goToStage12(){
+  if(STAGE===12 || gameOver) return;
+  for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
+  for(let i=items.length-1;i>=0;i--) killItem(i);
+  for(let i=shardsFly.length-1;i>=0;i--) killShard(i, null);
+  for(let i=wprojs.length-1;i>=0;i--) killWproj(i, null);
+  for(let i=mines.length-1;i>=0;i--) killMine(i);
+  for(let i=orbs.length-1;i>=0;i--) killOrb(i);
+  for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
+  for(const mn of minions) killMinion(mn);
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
+  if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
+  for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
+  for(const q of allPlayers) clearFX(q);
+  STAGE = 12; _stagePreview = 12;
+  resetBossFight();
+  applyStageTheme(12);
+  rebuildBelt();                                               // ►PIRATA: y AQUÍ dentro se levanta el barco + el mar
+  enableWeather(false);
+  chaosLvl = PIR_CHAOS_START; chaosT = 0;
+  const ch = document.getElementById('chaos');
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
+  stageResetPlayers();
+  shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
+  showBanner('¡STAGE '+stageNum(12)+': MAR PIRATA!', 2.6); sfx.chaos();
+  applyStageMusic(12);                                         // sin playlist propia → cae a la general (STAGE_PLAYLISTS)
+  crowdCheer(.6, true);
+  narrateStageStart();
+}
+
 function goToStage7(){
   if(STAGE===7 || gameOver) return;
   for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
@@ -32649,7 +33094,7 @@ function goToStage10(){
 
 /* Nombres largos de cada mapa por ID interno (incluye los dormidos 6 y 9, que se siguen
    construyendo aunque no estén en la ruta de campaña). Lo usa el rótulo de ►EXPLORAR. */
-const _STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
+const _STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 12:'MAR PIRATA', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
 let _stagePreview = 1;
 let MENU_STAGE = 1;    // stage en el que EMPIEZA la próxima partida (la campaña lo lleva por su cuenta)
 
