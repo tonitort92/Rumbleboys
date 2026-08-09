@@ -736,6 +736,11 @@ const SKINS = {
 const PAL = SKINS[SKIN] || SKINS.arena;
 if(SKIN === 'mar') K.tilt = 7;
 
+/* Color de respaldo por hueco. El color BUENO de un corredor es el de su CLASE
+   (ver `colorDe` más abajo): es el mismo identificativo que usa el juego para el
+   contorno, el puntero y la barra de aguante, así que aquí tiene que ser ese y
+   no uno inventado por slot. Esto solo cubre el caso de que la clase no tenga
+   color asignado. */
 const RACER_COL = [0x35c9ff, 0xff5a52, 0x7bf06a, 0xffd23f];
 
 /* =====================================================================
@@ -753,6 +758,16 @@ const CLASES = ['samurai', 'voxelhero', 'archer', 'knight', 'nun', 'link'];
 /* color del DECK de la tabla por clase (el mismo criterio que CLASS_COLOR) */
 const CLASE_COL = { voxelhero:0xff3b30, samurai:0x9b2bff, archer:0xffd84f,
                     link:0x3ad06a, knight:0xe8edf5, nun:0x2563eb };
+/* ►COLOR DE UN CORREDOR = EL DE SU CLASE. El contorno salía con el color del
+   HUECO (P1 cian sobre el samurái morado, y así los cuatro): en el juego el
+   anillo lo pinta `classColor(p)`, que es la marca de la clase, y esto tenía
+   que ser lo mismo. Se lee del juego cuando está disponible (una sola fuente de
+   verdad) y si no, del mapa local. */
+function colorDe(clase, i){
+  if(typeof CLASS_COLOR !== 'undefined' && CLASS_COLOR[clase] != null) return CLASS_COLOR[clase];
+  if(CLASE_COL[clase] != null) return CLASE_COL[clase];
+  return RACER_COL[i % RACER_COL.length];
+}
 
 const CHAR = { tpls:null, tabla:null, pedido:false };
 
@@ -860,7 +875,11 @@ function propDelJuego(key){
   } catch(e){ return null; }
 }
 
-/* mide un modelo para poder apoyarlo en el suelo y escalarlo por altura */
+/* Mide un modelo para poder apoyarlo en el suelo y escalarlo por altura.
+   OJO: la medida que usa `siembra` se calcula AHÍ, sobre la geometría ya
+   horneada y RECENTRADA (ver el bloque ►PALMERAS VOLANDO), porque esta de aquí
+   devuelve `minY` en el espacio del fichero del modelo y hay props cuya malla
+   vive a 280 u de su origen. */
 function mideProp(o){
   o.updateMatrixWorld(true);
   const b = new THREE.Box3().setFromObject(o);
@@ -1001,16 +1020,45 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
   opts = opts || {};
   const tpl = propDelJuego(clave);
   if(!tpl) return 0;
-  const med = mideProp(tpl);
-  /* una InstancedMesh por submalla del modelo */
-  const partes = [];
   tpl.updateMatrixWorld(true);
+
+  /* ►PALMERAS VOLANDO — LA CAUSA, medida.
+     Varios modelos del juego traen su malla MUY LEJOS del origen de su fichero
+     (medido aquí: s3_palm5 a 284/275 u, s3_palm2 a 92/175, s3_palm3 a -153 en z).
+     Hornear la jerarquía con `applyMatrix4(matrixWorld)` es correcto, pero
+     CONSERVA ese desplazamiento: la copia acaba a 100-280 u de donde se plantó,
+     y allí el terreno tiene OTRA altura. En una pista que baja entre 11° y 42°
+     eso son decenas de unidades de aire: `terrainY` en la plaza pedida daba
+     -111,8 y en el sitio donde de verdad caía la palmera, +443,9.
+     Ni apoyaEnLadera ni hundeFrac podían arreglarlo: medían el punto correcto,
+     el que se movía era el modelo. Por eso solo volaban las palmeras — cactus,
+     rocas y matojos tienen su malla en el origen (desfase medido: 0,0).
+     Solución: RECENTRAR la geometría horneada sobre su propia huella y apoyar
+     su base en y=0. Así el origen de la instancia ES el pie del prop, que es lo
+     que toda la colocación da por supuesto (y de paso `rotY` gira sobre su
+     propio eje y no describe una órbita de 280 u). */
+  const _geos = [];
   tpl.traverse(q => {
     if(!q.isMesh) return;
     const g = q.geometry.clone();
     g.applyMatrix4(q.matrixWorld);            // hornea la jerarquía del modelo
+    g.computeBoundingBox();
+    _geos.push({ g, q });
+  });
+  if(!_geos.length) return 0;
+  const _bAll = new THREE.Box3();
+  for(const it of _geos) _bAll.union(it.g.boundingBox);
+  const _cx = (_bAll.min.x + _bAll.max.x) / 2, _cz = (_bAll.min.z + _bAll.max.z) / 2;
+  const med = { alto: (_bAll.max.y - _bAll.min.y) || 1, minY: 0,
+                radio: Math.max(_bAll.max.x - _bAll.min.x, _bAll.max.z - _bAll.min.z) * 0.5 || 1 };
+
+  /* una InstancedMesh por submalla del modelo */
+  const partes = [];
+  for(const it of _geos){
+    const g = it.g;
+    g.translate(-_cx, -_bAll.min.y, -_cz);    // pie en y=0, centrado en XZ (ver arriba)
     _pintaGeo(g, { grad: opts.grad, tile: opts.tile, celda: opts.celda });
-    const m0 = Array.isArray(q.material) ? q.material[0] : q.material;
+    const m0 = Array.isArray(it.q.material) ? it.q.material[0] : it.q.material;
     const mat = new THREE.MeshLambertMaterial({
       color: (m0 && m0.color) ? m0.color.clone() : new THREE.Color(0xffffff),
       vertexColors: true, flatShading: !!opts.plano });
@@ -1022,8 +1070,7 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
        losas del stage 5 y está anotado; y he vuelto a caer.) Se recorta al
        final, cuando ya está lleno. */
     partes.push(im);
-  });
-  if(!partes.length) return 0;
+  }
 
   const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(),
         v3 = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
@@ -1051,6 +1098,9 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
     im.count = wi;                                   // ← ahora sí: recortar
     im.instanceMatrix.needsUpdate = true;
     if(im.instanceColor) im.instanceColor.needsUpdate = true;
+    /* ETIQUETA: "creo que hay palmeras flotando" se convierte en un número por
+       clave desde una sonda. Cuesta nada y ya ha ahorrado rondas enteras. */
+    im.userData._descProp = clave; im.userData._descTag = opts.tag || '?';
     if(wi > 0) world.add(im);
   }
   return puestos;
@@ -1112,6 +1162,7 @@ function hardnessAt(x, z){
 }
 DESC._ty = terrainY;
 DESC._hard = hardnessAt;
+DESC._hwAt = hwAt;
 
 /* =====================================================================
    PISTA: props repartidos por TODO el abanico, con la densidad de la zona
@@ -1663,7 +1714,7 @@ function buildScene(){
         return { x, y: null, z: zz, hundeFrac: 0.20 + rng()*0.14,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.14, rz:(rng()-0.5)*0.14,
                  ex: e * (0.8 + rng()*0.5), ey: e, ez: e * (0.8 + rng()*0.5) };
-      }, { sombra:true, plano:true });
+      }, { sombra:true, plano:true, tag:'rocaBorde1' });
     });
 
     /* segunda fila, más lejos y más grande: da masa a la ladera (sin sombra) */
@@ -1686,7 +1737,7 @@ function buildScene(){
         return { x, y: null, z: zz, hundeFrac: 0.24 + rng()*0.16,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.10, rz:(rng()-0.5)*0.10,
                  ex: e * (0.85 + rng()*0.5), ey: e, ez: e * (0.85 + rng()*0.5) };
-      }, { sombra:false, plano:true });
+      }, { sombra:false, plano:true, tag:'rocaBorde2' });
     });
     console.log('[descenso] borde: ' + nRocas + ' rocas de ' + CLAVES_ROCA.join('/'));
   }
@@ -1764,7 +1815,7 @@ function buildScene(){
         return { x:o2.x, y:null, z:o2.z, hundeFrac: 0.12 + rng()*0.08,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.12, rz:(rng()-0.5)*0.12,
                  ex: e * (0.85 + rng()*0.35), ey: e * (0.8 + rng()*0.45), ez: e * (0.85 + rng()*0.35) };
-      }, { sombra:true, plano:true });
+      }, { sombra:true, plano:true, tag:'rocaObst' });
     });
   }
 
@@ -1977,12 +2028,17 @@ function buildScene(){
       nBorde += siembra(world, clave, mios.length, rng, (i, med) => {
         const f = mios[i];
         /* PEGADAS A PISTA (0,70-0,88·hw). A 1,04·hw el cuenco ya las subía
-           ~22 u y con las altas (palmeras) se leían FLOTANDO contra el cielo. */
+           ~22 u y con las altas (palmeras) se leían FLOTANDO contra el cielo.
+           (Aquello, además, tenía OTRA causa detrás: ver ►PALMERAS VOLANDO en
+           `siembra` — la malla del modelo caía a 100-280 u de aquí. Se deja el
+           margen conservador porque ya está validado.) */
         const x2 = f.lado * (f.hw * (0.70 + rng() * 0.18));
         const zz = f.z + (rng() - 0.5) * 18;
-        const e2 = (3.4 + rng() * 5.2) / med.alto;
+        /* esta capa es "lo grande": a 3,4-8,6 u una palmera se leía como un
+           matojo (ahora que caen donde toca, se ven de verdad) */
+        const e2 = (7 + rng() * 9) / med.alto;
         return { x:x2, y:null, z:zz, hundeFrac:0.05, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
-      }, { sombra:true });
+      }, { sombra:true, tag:'borde' });
     });
 
     /* ---- EN MEDIO DE LA PISTA: matojos bajos, repartidos por todo el ancho ---- */
@@ -2003,7 +2059,7 @@ function buildScene(){
         if(pp && pp.mask > 0.25) return null;           // ni dentro de un pipe
         const e2 = (1.1 + rng() * 1.5) / med.alto;      // BAJOS: no tapan la vista
         return { x:f.x, y:null, z:f.z, hundeFrac:0.10, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
-      }, { sombra:true });
+      }, { sombra:true, tag:'mata' });
     });
     console.log('[descenso] decorado: ' + nBorde + ' a los lados (' + D.borde.join('/') +
                 ') + ' + nMedio + ' en pista (' + D.mata.join('/') + ')');
@@ -2482,7 +2538,8 @@ function animEstado(r){
 function makeRacer(i, human){
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
-  const col = RACER_COL[i];
+  const clase = CLASES[i % CLASES.length];
+  const col = colorDe(clase, i);          // ►el color de la CLASE, como en el juego (ver colorDe)
   const mat = new THREE.MeshLambertMaterial({ color: col });
 
   const body = new THREE.Group();
@@ -2517,7 +2574,7 @@ function makeRacer(i, human){
     i, human, col,
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
     gfx:g, body, capsula, board, meteor, shadow:sh,
-    clase: CLASES[i % CLASES.length], montado:false, model:null, mixer:null,
+    clase, montado:false, model:null, mixer:null,
     acts:null, animCur:null, tabla:null,
     padIndex: human ? (HUMANS === 1 ? 0 : i) : -1,
     kb: human && i === 0,
@@ -3882,13 +3939,21 @@ DESC.tick = function(dt){
 const DINK = {
   chars:  true,      // anillo de color por fuera del rider
   mundo:  true,      // tinta oscura en los bordes del escenario
-  grosor: 0.0038,    // grosor del anillo en fracción de ALTURA de pantalla (igual a cualquier resolución)
+  grosor: 0.0035,    // = thickness del contorno del juego. Fracción de ALTURA de pantalla → mismo borde a cualquier resolución
   fuerza: 1.0,
-  tinta:  0.42,      // fuerza de la línea del mundo
+  tinta:  0.45,      // = strength del inkPass del juego
   umbral: 0.030,     // curvatura relativa que ya cuenta como borde (ver el shader: es adimensional)
   limGrow:0.0006,    // ...y cuánto sube ese umbral con la distancia (poda el ruido del fondo)
   color:  0x0a0c16,
-  escala: 0.5        // resolución del target auxiliar (0.5 = 4× menos relleno)
+  /* ►GROSOR DE LA TINTA = RESOLUCIÓN DEL PASE. La línea de un detector de
+     bordes mide 1-2 TÉXELES, así que a 0,5 salía del doble de gruesa que la del
+     juego (que va a resolución completa en el composer) y, peor, ROTA: a media
+     resolución un borde casi horizontal cae dentro o fuera del téxel según la
+     fila y la línea se queda a trozos. Toni: "el outline del decorado debe ser
+     fino como en los stages de rumbleboys... y evita que las líneas se rompan".
+     Full-res para el pase de tinta; el ahorro se busca en calidad Media/Baja
+     (ver aplicaCalidad), no degradando el look por defecto. */
+  escala: 1.0
 };
 const DINK_LAYER = 5;
 DESC.ink = DINK;   // los knobs, tocables en vivo desde consola (todo lo demás vive dentro del IIFE)
@@ -3956,17 +4021,33 @@ function dinkBuild(rr){
         '  if(tinta <= 0.0) discard;',
         '  float wc = wz(vUv); float z = 1.0/wc;',
         '  if(z > far*0.95) discard;',                      // cielo / target sin escribir (el pase recorta el plano lejano a la niebla)
-        '  float kx = abs(wz(vUv+vec2(texel.x,0.0)) + wz(vUv-vec2(texel.x,0.0)) - 2.0*wc);',
-        '  float ky = abs(wz(vUv+vec2(0.0,texel.y)) + wz(vUv-vec2(0.0,texel.y)) - 2.0*wc);',
+        '  vec2 ex = vec2(texel.x, 0.0), ey = vec2(0.0, texel.y);',
+        '  float kx = abs(wz(vUv+ex) + wz(vUv-ex) - 2.0*wc);',
+        '  float ky = abs(wz(vUv+ey) + wz(vUv-ey) - 2.0*wc);',
+        /* ►LÍNEAS QUE NO SE ROMPEN. Con solo los dos ejes, un borde que corre
+           casi paralelo a uno de ellos cae dentro o fuera del téxel según la
+           fila y la línea sale a trazos. Las DIAGONALES cruzan ese mismo borde
+           en ángulo, así que responden donde los ejes fallan. Van a la mitad de
+           peso porque su paso es sqrt(2) téxeles y la segunda diferencia crece
+           con el cuadrado del paso: sin normalizar, cualquier borde diagonal
+           saldría el doble de fuerte. */
+        '  vec2 d1 = vec2(texel.x, texel.y), d2 = vec2(texel.x, -texel.y);',
+        '  float ka = abs(wz(vUv+d1) + wz(vUv-d1) - 2.0*wc) * 0.5;',
+        '  float kb = abs(wz(vUv+d2) + wz(vUv-d2) - 2.0*wc) * 0.5;',
         /* ×z lo vuelve ADIMENSIONAL: una silueta da ~1 esté a 10 u o a 300, así
            que el umbral no necesita crecer con la distancia (limGrow se queda
            como retoque fino, no como muleta). */
-        '  float rel = (kx + ky) * z;',
+        '  float rel = max(kx + ky, ka + kb) * z;',
         /* la tinta se DISUELVE con la niebla, igual que el objeto que contornea:
            si no, quedan líneas oscuras flotando en un horizonte ya lavado. */
         '  float fogT = smoothstep(fogNear, fogFar, z);',
         '  float lim = umbral*(1.0 + z*limGrow);',
-        '  float ink = smoothstep(lim, lim*3.0, rel) * tinta * (1.0 - fogT);',
+        /* ►ANTIALIASING SIN PAGARLO. El descenso pinta a pantalla con MSAA, pero
+           esto es un quad transparente ENCIMA: el MSAA no suaviza su borde. La
+           rampa ES el suavizado — un tramo ancho (0,7·lim → 2,2·lim) convierte
+           la respuesta parcial de un píxel a medio borde en alfa parcial en vez
+           de en un sí/no dentado. Coste cero: es el mismo smoothstep. */
+        '  float ink = smoothstep(lim*0.7, lim*2.2, rel) * tinta * (1.0 - fogT);',
         '  if(ink <= 0.004) discard;',
         '  gl_FragColor = vec4(inkCol, ink);',
         '}'].join('\n')
@@ -4130,8 +4211,10 @@ function boot(){
      el anillo de los personajes NO (son 4 riders), así que en calidad baja se
      cae solo la tinta del mundo y en pelada el efecto entero. */
   if(/pelad|min|none/.test(cal)){ K.sombras = false; K.densRoca = 0; K.densDeco = 0; K.streakN = 40; DINK.chars = false; DINK.mundo = false; }
-  else if(/baj|low/.test(cal)){ K.sombras = false; K.densRoca = 0.5;  K.densDeco = 0.45; K.streakN = 60; DINK.mundo = false; }
-  else if(/med/.test(cal)){ K.sombras = false; K.densRoca = 0.75; K.densDeco = 0.7; }
+  else if(/baj|low/.test(cal)){ K.sombras = false; K.densRoca = 0.5;  K.densDeco = 0.45; K.streakN = 60; DINK.mundo = false; DINK.escala = 0.5; }
+  /* en Media el pase de tinta baja a media resolución: es donde estaba el
+     ahorro que antes se cobraba a TODO el mundo (línea gorda y a trozos) */
+  else if(/med/.test(cal)){ K.sombras = false; K.densRoca = 0.75; K.densDeco = 0.7; DINK.escala = 0.5; }
   if(cal) console.log('[descenso] calidad=' + cal + ' · sombras=' + K.sombras);
   if(typeof THREE === 'undefined' || !GAME_RENDERER()) return;
   DESC._built = true;
