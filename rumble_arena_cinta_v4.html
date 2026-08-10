@@ -27371,6 +27371,12 @@ const PIR_BELT_MUL = 0.85;   // algo más lenta que el resto: aquí hay que calc
 const PIR_SHIP_S   = 3.5;    // escala del barco (13.1 nativo → 45.8 de eslora)
 const PIR_LANE     = 13.5;   // |z| mínimo de la cinta — el casco llega a 8.4
 const PIR_DECK     = 7.3;    // cubierta principal (la referencia de altura del stage)
+/* ►PIRSWAP (10/08): FUERA todos los barcos y todas las palmeras del kit de Kenney — Toni trae assets
+   nuevos. Esto NO es "esconder el modelo": el barco central era el SUELO del stage, así que con el
+   interruptor en false el stage se queda literalmente sin cubierta (se cae al mar) hasta que entre el
+   modelo nuevo. Todo lo medido (PIR_DECKS, PIR_TOP, las cotas de los builders) se conserva intacto:
+   para volver al barco viejo basta con poner esto en true. */
+const PIR_SHIP_ON  = false;
 const PIR = { ship:null, water:null, wake:null, plats:[], cannons:[], balls:[], t:0, volleyT:7 };
 
 /* fichas de los props del kit (size = dimensión MAYOR en unidades de juego) */
@@ -27430,6 +27436,7 @@ function _pirPushDecks(){                  // (re)inscribe las cubiertas en plat
   }
 }
 function buildPirateShip(){
+  if(!PIR_SHIP_ON) return null;   // ►PIRSWAP: sin barco no hay cubiertas — ni malla ni AABB (el asset nuevo se engancha aquí)
   if(PIR.ship){ _pirPushDecks(); return PIR.ship; }
   const G = new THREE.Group();
   const hull = (typeof getModel==='function') ? getModel('p_ship', DECOR_DEFSP) : null;
@@ -27521,11 +27528,13 @@ function pirIsle(cx, cz, r, topY, opts){
   s3Blob(cx, cz, r, r*(0.82+Math.random()*0.3), topY, 'sand');
   const pl = platforms[platforms.length-1];
   if(pl && pl.blob){ pl._pours = null; }        // sin chorros de arena (esto es una isla, no una duna)
-  const n = opts.palms !== undefined ? opts.palms : (r > 5 ? 2 : 1);
-  for(let i=0;i<n;i++){
-    const a = Math.random()*Math.PI*2, d = r*0.45;
-    pirProp(Math.random()<0.5 ? 'p_palm' : 'p_palmbend', cx+Math.cos(a)*d, topY, cz+Math.sin(a)*d, { sc:0.9+Math.random()*0.35 });
-  }
+  /* ►PIRSWAP: PALMERAS fuera (asset nuevo en camino). El reparto se conserva tal cual — `n` palmeras
+     repartidas al azar a r*0.45 del centro, escala 0.9-1.25 — para que al meter la key nueva vuelvan
+     exactamente donde estaban, incluidos los islotes que piden 2 y 3 por `opts.palms`. */
+  /* receta a restaurar con la key nueva:
+       const n = opts.palms !== undefined ? opts.palms : (r > 5 ? 2 : 1);
+       for(let i=0;i<n;i++){ const a = Math.random()*Math.PI*2, d = r*0.45;
+         pirProp(<key>, cx+Math.cos(a)*d, topY, cz+Math.sin(a)*d, { sc:0.9+Math.random()*0.35 }); }   */
   if(r > 4.5 && Math.random()<0.7){ const a=Math.random()*6.28;
     pirProp('p_rocksand_' + 'abc'[(Math.random()*3)|0], cx+Math.cos(a)*r*0.55, topY-0.3, cz+Math.sin(a)*r*0.55, { sc:0.6 }); }
   if(opts.barrel) pirProp('p_barrel', cx, topY, cz+1.2, {});
@@ -27567,13 +27576,13 @@ function pirTower(cx, cz, kind){
 }
 /* BARCO ENEMIGO: casco SÓLIDO (se aborda por arriba, no se atraviesa) con su cubierta a 6.4/7.2 —
    o sea a la altura de la tuya: es un abordaje, no un salto de fe. El bote de remos NO es pisable a
-   propósito: su borda queda a ras de agua y sería una plataforma-trampa pegada al plano de muerte. */
+   propósito: su borda queda a ras de agua y sería una plataforma-trampa pegada al plano de muerte.
+   ►PIRSWAP: vaciada. Las LLAMADAS de los builders siguen en su sitio a propósito — las posiciones son
+   el trabajo de diseño (todas fuera de |z|<PIR_LANE y a distancia de salto medida), así que el asset
+   nuevo entra escribiendo aquí dentro y el stage se rearma solo. Ni malla ni AABB mientras tanto: una
+   caja sólida sin modelo visible es un muro invisible. */
 function pirBoat(cx, cz, small){
-  if(small){ pirProp('p_boat', cx, PIR_WL, cz, { yaw:-Math.PI/2, shadow:false }); return null; }
-  pirProp('p_shipsmall', cx, PIR_WL, cz, { yaw:-Math.PI/2 });
-  const topY = PIR_WL + PIR_TOP.p_shipsmall;
-  pirPlat(cx, cz, 9.6, 11.0, topY, true);
-  return topY;
+  return null;
 }
 
 /* ---------- las 6 salas de la cinta ---------- */
@@ -27607,8 +27616,8 @@ function buildPirFuerte(){                      // idx2 · el fuerte: atalayas a
 }
 function buildPirNaufragio(){                   // idx3 · el pecio encallado + arrecife
   pirIsle(-6, -21, 9, 3.6, { palms:3 });
-  pirProp('p_wreck', -6, 3.4, -21, { yaw:-0.5 });       // encallado EN la isla (su base en la arena, no en el agua)
-  pirPlat(-6, -21, 12.0, 15.0, 3.4 + PIR_TOP.p_wreck, true);   // su cubierta rota también se pisa
+  /* ►PIRSWAP: el PECIO (p_wreck) también era un barco → fuera, y con él su cubierta pisable. La isla
+     grande se queda: es la que lo sujetaba, y el asset nuevo va encallado en ella a y=3.4, yaw −0.5. */
   pirIsle(20, -24, 5, 4.2); pirIsle(-24, -18, 5, 4.6);
   pirIsle(-2, 24, 7, 4.2, { palms:2 }); pirIsle(22, 19, 5.5, 4.8);
   for(const r of [[-14,-16],[8,-15],[-8,15],[16,16]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:0.8, shadow:false });   // arrecife: rocas medio sumergidas
@@ -27624,10 +27633,9 @@ function buildPirPuerto(){                      // idx4 · pasarela de pantalane
   addPad(-28, -25); addPad(28, 25);
 }
 function buildPirAbordaje(){                    // idx5 · abordaje: dos barcos grandes pegados a tus costados
-  for(const s of [[-8,-18],[10,18]]){
-    pirProp('p_shipmed', s[0], PIR_WL, s[1], { yaw:-Math.PI/2 });
-    pirPlat(s[0], s[1], 11.0, 14.0, PIR_WL + PIR_TOP.p_shipmed, true);   // cubierta a 7.2 = la MISMA cota que la tuya: se salta de una a otra
-  }
+  /* ►PIRSWAP: los dos barcos grandes del abordaje (p_shipmed) están fuera con su cubierta. Cuando
+     entre el asset nuevo va aquí: x −8/+10, |z| 18, apoyado en PIR_WL, yaw −π/2, y su tablero a la
+     MISMA cota que la cubierta del jugador — que es lo que hacía que esto fuera un abordaje. */
   pirIsle(-26, -22, 5.5, 4.4); pirIsle(26, 21, 5.5, 4.4);
   pirDock(-20, -14.5); pirDock(22, 15);
   pirBoat(6, -25, true); pirBoat(-4, 26, true);
