@@ -1468,12 +1468,13 @@ window.addEventListener('load', function(){
 <script src="stage_pirate_models.js?v=1"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
-<script src="chars_models.js?v=20260711a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar -->
+<script src="chars_models.js?v=20260810a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 (2.30s, rotaciones por bone-name + GC del BIN) -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
 <script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
 <script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
 <script src="bow_model.js?v=1"></script>  <!-- arco (Synty) en base64; se adjunta a la mano izquierda de la arquera; opcional -->
 <script src="arrow_model.js?v=2"></script>  <!-- ►ARROWS: FLECHA real (Arrow2 OBJ) en GAME_MODELS.arrow; proyectil de TODAS las flechas (antes CHAHIN parecía un bulto) -->
+<script src="spear_model.js?v=1"></script>  <!-- ►SPEAR: LANZA real (OBJ+MTL) en GAME_MODELS.spear; proyectil de la Q del CABALLERO (antes cilindro gris) -->
 <script src="seal_model.js?v=1"></script>  <!-- ►SEAL: FOCA (OBJ) en GAME_MODELS.seal; critter de empuje del stage 7 (solo molesta) -->
 <script src="penguin_model.js?v=2"></script>  <!-- ►PENGUIN v2: GLB RIGGEADO (PENG_GLB_B64, clips walk/idle/throw); enemigo lento del stage 7 -->
 <script src="icecream_model.js?v=1"></script>  <!-- ►ICECREAM: OBJ en GAME_MODELS.icecream; proyectil del pingüino (3 sabores) -->
@@ -7795,6 +7796,37 @@ const SHARD_AMMO = 10, SHARD_RELOAD = 3.2, SHARD_RATE = .18, SHARD_SPEED = 24, S
 const BOW_RATE = .46;   // cadencia base del básico de la arquera (s entre flechas) — antes .52; un pelo más de cadencia
 const shardsFly = [];
 const shardFlyGeo = new THREE.OctahedronGeometry(.14, 0);
+/* =====================================================================
+   ►ENERGYORB — BOLA DE ENERGÍA reutilizable (núcleo emisivo + halo aditivo que late).
+   Una sola fábrica para los dos proyectiles del MAGO: su básico (verde) y su Q (Orbes arcanos),
+   que antes eran un cristal facetado y un cilindro. Malla POOLEADA (mismo patrón que _projMesh /
+   _shieldPool: nada de new Mesh por disparo) y color por instancia — el que se lanza es el que
+   estalla. orbPop() es el estallido: ráfaga + anillo en ESE mismo color.
+   ===================================================================== */
+const _orbGeo  = new THREE.SphereGeometry(.19, 12, 9);
+const _orbPool = [];
+function _energyOrbMesh(color, scl){
+  let m = _orbPool.pop();
+  if(!m){
+    m = new THREE.Mesh(_orbGeo, new THREE.MeshStandardMaterial({ roughness:.28, metalness:0, emissiveIntensity:2.4 }));
+    const halo = new THREE.Mesh(_orbGeo, new THREE.MeshBasicMaterial({
+      transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false }));
+    m.add(halo);
+    m._halo = halo; m._v = new THREE.Vector3(); m._pool = _orbPool; m._orb = true;
+  }
+  m.material.color.set(color); m.material.emissive.set(color);
+  m._halo.material.color.set(color); m._halo.scale.setScalar(1.8);
+  m.scale.setScalar(scl||1); m.quaternion.identity(); m.visible = true;
+  return m;
+}
+function _orbPulse(m){ if(m && m._halo) m._halo.scale.setScalar(1.7 + .30*Math.sin(t*22 + m.id)); }   // late (el id desfasa cada bola)
+function orbPop(pos, color){   // ESTALLIDO en el color de la bola
+  burst(pos, color, 12, 6, 4.5, .8); ring(pos, color, 15, .32);
+}
+/* color del básico por clase: el MAGO lanza bolas de energía VERDES (verde de marca aclarado, igual
+   criterio que MAGE_TINT); el resto sigue lanzando su cristal del color del jugador */
+const MAGE_ORB_COL = 0x46f08a;
+function shardColor(p){ return (p && p._charKey==='link') ? MAGE_ORB_COL : p.color; }
 function throwShard(p){
   if(p.shardCD>0 || p.shardAmmo<=0 || p.atk.phase!=='none' || p.block ||
      p.hang || p.hitstun>0 || p.stun>0 || p.beam) return;
@@ -7804,31 +7836,42 @@ function throwShard(p){
     p.yaw = Math.atan2(foe.pos.x-p.pos.x, foe.pos.z-p.pos.z);   // autoapuntado SIEMPRE al enemigo más cercano
   }
   p.shardAmmo--; p.shardCD = SHARD_RATE; p.throwT = .26;
+  p._animKick = (p._animKick||0)+1;   // ►BOLTANIM: cada cristal RE-DISPARA el clip throwq (bruja/mago). Sin esto, como la cadencia (.18) es MÁS CORTA que throwT (.26), el token 'throwq' nunca se soltaba durante una ráfaga: el clip (LoopOnce+clampWhenFinished) sonaba UNA vez y se quedaba congelado en su último frame — la animación "cortada". Mismo patrón que fireBow/qShoot.
   if(p.shardAmmo<=0) p.shardReload = SHARD_RELOAD;     // cargador vacío → recarga
   const f = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
-  const m = new THREE.Mesh(shardFlyGeo, new THREE.MeshStandardMaterial({
-    color:p.color, flatShading:true, roughness:.1, metalness:.2,
-    emissive:p.color, emissiveIntensity:1.9 }));
-  m.scale.set(1.5, 2.6, 1.5);
-  /* halo aditivo alrededor: se ve a cualquier distancia */
-  const halo = new THREE.Mesh(shardFlyGeo, new THREE.MeshBasicMaterial({
-    color:p.color, transparent:true, opacity:.5,
-    blending:THREE.AdditiveBlending, depthWrite:false }));
-  halo.scale.set(1.55, 1.3, 1.55);
-  m.add(halo);
-  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), f);
+  const col = shardColor(p), orb = (col !== p.color);   // ►ENERGYORB: el mago lanza BOLA, los demás cristal
+  let m;
+  if(orb){
+    m = _energyOrbMesh(col, 1.25);
+  } else {
+    m = new THREE.Mesh(shardFlyGeo, new THREE.MeshStandardMaterial({
+      color:col, flatShading:true, roughness:.1, metalness:.2,
+      emissive:col, emissiveIntensity:1.9 }));
+    m.scale.set(1.5, 2.6, 1.5);
+    /* halo aditivo alrededor: se ve a cualquier distancia */
+    const halo = new THREE.Mesh(shardFlyGeo, new THREE.MeshBasicMaterial({
+      color:col, transparent:true, opacity:.5,
+      blending:THREE.AdditiveBlending, depthWrite:false }));
+    halo.scale.set(1.55, 1.3, 1.55);
+    m.add(halo);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), f);
+  }
   m.position.copy(p.pos).addScaledVector(f, .7)
     .add(new THREE.Vector3(Math.cos(p.yaw)*-.3, 1.25, Math.sin(p.yaw)*.3));
-  shardsFly.push({ m, owner:p, v:f.multiplyScalar(SHARD_SPEED), life:1.15 });
+  shardsFly.push({ m, owner:p, col, orb, v:f.multiplyScalar(SHARD_SPEED), life:1.15 });
   scene.add(m);
   jiggle(p, 5);
   sfx.throwS();
 }
 function killShard(i, sparkColor){
   const s = shardsFly[i];
-  if(sparkColor!==null) burst(s.m.position, sparkColor, 5, 3.5, 2.5, .55);
+  if(sparkColor!==null){
+    if(s.orb) orbPop(s.m.position, s.col);                                  // ►ENERGYORB: estalla en SU color (al chocar/impactar; agotarse en el aire sigue siendo silencioso)
+    burst(s.m.position, sparkColor, 5, 3.5, 2.5, .55);
+  }
   scene.remove(s.m);
-  s.m.traverse(o=>{ if(o.material) o.material.dispose(); });
+  if(s.m._pool){ s.m.visible = false; s.m._pool.push(s.m); }                // ►ENERGYORB: la bola vuelve al pool (NO dispose: su material se reusa)
+  else s.m.traverse(o=>{ if(o.material) o.material.dispose(); });
   shardsFly.splice(i, 1);
 }
 function updateShardsFly(dt){
@@ -7837,8 +7880,8 @@ function updateShardsFly(dt){
     s.life -= dt;
     if(s.life<=0){ killShard(i, null); continue; }
     s.m.position.addScaledVector(s.v, dt);
-    s.m.rotation.y += dt*14;
-    if(Math.random()<.7) burst(s.m.position, s.owner.color, 1, 1.4, .8, .45); // estela
+    if(s.orb) _orbPulse(s.m); else s.m.rotation.y += dt*14;                   // ►ENERGYORB: la bola late; el cristal gira
+    if(Math.random()<.7) burst(s.m.position, s.col||s.owner.color, 1, 1.4, .8, .45); // estela (del color del proyectil)
     const x = s.m.position.x, y = s.m.position.y, z = s.m.position.z;
     /* choca con suelo y con sólidos (los muros del laberinto dan cobertura) */
     let hitWorld = y < .04 && overAnyPlatform(x, z);
@@ -7859,7 +7902,7 @@ function updateShardsFly(dt){
       const kb=(4+mn.damage*.1)*kbMul(s.owner)*(mn.type==='small'?1.3:mn.type==='large'?.65:1);
       mn.vel.x+=dir.x*kb; mn.vel.z+=dir.z*kb; mn.vel.y=Math.max(mn.vel.y,2.5);
       mn.hitstun=Math.max(mn.hitstun,.2); mn.onGround=false; addPower(s.owner,dmg*.5);
-      burst(mc,s.owner.color,7,4.5,3.5,.7); sfx.hit(mn.damage); killShard(i,s.owner.color);
+      burst(mc,s.col||s.owner.color,7,4.5,3.5,.7); sfx.hit(mn.damage); killShard(i,s.col||s.owner.color);
       consumedSm=true; break;
     }
     if(consumedSm) continue;
@@ -7880,6 +7923,7 @@ function updateShardsFly(dt){
       const ta = back.pos.clone().add(new THREE.Vector3(0,1,0)).sub(s.m.position).normalize();
       s.v.copy(ta.multiplyScalar(SHARD_SPEED*1.35));
       s.life = 1.15;
+      s.col = vic.color;                                  // ►ENERGYORB: devuelta = pasa a ser del que contra-atacó (estela y estallido incluidos)
       s.m.material.color.setHex(vic.color);
       s.m.material.emissive.setHex(vic.color);
       s.m.children[0].material.color.setHex(vic.color);
@@ -8344,6 +8388,41 @@ function _axeMesh(scl){
     m.traverse(o=>{ if(o.isMesh) o.frustumCulled = false; }); }
   m.visible = true; m.scale.setScalar(scl||1); return m;
 }
+/* =====================================================================
+   ►SPEAR — LANZA REAL como proyectil de la Q del CABALLERO (antes: cilindro gris de _projMesh).
+   Modelo OBJ+MTL (spear_model.js) horneado a UNA malla con color de vértice por _parseRaw. En el
+   fichero la punta de acero mira a -Z y el mango de madera se va a +Z (largo 3,75 u): aquí se
+   NORMALIZA a largo 1 con la punta en +Y — la misma convención que la flecha, así spawnProj la
+   orienta con el mismo setFromUnitVectors(_PJ_UPY, f) y vuela de punta.
+   El largo real de vuelo lo pone quien dispara (scl), proporcional al tamaño del personaje.
+   Si el modelo no está, _spearMesh() devuelve null y la Q cae al cilindro de siempre. */
+const SPEAR_LEN = 1.7;   // largo de la lanza a escala de personaje 1 (cuerpo = CHAR_TARGET_H = 2.0 → algo menos que el caballero)
+let _spearTpl = null, _spearTplTried = false;
+function _buildSpearTpl(){
+  if(_spearTplTried) return _spearTpl; _spearTplTried = true;
+  try {
+    const raw = (typeof _parseRaw==='function') ? _parseRaw('spear') : null;   // OBJ+MTL → 1 malla con vertex-colors
+    if(!raw) return (_spearTpl = null);
+    raw.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(raw), size = new THREE.Vector3(), ctr = new THREE.Vector3();
+    box.getSize(size); box.getCenter(ctr);
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    raw.position.sub(ctr);                                   // centra el asta en el origen
+    const wrap = new THREE.Group(); wrap.add(raw); wrap.scale.setScalar(1/longest);   // largo total = 1
+    wrap.rotation.x = Math.PI/2;                             // -Z (la punta de acero) → +Y: vuela de punta, como la flecha
+    const g = new THREE.Group(); g.add(wrap);                // el grupo EXTERIOR se queda libre: spawnProj le escribe el quaternion de vuelo
+    g.traverse(o=>{ if(o.isMesh){ o.frustumCulled = false; o.castShadow = false; } });
+    return (_spearTpl = g);
+  } catch(e){ console.warn('[spear] build', e); return (_spearTpl = null); }
+}
+const _spearPool = [];
+function _spearMesh(scl){
+  let m = _spearPool.pop();
+  if(!m){ const tpl = _buildSpearTpl(); if(!tpl) return null;
+    m = tpl.clone(true); m._pool = _spearPool; m._v = new THREE.Vector3();
+    m.traverse(o=>{ if(o.isMesh) o.frustumCulled = false; }); }
+  m.visible = true; m.scale.setScalar(scl||1); return m;
+}
 const AR_TRAIL_YEL = { col:0xffe680, rate:.5, n:1, spd:1, up:.6, sc:.34 };   // estela AMARILLA SUTIL (flechas normales de la arquera)
 const _AR_Q_DOWN = new THREE.Quaternion().setFromUnitVectors(_PJ_UPY, new THREE.Vector3(0,-1,0));   // orientación "punta abajo" (lluvia R)
 const _shieldGeo = new THREE.BoxGeometry(.72, 1.0, .12), _shieldPool = [];
@@ -8366,6 +8445,10 @@ function spawnProj(p, yaw, opts){
     if(o.ball){ m._glow.visible = true; m._glow.material.color.set(o.ball); m._glow.scale.setScalar(o.ballScl||1.3); }
   } else if(o.axe && (m = _axeMesh(o.scl))){   // ►HACHA (Q barbarian): mango vertical de salida; vuela GIRANDO (tomahawk) — el eje/tumbo los pone updateWprojs
     m.quaternion.identity();
+  } else if(o.orb){   // ►ENERGYORB: BOLA DE ENERGÍA (Q del mago) — esfera emisiva + halo aditivo; estalla en SU color
+    m = _energyOrbMesh(o.color||0xb060ff, o.orbScl||1.35);
+  } else if(o.spear && (m = _spearMesh(o.scl))){   // ►SPEAR (Q caballero): lanza REAL, punta en +Y → vuela de punta
+    m.quaternion.setFromUnitVectors(_PJ_UPY, f);
   } else {
     m = _projMesh(r, .85+r*2.5, 1.4);
     m.material.color.set(o.color||0xffffff); m.material.emissive.set(o.color||0xffffff);
@@ -8376,6 +8459,7 @@ function spawnProj(p, yaw, opts){
     home:!!o.home, homeRate:o.homeRate, foe:o.foe,
     dmg:o.dmg, kbK:o.kbK, spell:o.spell, bleed:o.bleed, minBonus:o.minBonus, heal:o.heal, explode:o.explode,
     x0:o.falloff?p.pos.x:null, z0:o.falloff?p.pos.z:null, col:o.color||0x88ff88, trail:o.trail, ballScl:o.ballScl,
+    orb:!!o.orb, spear:!!o.spear,   // ►ENERGYORB: late al volar y estalla en su color al morir (ver updateWprojs/killWproj) · ►SPEAR: acero, sin la estela verde de los cilindros
     axe:!!o.axe, spinAxis:o.axe?new THREE.Vector3(f.z,0,-f.x).normalize():null });   // ►HACHA: eje de tumbo = horizontal perpendicular al avance
 }
 function fireBazooka(p){
@@ -8397,6 +8481,7 @@ function fireBazooka(p){
 }
 function killWproj(i, spark){
   const s = wprojs[i];
+  if(s.orb) orbPop(s.m.position, s.col);                      // ►ENERGYORB: SIEMPRE estalla en su color (choque, impacto o fin de vuelo)
   if(spark!==null) burst(s.m.position, spark, 6, 4, 3, .6);
   scene.remove(s.m);
   if(s.m._pool){ s.m.visible = false; s.m._pool.push(s.m); }   // ►PERF2: recicla (sin dispose por disparo)
@@ -8473,9 +8558,10 @@ function updateWprojs(dt){
     s.m.position.addScaledVector(s.v, dt);
     if(s.m._spin) s.m.rotateZ(dt*30);                 // ►SHURIKEN: gira en su plano mientras vuela
     if(s.axe && s.spinAxis) s.m.rotateOnWorldAxis(s.spinAxis, dt*24);   // ►HACHA: tumbo tomahawk (≈3.8 vueltas/s) sobre eje horizontal ⟂ al avance
+    if(s.orb){ _orbPulse(s.m); if(Math.random()<.55) burst(s.m.position, s.col, 1, 1.3, .7, .45); }   // ►ENERGYORB: late + estela de su color
     if(s.kind==='arrow'){
       if(s.trail){ if(Math.random()<s.trail.rate) burst(s.m.position, s.trail.col, s.trail.n||1, s.trail.spd||1, s.trail.up||.6, s.trail.sc||.4); }
-      else if(!s.axe && Math.random()<.6) burst(s.m.position, 0x88ff88, 1, 1, .6, .4);   // flechas sin estela (cilindros de otras clases): verde clásico — la HACHA no deja estela verde
+      else if(!s.axe && !s.orb && !s.spear && Math.random()<.6) burst(s.m.position, 0x88ff88, 1, 1, .6, .4);   // flechas sin estela (cilindros de otras clases): verde clásico — HACHA y LANZA (modelos reales) no la dejan, y la BOLA ya deja la suya
       if(s.m._glow && s.m._glow.visible){ const k=.85+.35*Math.sin(t*18+(s.x0||0)); s.m._glow.scale.setScalar((s.ballScl||1.3)*k); }   // ►ARROW: la bola de energía de la punta late (F)
     }
     else if(Math.random()<.85) burst(s.m.position, 0xff8a3a, 1, 1.2, .7, .5);
@@ -16347,8 +16433,8 @@ function archerFireLineQ(p){   // Arquera Q: FLECHA DE FUEGO — línea de fuego
   _aim(p,45); _setQ(p,FLINE_CD);
   spawnFireLine(p); p.throwT=.25; showCombo(p,'¡FLECHA DE FUEGO!'); return true;
 }
-function mageOrbQ(p){      const before=p.qAmmo; const opts={color:0xb060ff,size:.13,speed:22,life:1.5,dmg:8, spell:true,kbK:1.0,  aim:40,snd:'shardC',  name:'¡ORBES ARCANOS!'}; const r=qShoot(p,.14,opts); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; if(p._pkTwinOrb) spawnProj(p, p.yaw+0.20, opts); } return r; }   // cada orbe redispara el clip throwq · ►PERK ORBES GEMELOS: orbe extra en abanico
-function knightJavelinQ(p){const before=p.qAmmo; const opts={color:0xc2c8d4,size:.10,speed:28,life:1.3,dmg:8, kbK:1.2,           aim:30,snd:'swing',     name:'¡JABALINAS!'}; const r=qShoot(p,.15,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTwinJavelin){ spawnProj(p, p.yaw+0.18, opts); spawnProj(p, p.yaw-0.18, opts); } } return r; }   // pose de lanzamiento (anim knight) · ►PERK JABALINAS EN ABANICO: 3 en abanico
+function mageOrbQ(p){      const before=p.qAmmo; const opts={orb:true,orbScl:1.45,color:0xb060ff,size:.13,speed:22,life:1.5,dmg:8, spell:true,kbK:1.0,  aim:40,snd:'shardC',  name:'¡ORBES ARCANOS!'}; const r=qShoot(p,.14,opts); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; if(p._pkTwinOrb) spawnProj(p, p.yaw+0.20, opts); } return r; }   // ►ENERGYORB: bolas de energía que ESTALLAN en su color (antes: cilindro) · cada orbe redispara el clip throwq · ►PERK ORBES GEMELOS: orbe extra en abanico
+function knightJavelinQ(p){const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={spear:true, scl:SPEAR_LEN*cs, color:0xc2c8d4,size:.10,speed:28,life:1.3,dmg:8, kbK:1.2,           aim:30,snd:'swing',     name:'¡JABALINAS!'}; const r=qShoot(p,.15,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTwinJavelin){ spawnProj(p, p.yaw+0.18, opts); spawnProj(p, p.yaw-0.18, opts); } } return r; }   // pose de lanzamiento (anim knight) · ►PERK JABALINAS EN ABANICO: 3 en abanico
 function priestSmiteQ(p){  const before=p.qAmmo; const r=qShoot(p,.12,{color:0xffe9a8,size:.11,speed:28,life:1.3,dmg:6, spell:true,minBonus:18,heal:4,aim:40,snd:'parry',name:'¡CASTIGO!'}); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; } return r; }   // cada bolt de Castigo redispara el clip throwq (va al ritmo de la ráfaga)
 
 /* ===== ASIMETRÍA: kit por CLASE. Personaliza básico (X) / súper (B) / definitiva (R); el resto del
