@@ -136,7 +136,11 @@ if(!/[?&]descenso(=|&|$)/.test(Q)) return;
 
 const _qs    = new URLSearchParams(Q);
 const HUMANS = Math.max(1, Math.min(4, parseInt(_qs.get('humanos')||'1', 10) || 1));
-const SKIN   = (_qs.get('piel') || 'arena').toLowerCase();
+/* PIEL: `?descenso&piel=nieve` y también, más corto, `?descenso=nieve`. El
+   valor de `descenso=` ya viaja en la URL de entrada, así que aprovecharlo
+   ahorra un parámetro y es lo primero que se teclea para probar una piel. */
+const _pielQS = (_qs.get('piel') || _qs.get('descenso') || '').toLowerCase();
+const SKIN   = /^(arena|nieve|mar)$/.test(_pielQS) ? _pielQS : 'arena';
 const TAU    = Math.PI * 2;
 const RAD    = Math.PI / 180;
 const clamp  = (v, a, b) => v < a ? a : (v > b ? b : v);
@@ -485,6 +489,10 @@ const K = {
   polvoOp:    0.17,
   polvoCaja:  70,     // radio de la caja de reciclado alrededor de la cámara
   polvoViento:16,     // u/s de deriva lateral
+  polvoCae:   1.1,    // u/s de caída. En arena es casi 0 (el polvo FLOTA); la
+                      // piel de nieve lo sube a 7 y las mismas motas pasan a
+                      // ser una nevada. Ver el bloque de K por piel.
+  polvoTam:   [0.05, 0.18],   // radio mín/máx de la mota
   rafagasN:   26,     // VELOS de arena: láminas largas translúcidas cruzando
   rafagasOp:  0.085,
   /* ►TÚNEL. Toni pidió "más efecto túnel donde se blurrea lo que tienes
@@ -744,6 +752,13 @@ function railAt(z){
    dificultad de la zona se lee por las BANDERAS del cambio de tramo y por el
    HUD, no pintando el desierto de verde. El relieve del terreno lo da ahora el
    sombreado por dureza y por pendiente, no un tinte plano. */
+/* Todo lo que aquí es un campo de PAL estaba antes ESCRITO A FUEGO en beige
+   dentro de buildScene (la luz de relleno, los tres halos del sol, el tinte de
+   atardecer de las nubes, el labio del kicker, los jalones, la meta). Con una
+   sola piel no molestaba; con dos, cada uno de ellos es un cuerpo extraño en la
+   otra — un labio marrón chocolate sobre nieve, o una meta BLANCA sobre nieve,
+   que directamente desaparece. Los valores de `arena` son exactamente los que
+   había, así que esta piel no cambia ni un píxel. */
 const SKINS = {
   /* ►HORA DORADA. El diagnóstico era "beige sobre beige": luz de mediodía
      sin carácter. Misma escena, sol BAJO y cálido: cielo naranja→azul, niebla
@@ -751,18 +766,79 @@ const SKINS = {
   arena: { sky:0xffc98c, sky2:0x7ea6d8, fog:0xf0be84,
            soft:0xf2d5a2, hard:0xb8854a, wall:0xc08a52, wall2:0x936741,
            rock:0x8f6f48, ramp:0xb06e2e, part:0xe8c896, trail:0xb8905c,
-           valley:0xe0b47e, ridge:0xcf9f6d, sun:0xffc37a, hemi:0xffd9b0, zmix:0.0 },
-  nieve: { sky:0xe8f4ff, sky2:0x9dc4e8, fog:0xd6e7f4,
-           soft:0xffffff, hard:0x9fbdd8, wall:0x93a9bb, wall2:0x6f8496,
-           rock:0x6d7f8e, ramp:0x7fa8cc, part:0xffffff, trail:0x9fb8cc,
-           valley:0xc6dced, ridge:0xa4bcd2, sun:0xffffff, hemi:0xdcecff, zmix:0.0 },
+           valley:0xe0b47e, ridge:0xcf9f6d, sun:0xffc37a, hemi:0xffd9b0, zmix:0.0,
+           fogNear:190, fogFar:700,
+           sunInt:1.3, sunPos:[-85, 42, 30], hemiBajo:0x4a4e66, hemiInt:0.42,
+           fill:0xffe0c0, fillInt:0.28,
+           solDir:[-0.62, 0.20, -0.76], csol:[0xfff2d0, 0xffce8e, 0xffb870],
+           nubeCal:[0.985, 0.96, 0.09, 0.22],   // [verde, azul] base y cuánto se tiñen de naranja las BAJAS
+           lip:0x33302c, jalon:0xff8a3d, meta:0xffffff,
+           rail:0xd8dee8, railPoste:0x8a94a4,
+           picos:null, rocasLejos:null, tinteRoca:null, tintePico:null, relieve:1.0 },
+
+  /* ►DESCENSO NEVADO. La piel de arena vende su carácter con la HORA (sol bajo
+     y cálido); la de nieve NO puede hacer lo mismo, porque un sol rasante sobre
+     una superficie de albedo ~0,9 lo satura todo a blanco y la montaña deja de
+     tener forma. Aquí el carácter lo pone lo contrario: MAÑANA ALTA Y FRÍA, con
+     el sol menos dominante (1,3 → 1,05) y el hemisférico MUY subido (0,42 →
+     0,72), que es el rebote real de la nieve — la luz que te llega en una pista
+     de verdad viene del suelo tanto como del sol. Y con el suelo casi blanco,
+     lo que dibuja el relieve ya no puede ser el albedo: son las SOMBRAS AZULES
+     (el suelo del hemisférico, 0x2f4a72, bastante más saturado que el de
+     arena), que es exactamente como se lee la nieve a ojo. */
+  nieve: { sky:0xeaf4ff, sky2:0x5f9fda, fog:0xd8e9f7,
+           soft:0xffffff, hard:0xa9c6de, wall:0x8496a8, wall2:0x5d6d7d,
+           rock:0x74879a, ramp:0xdcecf8, part:0xffffff, trail:0xbcd6ea,
+           valley:0xc6dced, ridge:0xa4bcd2, sun:0xfff6e8, hemi:0xdcecff, zmix:0.0,
+           /* la niebla entra ANTES y llega más lejos: la calima de una montaña
+              nevada come el fondo mucho antes que el aire seco del desierto, y
+              es lo que despega la pista de las cumbres del telón */
+           fogNear:150, fogFar:820,
+           sunInt:1.05, sunPos:[-70, 78, 40], hemiBajo:0x2f4a72, hemiInt:0.72,
+           fill:0xdcecff, fillInt:0.34,
+           solDir:[-0.50, 0.42, -0.76], csol:[0xffffff, 0xeaf4ff, 0xcfe4f7],
+           nubeCal:[1.0, 1.02, 0.0, 0.0],       // nubes FRÍAS: azul por encima del rojo y sin viraje cálido
+           lip:0x2b4a63, jalon:0xff8a3d, meta:0xd8452f,
+           rail:0xd8dee8, railPoste:0x8a94a4,
+           /* ►TELÓN DE CUMBRES y ►SEGUNDA FILA: los assets de montaña del mapa
+              de hielo (s6_peak/s6_peak2), usados como los usa el juego. */
+           picos:['s6_peak', 's6_peak2'],
+           rocasLejos:['s6_peak', 's6_peak2'],
+           /* las rocas del juego vienen horneadas en color ARENA: sin retintar,
+              una pista nevada sale con peñascos ocre. Ver `opts.tinte`. */
+           tinteRoca:0x8ea2b4, tintePico:0xe6f0f8, relieve:1.6 },
+
   mar:   { sky:0xa8e8f5, sky2:0x4fb0d8, fog:0x76cde2,
            soft:0x4fc4e0, hard:0x14647f, wall:0x4a6b78, wall2:0x37525d,
            rock:0x40606d, ramp:0xcdf6ff, part:0xeafcff, trail:0x8fe0f0,
-           valley:0x2f9fc4, ridge:0x4a8fa8, sun:0xfffbe8, hemi:0xbfeef8, zmix:0.0 },
+           valley:0x2f9fc4, ridge:0x4a8fa8, sun:0xfffbe8, hemi:0xbfeef8, zmix:0.0,
+           fogNear:190, fogFar:700,
+           sunInt:1.3, sunPos:[-85, 42, 30], hemiBajo:0x4a4e66, hemiInt:0.42,
+           fill:0xffe0c0, fillInt:0.28,
+           solDir:[-0.62, 0.20, -0.76], csol:[0xfff2d0, 0xffce8e, 0xffb870],
+           nubeCal:[0.985, 0.96, 0.09, 0.22],
+           lip:0x33302c, jalon:0xff8a3d, meta:0xffffff,
+           rail:0xd8dee8, railPoste:0x8a94a4,
+           picos:null, rocasLejos:null, tinteRoca:null, tintePico:null, relieve:1.0 },
 };
 const PAL = SKINS[SKIN] || SKINS.arena;
 if(SKIN === 'mar') K.tilt = 7;
+
+/* ►AJUSTES DE K POR PIEL. El polvo de arena y la nevada son el MISMO sistema
+   (motas recicladas por caja alrededor de la cámara); lo que cambia es cómo se
+   mueven, y eso son tres números. Una mota de arena flota y deriva con el
+   viento; un copo CAE. Los velos largos ("ráfagas") también valen tal cual:
+   sobre nieve leen como ventisca a ras de suelo, que es justo lo que hay en una
+   pista. Se suben en número y se bajan en opacidad. */
+if(SKIN === 'nieve'){
+  K.polvoN     = 420;    // más motas: es nevada, no bruma
+  K.polvoOp    = 0.55;   // y un copo SE VE (una mota de polvo, no)
+  K.polvoCae   = 7.0;    // u/s de caída — lo que separa un copo de una mota
+  K.polvoViento= 9;      // ...y menos deriva lateral que el polvo del desierto
+  K.polvoTam   = [0.10, 0.16];
+  K.rafagasN   = 34;
+  K.rafagasOp  = 0.055;
+}
 
 /* Color de respaldo por hueco. El color BUENO de un corredor es el de su CLASE
    (ver `colorDe` más abajo): es el mismo identificativo que usa el juego para el
@@ -868,9 +944,15 @@ function tablaDe(clase){
    por vértice (la base más oscura que la cima). Sin eso, veinte copias del
    mismo modelo se leen como veinte calcomanías.
    ===================================================================== */
+/* Las rocas de CERCA (borde de la pista y obstáculos). En nieve NO van los
+   s6_peak: el juego los usa "SOLO horizonte y abismo, nunca zona jugable" y
+   tiene razón — son montañas, y a 6 u de alto se leen como conos de plástico.
+   Van las rocas de siempre RETINTADAS en frío (PAL.tinteRoca), que es lo que
+   hay debajo de la nieve en una ladera de verdad. Las cumbres se usan donde les
+   toca: en la segunda fila (lejos y grandes) y en el telón. */
 const ROCAS_POR_PIEL = {
   arena: ['s3_rock', 's3_rock2', 's3_rock3', 's3_rockbig', 's3_boulder'],
-  nieve: ['s6_peak', 's6_peak2', 's3_rock', 's3_rock2', 's3_boulder'],
+  nieve: ['s3_rock', 's3_rock2', 's3_rock3', 's3_boulder'],
   mar:   ['s3_rock', 's3_rock2', 's3_boulder'],
 };
 /* DECORADO. SOLO cosas que tienen sentido en un desierto: plantas, cactus,
@@ -878,16 +960,29 @@ const ROCAS_POR_PIEL = {
    tiene s3_carpet/s3_rug/s3_rugoriental y NO se usan aquí a propósito.
    `mata` = va también EN MEDIO de la pista (no estorba, se atraviesa);
    `borde`  = solo a los lados, porque es grande y taparía. */
+/* `hito` (opcional) = TERCERA capa, rara y a los lados: props con historia que
+   aparecen cada mucho y que uno se queda mirando al pasar. En nieve son los tres
+   de "encanto" del mapa de hielo (iglú, muñeco, trineo). No van en `borde`
+   porque a la densidad de `borde` un muñeco de nieve cada 40 u deja de ser un
+   hallazgo y pasa a ser papel pintado. */
 const DECOR = {
   arena: { mata:  ['s3_agave', 's3_aloe', 's3_cactusbarrel', 's3_bloom'],
            /* s3_pillar FUERA: Toni lo lee como "atalaya de tierra" y no pega */
            borde: ['s3_cactus', 's3_cactus3', 's3_datepalm', 's3_palm', 's3_palm2',
                    's3_palm3', 's3_palm4', 's3_palm5'] },
+  /* SOLO cosas que tienen sentido en una montaña nevada, y todas del mapa de
+     hielo: pinos, árboles secos, matojos asomando y cristales de hielo. */
   nieve: { mata:  ['s6_bush', 's6_crystal', 's6_crystal2'],
-           borde: ['s6_pine', 's6_deadtrees', 's6_peak', 's6_snowman'] },
+           borde: ['s6_pine', 's6_deadtrees', 's6_crystal2'],
+           hito:  ['s6_igloo', 's6_snowman', 's6_sled'] },
   mar:   { mata:  ['s6_bush', 's3_agave'],
            borde: ['s3_palm', 's3_palm2', 's3_datepalm'] },
 };
+/* Los cristales del mapa de hielo llevan brillo frío EN EL JUEGO (getModel les
+   clona el material y les pone emissive). Aquí se replica: sin él, un cristal
+   de hielo sobre nieve blanca es una silueta gris que no se distingue del
+   suelo. La clave está en el modelo, no en la piel. */
+const EMISIVO = { s6_crystal:[0x16324a, 0.55], s6_crystal2:[0x16324a, 0.55] };
 
 /* Instancia un modelo del juego. Usa el mismo parseo y la misma caché que el
    resto del proyecto: no se inventa un cargador. */
@@ -1002,6 +1097,37 @@ function _pintaGeo(g, opts){
   if(prev && prev.normalized){
     esc = (prev.array instanceof Uint8Array || prev.array instanceof Int8Array) ? 1/255 : 1/65535;
   }
+  /* ►RETINTE POR LUMINANCIA — Y POR QUÉ VA AQUÍ Y NO EN EL MATERIAL.
+     MEDIDO por CDP sobre la escena montada: en los props del juego el color NO
+     está en el material, está en el COLOR DE VÉRTICE. `s3_rock` tiene el
+     material en blanco puro (1,1,1) y los vértices en (0,30 0,15 0,06) — marrón
+     de desierto. Retintar el material, que es lo que parecía obvio, no cambiaba
+     nada: el marrón seguía saliendo del vértice y la pista nevada seguía con
+     peñascos ocre. (Y de paso: con el material a blanco, `0,6 + L` daba 1,5 en
+     TODOS los assets, así que la parte de "luminancia" tampoco medía nada.)
+     Aquí sí hay de dónde: se conserva la luminancia RELATIVA de cada vértice
+     (el claroscuro horneado del modelo, que es lo único que le da volumen) y se
+     sustituye el tono. `mul` pliega dentro el color del material, para los
+     modelos que sí lo lleven; quien pida tinte deja el material en blanco.
+
+     AVISO r128 al depurar esto: `Color.getHex()` NO clampa, así que un canal
+     por encima de 1 se desborda al byte de al lado y `getHexString` MIENTE
+     (#d5f2ff se lee como #d5f20e). Mide r/g/b crudos, no el hex. */
+  const tinte = opts.tinte != null ? new THREE.Color(opts.tinte) : null;
+  const mul = opts.mul || null;
+  const relMax = tinte ? 1.05 / Math.max(0.05, tinte.r, tinte.g, tinte.b) : 1;
+  const contraste = opts.contraste != null ? opts.contraste : 1;
+  let Lref = 1;
+  if(tinte){
+    let suma = 0;
+    for(let i = 0; i < pos.count; i++){
+      let r = prev ? prev.getX(i) * esc : 1, gg = prev ? prev.getY(i) * esc : 1,
+          b = prev ? prev.getZ(i) * esc : 1;
+      if(mul){ r *= mul.r; gg *= mul.g; b *= mul.b; }
+      suma += 0.30*r + 0.59*gg + 0.11*b;
+    }
+    Lref = Math.max(0.02, suma / Math.max(1, pos.count));
+  }
   const col = new Float32Array(pos.count * 3);
   for(let i = 0; i < pos.count; i++){
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
@@ -1009,9 +1135,27 @@ function _pintaGeo(g, opts){
     const t = 1 + (_hashCelda(Math.floor(x / celda), Math.floor(y / celda),
                               Math.floor(z / celda)) - 0.5) * tile;
     const f = k * t;
-    col[i*3]   = f * (prev ? prev.getX(i) * esc : 1);
-    col[i*3+1] = f * (prev ? prev.getY(i) * esc : 1);
-    col[i*3+2] = f * (prev ? prev.getZ(i) * esc : 1);
+    let r = prev ? prev.getX(i) * esc : 1, gg = prev ? prev.getY(i) * esc : 1,
+        b = prev ? prev.getZ(i) * esc : 1;
+    if(tinte){
+      if(mul){ r *= mul.r; gg *= mul.g; b *= mul.b; }
+      /* TOPE atado al propio tinte, no un número suelto: el canal más alto del
+         tinte no debe pasar de ~1, o los vértices claros del modelo revientan a
+         blanco y el pico pierde la forma. Medido sin tope: s6_peak2 llegaba a
+         2,11 en su canal azul (y con Lambert, todo lo que pase de 1 es el mismo
+         blanco). Lo que queda por encima de 1 es solo la variación de
+         relieve/loseta, que es la misma que lleva cualquier otro prop. */
+      /* `contraste` < 1 COMPRIME el claroscuro del modelo hacia su media. Es lo
+         que pide la perspectiva aérea: una cumbre a 2.000 u no se ve con el
+         mismo contraste roca-nieve que la que tienes al lado — se aplana y se
+         va hacia el color del aire. Sin esto, el telón salía como manchas
+         OSCURAS recortadas contra el cielo (visto en captura), que es
+         exactamente lo contrario de lo que hace la distancia. */
+      let rel = Math.min(relMax, (0.30*r + 0.59*gg + 0.11*b) / Lref);
+      if(contraste !== 1) rel = 1 + (rel - 1) * contraste;
+      r = tinte.r * rel; gg = tinte.g * rel; b = tinte.b * rel;
+    }
+    col[i*3] = f * r; col[i*3+1] = f * gg; col[i*3+2] = f * b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
 }
@@ -1085,13 +1229,34 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
   for(const it of _geos){
     const g = it.g;
     g.translate(-_cx, -_bAll.min.y, -_cz);    // pie en y=0, centrado en XZ (ver arriba)
-    _pintaGeo(g, { grad: opts.grad, tile: opts.tile, celda: opts.celda });
     const m0 = Array.isArray(it.q.material) ? it.q.material[0] : it.q.material;
+    const base = (m0 && m0.color) ? m0.color.clone() : new THREE.Color(0xffffff);
+    /* ►RETINTE POR LUMINANCIA (`opts.tinte`). Las rocas del juego vienen
+       HORNEADAS en color arena, así que en una piel de nieve una pista blanca
+       sale con peñascos ocre. El retinte NO va aquí sino dentro de `_pintaGeo`,
+       y la razón está medida y explicada ahí: en estos assets el color vive en
+       el VÉRTICE, no en el material. Con tinte, el material se queda en blanco
+       y todo el color lo pone el vértice. */
+    _pintaGeo(g, { grad: opts.grad, tile: opts.tile, celda: opts.celda,
+                   tinte: opts.tinte, contraste: opts.contraste,
+                   mul: opts.tinte != null ? base : null });
     const mat = new THREE.MeshLambertMaterial({
-      color: (m0 && m0.color) ? m0.color.clone() : new THREE.Color(0xffffff),
+      color: opts.tinte != null ? 0xffffff : base,
       vertexColors: true, flatShading: !!opts.plano });
+    /* brillo frío del hielo, con la MISMA tabla para todas las capas: la lleva
+       el modelo (EMISIVO[clave]), no quien lo siembra */
+    const em = EMISIVO[clave];
+    if(em){ mat.emissive.setHex(em[0]); mat.emissiveIntensity = em[1]; }
+    /* el telón vive a 1.500-2.300 u, muchísimo más lejos que fog.far: con
+       niebla saldría como una silueta plana del color de la bruma. Su
+       perspectiva aérea va HORNEADA por copia (ver telonDeCumbres). */
+    if(opts.sinNiebla) mat.fog = false;
     const im = new THREE.InstancedMesh(g, mat, n);
-    im.castShadow = !!opts.sombra; im.receiveShadow = true;
+    im.castShadow = !!opts.sombra; im.receiveShadow = !opts.sinNiebla;
+    /* r128 no tiene esfera envolvente de InstancedMesh: el culleo usa la del
+       MODELO en el origen del grupo. Para un telón pegado a la cámara eso es
+       la diferencia entre verlo y no verlo. */
+    if(opts.sinCull) im.frustumCulled = false;
     /* NO tocar `count` todavía: en r128 `instanceColor` se crea en el primer
        setColorAt CON EL TAMAÑO DE this.count. Poniéndolo a 0 antes, el buffer
        de color nace vacío y todas las copias salen NEGRAS. (Ya me pasó con las
@@ -1117,8 +1282,10 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
     qt.setFromEuler(new THREE.Euler(pl.rx || 0, pl.rotY || 0, pl.rz || 0));
     sc.set(pl.ex, pl.ey, pl.ez);
     m4.compose(v3, qt, sc);
-    /* tono por COPIA: es el multitono, y sale gratis */
-    _tono(rng, col, opts.fuerza);
+    /* tono por COPIA: es el multitono, y sale gratis. Una plaza puede traer el
+       suyo (`pl.tono`) cuando el tinte no es aleatorio sino que CODIFICA algo —
+       en el telón, la distancia a la que está esa cumbre. */
+    if(pl.tono) col.copy(pl.tono); else _tono(rng, col, opts.fuerza);
     for(const im of partes){ im.setMatrixAt(wi, m4); im.setColorAt(wi, col); }
     wi++; puestos++;
   }
@@ -1132,6 +1299,103 @@ function siembra(world, clave, n, rng, hazPlaza, opts){
     if(wi > 0) world.add(im);
   }
   return puestos;
+}
+
+/* =====================================================================
+   ►TELÓN DE CUMBRES — el horizonte de la piel de nieve
+
+   Toni, sobre la primera versión del fondo de arena: "el cielo se ve como un
+   parche para simular el fondo en línea recta". Tenía razón y la lección quedó
+   escrita: un telón tiene que ser un ANILLO DE 360°, no un plano delante. Aquí
+   se cumple por construcción — el grupo `cielo` se re-pega a la posición de la
+   cámara cada frame, así que el anillo acompaña los 6.200 u de bajada y las
+   cumbres nunca se quedan atrás ni cambian de tamaño.
+
+   Los picos son los del MAPA DE HIELO del juego (s6_peak / s6_peak2), usados
+   igual que los usa el juego en el horizonte del jefe de hielo: nada modelado
+   aquí. Y tres cosas que no son decorativas:
+
+     · PERSPECTIVA AÉREA HORNEADA. El telón está a 1.500-2.300 u y fog.far vale
+       820, así que con niebla saldría como una silueta plana del color de la
+       bruma. Va con `mat.fog = false` y el desvanecido se mete a mano en el
+       tono POR COPIA: cuanto más lejos la cumbre, más se va hacia el color de
+       la niebla. Es lo mismo que hace ►DEPTH en el juego, pero por instancia.
+     · ANILLO COMPLETO, con la CIMA MAYOR justo a la espalda de la salida: es
+       lo que se ve en el travelling de presentación y en cada mirada atrás.
+     · MAR DE NUBES al pie, que es lo que hace que las cumbres se lean como
+       LEJOS y no como rocas grandes: sin él, el pie de cada montaña acaba en un
+       corte limpio contra el cielo y la escala se viene abajo.
+   ===================================================================== */
+function telonDeCumbres(cielo, rng){
+  const CLAVES = PAL.picos;
+  const cFog = new THREE.Color(PAL.fog);
+  /* tonos nevados: los mismos seis del horizonte ártico del juego */
+  const SNOW = [0xffffff, 0xeef3f8, 0xdde6ee, 0xccd7e0, 0xbac7d2, 0xa9b7c4];
+
+  /* La cima grande a +Z (a la espalda de la salida) y el resto repartido por
+     todo el anillo con un hueco relativo delante-abajo, por donde se baja. */
+  const CUMBRES = [];
+  const N = 15;
+  for(let i = 0; i < N; i++){
+    const a = (i / N) * TAU + (rng() - 0.5) * 0.16;
+    /* delante (−Z, hacia donde se baja) las cumbres se alejan y encogen: si no,
+       tapan la lectura de la pista y parece que bajas hacia una pared */
+    const frente = clamp((Math.cos(a - Math.PI/2) + 1) / 2, 0, 1);   // 1 mirando a −Z
+    const rad = 1500 + rng() * 500 + frente * 320;
+    const alto = (300 + rng() * 240) * (1 - frente * 0.42);
+    CUMBRES.push({ a, rad, alto });
+  }
+  CUMBRES.push({ a: Math.PI/2, rad: 1620, alto: 780 });    // LA cima, a +Z
+
+  const _t = new THREE.Color();
+  let puestas = 0;
+  CLAVES.forEach((clave, ci) => {
+    const mias = CUMBRES.filter((_, i) => (i % CLAVES.length) === ci);
+    puestas += siembra(cielo, clave, mias.length, rng, (i, med) => {
+      const d = mias[i];
+      const e = d.alto / med.alto;
+      /* HAZE: 0 en la cumbre más cercana, 1 en la más lejana. Se mezcla el tono
+         nevado con el de la niebla y se sube un pelo el brillo, porque el
+         material del telón no recibe la direccional principal de lleno. */
+      const haze = clamp((d.rad - 1500) / 900, 0, 1) * 0.62;
+      _t.setHex(SNOW[(rng() * SNOW.length) | 0]).lerp(cFog, haze).multiplyScalar(1.18);
+      return { x: Math.cos(d.a) * d.rad, y: -260 - rng() * 60, z: Math.sin(d.a) * d.rad,
+               rotY: rng() * TAU, ex: e * (0.85 + rng() * 0.45), ey: e, ez: e * (0.85 + rng() * 0.45),
+               tono: _t.clone() };
+    }, { sombra:false, plano:true, sinNiebla:true, sinCull:true,
+         /* nevadas y con el claroscuro comprimido: son cumbres a 2 km, no rocas
+            grandes. Con su contraste horneado salían como manchas oscuras. */
+         tinte: PAL.tintePico, contraste: 0.42, grad: 0.30, tag:'telon' });
+  });
+
+  /* MAR DE NUBES al pie de las cumbres: banda de esferas achatadas, sin
+     iluminar (misma razón que las nubes de arriba: una nube estilizada es una
+     mancha clara, no un objeto sombreado — con Lambert se ven siempre por su
+     cara en sombra y salen gris plomo). */
+  {
+    const N2 = 130;
+    const im = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5),
+      new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.72, fog:false }), N2);
+    im.frustumCulled = false;
+    const mm = new THREE.Matrix4(), qq = new THREE.Quaternion(),
+          pp = new THREE.Vector3(), ss = new THREE.Vector3(), cc = new THREE.Color();
+    for(let i = 0; i < N2; i++){
+      const a = rng() * TAU, rad = 1080 + rng() * 900;
+      const esc = 150 + rng() * 190;
+      pp.set(Math.cos(a) * rad, -230 + (rng() - 0.5) * 90, Math.sin(a) * rad);
+      qq.identity();
+      ss.set(esc, esc * (0.16 + rng() * 0.12), esc * (0.6 + rng() * 0.5));
+      mm.compose(pp, qq, ss);
+      im.setMatrixAt(i, mm);
+      const g2 = 0.90 + rng() * 0.10;
+      cc.setRGB(g2 * 0.98, g2, g2 * 1.02);        // frías: azul por encima del rojo
+      im.setColorAt(i, cc);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if(im.instanceColor) im.instanceColor.needsUpdate = true;
+    cielo.add(im);
+  }
+  console.log('[descenso] telón: ' + puestas + ' cumbres de ' + CLAVES.join('/') + ' + mar de nubes');
 }
 
 function GAME_RENDERER(){ return (typeof renderer !== 'undefined') ? renderer : null; }
@@ -1392,20 +1656,20 @@ function slopeAt(x, z){
    ===================================================================== */
 function buildScene(){
   const sc = new THREE.Scene();
-  sc.fog = new THREE.Fog(PAL.fog, 190, 700);
+  sc.fog = new THREE.Fog(PAL.fog, PAL.fogNear, PAL.fogFar);
 
   /* 0,9 + 1,25 = 2,15 de luz: TODO saturaba a blanco y el color de zona no se
      leía (medido en captura: la pista roja salía color arena). */
   /* hemisferio BAJO + sol FUERTE = contraste; el ambiente azulado del
      hemisferio inferior enfría las sombras (complementario del sol cálido) */
-  sc.add(new THREE.HemisphereLight(PAL.hemi, 0x4a4e66, 0.42));
+  sc.add(new THREE.HemisphereLight(PAL.hemi, PAL.hemiBajo, PAL.hemiInt));
   /* ►SOMBRAS REALES. Es lo que más levanta una escena plana: sin ellas, nada
      toca el suelo. La caja de sombra es PEQUEÑA y VIAJA con el jugador (100×100
      unidades): una que cubriera los 5.600 u de pista daría texels del tamaño de
      un coche. Solo proyectan los personajes y las rocas cercanas; el terreno
      únicamente las recibe. */
-  const sun = new THREE.DirectionalLight(PAL.sun, 1.3);
-  sun.position.set(-85, 42, 30);          // BAJO: sombras largas de atardecer
+  const sun = new THREE.DirectionalLight(PAL.sun, PAL.sunInt);
+  sun.position.set(PAL.sunPos[0], PAL.sunPos[1], PAL.sunPos[2]);   // arena: BAJO (sombras largas de atardecer); nieve: ALTO
   sun.castShadow = !!K.sombras;
   const S = 52;
   sun.shadow.camera.left = -S; sun.shadow.camera.right = S;
@@ -1419,7 +1683,7 @@ function buildScene(){
   DESC.sun = sun;
   /* relleno DESDE LA CÁMARA: sin él, los personajes (MeshStandard) se ven de
      frente en sombra mientras el terreno (Lambert) ya está bien expuesto */
-  const fill = new THREE.DirectionalLight(0xffe0c0, 0.28);
+  const fill = new THREE.DirectionalLight(PAL.fill, PAL.fillInt);
   fill.position.set(30, 40, 80);
   sc.add(fill);
 
@@ -1447,8 +1711,8 @@ function buildScene(){
     cielo.renderOrder = -1;
 
     /* SOL: disco + dos halos concéntricos que se funden */
-    const dirSol = new THREE.Vector3(-0.62, 0.20, -0.76).normalize();
-    const CSOL = [0xfff2d0, 0xffce8e, 0xffb870];        // núcleo blanco → halo naranja
+    const dirSol = new THREE.Vector3(PAL.solDir[0], PAL.solDir[1], PAL.solDir[2]).normalize();
+    const CSOL = PAL.csol;        // arena: núcleo blanco → halo naranja. nieve: blanco → azul pálido
     let iSol = 0;
     for(const [r2, op] of [[130, 1.0], [300, 0.30], [580, 0.12]]){
       const disco = new THREE.Mesh(new THREE.CircleGeometry(r2, 26),
@@ -1488,9 +1752,12 @@ function buildScene(){
         imN.setMatrixAt(ni, mm);
         /* las de abajo, un punto más grises: da profundidad al banco de nubes */
         const g2 = 0.90 + 0.10 * clamp((alt - 240) / 620, 0, 1);
-        /* atardecer: las bajas se tiñen de naranja, las altas casi blancas */
+        /* atardecer: las bajas se tiñen de naranja, las altas casi blancas.
+           En nieve el viraje va a CERO (PAL.nubeCal): una nube cálida sobre un
+           cielo frío se lee como una mancha sucia, no como atardecer. */
         const w = 1 - clamp((alt - 240) / 620, 0, 1);
-        cc.setRGB(g2, g2 * (0.985 - 0.09*w), g2 * (0.96 - 0.22*w));
+        const NC = PAL.nubeCal;   // [verde base, azul base, viraje verde, viraje azul]
+        cc.setRGB(g2, g2 * (NC[0] - NC[2]*w), g2 * (NC[1] - NC[3]*w));
         imN.setColorAt(ni, cc);
         ni++;
       }
@@ -1498,6 +1765,13 @@ function buildScene(){
     imN.instanceMatrix.needsUpdate = true;
     if(imN.instanceColor) imN.instanceColor.needsUpdate = true;
     cielo.add(imN);
+
+    /* ►TELÓN DE CUMBRES (piel de nieve). Va AQUÍ, dentro del grupo `cielo`, y
+       eso no es un detalle: el grupo se re-pega a la cámara cada frame, así que
+       las cumbres son un telón de 360° de verdad y no un decorado que se queda
+       atrás — el error literal que Toni ya cazó una vez ("el cielo se ve como un
+       parche para simular el fondo en línea recta"). */
+    if(PAL.picos) telonDeCumbres(cielo, mulberry32(DESC.seed ^ 0x51c0));
 
     sc.add(cielo);
     DESC.cielo = cielo;
@@ -1581,7 +1855,14 @@ function buildScene(){
         const fuera = Math.abs(x) > hwPista ? 0.62 : 1;      // fuera del límite: apagado
         /* el faldón vira hacia el color de la roca del cañón y se oscurece */
         if(faldaT > 0) c.lerp(_cFalda, faldaT * 0.55);
-        const shade = (0.88 + 0.12 * h + pend * 0.42 + cav) * fuera * (1 - faldaT * 0.18);
+        /* ►RELIEVE POR PIEL. En arena el volumen lo dan DOS cosas: el sombreado
+           por pendiente y el propio color (la dureza va de 0xf2d5a2 a 0xb8854a,
+           un salto grande). En nieve el color casi no varía —la nieve es blanca
+           esté suelta o prensada—, así que si el sombreado no compensa, la
+           ladera entera es una sábana. `relieve` sube la pendiente y la cavidad
+           un 60% en nieve; es el mismo cálculo, con más peso. */
+        const shade = (0.88 + 0.12 * h + (pend * 0.42 + cav) * PAL.relieve)
+                    * fuera * (1 - faldaT * 0.18);
         col[vi*3] = c.r * shade; col[vi*3+1] = c.g * shade; col[vi*3+2] = c.b * shade;
         vi++;
       }
@@ -1728,7 +2009,7 @@ function buildScene(){
     const largo = Math.abs(R.z0 - R.z1);
     const y0 = terrainY(R.x, R.z0) + R.alto, y1 = terrainY(R.x, R.z1) + R.alto;
     const barra = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, largo),
-      new THREE.MeshLambertMaterial({ color:0xd8dee8 }));
+      new THREE.MeshLambertMaterial({ color:PAL.rail }));
     barra.position.set(R.x, (y0 + y1) / 2, (R.z0 + R.z1) / 2);
     barra.rotation.x = Math.atan2(y0 - y1, largo) * -1;
     world.add(barra);
@@ -1736,7 +2017,7 @@ function buildScene(){
        en el punto más bajo de su pie (si no, en cuesta uno de cada dos flota) */
     const nPost = Math.max(2, Math.round(largo / 12));
     const imP = new THREE.InstancedMesh(_cajaBandas(5, 0.55, 1.45),
-      new THREE.MeshLambertMaterial({ color:0x8a94a4, vertexColors:true, flatShading:true }),
+      new THREE.MeshLambertMaterial({ color:PAL.railPoste, vertexColors:true, flatShading:true }),
       nPost + 1);
     for(let i = 0; i <= nPost; i++){
       const zz = R.z0 + (R.z1 - R.z0) * (i / nPost);
@@ -1775,17 +2056,22 @@ function buildScene(){
         return { x, y: null, z: zz, hundeFrac: 0.20 + rng()*0.14,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.14, rz:(rng()-0.5)*0.14,
                  ex: e * (0.8 + rng()*0.5), ey: e, ez: e * (0.8 + rng()*0.5) };
-      }, { sombra:true, plano:true, tag:'rocaBorde1' });
+      }, { sombra:true, plano:true, tinte:PAL.tinteRoca, tag:'rocaBorde1' });
     });
 
-    /* segunda fila, más lejos y más grande: da masa a la ladera (sin sombra) */
+    /* segunda fila, más lejos y más grande: da masa a la ladera (sin sombra).
+       En nieve esta fila cambia de MODELO (PAL.rocasLejos = s6_peak/s6_peak2):
+       a 16-42 u de alto y fuera de la pista, las cumbres del mapa de hielo son
+       exactamente lo que el juego usa para "montaña que no se pisa", y hacen
+       que la garganta se lea como un valle entre picos y no como una zanja. */
+    const CLAVES_LEJOS = CLAVES_ROCA.length ? (PAL.rocasLejos || CLAVES_ROCA) : [];
     const filas2 = [];
     for(let z = 120; z > -(K.len + 200); z -= 42){
       const hw = hwAt(z);
       for(const lado of [-1, 1]) if(rng() < 0.8 * K.densRoca) filas2.push({ z, hw, lado });
     }
-    CLAVES_ROCA.forEach((clave, ci) => {
-      const mias = filas2.filter((_, i) => (i % CLAVES_ROCA.length) === ci);
+    CLAVES_LEJOS.forEach((clave, ci) => {
+      const mias = filas2.filter((_, i) => (i % CLAVES_LEJOS.length) === ci);
       siembra(world, clave, mias.length, rng, (i, med) => {
         const f = mias[i];
         const alto = 16 + rng() * 26;
@@ -1798,9 +2084,13 @@ function buildScene(){
         return { x, y: null, z: zz, hundeFrac: 0.24 + rng()*0.16,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.10, rz:(rng()-0.5)*0.10,
                  ex: e * (0.85 + rng()*0.5), ey: e, ez: e * (0.85 + rng()*0.5) };
-      }, { sombra:false, plano:true, tag:'rocaBorde2' });
+      }, { sombra:false, plano:true,
+           /* las cumbres del mapa de hielo ya vienen nevadas: se les da el
+              tinte SUAVE del telón, no el frío de las rocas de arena */
+           tinte: PAL.rocasLejos ? PAL.tintePico : PAL.tinteRoca, tag:'rocaBorde2' });
     });
-    console.log('[descenso] borde: ' + nRocas + ' rocas de ' + CLAVES_ROCA.join('/'));
+    console.log('[descenso] borde: ' + nRocas + ' rocas de ' + CLAVES_ROCA.join('/') +
+                ' + 2ª fila de ' + CLAVES_LEJOS.join('/'));
   }
 
   /* --- JALONES DEL LÍMITE: cada 46 u a los dos lados, para que se LEA dónde
@@ -1810,7 +2100,7 @@ function buildScene(){
     /* MULTITONO + MULTITILE: bandas naranja/oscuro en el propio poste y tinte
        por copia. Antes era una caja lisa naranja repetida n veces. */
     const im = new THREE.InstancedMesh(_cajaBandas(6, 0.52, 1.55),
-      new THREE.MeshLambertMaterial({ color:0xff8a3d, vertexColors:true, flatShading:true }), n);
+      new THREE.MeshLambertMaterial({ color:PAL.jalon, vertexColors:true, flatShading:true }), n);
     let i = 0;
     for(let k = 0; k < n / 2; k++){
       const z = 20 - k * step, hw = hwAt(z);
@@ -1876,7 +2166,7 @@ function buildScene(){
         return { x:o2.x, y:null, z:o2.z, hundeFrac: 0.12 + rng()*0.08,
                  rotY: rng() * TAU, rx:(rng()-0.5)*0.12, rz:(rng()-0.5)*0.12,
                  ex: e * (0.85 + rng()*0.35), ey: e * (0.8 + rng()*0.45), ez: e * (0.85 + rng()*0.35) };
-      }, { sombra:true, plano:true, tag:'rocaObst' });
+      }, { sombra:true, plano:true, tinte:PAL.tinteRoca, tag:'rocaObst' });
     });
   }
 
@@ -2015,7 +2305,7 @@ function buildScene(){
 
     /* LABIO oscuro + jalones: a distancia lo legible es el CANTO. */
     const lip = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshLambertMaterial({ color:0x33302c }), ramps.length);
+      new THREE.MeshLambertMaterial({ color:PAL.lip }), ramps.length);
     ramps.forEach((o, i) => {
       p.set(o.x, o.baseY + o.h, o.z - o.len/2 + 0.5); q.identity(); s2.set(o.w*1.03, 0.55, 1.1);
       m.compose(p, q, s2); lip.setMatrixAt(i, m);
@@ -2027,7 +2317,7 @@ function buildScene(){
     world.add(lip);
 
     const post = new THREE.InstancedMesh(_cajaBandas(5, 0.62, 1.45),
-      new THREE.MeshLambertMaterial({ color:0xff8a3d, vertexColors:true, flatShading:true }),
+      new THREE.MeshLambertMaterial({ color:PAL.jalon, vertexColors:true, flatShading:true }),
       ramps.length*2);
     let pi = 0;
     ramps.forEach(o => { for(const side of [-1,1]){
@@ -2096,10 +2386,13 @@ function buildScene(){
     DESC.picks = null;
   }
 
-  /* --- META: cruza TODO el abanico --- */
+  /* --- META: cruza TODO el abanico ---
+     El color sale de la piel y no es un capricho: en arena una meta BLANCA
+     recorta perfectamente contra la duna, y en nieve la misma meta blanca
+     sobre nieve blanca deja de existir. En nieve va en rojo. */
   {
     const g = new THREE.Group();
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const mat = new THREE.MeshLambertMaterial({ color: PAL.meta });
     const hw = hwAt(-K.len);
     const n = 16;
     for(let k = 0; k < n; k++){
@@ -2164,8 +2457,30 @@ function buildScene(){
         return { x:f.x, y:null, z:f.z, hundeFrac:0.10, rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
       }, { sombra:true, tag:'mata' });
     });
+
+    /* ---- HITOS: raros, grandes y siempre a un lado ----
+       Iglú, muñeco de nieve y trineo. Van cada ~400 u y solo uno por sitio: son
+       para levantar la vista un momento al pasar, no para poblar la ladera. Con
+       la densidad de `borde` dejarían de sorprender a la tercera vez. */
+    let nHito = 0;
+    if(D.hito && D.hito.length){
+      const hitos = [];
+      for(let z2 = -220; z2 > -(K.len - 120); z2 -= (330 + rng() * 220) / clamp(K.densDeco, 0.3, 2))
+        hitos.push({ z:z2, lado: rng() < 0.5 ? -1 : 1, hw:hwAt(z2) });
+      D.hito.forEach((clave, ci) => {
+        const mios = hitos.filter((_, i) => (i % D.hito.length) === ci);
+        nHito += siembra(world, clave, mios.length, rng, (i, med) => {
+          const f = mios[i];
+          const x2 = f.lado * (f.hw * (0.78 + rng() * 0.14));
+          const e2 = (3.4 + rng() * 2.2) / med.alto;
+          return { x:x2, y:null, z:f.z + (rng()-0.5)*20, hundeFrac:0.08,
+                   rotY: rng() * TAU, ex:e2, ey:e2, ez:e2 };
+        }, { sombra:true, fuerza:0.45, tag:'hito' });
+      });
+    }
     console.log('[descenso] decorado: ' + nBorde + ' a los lados (' + D.borde.join('/') +
-                ') + ' + nMedio + ' en pista (' + D.mata.join('/') + ')');
+                ') + ' + nMedio + ' en pista (' + D.mata.join('/') + ')' +
+                (nHito ? ' + ' + nHito + ' hitos (' + D.hito.join('/') + ')' : ''));
   }
 
   /* --- PARTÍCULAS --- */
@@ -2280,7 +2595,10 @@ function buildScene(){
         P.x[i] = (rp()*2-1) * K.polvoCaja;
         P.y[i] = (rp()*2-1) * K.polvoCaja * 0.4;
         P.z[i] = (rp()*2-1) * K.polvoCaja;
-        P.s[i] = 0.05 + rp() * 0.13;     // motas PEQUEÑAS: es bruma, no pedrisco
+        /* motas PEQUEÑAS: en arena es bruma, no pedrisco. En nieve suben algo
+           (K.polvoTam) porque un copo tiene que verse, pero poco: un copo
+           grande a 3 u de la cámara se lee como una bola de nieve flotando. */
+        P.s[i] = K.polvoTam[0] + rp() * (K.polvoTam[1] - K.polvoTam[0]);
         P.f[i] = rp() * TAU;             // fase para la ondulación
       }
       DESC.polvo = P;
@@ -2558,7 +2876,11 @@ function updatePolvo(dt){
   const t = DESC.t;
   for(let i = 0; i < P.N; i++){
     P.x[i] += (K.polvoViento * 0.6 + Math.sin(t * 0.7 + P.f[i]) * 3.5) * dt;
-    P.y[i] += (-1.1 + Math.cos(t * 0.9 + P.f[i]) * 0.8) * dt;
+    /* ►NEVADA. La única diferencia entre el polvo del desierto y una nevada es
+       CUÁNTO CAE la mota: en arena K.polvoCae vale 1,1 (flota y deriva) y en
+       nieve 7 (cae, y el bamboleo se lee como copo dando tumbos). Mismo pool,
+       mismo reciclado, mismo coste. */
+    P.y[i] += (-K.polvoCae + Math.cos(t * 0.9 + P.f[i]) * 0.8) * dt;
     P.z[i] += (K.polvoViento + Math.sin(t * 0.5 + P.f[i] * 2) * 2.5) * dt;
     if(P.x[i] >  C) P.x[i] -= 2*C; if(P.x[i] < -C) P.x[i] += 2*C;
     if(P.z[i] >  C) P.z[i] -= 2*C; if(P.z[i] < -C) P.z[i] += 2*C;
