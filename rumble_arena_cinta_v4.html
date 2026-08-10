@@ -1465,6 +1465,7 @@ window.addEventListener('load', function(){
 <script src="western_anims.js?v=1"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
 <script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
 <script src="stage_pirate2_models.js?v=1"></script> <!-- ►PIRSWAP · STAGE 12: barco grande/pequeño, bote y 3 muelles portuarios de Quaternius (pq_*), recoloreados a la madera naranja del kit Kenney. Color plano → 1 draw call por modelo -->
+<script src="stage_pirate_solids.js?v=1"></script> <!-- ►PIRSOLID · STAGE 12: la COLISIÓN de esos modelos y de las torres/pantalanes del kit, medida con raycast dentro del juego (no escrita a mano). Ver scratchpad/p_solids.js -->
 <script src="stage_pirate_models.js?v=1"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
@@ -3645,14 +3646,16 @@ function getCloud(key){
 }
 const CUMULUS_KEY = 'cloud1';                  // el CÚMULO (abultado/redondeado: huella W≈D, muy detallado). ►si no es este, prueba 'cloud2'/'cloud3'
 const CUMULUS_MUL = 2;                         // el cúmulo sale 2× más grande que el resto de nubes
-function addCloud(x,y,z, scale, drift){
+function addCloud(x,y,z, scale, drift, band){
   const keys=['cloud1','cloud2','cloud3'];
   const key = keys[(Math.random()*keys.length)|0];
   const c = getCloud(key);
   if(!c) return;                                           // sin modelo: no dibuja (quitadas las procedurales)
   c.scale.multiplyScalar((scale||1) * (key===CUMULUS_KEY ? CUMULUS_MUL : 1));   // el cúmulo 2×; SIN rotación aleatoria
   if(key===CUMULUS_KEY && Math.random()<0.5) c.scale.x *= -1;   // FLIP horizontal (espejo) a la mitad de los cúmulos: misma silueta en línea, pero variada
-  c.position.set(x,y,z); scene.add(c); markNoInk(c);   // ►NOINK: las nubes del prado van sueltas en la escena (no cuelgan de ningún *_SCENERY), hay que marcarlas una a una
+  c.position.set(x,y,z);
+  c.userData._y0 = y; c.userData._band = band || 'cielo';  // ►PIRSEA: el mar pirata sube las de cielo y APAGA las de debajo del agua
+  scene.add(c); markNoInk(c);   // ►NOINK: las nubes del prado van sueltas en la escena (no cuelgan de ningún *_SCENERY), hay que marcarlas una a una
   cloudOccluders.push(c);                     // se registra como oclusor tras construir la cinta (se funde si tapa al jugador)
   if(drift) drifters.push({ m:c, y, sp:.1, ph:Math.random()*6, drift });
 }
@@ -3664,7 +3667,7 @@ function scatterClouds(){
     addCloud((Math.random()-.5)*145, 48 + Math.random()*14, -12 - Math.random()*60, 0.7+Math.random()*1.2, 0.09+Math.random()*0.16);   // ►DOBLE altura (antes 24+7): no cruzan la cámara
   }
   for(let i=0;i<9;i++){                                    // BAJO las plataformas (entre el mar y el suelo)
-    addCloud((Math.random()-.5)*80, -3 - Math.random()*6, (Math.random()-.5)*55, 0.5+Math.random()*0.8, 0);
+    addCloud((Math.random()-.5)*80, -3 - Math.random()*6, (Math.random()-.5)*55, 0.5+Math.random()*0.8, 0, 'bajo');
   }
 }
 scatterClouds();
@@ -15609,15 +15612,26 @@ let _groundPl = null;   // ►S4: plataforma que devolvió groundAt (para saber 
    copiar el resultado antes). */
 let _platIdxOn = true;
 const _loosePlats = [], _qPlats = [];
-let _looseLen = -1;
+const _looseBins = new Map(); const _LBIN = 24;   // ►PIRSOLID: cubetas en X para las plataformas sueltas
+let _looseLen = -1, _looseDirty = false;          // _looseDirty: algo suelto se ha movido (barcos del canal)
 let _aabbN = 0;                        // contador de tests por frame (lo resetea perfTick; para medir A/B)
 function _platCandidates(x0, x1){
   if(!_platIdxOn || (typeof _segP0 !== 'undefined' && _segP0 > 0) ||
      typeof BELT === 'undefined' || !BELT.segs || !BELT.segs.length) return platforms;
-  if(_looseLen !== platforms.length){  // alta/baja de plataformas (rejillas de jefe, losetas…) → refresca las sueltas
-    _looseLen = platforms.length;
+  if(_looseLen !== platforms.length || _looseDirty){  // alta/baja de plataformas (rejillas de jefe, losetas…) → refresca las sueltas
+    _looseLen = platforms.length; _looseDirty = false;
     _loosePlats.length = 0;
     for(const pl of platforms) if(!pl.belt) _loosePlats.push(pl);
+    /* ►PIRSOLID · las "sueltas" pasaron de 7 a ~500 en el mar pirata (el barco trae 152 cajas medidas
+       y cada barco del canal las suyas) y ANTES entraban todas en cada consulta. Se cubetean por X,
+       igual que los segmentos: la consulta pasa de barrer 500 a mirar 1-2 cubos. Se reconstruye
+       cuando cambia el nº de plataformas o cuando algo suelto se ha MOVIDO (los barcos del canal
+       marcan _looseDirty al navegar). */
+    _looseBins.clear();
+    for(const pl of _loosePlats){
+      const b0 = Math.floor(pl.minX/_LBIN), b1 = Math.floor(pl.maxX/_LBIN);
+      for(let b=b0; b<=b1; b++){ let a=_looseBins.get(b); if(!a){ a=[]; _looseBins.set(b,a); } a.push(pl); }
+    }
   }
   const M = 1.0;                       // holgura > radio máximo de consulta (R=0.32 de collideWalls, m=0.4 de overAnyPlatform)
   _qPlats.length = 0;
@@ -15625,7 +15639,11 @@ function _platCandidates(x0, x1){
     if(sg.qMinX === undefined){ for(const pl of sg.plats) _qPlats.push(pl); continue; }   // sin bounds aún (antes del 1er updateBelt): candidato siempre
     if(x1 >= sg.qMinX - M && x0 <= sg.qMaxX + M) for(const pl of sg.plats) _qPlats.push(pl);
   }
-  for(const pl of _loosePlats) _qPlats.push(pl);
+  const b0 = Math.floor((x0-M)/_LBIN), b1 = Math.floor((x1+M)/_LBIN);
+  for(let b=b0; b<=b1; b++){
+    const a = _looseBins.get(b); if(!a) continue;
+    for(const pl of a) if(x1 >= pl.minX - M && x0 <= pl.maxX + M && _qPlats.indexOf(pl) < 0) _qPlats.push(pl);
+  }
   return _qPlats;
 }
 /* ►S4RIDE: altura REAL de la superficie de un RODILLO (perfil circular) en (x,z). El rodillo es
@@ -19143,9 +19161,13 @@ function updateFighter(p, dt){
     /* ►S10ZEROG: en la Vía Arcoíris todo el "recinto" se ensancha ×3 (muros laterales lejanos + muerte
        en Z ×3) y NO hay techo de muerte → puedes volar/planear muy lejos y arriba antes de que te saquen. */
     const _s10 = (STAGE===10);
+    /* ►PIRBIG: el mar pirata también ensancha el recinto (×1.25), pero SOLO en Z — los muros
+       laterales se quedan donde están: con el barco de 60 la proa y la popa ya casi los tocan y
+       alejarlos convertiría el stage en un pasillo vacío por delante y por detrás. */
+    const _pir = (STAGE===12 && typeof PIR_BLAST_MUL!=='undefined') ? PIR_BLAST_MUL : 1;
     const _wx = _s10 ? WALL_X*S10_BLAST_MUL : WALL_X;
-    const _zf = _s10 ? BLAST_Z_FAR*S10_BLAST_MUL : BLAST_Z_FAR;
-    const _zn = _s10 ? BLAST_Z_NEAR*S10_BLAST_MUL : BLAST_Z_NEAR;
+    const _zf = _s10 ? BLAST_Z_FAR*S10_BLAST_MUL : BLAST_Z_FAR*_pir;
+    const _zn = _s10 ? BLAST_Z_NEAR*S10_BLAST_MUL : BLAST_Z_NEAR*_pir;
     if(p.pos.x > _wx){ p.pos.x = _wx; if(p.vel.x > -WALL_PUSH) p.vel.x = -WALL_PUSH; wallHit(p, 1); }
     else if(p.pos.x < -_wx){ p.pos.x = -_wx; if(p.vel.x < WALL_PUSH) p.vel.x = WALL_PUSH; wallHit(p, -1); }
     if(p.pos.y < _loY || p.pos.z < -_zf || p.pos.z > _zn || (!_s10 && p.pos.y > _hiY)){ ko(p); return; }
@@ -20574,6 +20596,7 @@ function updateBelt(dt){
     }
   }
   if((STAGE===4 || STAGE===5 || STAGE===6 || STAGE===7 || STAGE===11) && typeof updateCarpets==='function') updateCarpets(dt);   // ►S4/S5/S6: bob de alfombras · ►S6M: blobs móviles (bob/patrulla/órbita/giro) — física (topY) y malla juntas, ANTES de updateFighter · ►WEST: tablones móviles del 11
+  if(STAGE===12 && typeof updatePirTraffic==='function') updatePirTraffic(dt);   // ►PIRTRAFFIC: los barcos del canal navegan AQUÍ, con las alfombras y el tren: malla + cajas juntas y antes de la física
   /* ►WEST: el `STAGE>=5` de aquí abajo también captura al 11 (western), que no tiene ninguna losa
      trampa ni péndulo. Hoy no rompería porque rebuildBelt vacía los arrays, pero es coste gratuito
      por frame y una mina para el día que el western sí tenga sus propios arrays. Exclusión explícita. */
@@ -20880,7 +20903,10 @@ function applyStageTheme(stage){
 /* restaura el PRADO (antiguo cuerpo del else) — base común desde la que se aplica cualquier stage */
 function _restoreS1Theme(){
   setCritterStage(1);                                                              // critters del prado de vuelta (luciérnagas/cuervos fuera)
-  for(const c of cloudOccluders) c.visible = true;   // nubes de prado (restaura)
+  /* nubes del prado: visibles otra vez Y en su altura original — el mar pirata sube las suyas y
+     esconde la banda de debajo del agua (►PIRSEA), y sin esto el cambio se quedaría pegado */
+  for(const c of cloudOccluders){ c.visible = true; if(c.userData._y0 !== undefined) c.position.y = c.userData._y0; }
+  if(typeof enablePirScenery==='function') enablePirScenery(false);   // ►PIRSEA: costa y fondo marino, fuera de los demás stages
   if(typeof seaMat!=='undefined' && _S1SNAP.seaCol) seaMat.color.copy(_S1SNAP.seaCol);
   if(typeof sea!=='undefined') sea.visible = true;                                 // S4 lo oculta (debajo hay DUNAS)
   if(_S1SNAP.woodCol){ for(let i=0;i<_WOODCOL.length;i++) _WOODCOL[i].copy(_S1SNAP.woodCol[i]); }
@@ -27520,29 +27546,23 @@ const SW_SEG_BUILDERS = [ buildWCanyonRim, buildWPuebloSpawn, buildWRancho, buil
    (medidas una a una) caen solas en la banda 4.5-5.5, a un salto de la cubierta. */
 const PIR_WL       = 2.0;    // línea del agua = cota de muerte (blastDownY la usa)
 const PIR_BELT_MUL = 0.85;   // algo más lenta que el resto: aquí hay que calcular saltos a cosas que pasan
-const PIR_SHIP_L   = 45;     // ESLORA del barco grande (pq_ship). Todo lo suyo se deriva de aquí
-const PIR_LANE     = 11.0;   // |z| mínimo de la cinta — el casco llega a 7.7 (►PIRSWAP: era 13.5)
-const PIR_CHAN     = [12.5, 23];   // ►PIRSWAP · el CANAL entre el barco y la orilla: por aquí desfilan barcos pequeños y botes
-const PIR_SHORE    = 25;     // ►PIRSWAP · a partir de aquí, islotes/atalayas/muelles (antes empezaban en 14)
-/* Cubiertas del barco grande en FRACCIÓN de eslora: [x0, x1, z0, z1, y], origen en el CENTRO del
-   barco y proa hacia −x. Medidas con raycast cenital sobre el modelo YA COLOCADO en el juego
-   (scratchpad/p_ship.js), no sobre el fichero: el error que queda es de ±0.07u.
-   Las cotas clave con eslora 45 son proa 9.15 · principal 7.64 · popa 10.33. */
-const PIR_DECK_FORE = 0.2033, PIR_DECK_MAIN = 0.1698, PIR_DECK_AFT = 0.2296;
-const PIR_SHIP_DECKS = [
-  /* La proa NO empieza en la punta: la semimanga medida cae a 2.3 en xf −0.30 (ahí ya es el
-     tajamar), así que una cubierta ancha hasta la punta serían dos metros de suelo sobre el agua. */
-  [-0.262, -0.015, -0.112,  0.112, PIR_DECK_FORE],   // castillo de PROA
-  [-0.015,  0.318, -0.118,  0.118, PIR_DECK_MAIN],   // CUBIERTA PRINCIPAL: la más baja y la más ancha, aquí se pelea
-  [ 0.318,  0.452, -0.105,  0.105, PIR_DECK_AFT],    // castillo de POPA, el punto alto del barco (el coronamiento se queda fuera: ahí la popa ya afina)
-  /* Las ESCALERAS a popa van por los DOS COSTADOS, no por el eje — el centro sigue a la cota de la
-     cubierta principal hasta el mamparo. (Medirlas por el eje fue el error de la primera pasada: dos
-     cajas de escalón flotando 1.3 y 2.3 sobre la madera.) */
-  [ 0.262,  0.290, -0.120, -0.050, 0.1933], [ 0.262, 0.290, 0.050, 0.120, 0.1933],   // peldaño bajo  (y≈8.70)
-  [ 0.290,  0.318, -0.120, -0.035, 0.2133], [ 0.290, 0.318, 0.035, 0.120, 0.2133],   // peldaño alto  (y≈9.60)
-];
-const PIR_HULL_Z   = 0.158;                       // semimanga del casco, en fracción de eslora (medida: 7.1 con eslora 45)
-const PIR_DECK     = PIR_SHIP_L * PIR_DECK_MAIN;  // cubierta principal (la referencia de altura del stage)
+/* ►PIRBIG (11/08, pedido de Toni "hazlo más grande aún"): eslora 45 → 60.
+   La trampa de escalar un barco es que la CUBIERTA SUBE con él (0.17·60 = 10.2 sobre la quilla), y
+   con ella los saltos: de la cubierta a un islote pasaría de 2.8 a 5.4 y el stage dejaría de
+   perdonar. Se arregla HUNDIENDO la quilla en vez de recortar el modelo — que además es lo que hace
+   un barco de verdad cuando crece: `PIR_SHIP_Y` baja la quilla a −2 y la cubierta principal se queda
+   en 8.2 (antes 7.64), o sea el mismo salto de siempre, y el casco por fin cala en el agua. */
+const PIR_SHIP_L   = 60;     // ESLORA del barco grande (pq_ship). Todo lo suyo se deriva de aquí
+const PIR_SHIP_Y   = -2.0;   // cota de la QUILLA (el modelo se apoya aquí; el agua está en PIR_WL)
+const PIR_LANE     = 13.0;   // |z| mínimo de la cinta — el casco llega a 9.5
+const PIR_CHAN     = [14, 26];   // el CANAL: por aquí navegan los barcos pequeños (►PIRTRAFFIC). NADIE construye dentro
+const PIR_SHORE    = 29;     // a partir de aquí, islotes/atalayas/muelles (medido: los muelles miden 15 de semianchura, así que sus centros van a 44)
+/* ►PIRBIG · el recinto de muerte del stage 12 se ensancha con el mapa (patrón de S10_BLAST_MUL):
+   con la orilla en 32-46 el borde de muerte de serie (−54/+44) se comía media orilla. */
+const PIR_BLAST_MUL = 1.25;                       // → muerte en −67 / +55
+const PIR_HULL_Z   = 0.158;                       // semimanga del casco, en fracción de eslora (medida)
+const PIR_DECK_FORE = 0.2033, PIR_DECK_MAIN = 0.1698, PIR_DECK_AFT = 0.2296;   // cubiertas en fracción de eslora (medidas)
+const PIR_DECK     = PIR_SHIP_Y + PIR_SHIP_L * PIR_DECK_MAIN;   // cubierta principal (la referencia de altura del stage)
 const PIR = { ship:null, water:null, wake:null, plats:[], cannons:[], balls:[], posts:[], t:0, volleyT:7, postT:0 };
 
 /* fichas de los props del kit (size = dimensión MAYOR en unidades de juego) */
@@ -27585,33 +27605,72 @@ function pirProp(key, x, y, z, opts){
   return m;
 }
 
+/* =====================================================================
+   ►PIRSOLID · LA COLISIÓN SE MIDE, NO SE ESCRIBE (11/08, queja de Toni:
+   "pisas suelo sólido y te caes, sobre todo en proa y popa")
+   Había DOS fallos, y el gordo no era de medida:
+   1) `pirPlat` marcaba los pantalanes, los muelles y las cubiertas de los
+      barcos pequeños con `solid:false` — y `platformTopAt` DESCARTA lo no
+      sólido. O sea que no es que estuvieran mal ajustados: no eran suelo
+      en absoluto. Se pisaba la madera dibujada y se caía al mar.
+   2) Una caja por prop no describe un barco (proa afinada, castillos a
+      distinta cota, bordas, escaleras).
+   Ahora cada modelo trae su colisión GENERADA con raycast cenital dentro
+   del propio juego (scratchpad/p_solids.js → stage_pirate_solids.js), en
+   fracciones de su tamaño, y expandida bajo bordas y mamparos para que la
+   franja del borde tenga suelo hasta el canto del casco.
+   `baseY` decide si además TAPONA por el lado:
+     · casco de barco → sí (no se atraviesa; se aborda por arriba)
+     · muelle/atalaya → no (se pasa por debajo y se aterriza encima)
+   ===================================================================== */
+function pirSolids(key, cx, cz, baseY, opts){
+  opts = opts || {};
+  const arr = (typeof window!=='undefined' && window.PIR_SOLIDS) ? window.PIR_SOLIDS[key] : null;
+  if(!arr || !arr.length) return null;
+  const S = opts.size || (DECOR_DEFSP[key] && DECOR_DEFSP[key].size) || 1;
+  const f = opts.flip ? -1 : 1;
+  const hull = !!opts.hull;
+  const recs = [];
+  for(const b of arr){
+    let x0 = b[0]*S*f, x1 = b[1]*S*f, z0 = b[2]*S*f, z1 = b[3]*S*f;
+    if(x0 > x1){ const t=x0; x0=x1; x1=t; }
+    if(z0 > z1){ const t=z0; z0=z1; z1=t; }
+    const topY = baseY + b[4]*S;
+    const rec = { minX:cx+x0, maxX:cx+x1, minZ:cz+z0, maxZ:cz+z1, topY,
+                  baseY: hull ? baseY - 1.0 : topY - 0.55,
+                  solid: true, step: 0.5, _pirBox: true };
+    platforms.push(rec); recs.push(rec);
+  }
+  return recs;
+}
+
 /* ---------- EL BARCO (fijo, fuera de la cinta) ---------- */
-/* ►PIRSWAP: ahora es pq_ship (Quaternius). Su eslora va en el eje X del modelo y la PROA cae en su
-   −x, que es justo el sentido de la marcha → va SIN rotar (el barco viejo, con la eslora en z,
-   necesitaba −π/2; si algún día se cambia el sentido de la cinta, es aquí y en PIR_SHIP_DECKS).
-   Las cotas salen de PIR_SHIP_DECKS × PIR_SHIP_L, así que cambiar la eslora no descuadra nada. */
+/* Es pq_ship (Quaternius): su eslora va en el eje X del modelo y la PROA cae en su −x, que es justo
+   el sentido de la marcha → va SIN rotar. Toda su colisión sale de PIR_SOLIDS, así que cambiar
+   PIR_SHIP_L o PIR_SHIP_Y no descuadra nada. */
 function _pirPushDecks(){                  // (re)inscribe las cubiertas en platforms[] — rebuildBelt lo vacía en cada reconstrucción
   PIR.plats.length = 0;
-  for(const d of PIR_SHIP_DECKS){
-    const rec = { minX:d[0]*PIR_SHIP_L, maxX:d[1]*PIR_SHIP_L, minZ:d[2]*PIR_SHIP_L, maxZ:d[3]*PIR_SHIP_L,
-                  topY:d[4]*PIR_SHIP_L, baseY:PIR_WL-1, solid:true, _pirDeck:true };
-    platforms.push(rec); PIR.plats.push(rec);
-  }
+  const recs = pirSolids('pq_ship', 0, 0, PIR_SHIP_Y, { size:PIR_SHIP_L, hull:true });
+  if(recs) for(const r of recs){ r._pirDeck = true; PIR.plats.push(r); }
+  /* ►PIRTRAFFIC: los barcos del canal tampoco son de la cinta — se crean una vez y sus cajas se
+     re-inscriben aquí, en el mismo sitio y por el mismo motivo que las cubiertas del barco grande. */
+  if(typeof pirBuildTraffic==='function'){ pirBuildTraffic(); _pirTrafPush(); }
 }
 function buildPirateShip(){
   if(PIR.ship){ _pirPushDecks(); return PIR.ship; }
   const G = new THREE.Group();
   const hull = (typeof getModel==='function') ? getModel('pq_ship', DECOR_DEFSP) : null;
   if(hull){
-    hull.position.set(0, (hull.userData.halfH||0), 0);   // getModel centra en Y → la quilla queda en y=0
+    hull.position.set(0, PIR_SHIP_Y + (hull.userData.halfH||0), 0);   // getModel centra en Y → la quilla cae en PIR_SHIP_Y (hundida: ►PIRBIG)
     hull.traverse(o=>{ if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
     G.add(hull);
   }
   /* vestido de cubierta con el kit Kenney (que sigue puesto): barriles, cajas, un cofre en el
      castillo de popa y los cañones asomando por las bordas de la cubierta principal. Las cotas se
-     leen de PIR_SHIP_DECKS, no a mano — si se retoca una cubierta, el vestido la sigue. */
-  const L = PIR_SHIP_L;
-  const yFore = PIR_DECK_FORE*L, yMain = PIR_DECK_MAIN*L, yAft = PIR_DECK_AFT*L;
+     derivan de las fracciones medidas, no a mano — si se retoca la eslora o el calado, el vestido
+     las sigue solo. */
+  const L = PIR_SHIP_L, Y0 = PIR_SHIP_Y;
+  const yFore = Y0 + PIR_DECK_FORE*L, yMain = Y0 + PIR_DECK_MAIN*L, yAft = Y0 + PIR_DECK_AFT*L;
   const deco = [[-0.20,-0.075],[-0.12,0.080],[0.06,-0.072],[0.16,0.070],[0.22,-0.060]];
   for(let i=0;i<deco.length;i++){
     const x = deco[i][0]*L, z = deco[i][1]*L;
@@ -27635,6 +27694,8 @@ function buildPirateShip(){
 function _pirClearShip(){
   if(PIR.ship){ scene.remove(PIR.ship); PIR.ship = null; }
   PIR.plats.length = 0;
+  if(typeof _pirClearTraffic==='function') _pirClearTraffic();   // ►PIRTRAFFIC: los barcos del canal viven en la RAÍZ
+  if(typeof PIR_FOE!=='undefined' && PIR_FOE.g){ scene.remove(PIR_FOE.g); PIR_FOE.g = null; }   // ►PIRCANNON2: el barco que dispara desde el horizonte
   if(typeof _pirClearPosts==='function') _pirClearPosts();   // ►PIRPOST: al salir del stage no queda ni un puesto vivo
   if(PIR.water){ scene.remove(PIR.water); PIR.water = null; }
   for(const b of PIR.balls) if(b.m && b.m.parent) b.m.parent.remove(b.m);
@@ -27650,6 +27711,11 @@ function _pirBuildWater(){
   const w = new THREE.Mesh(new THREE.PlaneGeometry(1400, 900, 96, 64), m);
   w.rotation.x = -Math.PI/2; w.position.y = PIR_WL;
   w.userData.noOcc = true; w.frustumCulled = false;
+  /* ►PIRSEA: semitransparente para que se vea el FONDO. Se aplica aquí y no solo en
+     enablePirScenery porque el agua se construye DESPUÉS del tema (rebuildBelt), y si no se
+     quedaba opaca la primera vez que entras al stage. */
+  m.transparent = true; m.opacity = 0.93; m.depthWrite = false; m.needsUpdate = true;   // 0.88 dejaba el mar lavado, como hielo
+  w.renderOrder = 2;
   scene.add(w); PIR.water = w;
   return w;
 }
@@ -27682,7 +27748,96 @@ function _applyPirTheme(){
   VISUAL.fill.color = 0xcfe8f5; VISUAL.fill.intensity = 0.40;
   VISUAL.fog.color = 0xcfe9f2; VISUAL.fog.near = 62; VISUAL.fog.far = 175;   // ►PIRATA: la niebla empieza LEJOS — con near 46 el propio barco (46u de eslora) ya salía lavado por la punta
   if(typeof seaMat!=='undefined') seaMat.color.setHex(0x1f6fa8);
-  for(const c of cloudOccluders) c.visible = true;    // cielo abierto: las nubes del prado valen tal cual
+  /* ►PIRSEA (pedido de Toni): las nubes que el prado siembra DEBAJO del agua se veían flotando sobre
+     el mar (el agua va con depthWrite:false, así que no las tapa) — fuera. Y las de cielo, más
+     altas: aquí el horizonte es todo cielo y a la altura del prado cruzaban el encuadre. */
+  for(const c of cloudOccluders){
+    const bajo = c.userData._band === 'bajo';
+    c.visible = !bajo;
+    if(!bajo && c.userData._y0 !== undefined) c.position.y = c.userData._y0 + 10;
+  }
+  if(typeof enablePirScenery==='function') enablePirScenery(true);   // costa a la vista + fondo oceánico
+}
+
+/* =====================================================================
+   ►PIRSEA · LA COSTA Y EL FONDO DEL MAR
+   Dos cosas que faltaban y que Toni pidió juntas: que en el horizonte se
+   vea TIERRA por un lado, y que debajo del agua haya fondo en vez de las
+   nubes del prado.
+   El fondo se ve porque el agua del stage 12 pasa a semitransparente; lo
+   demás del mar (oleaje, espuma) no se toca — sigue siendo ►WATER.
+   ===================================================================== */
+const PIR_COAST_SIDE = -1;            // la costa va al fondo (−z); el barco enemigo dispara del otro lado
+const PIR_SCENERY = { group:null, on:false };
+function buildPirScenery(){
+  if(PIR_SCENERY.group) return PIR_SCENERY.group;
+  const G = new THREE.Group(); G.userData.noOcc = true;
+  const rng = (a,b)=> a + Math.random()*(b-a);
+  const S = PIR_COAST_SIDE;
+  /* 1) FONDO OCEÁNICO: arena en penumbra con dunas y peñascos, muy por debajo de la quilla. No es
+     pisable (ni está en platforms[]): es lo que se ve a través del agua. */
+  {
+    const mat0 = new THREE.MeshStandardMaterial({ color:0x17415a, roughness:1, metalness:0, flatShading:true });   // fondo OSCURO: con uno claro el mar entero se aclaraba
+    const g0 = new THREE.PlaneGeometry(900, 700, 26, 20);
+    const pa = g0.attributes.position;
+    for(let i=0;i<pa.count;i++) pa.setZ(i, Math.sin(pa.getX(i)*0.06)*1.8 + Math.cos(pa.getY(i)*0.05)*2.2 + Math.random()*0.8);
+    g0.computeVertexNormals();
+    const bed = new THREE.Mesh(g0, mat0);
+    bed.rotation.x = -Math.PI/2; bed.position.y = -13; bed.renderOrder = -2;
+    bed.userData.noOcc = true; G.add(bed);
+    const rmat = new THREE.MeshStandardMaterial({ color:0x143a4f, roughness:1, flatShading:true });
+    for(let i=0;i<26;i++){
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rng(1.6,4.2), 0), rmat);
+      r.position.set(rng(-120,120), rng(-12.5,-9.5), rng(-90,80));
+      r.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+      r.userData.noOcc = true; G.add(r);
+    }
+  }
+  /* 2) COSTA a la vista: una masa de tierra continua al fondo con su cordillera. Assets REALES del
+     juego (sj_mountain), como el horizonte de Japón y el del hielo — nada de conos inventados. */
+  {
+    /* MEDIDO: con la costa a 150 la niebla del stage (near 62 · far 175) se la comía —solo se veía un
+       borrón blanco en el horizonte—. A 100-140 aún hay bruma (queda lejana) pero SE LEE como tierra. */
+    const land = new THREE.Mesh(new THREE.PlaneGeometry(620, 150, 20, 6),
+      new THREE.MeshStandardMaterial({ color:0x6f8a52, roughness:1, flatShading:true }));
+    land.rotation.x = -Math.PI/2; land.position.set(0, PIR_WL + 0.6, S*118);
+    land.userData.noOcc = true; G.add(land);
+    const beach = new THREE.Mesh(new THREE.PlaneGeometry(620, 24, 20, 2),
+      new THREE.MeshStandardMaterial({ color:0xd9c496, roughness:1, flatShading:true }));
+    beach.rotation.x = -Math.PI/2; beach.position.set(0, PIR_WL + 0.7, S*89);
+    beach.userData.noOcc = true; G.add(beach);
+    const tpl = (typeof getModel==='function' && typeof DECOR_DEFSJ!=='undefined') ? getModel('sj_mountain', DECOR_DEFSJ) : null;
+    if(tpl){
+      const base = DECOR_DEFSJ.sj_mountain.size || 40;
+      for(let i=0;i<22;i++){
+        const p = tpl.clone();
+        const s = rng(40, 92), k = s/base;
+        p.scale.multiplyScalar(k);
+        p.position.set(rng(-250,250), PIR_WL - 2 + (p.userData.halfH||0)*k, S*rng(102,148));
+        p.rotation.y = Math.random()*Math.PI*2;
+        p.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+        p.userData.noOcc = true; G.add(p);
+      }
+    }
+  }
+  if(typeof markNoInk==='function') markNoInk(G);     // ►NOINK: decorado de fondo, sin contorno
+  G.visible = false; scene.add(G);
+  PIR_SCENERY.group = G;
+  return G;
+}
+function enablePirScenery(on){
+  if(on && !PIR_SCENERY.group) buildPirScenery();
+  if(PIR_SCENERY.group) PIR_SCENERY.group.visible = !!on;
+  PIR_SCENERY.on = !!on;
+  /* el agua del mar pirata se vuelve semitransparente para que el fondo se vea; al salir del stage
+     vuelve a ser opaca (la comparte el resto de mares por `applyWaterLook`, pero la INSTANCIA es
+     nuestra: PIR.water). */
+  if(PIR.water && PIR.water.material){
+    const m = PIR.water.material;
+    m.transparent = !!on; m.opacity = on ? 0.93 : 1; m.depthWrite = !on;
+    PIR.water.renderOrder = on ? 2 : 0;
+    m.needsUpdate = true;
+  }
 }
 /* ---------- islotes, pantalanes y atalayas (piezas de los builders) ---------- */
 const PIR_PALMS = ['s3_palm','s3_palm2','s3_palm3','s3_palm4','s3_datepalm'];   // ►PIRSWAP: las palmeras del gran desierto (sin la 5, ver pirIsle)
@@ -27717,58 +27872,76 @@ function pirIsle(cx, cz, r, topY, opts){
   if(opts.post !== false && Math.random() < 0.55) pirPost(cx, cz, topY);   // ►PIRPOST: tirador plantado en la isla
   return pl;
 }
-/* PLATAFORMA SIN MALLA: el prop del kit ES el suelo, así que la caja va calcada a su superficie
-   MEDIDA y no se dibuja nada encima. (El primer intento usaba addFloating, que pinta sus propios
-   tablones: quedaban dos suelos superpuestos y a distinta altura — el clásico "prop que flota".)
-   `solid` = casco de barco (bloquea de lado); sin él se atraviesa por debajo y solo se aterriza. */
-function pirPlat(cx, cz, sx, sz, topY, solid){
-  const rec = { minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2,
-                topY, baseY: solid ? PIR_WL-2 : topY-0.35, solid: !!solid };
-  platforms.push(rec);                       // dentro de un builder, buildSegment ya le pone belt/lminX
-  return rec;
+/* ►PIRBIG · ISLOTE GRANDE Y COMPUESTO (pedido de Toni: "islotes más complejos y grandes de vez en
+   cuando"). No es un blob más gordo: son VARIOS solapados a distinta cota + un peñasco de relieve
+   que se sube, palmeral, rocas y su pantalán de acceso. Uno por sala como mucho — su gracia es que
+   contraste con los islotes simples de al lado. */
+function pirIsleBig(cx, cz, opts){
+  opts = opts || {};
+  const base = 3.6 + Math.random()*0.6;
+  /* R acotado: con 13 el cuerpo + la repisa llegaban a |z| 22 y se metían en el canal de paso
+     (medido: 120 solapes con barcos en 60 s). Con 9 la extensión total se queda en ~11. */
+  const R = 8 + Math.random()*2;
+  pirIsle(cx, cz, R, base, { palms:3, post:false });                       // cuerpo principal
+  const a1 = Math.random()*Math.PI*2;
+  pirIsle(cx + Math.cos(a1)*R*0.78, cz + Math.sin(a1)*R*0.78, R*0.55, base + 1.5, { palms:1, post:false });   // repisa alta
+  const a2 = a1 + 2.1 + Math.random();
+  pirIsle(cx + Math.cos(a2)*R*0.85, cz + Math.sin(a2)*R*0.85, R*0.45, base - 0.9, { palms:1, post:false });   // playita baja
+  /* peñasco: es el que da RELIEVE de verdad — se sube por la repisa y desde arriba se domina el canal */
+  if(typeof s3DuneHill==='function' && Math.random()<0.8){
+    const hx = cx + Math.cos(a1+Math.PI)*R*0.35, hz = cz + Math.sin(a1+Math.PI)*R*0.35;
+    s3DuneHill(hx, hz, R*0.34, R*0.30, base + 4.4, 'rose');
+    if(opts.tower!==false && Math.random()<0.5) pirTower(hx, hz, 'watch', { baseY: base + 4.4 });   // atalaya EN LO ALTO del peñasco
+  }
+  for(let i=0;i<3;i++){ const a=Math.random()*6.28, d=R*(0.55+Math.random()*0.4);
+    pirProp('p_rocksand_' + 'abc'[(Math.random()*3)|0], cx+Math.cos(a)*d, base-0.35, cz+Math.sin(a)*d, { sc:0.7+Math.random()*0.5 }); }
+  pirProp('p_barrel', cx+1.5, base, cz-1.2, {}); pirProp('p_crate', cx-1.8, base, cz+1.4, {});
+  pirPost(cx, cz, base); pirPost(cx + Math.cos(a1)*R*0.78, cz + Math.sin(a1)*R*0.78, base + 1.5);
+  return base;
 }
-/* Alturas PISABLES de cada prop sobre SU BASE, medidas con el área de caras hacia arriba (p16):
-   no son proporciones inventadas, son la cota del tablero de cada modelo ya escalado por DECOR_DEFSP. */
+/* Cota PISABLE de cada prop sobre su base — solo para saber DÓNDE plantar al tirador y qué devuelve
+   cada helper; el suelo de verdad lo ponen las cajas de PIR_SOLIDS. */
 const PIR_TOP = { p_dock:2.9, p_docksmall:2.5, p_towerwatch:7.7, p_towersmall:12.0, p_towerbig:13.3 };
-/* PANTALÁN sobre pilotes: se apoya en el AGUA (los pilotes tienen que mojarse) y su tablero cae
-   solo a ~4.5-4.9, o sea a un salto corto de la cubierta del barco (7.3). Ese es el peldaño. */
+/* PANTALÁN sobre pilotes: se apoya en el AGUA (los pilotes tienen que mojarse). Su tablero queda a
+   ~4.5-4.9, o sea a un salto corto de la cubierta del barco: ése es el peldaño de vuelta. */
 function pirDock(cx, cz, big){
   const key = big ? 'p_dock' : 'p_docksmall';
   pirProp(key, cx, PIR_WL, cz, { yaw:0, shadow:false });
+  pirSolids(key, cx, cz, PIR_WL);                  // ►PIRSOLID: tablero, escalones y pilotes, medidos
   const topY = PIR_WL + PIR_TOP[key];
-  pirPlat(cx, cz, big ? 7.4 : 5.0, big ? 7.4 : 6.4, topY);
   if(Math.random() < 0.5) pirPost(cx, cz, topY);   // ►PIRPOST
   return topY;
 }
-/* ATALAYA: torre apoyada en el agua. La plataforma es su remate, que queda POR ENCIMA de la cubierta
-   (9.7 / 14 / 15.3): son los puntos altos del stage y por eso los ocupan los tiradores. */
-function pirTower(cx, cz, kind){
+/* ATALAYA: SIEMPRE sobre tierra (pedido de Toni: "las torres no deben emerger del agua"). Se le
+   construye su islote debajo y se apoya en la arena REAL medida, no en la línea de flotación. */
+function pirTower(cx, cz, kind, opts){
+  opts = opts || {};
   const K = kind || (Math.random()<0.5 ? 'small' : 'watch');
   const key = K==='big' ? 'p_towerbig' : K==='small' ? 'p_towersmall' : 'p_towerwatch';
-  pirProp(key, cx, PIR_WL, cz, { yaw:0 });
-  const topY = PIR_WL + PIR_TOP[key];
-  pirPlat(cx, cz, K==='watch' ? 6.5 : 4.6, K==='watch' ? 6.5 : 4.6, topY);
-  if(K==='small') pirPlat(cx, cz, 5.6, 5.6, PIR_WL + 6.3);   // la torre mediana trae un rellano a media altura: peldaño gratis
-  pirPost(cx, cz, topY);                                     // ►PIRPOST: la atalaya SIEMPRE tiene vigía — es el nido de francotirador del stage
+  let baseY = opts.baseY;
+  if(baseY === undefined){
+    const rIs = K==='big' ? 8.5 : K==='small' ? 7 : 6.5;
+    baseY = 3.6 + Math.random()*0.9;
+    pirIsle(cx, cz, rIs, baseY, { post:false, palms: (Math.random()<0.6 ? 1 : 0) });   // la isla que la sostiene
+  }
+  pirProp(key, cx, baseY - 0.25, cz, { yaw:0 });   // −0.25: el pie, mordido por la arena (sin junta a la vista)
+  pirSolids(key, cx, cz, baseY - 0.25);            // ►PIRSOLID: remate, rellanos y almenas
+  const topY = baseY - 0.25 + PIR_TOP[key];
+  pirPost(cx, cz, topY);                           // ►PIRPOST: la atalaya SIEMPRE tiene vigía — es el nido del stage
   return topY;
 }
-/* ►PIRSWAP · BARCO PEQUEÑO (pq_shipsm) — el habitante del CANAL. Casco SÓLIDO: se aborda por arriba,
-   no se atraviesa. Su cubierta cae a PIR_WL + 0.1655·eslora ≈ 5.1, o sea ~2.5 por debajo de la tuya:
-   se baja de un salto y se vuelve a subir, que es lo que hace falta para ir a callar a los tiradores.
-   Las cotas y el rectángulo pisable están MEDIDOS sobre el modelo, no estimados. */
-const PQ_SM = { deckY:0.1655, x0:-0.152, x1:0.261, zh:0.140 };   // fracción de eslora (raycast cenital)
-function pirSmallShip(cx, cz, yaw){
-  const S = DECOR_DEFSP.pq_shipsm.size;
-  pirProp('pq_shipsm', cx, PIR_WL, cz, { yaw: yaw||0 });
-  const topY = PIR_WL + PQ_SM.deckY*S;
-  /* el rectángulo va en el frame del modelo; con yaw ±π/2 la eslora pasa a Z (solo se usan esos dos) */
-  const along = (S*(PQ_SM.x1-PQ_SM.x0)), across = (S*PQ_SM.zh*2), off = S*(PQ_SM.x0+PQ_SM.x1)/2;
-  const swap = Math.abs(Math.abs(yaw||0) - Math.PI/2) < 0.5;
-  const sgn  = (yaw||0) < 0 ? -1 : 1;
-  const rec = swap ? pirPlat(cx, cz + sgn*off, across, along, topY, true)
-                   : pirPlat(cx + off, cz, along, across, topY, true);
-  pirPost(cx + (swap?0:off), cz + (swap?sgn*off:0), topY);   // ►PIRPOST: TODO barco del canal va tripulado — es su razón de ser
-  return { topY, rec };
+/* BARCO PEQUEÑO (pq_shipsm): el habitante del CANAL. Casco SÓLIDO, se aborda por arriba. Su cubierta
+   cae ~3 por debajo de la tuya: se baja de un salto y se vuelve a subir, que es lo que hace falta
+   para ir a callar a los tiradores. Toda su colisión sale medida (►PIRSOLID) — la caja única de
+   antes dejaba la proa, la popa y las bordas sin suelo. */
+const PQ_SM_DECK = 0.1675;                         // cubierta, en fracción de eslora (medida)
+function pirSmallShip(cx, cz, yaw, size){
+  const S = size || DECOR_DEFSP.pq_shipsm.size;
+  pirProp('pq_shipsm', cx, PIR_WL, cz, { yaw:0, sc: S/DECOR_DEFSP.pq_shipsm.size });
+  const recs = pirSolids('pq_shipsm', cx, cz, PIR_WL, { size:S, hull:true });
+  const topY = PIR_WL + PQ_SM_DECK*S;
+  pirPost(cx + S*0.05, cz, topY);                  // ►PIRPOST: TODO barco del canal va tripulado — es su razón de ser
+  return { topY, recs };
 }
 /* BOTE de remos (pq_boat): DECORADO y solo decorado. Su regala queda a ras de agua, así que como
    plataforma sería una trampa pegada al plano de muerte (esto ya estaba decidido con el bote viejo).
@@ -27778,29 +27951,23 @@ function pirSmallShip(cx, cz, yaw){
    borda flota 1.3 sobre la madera, y el suelo de verdad queda POR DEBAJO del plano de muerte del agua
    (blastDownY = 2.6). No hay tamaño razonable que arregle eso: el bote se queda de DECORADO, y los
    tiradores embarcados van en los barcos pequeños, que sí tienen cubierta. */
-function pirRowBoat(cx, cz, yaw){
-  pirProp('pq_boat', cx, PIR_WL, cz, { yaw: (yaw!==undefined ? yaw : 0), shadow:false });
-  return PIR_WL + DECOR_DEFSP.pq_boat.size * 0.186;
-}
-/* ►PIRSWAP · MUELLES PORTUARIOS (pq_port1/2/3). Son las "estructuras en forma de plataforma" que
-   pidió Toni: cada uno trae una o dos pasarelas anchas y el resto es obra (grúas, casetas) que hace
-   de decorado. Los rectángulos son los MEDIDOS sobre el modelo (fracción de su dimensión mayor):
-   nada de "un poco más allá", que es como salen los props que flotan. */
+/* (el bote ya no se coloca por sala: es una de las embarcaciones de ►PIRTRAFFIC, que navega) */
+/* MUELLES PORTUARIOS (pq_port1/2/3): las "estructuras en forma de plataforma" que pidió Toni. Cada
+   uno trae pasarelas anchas y obra (grúas, casetas). Antes se les escribían 1-2 rectángulos a ojo y
+   ADEMÁS iban sin `solid`, o sea que ni eran suelo; ahora todo su tablero sale de PIR_SOLIDS. */
 const PIR_PORTS = {
-  1: { key:'pq_port1', deckY:0.332,  plats:[[-0.022,0.478, 0.150,0.090]] },                        // pasarela larga en X
-  2: { key:'pq_port2', deckY:0.2191, plats:[[ 0.358,0.142, 0.150,0.300], [-0.109,0.109,-0.400,0.100]] },  // pasarela en Z + embarcadero
-  3: { key:'pq_port3', deckY:0.2187, plats:[[-0.359,0.141, 0.100,0.350], [ 0.141,0.359,-0.075,0.075]] },  // muelle en L
+  1: { key:'pq_port1', deckY:0.332,  post:[[-0.02, 0.15],[ 0.30, 0.12]] },   // pasarela larga en X
+  2: { key:'pq_port2', deckY:0.2191, post:[[ 0.30, 0.15],[-0.11,-0.40]] },   // pasarela en Z + embarcadero
+  3: { key:'pq_port3', deckY:0.2187, post:[[-0.36, 0.10],[ 0.14,-0.07]] },   // muelle en L
 };
 function pirPort(kind, cx, cz, flip){
   const P = PIR_PORTS[kind] || PIR_PORTS[1];
   const S = DECOR_DEFSP[P.key].size;
   const f = flip ? -1 : 1;                    // media vuelta: el muelle mira al otro costado (y sus cajas también)
   pirProp(P.key, cx, PIR_WL, cz, { yaw: flip ? Math.PI : 0, shadow:false });
+  pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip });
   const topY = PIR_WL + P.deckY*S;
-  for(const q of P.plats){
-    pirPlat(cx + f*q[0]*S, cz + f*q[2]*S, q[1]*2*S, q[3]*2*S, topY);
-    pirPost(cx + f*q[0]*S, cz + f*q[2]*S, topY);   // ►PIRPOST: el muelle es zona enemiga, no un descansillo
-  }
+  for(const q of P.post) pirPost(cx + f*q[0]*S, cz + f*q[1]*S, topY);   // ►PIRPOST: el muelle es zona enemiga, no un descansillo
   return topY;
 }
 
@@ -27859,83 +28026,194 @@ function updatePirPosts(dt){
   }
 }
 function _pirClearPosts(){                                   // rebuildBelt borra las salas: los puestos mueren con ellas
-  for(const P of PIR.posts) if(P.live) P.live._pirPost = null;   // el tirador huérfano vuelve a ser horda normal (y lo culla el guarda de ±WALL_X)
-  PIR.posts.length = 0;
+  for(const P of PIR.posts){
+    if(P._traf) continue;                                    // los de los barcos en marcha NO son de la cinta (se re-inscriben aparte)
+    if(P.live) P.live._pirPost = null;                       // el tirador huérfano vuelve a ser horda normal (y lo culla el guarda de ±WALL_X)
+  }
+  PIR.posts = PIR.posts.filter(P => P._traf);
+}
+
+/* =====================================================================
+   ►PIRTRAFFIC · EL CANAL VIVO (pedido de Toni: "los barcos pequeños no
+   deben estar quietos; deben pasar a distintas velocidades y no chocar
+   con los islotes")
+   Los barcos del canal DEJAN de ser props de sala: pasan a vivir en la
+   RAÍZ de la escena con su propia velocidad, y su malla y sus cajas se
+   mueven JUNTAS al final de updateBelt — el mismo contrato que el tren
+   del western (_wUpdateTrains) y las alfombras (updateCarpets): dibujo y
+   colisión son lo mismo, y antes de la física del jugador.
+   La velocidad es relativa a TI: k=1 es un pecio a la deriva (va con el
+   mar), k<1 navega en tu mismo rumbo y se queda atrás despacio, y k<0 te
+   ADELANTA. Nunca chocan con nada porque solo navegan por el canal, banda
+   donde los builders tienen prohibido construir.
+   ===================================================================== */
+const PIR_TRAF_N = 9;              // embarcaciones en el agua a la vez (2 de cada 3 son barco pisable; el resto, botes)
+const PIR_TRAF = [];
+function _pirTrafReset(t, entrandoPorDetras){
+  const S = t.boat ? (8 + Math.random()*3) : (17 + Math.random()*9);   // "unos más grandes y otros más pequeños"
+  const side = Math.random()<0.5 ? -1 : 1;
+  t.z = side * (PIR_CHAN[0] + 1 + Math.random()*(PIR_CHAN[1]-PIR_CHAN[0]-2));
+  /* MEDIDO: dejando que `k` cayera cerca de 0 salían barcos CLAVADOS en el mundo (no se mueven con
+     el mar ni contigo) y los islotes acababan encima. Se sortea de dos tramos, sin pasar por cero. */
+  t.k = (Math.random()<0.25) ? (-0.45 + Math.random()*0.30)         // 1 de cada 4 te adelanta
+                             : ( 0.50 + Math.random()*0.85);
+  t.size = S;
+  t.x = entrandoPorDetras ? (-BELT.exitX - 20 - Math.random()*40) : (BELT.exitX + 20 + Math.random()*40);
+  if(t.k < 0) t.x = BELT.exitX + 20 + Math.random()*40;             // si adelanta, entra por delante
+  t.g.scale.setScalar(S / DECOR_DEFSP[t.boat?'pq_boat':'pq_shipsm'].size);
+  t.g.position.set(t.x, PIR_WL, t.z);
+  t.g.rotation.y = t.boat ? (Math.random()-0.5)*0.5 : 0;            // el bote va un poco atravesado, como una barca suelta
+  /* las cajas se recalculan a su tamaño: se tiran y se rehacen (son pocas y solo pasa al reciclar) */
+  if(t.recs) for(const r of t.recs){ const i=platforms.indexOf(r); if(i>=0) platforms.splice(i,1); }
+  t.recs = t.boat ? [] : (pirSolids('pq_shipsm', t.x, t.z, PIR_WL, { size:S, hull:true }) || []);
+  t.deckY = PIR_WL + PQ_SM_DECK*S;
+  if(t.post){ t.post.anchor.position.set(0, t.deckY - PIR_WL, 0); t.post.y = t.deckY;
+              if(t.post.live){ t.post.live._pirPost=null; killMinion(t.post.live); t.post.live=null; } }
+}
+function pirBuildTraffic(){
+  if(PIR_TRAF.length) return;
+  for(let i=0;i<PIR_TRAF_N;i++){
+    /* 1 de cada 3 es un BOTE: decorado y solo decorado. Medido en su día: su suelo interior queda por
+       DEBAJO del plano de muerte del agua, así que como plataforma sería una trampa. Pasa, y ya. */
+    const boat = (i % 3 === 2);
+    const m = (typeof getModel==='function') ? getModel(boat?'pq_boat':'pq_shipsm', DECOR_DEFSP) : null;
+    if(!m) return;
+    const g = new THREE.Group();
+    m.position.set(0, (m.userData.halfH||0), 0);
+    m.traverse(o=>{ if(o.isMesh){ o.castShadow = !boat; o.receiveShadow = false; } });
+    g.add(m); g.position.y = PIR_WL;
+    if(!boat) g.userData.occFloor = true;                          // ►OCC: es suelo, no un oclusor pelado
+    scene.add(g);
+    const t = { g, boat, post:null, recs:null, x:0, z:0, k:1, size:19, deckY:PIR_WL };
+    if(!boat){
+      const anchor = new THREE.Object3D(); g.add(anchor);          // el puesto del tirador VIAJA con el barco
+      t.post = { anchor, y:PIR_WL, live:null, cd:0, _traf:true };
+      PIR.posts.push(t.post);
+    }
+    PIR_TRAF.push(t);
+    _pirTrafReset(t, true);
+    /* repartidos ya de salida: si no, el mar arranca vacío y tardan media vuelta en entrar */
+    _pirTrafMove(t, (-BELT.exitX + (i+0.5)*(BELT.exitX*2/PIR_TRAF_N)) - t.x);
+  }
+}
+/* mueve barco + cajas juntos. TODO desplazamiento pasa por aquí: es la regla de "dibujo = colisión". */
+function _pirTrafMove(t, d){
+  if(!d) return;
+  t.x += d; t.g.position.x = t.x;
+  if(t.recs && t.recs.length){
+    for(const r of t.recs){ r.minX += d; r.maxX += d; }
+    if(typeof _looseDirty !== 'undefined') _looseDirty = true;   // ►PLATIDX: sus cubetas de X hay que rehacerlas
+  }
+}
+/* rebuildBelt vacía platforms[]: hay que re-inscribir las cajas de los barcos. El `indexOf` no es
+   por elegancia: la primera vez las acaba de meter `pirSolids` al construirlos, y sin la comprobación
+   se duplicarían (y un duplicado en platforms[] es un AABB fantasma que nadie borra). */
+function _pirTrafPush(){
+  for(const t of PIR_TRAF) if(t.recs) for(const r of t.recs) if(platforms.indexOf(r) < 0) platforms.push(r);
+}
+function updatePirTraffic(dt){
+  if(!PIR_TRAF.length || !BELT.on) return;
+  for(const t of PIR_TRAF){
+    const d = BELT.vel * t.k * dt;
+    _pirTrafMove(t, d);
+    if(d && !t.boat){                                              // arrastre del pasajero (patrón cinta/alfombra)
+      const x0 = t.x - t.size*0.55, x1 = t.x + t.size*0.55, z0 = t.z - t.size*0.25, z1 = t.z + t.size*0.25;
+      for(const p of players){
+        if(p.dead || p.out || !p.onGround) continue;
+        if(p.pos.x<x0 || p.pos.x>x1 || p.pos.z<z0 || p.pos.z>z1) continue;
+        if(Math.abs(p.pos.y - t.deckY) > 0.9) continue;
+        p.pos.x += d;
+      }
+      for(const mn of minions){
+        if(mn.dead || !mn.onGround) continue;
+        if(mn.pos.x<x0 || mn.pos.x>x1 || mn.pos.z<z0 || mn.pos.z>z1) continue;
+        if(Math.abs(mn.pos.y - t.deckY) > 0.9) continue;
+        mn.pos.x += d;
+      }
+    }
+    if(t.x > BELT.exitX + 60) _pirTrafReset(t, true);
+    else if(t.x < -BELT.exitX - 70) _pirTrafReset(t, false);
+  }
+}
+function _pirClearTraffic(){
+  for(const t of PIR_TRAF){
+    if(t.recs) for(const r of t.recs){ const i=platforms.indexOf(r); if(i>=0) platforms.splice(i,1); }
+    if(t.post && t.post.live){ t.post.live._pirPost=null; killMinion(t.post.live); }
+    scene.remove(t.g);
+  }
+  PIR_TRAF.length = 0;
+  PIR.posts = PIR.posts.filter(P => !P._traf);
 }
 
 /* ---------- las 6 salas de la cinta ---------- */
 /* REGLA DE ORO: nada dentro de |z| < PIR_LANE (ahí está el barco). idx1 cae en x=0 al empezar.
-   ►PIRSWAP · LOS TRES CARRILES. Cada sala reparte en dos bandas:
-     · CANAL (|z| 12.5–23): SOLO barcos pequeños y botes, y siempre con su tirador embarcado. Es el
-       carril de tráfico que pidió Toni — pasa entre tu barco y la orilla, y es lo que te obliga a
-       bajar. Nada de islotes aquí: el canal tiene que quedar despejado para que se vea el desfile.
-     · ORILLA (|z| ≥ 25): islotes, atalayas, pantalanes y los muelles portuarios nuevos.
-   Cotas: los islotes van a 3.4-4.8 y los pantalanes a ~4.5-4.9; la cubierta pequeña, a ~5.1. Todo a
-   menos de 5.0 de la cubierta grande (7.65), que es lo que sube un salto: se sale y se vuelve. */
+   ►PIRBIG · LOS TRES CARRILES, con el barco de 60:
+     · CASCO   |z| ≤ 9.5   tu barco.
+     · CANAL   |z| 15–30   NADIE construye aquí. Es la calle por la que navegan los barcos de
+                           ►PIRTRAFFIC, que ya no son props de sala sino tráfico de verdad. Solo se
+                           permiten AMARRADOS: un barco pegado a un muelle, que sí va en la cinta.
+     · ORILLA  |z| ≥ 32    islotes (algunos grandes y compuestos), atalayas —siempre SOBRE tierra—,
+                           pantalanes y los muelles portuarios.
+   Cotas: islotes 3.4-4.8 · pantalanes ~4.7 · cubierta pequeña ~5.2 · cubierta grande 8.2. Todo a
+   menos de 5 de la cubierta, que es lo que sube un salto: se sale y se vuelve. */
 function buildPirIslas(){                       // idx0 · archipiélago a los dos costados
-  pirIsle(-22, -29, 7, 4.2, { barrel:true }); pirIsle(-4, -34, 5.5, 3.8);
-  pirIsle( 16, -27, 6, 4.6); pirIsle(26, -35, 5, 4.0);
-  pirIsle(-18,  29, 6.5, 4.4); pirIsle(2, 33, 5, 3.9, { barrel:true });
-  pirIsle( 20,  27, 6, 4.8); pirIsle(30, 34, 4.5, 4.0);
-  pirDock(-10, -26); pirDock(10, 26);                   // peldaños de media distancia hacia la orilla
-  pirTower(-30, -25, 'watch'); pirTower(28, 25, 'small');
-  pirSmallShip(-14, -16, 0); pirRowBoat(12, -20, 0.4);  // ►CANAL
-  pirSmallShip( 16,  17, 0); pirRowBoat(-8, 21, -0.3);
-  addPad(-22, -29); addPad(20, 27);
+  pirIsleBig(-20, -42);                                  // ►PIRBIG: el islote grande de la sala
+  pirIsle(-2, -40, 5.5, 3.8); pirIsle( 18, -34, 6, 4.6); pirIsle(28, -42, 5, 4.0);
+  pirIsle(-18,  34, 6.5, 4.4); pirIsle(4, 40, 5, 3.9, { barrel:true }); pirIsle(22, 33, 6, 4.8);
+  pirDock(-10, -32); pirDock(10, 32);                    // peldaños de media distancia hacia la orilla
+  pirTower(30, 34, 'small');
+  addPad(-20, -42); addPad(22, 32);
 }
-function buildPirConvoy(){                      // idx1 · sala de SPAWN: el convoy que te escolta (y te ataca)
-  pirSmallShip(-22, -14, 0); pirSmallShip(4, -18, 0); pirSmallShip(22, -15, 0);   // ►CANAL: tres al costado de babor
-  pirSmallShip(-12, 16, 0); pirSmallShip(14, 20, 0);
-  pirRowBoat(-2, -22, 0.25); pirRowBoat(24, 14, -0.2);
-  pirIsle(-2, -31, 6, 4.2); pirIsle(0, 31, 6, 4.2);
-  pirDock(-8, -26); pirDock(6, 26);
-  addPad(-2, -31); addPad(0, 31);
+function buildPirConvoy(){                      // idx1 · sala de SPAWN: la escolta amarrada
+  pirPort(1, -14, -36); pirSmallShip(-14, -31.5, 0, 20);   // AMARRADO al borde del muelle, JUSTO fuera del canal de paso
+  pirPort(1, 16, 36, true); pirSmallShip(16, 31.5, 0, 18);
+  pirIsle(-2, -40, 6, 4.2); pirIsle(2, 40, 6, 4.2);
+  pirDock(-8, -32); pirDock(6, 32);
+  addPad(-2, -40); addPad(2, 40);
 }
 function buildPirFuerte(){                      // idx2 · el fuerte: atalayas altas y cañones apuntándote
-  pirTower(-20, -29, 'big'); pirTower(-2, -33, 'small'); pirTower(18, -27, 'watch');
-  pirTower(-12, 29, 'small'); pirTower(16, 32, 'big');
-  pirIsle(-30, -34, 6, 4.4); pirIsle(30, 33, 6, 4.4);
-  pirDock(0, -25, true); pirDock(-4, 26, true);
-  pirSmallShip(10, -16, 0); pirSmallShip(-16, 18, 0);   // ►CANAL
-  pirRowBoat(-6, -20, 0.3); pirRowBoat(20, 15, -0.35);
-  for(const t of [[-20,-29],[16,32]]) pirProp('p_cannonmob', t[0]+2.2, PIR_WL+13.3, t[1], { yaw:0, shadow:false });   // el cañón, EN el remate de la torre grande (13.3 = su cota medida)
-  addPad(-30, -34); addPad(30, 33);
+  pirTower(-20, -36, 'big'); pirTower(2, -41, 'small'); pirTower(20, -34, 'watch');
+  pirTower(-14, 36, 'small'); pirTower(18, 40, 'big');
+  pirDock(0, -32, true); pirDock(-4, 33, true);
+  for(const t of [[-20,-36],[18,40]]) pirProp('p_cannonmob', t[0]+2.2, PIR_WL+15.5, t[1], { yaw:0, shadow:false });   // el cañón, en el remate de la torre grande
+  addPad(-20, -36); addPad(18, 40);
 }
 function buildPirNaufragio(){                   // idx3 · el arrecife: la orilla más rota del stage
-  pirIsle(-8, -30, 9, 3.6, { palms:3 });
-  pirIsle(22, -33, 5, 4.2); pirIsle(-26, -27, 5, 4.6);
-  pirIsle(-2, 32, 7, 4.2, { palms:2 }); pirIsle(24, 28, 5.5, 4.8);
-  for(const r of [[-14,-24],[8,-25],[-8,25],[16,26]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:0.8, shadow:false });   // arrecife: rocas medio sumergidas
-  pirDock(2, -26); pirDock(6, 26.5);
-  pirSmallShip(-4, -17, 0); pirSmallShip(18, 16, 0);    // ►CANAL
-  pirRowBoat(16, -21, -0.4); pirRowBoat(-18, 20, 0.2); pirRowBoat(-2, 14, 0.5);
-  addPad(-8, -30); addPad(-2, 32);
+  pirIsleBig(-6, -42);
+  pirIsle(24, -38, 5, 4.2); pirIsle(-26, -34, 5, 4.6); pirIsle(-4, -41, 7, 4.2, { palms:2 });
+  pirIsle(26, 33, 5.5, 4.8);
+  for(const r of [[-14,-31],[8,-30],[-8,31],[16,31]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:0.8, shadow:false });   // arrecife: rocas medio sumergidas
+  pirDock(2, -32); pirDock(6, 32.5);
+  addPad(-6, -42); addPad(-4, 38);
 }
 function buildPirPuerto(){                      // idx4 · EL PUERTO: los muelles nuevos, el camino largo por los costados
-  pirPort(2, -14, -31);  pirPort(3, 20, 30, true);      // ►PIRSWAP: las estructuras-plataforma de Quaternius
-  pirPort(1, 18, -26);
-  pirIsle(-32, -28, 5, 4.2); pirIsle(-26, 27, 5, 4.2);
-  pirDock(-2, -25); pirDock(-6, 26);
-  pirTower(6, -34, 'small');
-  pirSmallShip(-20, -15, 0); pirSmallShip(6, -19, 0);   // ►CANAL: barcos atracando al puerto
-  pirSmallShip(-6, 16, 0);  pirRowBoat(22, 20, -0.25); pirRowBoat(-24, 17, 0.3);
-  addPad(-32, -28); addPad(-26, 27);
+  pirPort(2, -16, -44);  pirPort(3, 22, -44);              // los dos muelles GRANDES, al costado que tiene sitio (miden 30 de fondo)
+  pirPort(1, 18, 36, true);   pirSmallShip(18, 31.5, 0, 22);   // amarrado en el pantalán del puerto
+  pirIsle(-34, -34, 5, 4.2); pirIsle(-26, 33, 5, 4.2);
+  pirDock(-2, -31); pirDock(-6, 32);
+  pirTower(6, -42, 'small');
+  addPad(-34, -34); addPad(-26, 33);
 }
-function buildPirAbordaje(){                    // idx5 · ABORDAJE: el canal lleno, casco contra casco
-  pirSmallShip(-10, -14.5, 0); pirSmallShip(8, -14.5, 0);   // ►CANAL: pegados al costado — es un abordaje
-  pirSmallShip(-2, 15, 0);     pirSmallShip(18, 15, 0);
-  pirRowBoat(-20, -19, 0.3); pirRowBoat(24, -17, -0.3); pirRowBoat(-16, 20, 0.4);
-  pirPort(1, -6, 28);
-  pirIsle(-30, -27, 5.5, 4.4); pirIsle(30, 26, 5.5, 4.4);
-  pirDock(-22, -25); pirDock(24, 26);
-  addPad(-30, -27); addPad(30, 26);
+function buildPirAbordaje(){                    // idx5 · ABORDAJE: dos barcos amarrados a tiro de salto
+  pirPort(1, -8, -36); pirSmallShip(-8, -31.5, 0, 24);    // el grande del abordaje, amarrado al borde del canal
+  pirPort(1, 14, 36, true); pirSmallShip(14, 31.5, 0, 21);
+  pirIsleBig(28, -42, { tower:false });
+  pirIsle(-32, 34, 5.5, 4.4);
+  pirDock(-22, -31); pirDock(24, 32);
+  addPad(-32, 34); addPad(28, -42);
 }
 const PIR_SEG_BUILDERS = [ buildPirIslas, buildPirConvoy, buildPirFuerte, buildPirNaufragio, buildPirPuerto, buildPirAbordaje ];
 
-/* ---------- CAÑONAZOS: el peligro del mundo (►PIRCANNON) ----------
-   Andanada telegrafiada: primero una marca creciente en la cubierta (el punto donde va a caer),
-   después la bola. El aviso es el juego: si te quedas parado en la marca, es tuyo. */
-const PIR_BALL_DMG = 22, PIR_WARN = 1.25;
+/* ---------- CAÑONAZOS DESDE EL HORIZONTE (►PIRCANNON2) ----------
+   (11/08, pedido de Toni: "que se vean venir desde el horizonte con un flash, con su tiro parabólico,
+   y una señal en la cubierta que se va volviendo intensa, como los rayos del stage 2")
+   Antes la bola aparecía a 46u sobre tu cabeza y caía en 1,25 s: no se veía venir, solo caía.
+   Ahora dispara un BARCO DE GUERRA visible en el horizonte — fogonazo y humo en su costado — y la
+   bala hace una parábola de ~2 s que puedes seguir con la vista. La marca del suelo vive TODO el
+   vuelo: nace fina y se enciende conforme la bala llega. El aviso ES el juego. */
+const PIR_BALL_DMG = 22;
+const PIR_FLIGHT   = [1.9, 2.4];     // s de vuelo (se ve venir de sobra)
+const PIR_FOE = { g:null, side:1, t:0 };
 function _pirWarnMesh(){
   const g = new THREE.RingGeometry(0.55, 1.0, 20);
   g.rotateX(-Math.PI/2);
@@ -27943,19 +28221,48 @@ function _pirWarnMesh(){
   const r = new THREE.Mesh(g, m); r.userData.noOcc = true; r.frustumCulled = false;
   return r;
 }
+/* el que dispara: silueta de un barco grande MUY lejos, del lado que no tiene costa */
+function pirBuildFoe(){
+  if(PIR_FOE.g) return PIR_FOE.g;
+  const m = (typeof getModel==='function') ? getModel('pq_ship', DECOR_DEFSP) : null;
+  if(!m) return null;
+  const g = new THREE.Group();
+  const k = 1.15;
+  m.scale.multiplyScalar(k); m.position.set(0, (m.userData.halfH||0)*k, 0);
+  m.traverse(o=>{ if(o.isMesh){ o.castShadow = false; o.receiveShadow = false; } });
+  g.add(m);
+  PIR_FOE.side = (typeof PIR_COAST_SIDE!=='undefined') ? -PIR_COAST_SIDE : 1;   // al lado contrario de la costa
+  g.position.set(-24, PIR_SHIP_Y, PIR_FOE.side * 118);
+  g.rotation.y = PIR_FOE.side > 0 ? Math.PI : 0;                                // de costado: apunta hacia ti
+  g.userData.noOcc = true;
+  if(typeof markNoInk==='function') markNoInk(g);       // ►NOINK: decorado de fondo, sin contorno
+  scene.add(g); PIR_FOE.g = g;
+  return g;
+}
 function pirVolley(){
   const live = players.filter(p => p && !p.out && !p.dead);
   if(!live.length) return;
+  const foe = pirBuildFoe();
   const n = 1 + (Math.random()*2|0);
   for(let i=0;i<n;i++){
     const p = live[(Math.random()*live.length)|0];
-    const tz0 = PIR_SHIP_L*0.112;   // ►PIRSWAP: la andanada cae sobre la cubierta NUEVA (era ±7 a mano)
-    const tx = p.pos.x + (Math.random()-0.5)*7, tz = THREE.MathUtils.clamp(p.pos.z + (Math.random()-0.5)*7, -tz0, tz0);
+    const tz0 = PIR_HULL_Z*PIR_SHIP_L*0.72;                       // la andanada cae DENTRO de la cubierta
+    const tx = p.pos.x + (Math.random()-0.5)*8, tz = THREE.MathUtils.clamp(p.pos.z + (Math.random()-0.5)*8, -tz0, tz0);
     const ty = (typeof platformTopAt==='function' ? platformTopAt(tx, tz) : null);
     const y = (ty === null || ty === undefined) ? PIR_DECK : ty;
-    const warn = _pirWarnMesh(); warn.position.set(tx, y+0.06, tz); scene.add(warn);
-    const m = pirProp('p_ball', tx, y + 46, tz, { shadow:false, noOcc:true });
-    PIR.balls.push({ m, warn, x:tx, z:tz, y:y+46, ty:y, t:0, hit:false });
+    /* boca del cañón: el costado del barco enemigo, un poco escalonada por disparo (es una ANDANADA) */
+    const ox = (foe ? foe.position.x : -24) + (i-0.5)*9;
+    const oz = (foe ? foe.position.z : 118) - PIR_FOE.side*4;
+    const oy = PIR_SHIP_Y + PIR_SHIP_L*0.20;
+    const warn = _pirWarnMesh(); warn.position.set(tx, y+0.06, tz); warn.scale.setScalar(0.5); scene.add(warn);
+    const m = pirProp('p_ball', ox, oy, oz, { shadow:false, noOcc:true });
+    const dur = PIR_FLIGHT[0] + Math.random()*(PIR_FLIGHT[1]-PIR_FLIGHT[0]);
+    PIR.balls.push({ m, warn, x:tx, z:tz, ty:y, ox, oy, oz, t:0, dur, hit:false,
+                     arc: 16 + Math.random()*10, smokeT:0 });
+    /* FOGONAZO en la boca: se ve el disparo aunque estés mirando a otro lado (el humo queda un rato) */
+    const c = new THREE.Vector3(ox, oy, oz);
+    burst(c.clone(), 0xffd9a0, 14, 9, 7, 1.2); burst(c.clone(), 0xb0b8bd, 10, 5, 9, 1.6);
+    ring(c.clone(), 0xffc070, 10, 0.5);
   }
   sfx && sfx.bazooka && sfx.bazooka();
 }
@@ -27971,11 +28278,19 @@ function updateStagePir(dt){
   for(let i=PIR.balls.length-1;i>=0;i--){
     const b = PIR.balls[i];
     b.t += dt;
-    const k = Math.min(1, b.t/PIR_WARN);
-    if(b.warn){ b.warn.scale.setScalar(1 + (1-k)*2.6); b.warn.material.opacity = 0.25 + 0.7*k; }
-    if(b.m){                                            // la bola CAE dentro de la ventana de aviso: llega justo al acabar la marca
-      b.m.position.y = b.ty + 1 + (b.y - b.ty)*(1-k)*(1-k);
-      b.m.rotation.x += dt*6;
+    const k = Math.min(1, b.t/b.dur);
+    /* MARCA: nace pequeña y tenue y se cierra sobre el punto de impacto conforme la bala llega — el
+       jugador tiene los 2 s del vuelo para leerla y apartarse (idea de los rayos del stage 2). */
+    if(b.warn){
+      b.warn.scale.setScalar(0.5 + (1-k)*2.4 + Math.sin(PIR.t*14)*0.05*k);
+      b.warn.material.opacity = 0.18 + 0.75*k*k;
+      b.warn.material.color.setRGB(1, 0.36 - 0.22*k, 0.24 - 0.16*k);   // ámbar → rojo al llegar
+    }
+    if(b.m){                                            // PARÁBOLA de verdad: recta en XZ + arco en Y
+      b.m.position.set(b.ox + (b.x-b.ox)*k, b.oy + (b.ty-b.oy)*k + b.arc*4*k*(1-k), b.oz + (b.z-b.oz)*k);
+      b.m.rotation.x += dt*6; b.m.rotation.z += dt*4;
+      b.smokeT -= dt;                                   // estela: una mota cada poco, no un chorro por frame
+      if(b.smokeT <= 0){ b.smokeT = 0.10; burst(b.m.position.clone(), 0xd8d8d0, 2, 1.2, 2.5, 0.7); }
     }
     if(k >= 1 && !b.hit){
       b.hit = true;
@@ -27995,7 +28310,7 @@ function updateStagePir(dt){
         hurtEnemy(mn, 40, false); mn.hitstun = Math.max(mn.hitstun, .25); mn.onGround = false; mn.vel.y = Math.max(mn.vel.y, 5);
       }
     }
-    if(b.t > PIR_WARN + 0.25){
+    if(b.t > b.dur + 0.25){
       if(b.warn){ scene.remove(b.warn); }
       if(b.m){ scene.remove(b.m); }
       PIR.balls.splice(i,1);
