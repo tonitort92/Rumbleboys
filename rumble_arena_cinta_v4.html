@@ -1468,7 +1468,7 @@ window.addEventListener('load', function(){
 <script src="stage_pirate_models.js?v=1"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
-<script src="chars_models.js?v=20260810a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 (2.30s, rotaciones por bone-name + GC del BIN) -->
+<script src="chars_models.js?v=20260811a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
 <script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
 <script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
@@ -5267,8 +5267,8 @@ function mageToken(p){
   if(p._chainPoseT>0) return 'fchain';                // F: Cadena
   if(p._healPoseT>0)  return 'heal';                  // curar (H)
   if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de la arquera (antes de throwT: fireBow también sube throwT)
-  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'throwq';   // ►WPNANIM: espada/bate recogidos → su ataque básico (lanzamiento)
-  if(p.throwT>0)      return 'throwq';                // básico Cristal + Q Orbe (ambos lanzan)
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'melee';   // ►MELEEANIM: espada/bate recogidos → mandoble propio (Standing Melee Attack Downward)
+  if(p.throwT>0)      return 'throwq';                // básico Bola verde + Q Orbe (ambos lanzan)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : (p._dj ? 'djump' : 'jump');   // caída/doble salto → clips inyectados
   const sp = Math.hypot(p.vel.x, p.vel.z);
   if(sp > 5.0) return 'fastrun';                      // sprint → clip inyectado
@@ -5289,8 +5289,8 @@ function nunToken(p){
   if(p._novaPoseT>0) return 'fnova';                  // F: Nova (destello sagrado)
   if(p._healPoseT>0) return 'heal';                   // E Curación + curar (H)
   if(p._bowPoseT>0 && p._acts && p._acts.aim) return 'aim';   // ►WPNANIM: ARCO recogido → anim de la arquera (antes de throwT: fireBow también sube throwT)
-  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'throwq';   // ►WPNANIM: espada/bate recogidos → su ataque básico (lanzamiento)
-  if(p.throwT>0)     return 'throwq';                 // básico Bolt + Q Castigo (ambos lanzan)
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'melee';   // ►MELEEANIM: espada/bate recogidos → mandoble propio (Standing Melee Attack Downward)
+  if(p.throwT>0)     return 'throwq';                 // básico Bola azul + Q Castigo (ambos lanzan)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : 'jump';
   const sp = Math.hypot(p.vel.x, p.vel.z);
   if(sp > 5.0)  return 'fastrun';                     // sprint
@@ -5308,7 +5308,7 @@ function archerToken(p){
   if(p.rainT>0) return 'aim';                         // R: Lluvia — misma anim de disparo (+ torso al cielo, aparte)
   if(p._healPoseT>0) return 'heal';                   // curar (H)
   if(p.throwT>0) return 'aim';                        // básico (Arco) + E + F + Q — todas disparan
-  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'aim';   // ►WPNANIM: espada/bate recogidos → su ataque básico (disparo arquera)
+  if(p.atk && p.atk.phase!=='none' && (p.atk.kind==='sword' || p.atk.kind==='bat')) return 'melee';   // ►MELEEANIM: espada/bate recogidos → mandoble propio (Standing Melee Attack Downward)
   if(!p.onGround) return p.vel.y < 0 ? 'fall' : (p._dj ? 'djump' : 'jump');   // caída / doble salto (clips inyectados)
   const sp = Math.hypot(p.vel.x, p.vel.z);
   if(sp > 5.0) return 'fastrun';                      // sprint → clip inyectado
@@ -5411,8 +5411,8 @@ function updateCharMixers(dt){
         } else if(p._richAnim){
           /* SAMURÁI: acelera el clip para que se reproduzca ENTERO dentro de su ventana de juego
              (clips Mixamo 1.4-6.7s vs acciones 0.4-0.9s) → ni se corta ni va lento */
-          let win = (tok==='atk1'||tok==='atk2'||tok==='atk3'||tok==='atk4')
-            ? ((p.atk && (p.atk.wind+p.atk.hit+p.atk.rec)) || 0.4)   // total VIVO de la espada
+          let win = (tok==='atk1'||tok==='atk2'||tok==='atk3'||tok==='atk4'||tok==='melee')
+            ? ((p.atk && (p.atk.wind+p.atk.hit+p.atk.rec)) || 0.4)   // total VIVO de la espada (►MELEEANIM: el mandoble de mago/bruja/arquera va igual, al ritmo de SU golpe)
             : ((p._winMap||{})[tok] || (tok==='aim'?0.25:0));        // ►WPNANIM: 'aim' prestado (arco) sin ventana propia → 0.25s como la arquera
           a.timeScale = win>0 ? THREE.MathUtils.clamp((p._actDur[tok]||win)/win, 0.5, 6.0) : 1;
         } else if((tok==='punch'||tok==='dagger'||tok==='dagger2') && p.atk){
@@ -7815,18 +7815,43 @@ function _energyOrbMesh(color, scl){
     m._halo = halo; m._v = new THREE.Vector3(); m._pool = _orbPool; m._orb = true;
   }
   m.material.color.set(color); m.material.emissive.set(color);
-  m._halo.material.color.set(color); m._halo.scale.setScalar(1.8);
+  m._halo.material.color.set(color); m._haloBase = m._haloBase || new THREE.Vector3(); m._haloBase.set(1.8, 1.8, 1.8);
+  m._halo.scale.copy(m._haloBase);
   m.scale.setScalar(scl||1); m.quaternion.identity(); m.visible = true;
   return m;
 }
-function _orbPulse(m){ if(m && m._halo) m._halo.scale.setScalar(1.7 + .30*Math.sin(t*22 + m.id)); }   // late (el id desfasa cada bola)
+/* ►ENERGYLANCE: la misma idea en punta — LANZA AFILADA de energía (Q de la bruja). Cono emisivo con
+   la punta en +Y (misma convención que flecha y lanza real → spawnProj la orienta igual) + halo
+   aditivo que late. Late y estalla como la bola: comparten el flag `orb` del registro. */
+const _lanceGeo = new THREE.ConeGeometry(.13, 1, 7);   // largo 1 sobre +Y: el disparo lo escala
+const _lancePool = [];
+function _energyLanceMesh(color, len){
+  let m = _lancePool.pop();
+  if(!m){
+    m = new THREE.Mesh(_lanceGeo, new THREE.MeshStandardMaterial({ roughness:.25, metalness:0, emissiveIntensity:2.6 }));
+    const halo = new THREE.Mesh(_lanceGeo, new THREE.MeshBasicMaterial({
+      transparent:true, opacity:.40, blending:THREE.AdditiveBlending, depthWrite:false }));
+    m.add(halo);
+    m._halo = halo; m._v = new THREE.Vector3(); m._pool = _lancePool; m._orb = true; m._lance = true;
+  }
+  m.material.color.set(color); m.material.emissive.set(color);
+  m._halo.material.color.set(color); m._haloBase = m._haloBase || new THREE.Vector3(); m._haloBase.set(1.7, 1.06, 1.7);
+  m._halo.scale.copy(m._haloBase);
+  m.scale.set(.55, len||1, .55); m.quaternion.identity(); m.visible = true;   // fina y larga = afilada
+  return m;
+}
+/* el halo late; en la LANZA solo de grosor (si latiera a lo largo parecería que crece y encoge) */
+function _orbPulse(m){ if(!m || !m._halo || !m._haloBase) return;
+  const b = m._haloBase, k = 1 + .17*Math.sin(t*22 + m.id);
+  m._halo.scale.set(b.x*k, m._lance ? b.y : b.y*k, b.z*k); }
 function orbPop(pos, color){   // ESTALLIDO en el color de la bola
   burst(pos, color, 12, 6, 4.5, .8); ring(pos, color, 15, .32);
 }
-/* color del básico por clase: el MAGO lanza bolas de energía VERDES (verde de marca aclarado, igual
-   criterio que MAGE_TINT); el resto sigue lanzando su cristal del color del jugador */
-const MAGE_ORB_COL = 0x46f08a;
-function shardColor(p){ return (p && p._charKey==='link') ? MAGE_ORB_COL : p.color; }
+/* BÁSICO por clase: MAGO y BRUJA lanzan BOLAS DE ENERGÍA de su color de marca aclarado (mismo
+   criterio que MAGE_TINT/NUN_TINT: el de marca a secas sale apagado). El resto sigue lanzando su
+   cristal del color del JUGADOR. La tabla manda: si la clase está aquí, es bola. */
+const BASIC_ORB_COL = { link:0x46f08a, nun:0x3d8bff };   // mago VERDE · bruja AZUL
+function shardOrbColor(p){ return (p && p._charKey) ? BASIC_ORB_COL[p._charKey] : undefined; }
 function throwShard(p){
   if(p.shardCD>0 || p.shardAmmo<=0 || p.atk.phase!=='none' || p.block ||
      p.hang || p.hitstun>0 || p.stun>0 || p.beam) return;
@@ -7839,7 +7864,7 @@ function throwShard(p){
   p._animKick = (p._animKick||0)+1;   // ►BOLTANIM: cada cristal RE-DISPARA el clip throwq (bruja/mago). Sin esto, como la cadencia (.18) es MÁS CORTA que throwT (.26), el token 'throwq' nunca se soltaba durante una ráfaga: el clip (LoopOnce+clampWhenFinished) sonaba UNA vez y se quedaba congelado en su último frame — la animación "cortada". Mismo patrón que fireBow/qShoot.
   if(p.shardAmmo<=0) p.shardReload = SHARD_RELOAD;     // cargador vacío → recarga
   const f = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
-  const col = shardColor(p), orb = (col !== p.color);   // ►ENERGYORB: el mago lanza BOLA, los demás cristal
+  const orbCol = shardOrbColor(p), orb = (orbCol !== undefined), col = orb ? orbCol : p.color;   // ►ENERGYORB: mago/bruja lanzan BOLA de su color; los demás, cristal del color del jugador
   let m;
   if(orb){
     m = _energyOrbMesh(col, 1.25);
@@ -8449,6 +8474,9 @@ function spawnProj(p, yaw, opts){
     m = _energyOrbMesh(o.color||0xb060ff, o.orbScl||1.35);
   } else if(o.spear && (m = _spearMesh(o.scl))){   // ►SPEAR (Q caballero): lanza REAL, punta en +Y → vuela de punta
     m.quaternion.setFromUnitVectors(_PJ_UPY, f);
+  } else if(o.lance){   // ►ENERGYLANCE (Q bruja): lanza AFILADA de energía, punta en +Y → vuela de punta
+    m = _energyLanceMesh(o.color||0x59b8ff, o.lanceLen||1.1);
+    m.quaternion.setFromUnitVectors(_PJ_UPY, f);
   } else {
     m = _projMesh(r, .85+r*2.5, 1.4);
     m.material.color.set(o.color||0xffffff); m.material.emissive.set(o.color||0xffffff);
@@ -8459,7 +8487,7 @@ function spawnProj(p, yaw, opts){
     home:!!o.home, homeRate:o.homeRate, foe:o.foe,
     dmg:o.dmg, kbK:o.kbK, spell:o.spell, bleed:o.bleed, minBonus:o.minBonus, heal:o.heal, explode:o.explode,
     x0:o.falloff?p.pos.x:null, z0:o.falloff?p.pos.z:null, col:o.color||0x88ff88, trail:o.trail, ballScl:o.ballScl,
-    orb:!!o.orb, spear:!!o.spear,   // ►ENERGYORB: late al volar y estalla en su color al morir (ver updateWprojs/killWproj) · ►SPEAR: acero, sin la estela verde de los cilindros
+    orb:!!(o.orb||o.lance), spear:!!o.spear,   // ►ENERGYORB/►ENERGYLANCE: laten al volar y estallan en su color al morir (ver updateWprojs/killWproj) · ►SPEAR: acero, sin la estela verde de los cilindros
     axe:!!o.axe, spinAxis:o.axe?new THREE.Vector3(f.z,0,-f.x).normalize():null });   // ►HACHA: eje de tumbo = horizontal perpendicular al avance
 }
 function fireBazooka(p){
@@ -16435,7 +16463,7 @@ function archerFireLineQ(p){   // Arquera Q: FLECHA DE FUEGO — línea de fuego
 }
 function mageOrbQ(p){      const before=p.qAmmo; const opts={orb:true,orbScl:1.45,color:0xb060ff,size:.13,speed:22,life:1.5,dmg:8, spell:true,kbK:1.0,  aim:40,snd:'shardC',  name:'¡ORBES ARCANOS!'}; const r=qShoot(p,.14,opts); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; if(p._pkTwinOrb) spawnProj(p, p.yaw+0.20, opts); } return r; }   // ►ENERGYORB: bolas de energía que ESTALLAN en su color (antes: cilindro) · cada orbe redispara el clip throwq · ►PERK ORBES GEMELOS: orbe extra en abanico
 function knightJavelinQ(p){const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={spear:true, scl:SPEAR_LEN*cs, color:0xc2c8d4,size:.10,speed:28,life:1.3,dmg:8, kbK:1.2,           aim:30,snd:'swing',     name:'¡JABALINAS!'}; const r=qShoot(p,.15,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTwinJavelin){ spawnProj(p, p.yaw+0.18, opts); spawnProj(p, p.yaw-0.18, opts); } } return r; }   // pose de lanzamiento (anim knight) · ►PERK JABALINAS EN ABANICO: 3 en abanico
-function priestSmiteQ(p){  const before=p.qAmmo; const r=qShoot(p,.12,{color:0xffe9a8,size:.11,speed:28,life:1.3,dmg:6, spell:true,minBonus:18,heal:4,aim:40,snd:'parry',name:'¡CASTIGO!'}); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; } return r; }   // cada bolt de Castigo redispara el clip throwq (va al ritmo de la ráfaga)
+function priestSmiteQ(p){  const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const r=qShoot(p,.12,{lance:true,lanceLen:1.15*cs,color:0x59b8ff,size:.11,speed:28,life:1.3,dmg:6, spell:true,minBonus:18,heal:4,aim:40,snd:'parry',name:'¡CASTIGO!'}); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; } return r; }   // ►ENERGYLANCE: lanzas AFILADAS de energía azul (antes: bolt dorado) · cada bolt redispara el clip throwq (va al ritmo de la ráfaga)
 
 /* ===== ASIMETRÍA: kit por CLASE. Personaliza básico (X) / súper (B) / definitiva (R); el resto del
    chasis (agarre/escudo/contra/dash/giro) es compartido. Arrows → funciones hoisted. ►►► AMPLÍA ◄◄◄
