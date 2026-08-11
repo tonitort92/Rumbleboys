@@ -3031,10 +3031,14 @@ function animA(r, nom){
 /* ►MÁQUINA DE ESTADOS DE ANIMACIÓN (una decisión por frame, en orden de
    prioridad). La caída NO se decide aquí: fall() y su cadena wipeout→getup
    mandan mientras r.fall > 0. El salto usa el clip 'jump' DEL JUEGO NORMAL
-   (petición de Toni), turbo y carve son los Crouch de Mixamo. */
+   (petición de Toni), turbo y carve son los Crouch de Mixamo.
+   ►AIRPOSE (petición de Toni): en SANDBOARD y SNOWBOARD el aire NO cambia de
+   pose — se sigue surfeando con la misma animación que en el suelo. El corte a
+   'jump' se veía como un cambio sin motivo cada vez que despegabas de un lomo.
+   El surf (piel de mar) se queda con el clip de salto, que ahí sí es un salto. */
 function animEstado(r){
   if(!r.montado || r.fall > 0) return;
-  if(r.air)                 animA(r, 'jump');    // animA ya reinicia al entrar
+  if(r.air && SKIN === 'mar') animA(r, 'jump');  // animA ya reinicia al entrar
   else if(r.grind)          animA(r, 'board');
   else if(r.turbo)          animA(r, 'turbo');
   /* ►EL CLIP DE GIRO Y SU LADO — CERRADO CON UNA MEDIDA, no con un argumento.
