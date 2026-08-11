@@ -4548,7 +4548,7 @@ function makePlayer(color, darker, spawnX, isAI){
     yaw: isAI ? Math.PI*1.5 : Math.PI*.5,
     spawnX,
     damage: 0, stocks: 4,
-    onGround:false, jumps:2, coyote:0,
+    onGround:false, jumps:3, coyote:0,   // ►TRIPLE SALTO: aéreos disponibles al crear el luchador (base 2 + margen; se recalcula con airJumps al tocar suelo)
     dashCD:0, dashT:0,
     atk:{ t:0, phase:'none', didHit:false, kind:'hammer', wind:.1, hit:.12, rec:.2, amp:2.2 },
     charge:null, _atkHeld:false, _atkHoldT:0,
@@ -6855,13 +6855,13 @@ function kbMul(p){
   return (.6 + chaosLvl*.05) * (1 + .15*e) * (p.rainbowT>0?10:1) * clsStat(p,'kb');
 }
 function rateMul(p){ return Math.max(.35, Math.pow(.86, bst(p,'rate')) * clsStat(p,'rate') * (p.buffRateT>0?(p.buffRateV||0.75):1)); }   // CADENCIA: menor = más rápido; boost de cadencia temporal (cura)
-const MAX_AIR_JUMPS = 6;   // ►CAP SALTOS: tope absoluto de saltos aéreos en stages normales → 6 aéreos + 1 de suelo = 7 SALTOS MÁX (2 base + 3 cápsula + 2 tienda). El CAOS ya NO da saltos extra (solo altura vía jmpMul).
+const MAX_AIR_JUMPS = 7;   // ►CAP SALTOS: tope absoluto de saltos aéreos en stages normales → 7 aéreos + 1 de suelo = 8 SALTOS MÁX (3 base + 3 cápsula + 2 tienda). El CAOS ya NO da saltos extra (solo altura vía jmpMul).
 const CAP_AIRJ_MAX  = 3;   // ►SALTO EXTRA de cápsula: como mucho +3 saltos, TEMPORAL (p.boost.airj se resetea al cambiar de stage en stageResetPlayers). Sin tienda → máx 5 saltos por stage.
 function airJumps(p){
   if(typeof STAGE!=='undefined' && STAGE===10) return 4 + Math.min(3, chaosLvl>>1) + ((p&&p._pkAir)||0);   // ►S10ZEROG: gravedad cero → floaty a propósito, sin tope (stage especial)
   const store   = Math.min(2, (p&&p._pkAir)||0);                          // TIENDA: +2 saltos, PERMANENTE (persiste entre stages; solo se limpia al volver al menú)
   const capsule = Math.min(CAP_AIRJ_MAX, (p&&p.boost&&p.boost.airj)||0);   // CÁPSULAS ⏫: +2 saltos, TEMPORAL (se resetea por stage)
-  return Math.min(MAX_AIR_JUMPS, 1 + store + capsule);                     // base 1 aéreo (2 en total) → 5 sin tienda, 7 con tienda. SIN bonus de caos.
+  return Math.min(MAX_AIR_JUMPS, 2 + store + capsule);                     // ►TRIPLE SALTO: base 2 aéreos (3 en total, IGUAL para las 6 clases) → 6 sin tienda, 8 con tienda. SIN bonus de caos.
 }
 
 /* =====================================================================
@@ -17085,7 +17085,7 @@ function respawn(p){
   p.lastHitBy = null; p._rainbowT = 0;
   safeSpawn(p);
   p.vel.set(0,0,0);
-  p.jumps = 2; p._dj = false; p.hitstun = 0; p.hang = null; clearGrabs(p);   // ►LTGRAB: morir rompe el agarre (por los dos lados)
+  p.jumps = airJumps(p); p._dj = false; p.hitstun = 0; p.hang = null; clearGrabs(p);   // ►TRIPLE SALTO: reaparece con TODOS sus aéreos (antes fijo a 2 y se comía las mejoras) · ►LTGRAB: morir rompe el agarre (por los dos lados)
   p.rollT = 0; p._rollWin = 0; p.rollCD = 0;   // ►ROLL: no reapareces rodando ni con la ventana abierta
   p.wallSliding = false; p.wallSlideT = 0; p._wallSlideLock = false;   // limpia el deslizamiento por pared al reaparecer
   p.atk.phase = 'none';
@@ -18274,7 +18274,7 @@ function playerInput(p){ return readInput(p).move; }   // compat: dirección de 
    Despliega rápido los movimientos de TU personaje (qué hacen + daño) por si no te acuerdas.
    No pausa el juego; se oculta al soltar. */
 const MS_COMMON = [   // utilidad compartida por todas las clases (botón mando · tecla)
-  { pad:'A',  key:'Esp', name:'Saltar', desc:'Salta; en el aire, doble salto.',                 dmg:0 },
+  { pad:'A',  key:'Esp', name:'Saltar', desc:'Salta; en el aire, dos saltos más (3 en total).', dmg:0 },
   { pad:'RT', key:'May', name:'Dash',   desc:'Impulso rápido para esquivar o entrar.',           dmg:0 },
   { pad:'LB', key:'T',   name:'Escudo', desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.', dmg:0 },
   { pad:'LT', key:'L / clic dcho.', name:'Empujón', desc:'Suelo: gastas TODA la barra de aguante y sueltas un EMPUJÓN fuerte a quien tengas delante (queda vacía y parpadeando ~3 s). Aire: te agarras a un borde.', dmg:0 },   // ►LTSHOVE: LT ya no agarra-pasea; empujón que cuesta la barra entera
@@ -22454,8 +22454,8 @@ function modRollLog(cx, cz, sx){
    TOOLKIT DE DIFICULTAD (Stage 2) — mecánicas nuevas reutilizables.
    Se apoyan en el wall-jump YA existente (collideWalls marca p._wallHit;
    wallJump rebota y RECARGA saltos aéreos) y autoescalan con el caos
-   (airJumps()=1+min(3,chaos>>1); jmpMul sube con el caos hasta ×1 y con las cápsulas ⤒ hasta ×1.56).
-   Alcance vertical: caos0 ≈ 5.3u (1+1 saltos); caos8+ >25u.
+   (airJumps()=2 de base +tienda/cápsulas; jmpMul sube con el caos hasta ×1 y con las cápsulas ⤒ hasta ×1.56).
+   Alcance vertical: caos0 ≈ 7u (1 de suelo + 2 aéreos); caos8+ >25u.
    =================================================================== */
 
 // MURO AÉREO: pared alta y fina que corta el carril entre dos repisas.
