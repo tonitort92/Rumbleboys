@@ -6085,8 +6085,12 @@ function _fatBoltSeg(a, b, color, width, life){
   parts.push({ m, life: life||(.24+Math.random()*.12), v:_PZERO, bolt:true, pool:fatBoltPool });
   scene.add(m);
 }
-function skyBoltFX(x, z, color){
-  const floorY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(x, z) : 0;   // ►BOSSFIX: la arena flota a Y=120 → el rayo caía al vacío 120u por debajo (0 fuera del jefe)
+function skyBoltFX(x, z, color, yRef){
+  /* ►BOSSFIX: la arena flota a Y=120 → el rayo caía al vacío 120u por debajo.
+     ►PIRFXY: y lo mismo pasaba sobre la cubierta del barco pirata (8.2) — `yRef` es la cota de quien
+     lo lanza, para no engancharse a una verga que pase por encima. */
+  const floorY = (typeof fxFloorY==='function') ? fxFloorY(x, z, yRef)
+               : ((typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(x, z) : 0);
   const top = new THREE.Vector3(x + (Math.random()-.5)*2.5, floorY+27, z + (Math.random()-.5)*2.5);
   const ground = new THREE.Vector3(x, floorY+0.3, z);
   const dir = ground.clone().sub(top); const len = dir.length();
@@ -8912,7 +8916,7 @@ function spawnGroundLine(p, st){
   /* ►BOSSFIX: la arena del jefe FLOTA a BOSS_ARENA_Y (=120). El efecto iba clavado a Y=0.05 → durante el
      jefe se dibujaba ~120u POR DEBAJO de la arena (no se veía). Lo anclamos al SUELO real bajo el caster
      (loseta de la arena en el jefe, 0 en juego normal). El daño ya es XZ-only, solo fallaba el visual. */
-  const floorY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(o0.x, o0.z) : 0;
+  const floorY = fxFloorY(o0.x, o0.z, p.pos.y);   // ►PIRFXY: mismo problema con TODO suelo elevado (cubierta del barco a 8.2), no solo con la arena del jefe
   const g=new THREE.Group(); g.rotation.y=p.yaw; g.position.set(o0.x, floorY+.05, o0.z);
   /* ►FIRE-GROUND: la TIRA de fuego en el suelo (color) + degradado de llamas amarillo/naranja/rojo */
   let groundStrip=null, groundGlow=null, matFireA=null, matFireB=null;
@@ -8976,7 +8980,7 @@ function spawnGroundLine(p, st){
   head.position.set(0, .95, 0); g.add(head);
   scene.add(g);
   fireLines.push({ g, matA, matB, groundStrip, groundGlow, matFireA, matFireB, head, clumps, reach:0, speed: st.kind==='fire'?34:46,
-                   owner:p, o:o0, f, gy:p.pos.y, t:0, tick:0, st });
+                   owner:p, o:o0, f, gy:p.pos.y, gyFX:floorY, t:0, tick:0, st });   // ►PIRFXY: gy = banda de DAÑO (no tocar) · gyFX = cota de dibujo
 }
 function spawnFireLine(p){  spawnGroundLine(p, GL_FIRE);  sfx.bow(); sfx.crack(); }
 function spawnSlashLine(p){ spawnGroundLine(p, GL_SLASH); sfx.swordSwing(); }
@@ -9045,11 +9049,12 @@ function updateFireLines(dt){
     /* partículas a lo largo de lo YA encendido (ascuas suben / chispas de corte) */
     for(let k=0;k<2;k++){ const dd=Math.random()*s.reach, w=(Math.random()-.5)*FLINE_W*2;
       const px=s.o.x+s.f.x*dd - s.f.z*w, pz=s.o.z+s.f.z*dd + s.f.x*w;
+      const _fy = s.gyFX || 0;   // ►PIRFXY: las ascuas también salían del suelo de y=0 (bajo el mar, con el barco)
       if(st.kind==='slash'){   // ►SHURIKEN: pavesas ARCANAS lila que SUBEN dentro del rectángulo (como las llamas del campo del mago)
-        burst(new THREE.Vector3(px,.12,pz), Math.random()<.5?st.col:st.col2, 1, 1.4, 4.0, .55);
-        if(Math.random()<.14) ring(new THREE.Vector3(px,.1,pz), st.col2, 7, .20);
+        burst(new THREE.Vector3(px,_fy+.12,pz), Math.random()<.5?st.col:st.col2, 1, 1.4, 4.0, .55);
+        if(Math.random()<.14) ring(new THREE.Vector3(px,_fy+.1,pz), st.col2, 7, .20);
       } else {
-        burst(new THREE.Vector3(px,.08+Math.random()*.4,pz), Math.random()<.35?0xff5522:(Math.random()<.5?st.col:st.col2), 1, 1.6, .8, .5);
+        burst(new THREE.Vector3(px,_fy+.08+Math.random()*.4,pz), Math.random()<.35?0xff5522:(Math.random()<.5?st.col:st.col2), 1, 1.6, .8, .5);
       }
     }
     s.tick-=dt;
@@ -15782,6 +15787,28 @@ function platformTopAt(x, z, m){
       if(best===null || pl.topY>best) best=pl.topY; } }
   return best;
 }
+/* =====================================================================
+   ►PIRFXY (12/08, queja de Toni: "la R de la arquera no funciona bien en la cubierta, y supongo que
+   tampoco otros especiales")
+   Media docena de habilidades calculan el suelo de su efecto así:
+       const floorY = (BOSSFIGHT.phase!=='none') ? bossFloorYAt(x,z) : 0;
+   o sea "fuera del jefe, el suelo está a y=0". Con la cubierta del barco pirata a 8.2 eso es
+   catastrófico en la R de la arquera: las flechas nacen a `floorY+9` = 0.8 sobre la madera, o sea
+   DENTRO de las cajas del barco, y el test de mundo las mata en el mismo frame. Los discos y las
+   llamas de las demás se pintan bajo el mar.
+   `platformTopAt` a secas NO vale como sustituto: bajo la verga mayor devuelve 34, y el efecto se
+   iría al cielo. Hay que quedarse con el suelo más alto que NO esté por encima de quien lanza. */
+function fxFloorY(x, z, yRef){
+  if(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') return bossFloorYAt(x, z);
+  let best = 0;                                          // 0 = el comportamiento de siempre fuera de plataforma
+  const lim = (yRef === undefined ? 1e9 : yRef + 0.6);    // techos, vergas y tejados NO son tu suelo
+  for(const pl of _platCandidates(x-0.3, x+0.3)){ _aabbN++;
+    if(!pl.solid || pl._bossNoFloor || pl._fell || pl.topY > lim) continue;
+    if(pl.blob){ if(_inBlob(pl, x, z, 0.3) && pl.topY > best) best = pl.topY; continue; }
+    if(x>=pl.minX-0.3 && x<=pl.maxX+0.3 && z>=pl.minZ-0.3 && z<=pl.maxZ+0.3 && pl.topY > best) best = pl.topY;
+  }
+  return best;
+}
 /* ►LTSTAM · BARRA DE AGUANTE flotante SOBRE el personaje. Pedido de Toni: visible siempre que la barra
    NO esté llena (gastándose o recargándose) y para TODOS (no solo P1) → "que nadie muera pensando que
    le quedaba aguante". Color de CLASE vía classColor() — el mismo identificativo que ya usan el puntero
@@ -16196,7 +16223,7 @@ function updateRain(p,dt){
     /* ►BOSSFIX: la arena del jefe FLOTA a BOSS_ARENA_Y (=120). El anillo iba a Y=0.18 y las flechas nacían
        a Y=9 cayendo → durante el jefe caían ~111u POR DEBAJO de la arena y nunca tocaban al jefe. Anclamos
        al SUELO real de la zona (loseta del jefe, 0 en juego normal): las flechas nacen 9u por ENCIMA y caen. */
-    const floorY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(c.x, c.z) : 0;
+    const floorY = fxFloorY(c.x, c.z, p.pos.y);   // ►PIRFXY: y sobre CUALQUIER suelo elevado (la cubierta del barco pirata está a 8.2)
     ring(new THREE.Vector3(c.x,floorY+0.18,c.z), 0x55ff66, RAIN_R*2.0, .35);   // telegrafía la zona amplia de impacto
     for(let i=0;i<10;i++){ const ax=c.x+(Math.random()-.5)*RAIN_R*2, az=c.z+(Math.random()-.5)*RAIN_R*2;   // MUCHAS más flechas por tic
       let m=_arrowMesh();                              // ►ARROW: flecha REAL cayendo del cielo
@@ -16256,7 +16283,7 @@ function mageZoneE(p){
   const zz = foe ? foe.pos.z : p.pos.z + Math.cos(p.yaw)*6;
   const disc = new THREE.Mesh(new THREE.CircleGeometry(ZONE_R, 36),
     new THREE.MeshBasicMaterial({ color:0x3ad06a, transparent:true, opacity:.28, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }));   // ►VERDE: campo arcano en tono verde (marca del mago)
-  const zgy = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(zx, zz) : 0;   // ►BOSSFIX: la arena flota a Y=120 → ancla el campo al suelo real (0 en juego normal)
+  const zgy = fxFloorY(zx, zz, p.pos.y);   // ►BOSSFIX: la arena flota a Y=120 → ancla el campo al suelo real · ►PIRFXY: y a la cubierta si peleas encima de un barco
   disc.rotation.x = -Math.PI/2; disc.position.set(zx, zgy+0.06, zz); scene.add(disc);
   p.zone = { t:0, tick:0, x:zx, z:zz, gy:zgy, disc }; p._zonePoseT = .5;   // _zonePoseT = pose de conjuro (anim mago; = MAGE_WIN.ezone)
   ring(new THREE.Vector3(zx,zgy+0.2,zz), 0x3ad06a, ZONE_R*5, .5); shake=Math.max(shake,.25);
@@ -16335,7 +16362,7 @@ function priestHealUp(p){ if(p.healCD>0){sfx.deny();return true;} if(!_healGate(
   _healSelf(p, big?116:58);
   const rr = big?HDISC_R*1.5:HDISC_R;
   const disc = new THREE.Mesh(new THREE.CircleGeometry(rr, 36), new THREE.MeshBasicMaterial({ color:0x4aa8ff, transparent:true, opacity:.3, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }));
-  const _hgy = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? bossFloorYAt(p.pos.x, p.pos.z) : 0;   // ►BOSSFIX: arena flotante → suelo real (0 fuera del jefe)
+  const _hgy = fxFloorY(p.pos.x, p.pos.z, p.pos.y);   // ►BOSSFIX: arena flotante → suelo real · ►PIRFXY: y cubierta de barco
   disc.rotation.x=-Math.PI/2; disc.position.set(p.pos.x,_hgy+0.07,p.pos.z); scene.add(disc);
   p.healDisc = { t:0, tick:0, disc, R:rr, dur:(big?10:HDISC_DUR) }; p._healPoseT = .9; showCombo(p, big?'¡GRAN SANTUARIO!':'¡SANTUARIO!'); return true; }   // la que más + DISCO azul (_healPoseT = pose de cura witch)
 function classHeal(p){ return (classKit(p).heal||barbHeal)(p); }
@@ -16347,7 +16374,7 @@ function updateHealDisc(p,dt){
   const z=p.healDisc; if(!z) return; if(p.dead){ endHealDisc(p); return; }
   z.t+=dt;
   const _R = z.R||HDISC_R, _DUR = z.dur||HDISC_DUR;   // ►PERK SANTUARIO MAYOR: radio/duración del disco vienen del disco (por si el perk lo agrandó)
-  if(z.disc){ const _hgy=(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none')?bossFloorYAt(p.pos.x,p.pos.z):0; z.disc.position.set(p.pos.x,_hgy+0.07,p.pos.z); z.disc.material.opacity=.22+.12*Math.abs(Math.sin(t*7)); z.disc.rotation.z+=dt*.8; }   // ►BOSSFIX: suelo real (arena flotante) · sigue a la priest y pulsa
+  if(z.disc){ const _hgy=fxFloorY(p.pos.x,p.pos.z,p.pos.y); z.disc.position.set(p.pos.x,_hgy+0.07,p.pos.z); z.disc.material.opacity=.22+.12*Math.abs(Math.sin(t*7)); z.disc.rotation.z+=dt*.8; }   // ►BOSSFIX: suelo real (arena flotante) · sigue a la priest y pulsa
   for(let k=0;k<2;k++){ const a=Math.random()*Math.PI*2, rr=Math.sqrt(Math.random())*_R; burst(_fxV.set(p.pos.x+Math.cos(a)*rr, p.pos.y+.15, p.pos.z+Math.sin(a)*rr), 0x7ac8ff, 1, 1.2, 3.5, .5); }   // ►PERF2: scratch
   z.tick-=dt;
   if(z.tick<=0){ z.tick=HDISC_TICK; let any=false;
@@ -16419,7 +16446,7 @@ function _chainHit(att, t, dmg){
    visible). Cae en el foe más cercano; daño en área en el punto de caída. */
 const STRIKE_R = 4.6, STRIKE_DMG = 30, STRIKE_COL = 0x39ff5a;   // verde brillante
 function _skyStrike(p, sx, sz, f){   // ►SKYBOLT: un rayo verde cae en (sx,sz) y golpea en ÁREA
-  skyBoltFX(sx, sz, STRIKE_COL);
+  skyBoltFX(sx, sz, STRIKE_COL, p ? p.pos.y : undefined);   // ►PIRFXY: el rayo cae sobre el suelo del LANZADOR (cubierta), no sobre y=0
   for(const o of players){ if(o===p||o.dead||o.invuln>0) continue; const dx=o.pos.x-sx, dz=o.pos.z-sz; if(Math.hypot(dx,dz)>STRIKE_R) continue;
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(f.x,0,f.z); dir.normalize();
     if(o.block){ o.damage+=STRIKE_DMG*.3*defMul(o); o.shieldFlash=.2; continue; }
@@ -19800,7 +19827,11 @@ function _occSetOpacity(root, op){                  // funde/restaura TODAS las 
   const meshes = root.userData._occMeshes; if(!meshes) return;
   for(const o of meshes){
     const ms = Array.isArray(o.material) ? o.material : [o.material];
-    for(const m of ms){ m.transparent = op<1; m.opacity = op; m.depthWrite = op>=1; }
+    /* ►OCCSAIL: un material puede declararse INFUNDIBLE. Existe por el barco pirata, que es UNA sola
+       malla con 10 materiales: sin esto, que el rayo roce la vela funde el barco ENTERO al 16% (y con
+       depthWrite off, o sea que desaparece). Con la marca se funde solo la lona. */
+    for(const m of ms){ if(m.userData && m.userData._occKeep) continue;
+                        m.transparent = op<1; m.opacity = op; m.depthWrite = op>=1; }
   }
 }
 /* ►FIX arrastre-cinta v4: opacidad de un árbol de la cinta (S2) para el fundido de muro. Usa las
@@ -27577,6 +27608,12 @@ const SW_SEG_BUILDERS = [ buildWCanyonRim, buildWPuebloSpawn, buildWRancho, buil
    Y manda sobre todo lo demás: los props del kit se apoyan AQUÍ, así que sus superficies pisables
    (medidas una a una) caen solas en la banda 4.5-5.5, a un salto de la cubierta. */
 const PIR_WL       = 2.0;    // línea del agua = cota de muerte (blastDownY la usa)
+/* ►PIRSEA2 · la paleta del mar, en un sitio. Turquesa de verdad (H≈183°) en vez del cian oscuro de
+   antes, y el fondo en la misma familia pero más oscuro: el agua es semitransparente, así que el lecho
+   es la mitad del color que se ve. Emparentado con el turquesa del portal del mundo 12 (PORTAL_PAL). */
+const PIR_SEA_COL  = 0x14a8ad;   // superficie
+const PIR_BED_COL  = 0x1a6b74;   // lecho marino (antes 0x17415a, azul marino: agrisaba el agua entera)
+const PIR_BEDR_COL = 0x226f70;   // peñascos del fondo
 const PIR_BELT_MUL = 0.85;   // algo más lenta que el resto: aquí hay que calcular saltos a cosas que pasan
 /* ►PIRBIG (11/08, pedido de Toni "hazlo más grande aún"): eslora 45 → 60.
    La trampa de escalar un barco es que la CUBIERTA SUBE con él (0.17·60 = 10.2 sobre la quilla), y
@@ -27659,6 +27696,38 @@ function pirProp(key, x, y, z, opts){
      · casco de barco → sí (no se atraviesa; se aborda por arriba)
      · muelle/atalaya → no (se pasa por debajo y se aterriza encima)
    ===================================================================== */
+/* ►PIRJARCIA (12/08) · QUÉ CAJA ES JARCIA Y CUÁL ES OBRA MUERTA
+   Con `hull:true` toda caja va de la quilla a su cima, y eso convierte las VERGAS y las COFAS en
+   muros: hay una caja de 0.6×12.2 u a 26 u de altura (verga del trinquete) y otra de 0.6×16.4 a 34
+   (verga mayor) que cruzan la manga ENTERA — los "muros invisibles" de la cubierta.
+   No se distinguen por altura: el criterio es el HUECO que deja cada caja con la superficie que tiene
+   debajo. Medido sobre las 159 del barco: obra muerta (bordas, castillos, mamparos, coronamiento) deja
+   como mucho 4.4 u; la jarcia deja de 14 a 30. El corte en 0.12 de la eslora (7.2 u) parte esa
+   distribución por la mitad y toca exactamente 6 cajas.
+   Lo tocado pasa a ser LOSA (baseY = topY-0.55): sigue siendo suelo —te puedes subir a una verga— pero
+   deja de taponar de lado y deja de comerse flechas y orbes (el test de mundo de los proyectiles es
+   `y<topY && y>baseY`). El casco no se toca. */
+const _PIR_THIN = {};
+function _pirThinMask(key, arr, gapMax){
+  if(_PIR_THIN[key]) return _PIR_THIN[key];
+  const n = arr.length, m = new Array(n).fill(false);
+  /* De ABAJO ARRIBA y saltándose lo ya marcado: la referencia tiene que ser OBRA, no otra pieza de
+     jarcia. MEDIDO: sin esto, la cofa (36.1) mide su hueco contra la verga mayor (34.2) —1.9 u— y se
+     salvaba del corte, así que seguía habiendo un muro invisible cruzando la cubierta en x=14. */
+  const ord = arr.map((b,i)=>i).sort((a,b)=> arr[a][4] - arr[b][4]);
+  for(const i of ord){
+    const a = arr[i]; let below = null;
+    for(let j=0;j<n;j++){
+      if(j===i || m[j]) continue; const b = arr[j];                            // m[j] = ya es jarcia: no cuenta como suelo
+      if(b[4] >= a[4] - 0.005) continue;                                       // solo lo que está DEBAJO
+      if(Math.max(b[0],b[1]) <= Math.min(a[0],a[1]) || Math.min(b[0],b[1]) >= Math.max(a[0],a[1])) continue;
+      if(Math.max(b[2],b[3]) <= Math.min(a[2],a[3]) || Math.min(b[2],b[3]) >= Math.max(a[2],a[3])) continue;
+      if(below === null || b[4] > below) below = b[4];
+    }
+    m[i] = (below !== null) && (a[4] - below > gapMax);
+  }
+  return (_PIR_THIN[key] = m);
+}
 function pirSolids(key, cx, cz, baseY, opts){
   opts = opts || {};
   const arr = (typeof window!=='undefined' && window.PIR_SOLIDS) ? window.PIR_SOLIDS[key] : null;
@@ -27666,8 +27735,10 @@ function pirSolids(key, cx, cz, baseY, opts){
   const S = opts.size || (DECOR_DEFSP[key] && DECOR_DEFSP[key].size) || 1;
   const f = opts.flip ? -1 : 1;
   const hull = !!opts.hull;
+  const thin = hull ? _pirThinMask(key, arr, opts.gapMax || 0.12) : null;   // ►PIRJARCIA
   const recs = [];
-  for(const b of arr){
+  for(let bi=0; bi<arr.length; bi++){
+    const b = arr[bi];
     let x0 = b[0]*S*f, x1 = b[1]*S*f, z0 = b[2]*S*f, z1 = b[3]*S*f;
     if(x0 > x1){ const t=x0; x0=x1; x1=t; }
     if(z0 > z1){ const t=z0; z0=z1; z1=t; }
@@ -27680,9 +27751,79 @@ function pirSolids(key, cx, cz, baseY, opts){
        castillo de proa se sube en dos zancadas. Los saltos GRANDES (cubierta → castillos, 1.95) siguen
        siendo muro, que es lo que impide colarse por debajo de la toldilla y caer al mar. */
     const rec = { minX:cx+x0, maxX:cx+x1, minZ:cz+z0, maxZ:cz+z1, topY,
-                  baseY: hull ? baseY - 1.0 : topY - 0.55,
+                  baseY: (hull && !thin[bi]) ? baseY - 1.0 : topY - 0.55,
                   solid: true, step: 0.9, _pirBox: true };
+    if(thin && thin[bi]) rec._pirRig = true;                       // ►PIRJARCIA: verga/cofa/tope de palo
     platforms.push(rec); recs.push(rec);
+  }
+  /* ►PIRROOF (12/08, queja de Toni: "muchos puertos y plataformas no están bien mapeados y te caes al
+     mar"). No estaban mal medidos: el raycast que generó la colisión era CENITAL, así que donde el
+     muelle tiene cobertizo o grúa la única caja quedó en el TEJADO y bajo él no hay suelo ninguno.
+     Medido rasterizando la huella: el 23% de la cubierta de pq_port1, el 28% de la de port2 y el 54%
+     de la de port3 son agujeros INTERIORES (rodeados de tablero por 3-4 lados), no voladizos sobre el
+     agua. Como la cubierta es plana y su cota se conoce (PIR_PORTS[k].deckY), se aplica la regla obvia:
+     hay tejado ⇒ hay cubierta debajo. Se copia cada caja alta a la cota del tablero, recortada al
+     rectángulo del tablero para no dejar suelo fantasma sobre el mar. */
+  if(opts.roofFloor !== undefined){
+    const d = opts.roofFloor, topD = baseY + d*S;
+    let bx0=Infinity, bx1=-Infinity, bz0=Infinity, bz1=-Infinity;
+    for(const b of arr) if(b[4] <= d + 0.004){
+      bx0=Math.min(bx0,b[0],b[1]); bx1=Math.max(bx1,b[0],b[1]);
+      bz0=Math.min(bz0,b[2],b[3]); bz1=Math.max(bz1,b[2],b[3]);
+    }
+    /* de las más GRANDES a las más pequeñas y saltándose las que ya quedan dentro de una emitida: los
+       tejados son rejillas de celdas y sin esto se emiten decenas de cajas redundantes (medido: 261
+       copias en la cinta entera, y una consulta de plataforma mira todas las de su segmento). */
+    const cand = [];
+    if(bx0 < bx1) for(const b of arr){
+      if(b[4] <= d + 0.004) continue;
+      const ax0=Math.max(Math.min(b[0],b[1]), bx0), ax1=Math.min(Math.max(b[0],b[1]), bx1);
+      const az0=Math.max(Math.min(b[2],b[3]), bz0), az1=Math.min(Math.max(b[2],b[3]), bz1);
+      if(ax1 <= ax0 || az1 <= az0) continue;
+      cand.push([ax0, ax1, az0, az1, (ax1-ax0)*(az1-az0)]);
+    }
+    cand.sort((p,q)=> q[4]-p[4]);
+    const kept = [];
+    for(const c of cand){
+      let dentro = false;
+      for(const k of kept) if(c[0] >= k[0]-1e-6 && c[1] <= k[1]+1e-6 && c[2] >= k[2]-1e-6 && c[3] <= k[3]+1e-6){ dentro = true; break; }
+      if(dentro) continue;
+      kept.push(c);
+      let X0=c[0]*S*f, X1=c[1]*S*f, Z0=c[2]*S*f, Z1=c[3]*S*f;
+      if(X0>X1){ const t=X0; X0=X1; X1=t; } if(Z0>Z1){ const t=Z0; Z0=Z1; Z1=t; }
+      const rec = { minX:cx+X0, maxX:cx+X1, minZ:cz+Z0, maxZ:cz+Z1, topY:topD, baseY:topD-0.55,
+                    solid:true, step:0.9, _pirBox:true, _pirRoofFloor:true };
+      platforms.push(rec); recs.push(rec);
+    }
+  }
+  /* ►PIRSHAFT (12/08, pedido de Toni: "que las torres tengan collide en sus paredes porque si no lo
+     traspasas"). Mismo origen que lo anterior: el raycast cenital solo vio el REMATE, así que las
+     torres son una losa flotante sin fuste — y `collideWalls` ignora toda caja con
+     `p.pos.y + 1.5 <= baseY`, o sea que atraviesas la torre entera por debajo.
+     Se le añade una columna: la huella del nivel más bajo que NO sea una astilla (≥25% del área del
+     nivel mayor; sin ese filtro p_towersmall cogería una escalerilla lateral del 2.3%), encogida, y
+     desde baseY-1.0 para que taponee de verdad. */
+  if(opts.shaftW){
+    const lv = {};
+    for(const b of arr){ const k = b[4].toFixed(4); (lv[k] = lv[k] || []).push(b); }
+    const bb = (g)=>{ let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;
+      for(const b of g){ x0=Math.min(x0,b[0],b[1]); x1=Math.max(x1,b[0],b[1]); z0=Math.min(z0,b[2],b[3]); z1=Math.max(z1,b[2],b[3]); }
+      return { x0,x1,z0,z1, a:(x1-x0)*(z1-z0) }; };
+    const keys = Object.keys(lv).map(Number).sort((a,b)=>a-b);
+    const bbs = keys.map(k=>bb(lv[k.toFixed(4)]));
+    const amax = Math.max.apply(null, bbs.map(o=>o.a));
+    let best = null;
+    for(let i=0;i<keys.length;i++) if(bbs[i].a >= 0.25*amax){ best = { y:keys[i], b:bbs[i] }; break; }
+    /* El ANCHO no se deduce de las cajas: la huella del nivel más bajo es el remate/las almenas, no el
+       cuerpo. Se MIDIÓ con raycast horizontal sobre el modelo ya escalado (media altura y 20%):
+       p_towerbig 5.69 u de 20 → 0.285 · p_towersmall 6.07 de 13.5 → 0.45. Deducirlo daba 3.0 y 4.0, o
+       sea 2 u de piedra por la que se seguía pasando. El nivel elegido sí vale para la ALTURA. */
+    if(best){
+      const half = opts.shaftW*0.5*S;
+      const rec = { minX:cx-half, maxX:cx+half, minZ:cz-half, maxZ:cz+half, topY: baseY + best.y*S,
+                    baseY: baseY - 1.0, solid:true, step:0.9, _pirBox:true, _pirShaft:true };
+      platforms.push(rec); recs.push(rec);
+    }
   }
   return recs;
 }
@@ -27703,6 +27844,7 @@ function buildPirateShip(){
   const G = new THREE.Group();
   const hull = (typeof getModel==='function') ? getModel('pq_ship', DECOR_DEFSP) : null;
   if(hull){
+    _pirSplitSail(hull);                                              // ►OCCSAIL: separa la LONA del resto (ver la ficha de abajo)
     hull.position.set(0, PIR_SHIP_Y + (hull.userData.halfH||0), 0);   // getModel centra en Y → la quilla cae en PIR_SHIP_Y (hundida: ►PIRBIG)
     hull.traverse(o=>{ if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
     G.add(hull);
@@ -27731,7 +27873,81 @@ function buildPirateShip(){
   PIR.ship = G;
   _pirPushDecks();
   if(typeof registerOccluder==='function') registerOccluder(G);
+  _pirMarkSailOnly(G);   // ►OCCSAIL: y de todo el barco, la ÚNICA pieza que se puede fundir es la vela
   return G;
+}
+/* =====================================================================
+   ►OCCSAIL (12/08, queja de Toni: "en rotaciones de cámara el barco se invisibiliza totalmente a
+   ratos; supongo que es el mástil que se cruza y genera que todo el asset entero se invisibilice")
+   Diagnóstico: exacto salvo por la pieza. La oclusión funde por OBJETO — `updateOcclusion` mete el
+   root entero en el set en cuanto el rayo cámara→jugador toca UNA de sus mallas, y `_occSetOpacity`
+   lo pasa al 16% CON depthWrite=false, o sea que desaparece. Y aquí no hay "una malla por pieza":
+   `_bakeColored` fusiona todo el OBJ en UNA malla con UN material y los colores en los VÉRTICES
+   (por eso tampoco vale marcar materiales: solo hay uno, y es blanco).
+   Solución en dos pasos:
+     1) `_pirSplitSail` parte esa malla en dos por SATURACIÓN del color de vértice: la lona (los 5
+        tonos de vela rondan 0.14 de saturación) y todo lo demás (madera naranja, ≥0.45). Corte en
+        0.25, margen 3×. Cuesta +1 draw call y una pasada por la geometría al construir el barco.
+     2) `_pirMarkSailOnly` marca `_occKeep` en el material de TODO lo que no sea lona, y
+        `_occSetOpacity` lo respeta.
+   Resultado: te tapa la vela → se funde la vela; el casco, la cubierta, los castillos, los palos y el
+   vestido no se funden NUNCA. Si el reparto fallara (otro modelo, otro horneado), falla al lado
+   seguro: sin lona detectada se marca todo y el barco deja de fundirse, que es el mal menor. */
+function _pirSplitSail(root){
+  if(!root || root.userData._sailSplit) return;
+  let mesh = null;
+  root.traverse(o=>{ if(!mesh && o.isMesh && o.geometry && o.geometry.attributes.color) mesh = o; });
+  if(!mesh) return;
+  const g = mesh.geometry, pos = g.attributes.position, col = g.attributes.color, nor = g.attributes.normal;
+  if(!pos || g.index) return;                       // _bakeColored deja la geometría SIN índice; si algún día la indexa, no tocar
+  const tris = pos.count/3; if(tris < 3 || tris !== Math.floor(tris)) return;
+  const sail = [], rest = [];
+  for(let t=0;t<tris;t++){
+    let s = 0;
+    for(let k=0;k<3;k++){ const i=(t*3+k)*3, r=col.array[i], gr=col.array[i+1], b=col.array[i+2];
+      const mx=Math.max(r,gr,b), mn=Math.min(r,gr,b); s += mx>0 ? (mx-mn)/mx : 0; }
+    (s/3 <= 0.25 ? sail : rest).push(t);
+  }
+  if(!sail.length || !rest.length) return;          // todo de un tono → no hay nada que separar
+  const build = (list)=>{
+    const n = list.length*3, P = new Float32Array(n*3), C = new Float32Array(n*3), N = nor ? new Float32Array(n*3) : null;
+    let o = 0;
+    for(const t of list){ for(let k=0;k<3;k++){ const i=(t*3+k)*3;
+      P[o]=pos.array[i]; P[o+1]=pos.array[i+1]; P[o+2]=pos.array[i+2];
+      C[o]=col.array[i]; C[o+1]=col.array[i+1]; C[o+2]=col.array[i+2];
+      if(N){ N[o]=nor.array[i]; N[o+1]=nor.array[i+1]; N[o+2]=nor.array[i+2]; }
+      o += 3; } }
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(P,3));
+    ng.setAttribute('color',    new THREE.BufferAttribute(C,3));
+    if(N) ng.setAttribute('normal', new THREE.BufferAttribute(N,3)); else ng.computeVertexNormals();
+    return ng;
+  };
+  /* material COMPARTIDO a propósito: `registerOccluder` clona el material de cada malla, así que a
+     partir de ese momento son dos y se pueden marcar por separado. Y la plantilla NO se toca: la
+     geometría original sigue viva para el próximo getModel (un clon comparte geometría con ella). */
+  const mkMesh = (geo, isSail)=>{
+    const m = new THREE.Mesh(geo, mesh.material);
+    m.position.copy(mesh.position); m.quaternion.copy(mesh.quaternion); m.scale.copy(mesh.scale);
+    m.userData._pirSail = !!isSail;
+    return m;
+  };
+  const parent = mesh.parent || root;
+  parent.add(mkMesh(build(rest), false), mkMesh(build(sail), true));
+  parent.remove(mesh);
+  root.userData._sailSplit = { sail:sail.length, rest:rest.length };
+}
+function _pirMarkSailOnly(G){
+  let keep = 0, fade = 0;
+  G.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    for(const m of ms){
+      if(o.userData._pirSail){ fade++; continue; }                    // la LONA es lo único fundible
+      (m.userData = m.userData || {})._occKeep = true; keep++;
+    }
+  });
+  G.userData._occSailStat = { keep, fade };   // sonda: fade = 1 (la lona) y keep = todo lo demás
 }
 function _pirClearShip(){
   if(PIR.ship){ scene.remove(PIR.ship); PIR.ship = null; }
@@ -27739,13 +27955,22 @@ function _pirClearShip(){
   if(typeof PIR_FOE!=='undefined' && PIR_FOE.g){ scene.remove(PIR_FOE.g); PIR_FOE.g = null; }   // ►PIRCANNON2: el barco que dispara desde el horizonte
   if(typeof _pirClearPosts==='function') _pirClearPosts();   // ►PIRPOST: al salir del stage no queda ni un puesto vivo
   if(PIR.water){ scene.remove(PIR.water); PIR.water = null; }
-  for(const b of PIR.balls) if(b.m && b.m.parent) b.m.parent.remove(b.m);
+  for(const b of PIR.balls){
+    if(b.m && b.m.parent) b.m.parent.remove(b.m);
+    if(b.warn && b.warn.parent) b.warn.parent.remove(b.warn);
+    if(b.osc){ try{ b.osc.stop(); }catch(e){} }   // ►PIRCANNON3: el silbido está programado en el reloj de audio → hay que cortarlo al salir
+  }
   PIR.balls.length = 0; PIR.cannons.length = 0;
 }
 /* ---------- EL MAR ---------- */
 function _pirBuildWater(){
   if(PIR.water) return PIR.water;
-  const m = applyWaterLook(mat(0x1f6fa8, { roughness:.45, metalness:.18, depthWrite:false }));   // ►WATER: mismo oleaje en GPU que el resto de mares del juego
+  /* ►PIRSEA2 (12/08, pedido de Toni: "el agua del mar más turquesa"). El azul de antes (0x1f6fa8) es
+     cian OSCURO, y encima se agrisaba por tres sitios: el lecho azul marino que se ve a través del 7%
+     de transparencia, el reflejo del cielo pálido (metalness .18 + poca rugosidad = casi espejo) y la
+     espuma blanca de ►WATER. Se corrige el color aquí y se aclara el fondo abajo; el reflejo se baja
+     con MÁS rugosidad y MENOS metal, que es lo que quita el velo gris sin tocar el shader compartido. */
+  const m = applyWaterLook(mat(PIR_SEA_COL, { roughness:.58, metalness:.10, depthWrite:false }));   // ►WATER: mismo oleaje en GPU que el resto de mares del juego
   /* SUBDIVIDIDO (96×64), como el `seaGeo` del prado (48×48): el oleaje de ►WATER desplaza VÉRTICES,
      así que un plano de 1×1 segmentos sale liso como una mesa — que es como salió el primer intento.
      Aquí encima el agua es el 80% del encuadre, o sea que es el detalle más visible del stage. */
@@ -27788,7 +28013,7 @@ function _applyPirTheme(){
      costado de sombra se va a negro y parece que el modelo no tiene textura (ya pasó en el western) */
   VISUAL.fill.color = 0xcfe8f5; VISUAL.fill.intensity = 0.40;
   VISUAL.fog.color = 0xcfe9f2; VISUAL.fog.near = 62; VISUAL.fog.far = 175;   // ►PIRATA: la niebla empieza LEJOS — con near 46 el propio barco (46u de eslora) ya salía lavado por la punta
-  if(typeof seaMat!=='undefined') seaMat.color.setHex(0x1f6fa8);
+  if(typeof seaMat!=='undefined') seaMat.color.setHex(PIR_SEA_COL);   // ►PIRSEA2: el mar del prado asoma en el horizonte → mismo turquesa o se ve el empalme
   /* ►PIRSEA (pedido de Toni): las nubes que el prado siembra DEBAJO del agua se veían flotando sobre
      el mar (el agua va con depthWrite:false, así que no las tapa) — fuera. Y las de cielo, más
      altas: aquí el horizonte es todo cielo y a la altura del prado cruzaban el encuadre. */
@@ -27818,7 +28043,10 @@ function buildPirScenery(){
   /* 1) FONDO OCEÁNICO: arena en penumbra con dunas y peñascos, muy por debajo de la quilla. No es
      pisable (ni está en platforms[]): es lo que se ve a través del agua. */
   {
-    const mat0 = new THREE.MeshStandardMaterial({ color:0x17415a, roughness:1, metalness:0, flatShading:true });   // fondo OSCURO: con uno claro el mar entero se aclaraba
+    /* ►PIRSEA2: el lecho sigue siendo el tono OSCURO del par (a través del 7% de transparencia es la
+       mitad del color que se ve), pero ya no azul marino — en la familia del turquesa de la superficie.
+       Con el azul de antes, el agua entera se leía gris azulada aunque el material fuese turquesa. */
+    const mat0 = new THREE.MeshStandardMaterial({ color:PIR_BED_COL, roughness:1, metalness:0, flatShading:true });
     const g0 = new THREE.PlaneGeometry(900, 700, 26, 20);
     const pa = g0.attributes.position;
     for(let i=0;i<pa.count;i++) pa.setZ(i, Math.sin(pa.getX(i)*0.06)*1.8 + Math.cos(pa.getY(i)*0.05)*2.2 + Math.random()*0.8);
@@ -27826,7 +28054,7 @@ function buildPirScenery(){
     const bed = new THREE.Mesh(g0, mat0);
     bed.rotation.x = -Math.PI/2; bed.position.y = -13; bed.renderOrder = -2;
     bed.userData.noOcc = true; G.add(bed);
-    const rmat = new THREE.MeshStandardMaterial({ color:0x143a4f, roughness:1, flatShading:true });
+    const rmat = new THREE.MeshStandardMaterial({ color:PIR_BEDR_COL, roughness:1, flatShading:true });
     for(let i=0;i<26;i++){
       const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rng(1.6,4.2), 0), rmat);
       r.position.set(rng(-120,120), rng(-12.5,-9.5), rng(-90,80));
@@ -27840,23 +28068,42 @@ function buildPirScenery(){
     /* MEDIDO: con la costa a 150 la niebla del stage (near 62 · far 175) se la comía —solo se veía un
        borrón blanco en el horizonte—. A 100-140 aún hay bruma (queda lejana) pero SE LEE como tierra. */
     const land = new THREE.Mesh(new THREE.PlaneGeometry(620, 150, 20, 6),
-      new THREE.MeshStandardMaterial({ color:0x6f8a52, roughness:1, flatShading:true }));
+      new THREE.MeshStandardMaterial({ color:0x86a55f, roughness:1, flatShading:true }));   // ►PIRSEA2: verde más claro y cálido (antes 0x6f8a52, casi oliva militar)
     land.rotation.x = -Math.PI/2; land.position.set(0, PIR_WL + 0.6, S*118);
     land.userData.noOcc = true; G.add(land);
     const beach = new THREE.Mesh(new THREE.PlaneGeometry(620, 24, 20, 2),
-      new THREE.MeshStandardMaterial({ color:0xd9c496, roughness:1, flatShading:true }));
+      new THREE.MeshStandardMaterial({ color:0xefdfb8, roughness:1, flatShading:true }));   // ►PIRSEA2: arena de playa, no barro
     beach.rotation.x = -Math.PI/2; beach.position.set(0, PIR_WL + 0.7, S*89);
     beach.userData.noOcc = true; G.add(beach);
     const tpl = (typeof getModel==='function' && typeof DECOR_DEFSJ!=='undefined') ? getModel('sj_mountain', DECOR_DEFSJ) : null;
     if(tpl){
       const base = DECOR_DEFSJ.sj_mountain.size || 40;
+      /* ►PIRSEA2 (12/08, "has usado colores raros"): esas siluetas blancas del horizonte eran el FUJI
+         de Japón tal cual — su MTL trae un material `Snow` (Kd .807 .855 .905) y nadie lo retintaba.
+         Nieve en un mar caribeño.
+         Retinte CORRECTO en este proyecto: el color vive en los VÉRTICES (getModel hornea el Kd del MTL
+         en el atributo `color` y deja el material en blanco), pero el material MULTIPLICA, así que basta
+         un tinte cálido en `material.color`... con dos cuidados:
+           · el material va COMPARTIDO con el stage 3 y con el horizonte del jefe de hielo (los clones
+             de three comparten geometría Y material) → hay que CLONARLO, o se nos vuelve arena el Fuji;
+           · se clona UNA vez y se reparte entre las 22 → 1 draw call por montaña, como antes.
+         La nieve (.81,.86,.91) sale (.81,.74,.56) = arenisca clara; la roca oscura queda neutra. */
+      let tint = null;
+      tpl.traverse(o=>{ if(!tint && o.isMesh && o.material){ tint = o.material.clone();
+                        tint.color.multiply(new THREE.Color(1.00, 0.78, 0.52)); } });
+      /* MEDIDO en captura, y el tinte NO era el problema: a 102-148 u, con la cámara de juego en z≈+20
+         y la niebla en near 62 / far 175, esas montañas iban al 75-95% de NIEBLA (0xcfe9f2, casi
+         blanco). Da igual de qué color las pintes: lo que se ve es niebla. Se acercan a 74-104 → 40-70%
+         de color propio, que ya se lee como roca cálida. La niebla no se toca: su `far` está atado al
+         cull de la cinta y al radio del fondo. Y se bajan un punto de escala, que a esta distancia
+         cunden mucho más. */
       for(let i=0;i<22;i++){
         const p = tpl.clone();
-        const s = rng(40, 92), k = s/base;
+        const s = rng(30, 66), k = s/base;
         p.scale.multiplyScalar(k);
-        p.position.set(rng(-250,250), PIR_WL - 2 + (p.userData.halfH||0)*k, S*rng(102,148));
+        p.position.set(rng(-250,250), PIR_WL - 2 + (p.userData.halfH||0)*k, S*rng(74,104));
         p.rotation.y = Math.random()*Math.PI*2;
-        p.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+        p.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; if(tint) o.material = tint; } });
         p.userData.noOcc = true; G.add(p);
       }
     }
@@ -27967,7 +28214,11 @@ function pirTower(cx, cz, kind, opts){
     pirIsle(cx, cz, rIs, baseY, { post:false, palms: (Math.random()<0.6 ? 1 : 0) });   // la isla que la sostiene
   }
   pirProp(key, cx, baseY - 0.25, cz, { yaw:0 });   // −0.25: el pie, mordido por la arena (sin junta a la vista)
-  pirSolids(key, cx, cz, baseY - 0.25);            // ►PIRSOLID: remate, rellanos y almenas
+  /* ►PIRSHAFT: las de piedra llevan FUSTE (si no, se atraviesan: sus cajas medidas están todas en el
+     remate). La atalaya de madera va sobre patas y se pasa por debajo a propósito → sin fuste.
+     `shaftW` es el ancho MEDIDO del cuerpo, en fracción del tamaño del modelo (ver pirSolids). */
+  pirSolids(key, cx, cz, baseY - 0.25, K==='watch' ? undefined
+            : { shaftW: (K==='small' ? 0.45 : 0.285) });   // ►PIRSOLID: remate, rellanos y almenas
   const topY = baseY - 0.25 + PIR_TOP[key];
   pirPost(cx, cz, topY);                           // ►PIRPOST: la atalaya SIEMPRE tiene vigía — es el nido del stage
   return topY;
@@ -27993,7 +28244,7 @@ function pirPort(kind, cx, cz, flip){
   const S = DECOR_DEFSP[P.key].size;
   const f = flip ? -1 : 1;                    // media vuelta: el muelle mira al otro costado (y sus cajas también)
   pirProp(P.key, cx, PIR_WL, cz, { yaw: flip ? Math.PI : 0, shadow:false });
-  pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip });
+  pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip, roofFloor:P.deckY });   // ►PIRROOF: cubierta bajo los cobertizos
   const topY = PIR_WL + P.deckY*S;
   for(const q of P.post) pirPost(cx + f*q[0]*S, cz + f*q[1]*S, topY);   // ►PIRPOST: el muelle es zona enemiga, no un descansillo
   return topY;
@@ -28093,12 +28344,23 @@ function _pirClearPosts(){                                   // rebuildBelt borr
        poner contenido ahí es tirarlo.
      · −z (FONDO): todo vale, y cuanto más alto mejor. Está detrás del barco, no tapa nada y es el
        telón del stage: las atalayas, los muelles grandes y los islotes compuestos van AQUÍ. */
+/* ►PIRWIDE (12/08, pedido de Toni: "popula más plataformas y assets a lo ancho; que detrás de las
+   plataformas, islotes y puertos haya más islotes y puertos, así el jugador se puede ir moviendo por
+   ahí"). La orilla pasa de una fila a DOS, pero solo hacia el FONDO (−z): en el lado de la cámara no
+   cabe nada más (la cámara vive entre +12 y +30, ver arriba).
+     · fila 1  |z| 13-28   la de siempre
+     · unión   |z| ~31     un pantalán que hace de peldaño entre filas (siempre alineado en X con algo)
+     · fila 2  |z| 33-46   islotes, atalayas y muelles; tope de muerte en −67.5, o sea 20 u de margen
+   Todo lo de la fila 2 es del FONDO, así que puede ser alto: es telón y camino a la vez. */
 function buildPirIslas(){                       // idx0 · archipiélago a los dos costados
   pirIsleBig(-20, -28);                                  // ►PIRBIG: el islote grande de la sala, al fondo
   pirIsle(-2, -20, 5.5, 3.8); pirIsle(14, -20, 6, 4.6);
   pirTower(30, -24, 'small');                            // la atalaya, SIEMPRE al fondo (►PIRNARROW)
   pirIsle(-18, 21, 6.5, 4.4); pirIsle(4, 24, 5, 3.9, { barrel:true }); pirIsle(22, 20, 6, 4.8);
   pirDock(-10, -16); pirDock(10, 16);                    // los pantalanes: el peldaño pegado al barco
+  /* ►PIRWIDE · fila 2 */
+  pirDock(0, -31, true);                                 // peldaño entre filas
+  pirIsle(2, -38, 6, 4.4); pirIsle(20, -36, 5.5, 4.0); pirTower(-16, -40, 'watch');
   addPad(-20, -28); addPad(22, 20);
 }
 function buildPirConvoy(){                      // idx1 · sala de SPAWN: el pantalán de la escolta
@@ -28106,6 +28368,9 @@ function buildPirConvoy(){                      // idx1 · sala de SPAWN: el pan
   pirIsle(14, -20, 6, 4.2);
   pirIsle(2, 20, 6, 4.2); pirIsle(-24, 22, 5.5, 4.6);
   pirDock(-8, -16); pirDock(6, 16); pirDock(20, 17);     // tres peldaños: el spawn es donde se aprende a saltar fuera
+  /* ►PIRWIDE · fila 2 */
+  pirDock(14, -31);
+  pirIsleBig(16, -40, { tower:false }); pirIsle(-14, -36, 6, 4.6); pirTower(-30, -38, 'small');
   addPad(14, -20); addPad(2, 20);
 }
 function buildPirFuerte(){                      // idx2 · el fuerte: atalayas altas y cañones apuntándote (todas al fondo)
@@ -28113,6 +28378,9 @@ function buildPirFuerte(){                      // idx2 · el fuerte: atalayas a
   pirIsle(-2, 21, 5.5, 4.4); pirIsle(20, 22, 6, 4.6);    // enfrente, bajo: a lo que se salta desde la cubierta
   pirDock(-8, -17, true); pirDock(-4, 17, true); pirDock(14, 16);
   for(const t of [[-20,-23],[32,-24]]) pirProp('p_cannonmob', t[0]+2.2, PIR_WL+15.5, t[1], { yaw:0, shadow:false });   // el cañón, en el remate de la torre
+  /* ►PIRWIDE · fila 2: la muralla de atrás del fuerte */
+  pirDock(10, -31, true);
+  pirPort(1, 8, -40); pirIsle(-14, -37, 6.5, 4.8); pirIsle(-32, -36, 5, 4.2);
   addPad(-20, -23); addPad(-2, 21);
 }
 function buildPirNaufragio(){                   // idx3 · el arrecife: la orilla más rota del stage
@@ -28123,6 +28391,10 @@ function buildPirNaufragio(){                   // idx3 · el arrecife: la orill
      (|z| 17-18) y no en el hueco de salto — una roca a mitad de salto invita a pisarla y a morir. */
   for(const r of [[-14,-18],[8,-17],[-8,18],[16,18]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:0.8, shadow:false });
   pirDock(2, -16); pirDock(-16, 16.5);
+  /* ►PIRWIDE · fila 2: más arrecife, el sitio donde el mapa se abre */
+  pirDock(22, -32);
+  pirIsle(24, -39, 6, 4.6); pirIsle(6, -37, 5.5, 4.0); pirIsleBig(-22, -40, { tower:false });
+  for(const r of [[14,-34],[-4,-33]]) pirProp('p_rocks_' + 'abc'[(Math.random()*3)|0], r[0], PIR_WL-0.6, r[1], { sc:1.1, shadow:false });
   addPad(-6, -28); addPad(26, 20);
 }
 function buildPirPuerto(){                      // idx4 · EL PUERTO: los muelles grandes, el camino largo por el fondo
@@ -28131,6 +28403,10 @@ function buildPirPuerto(){                      // idx4 · EL PUERTO: los muelle
   pirIsle(-34, -20, 5, 4.2);
   pirIsle(-26, 20, 5, 4.2); pirIsle(10, 22, 6, 4.6);
   pirDock(-2, -16); pirDock(-6, 16); pirDock(22, 17);
+  /* ►PIRWIDE · fila 2: la dársena de detrás. Los muelles grandes ya llegan a −43 y la costa de
+     decorado empieza en −43, así que aquí solo caben piezas en los huecos de X que dejan los muelles
+     (entre −2 y 8, y a partir de −30) y sin pasar de |z| 42. */
+  pirIsle(3, -42, 5.5, 4.8); pirTower(-34, -38, 'watch');
   addPad(-34, -20); addPad(-26, 20);
 }
 function buildPirAbordaje(){                    // idx5 · ABORDAJE: el muelle largo del fondo, a tiro de salto de la cubierta
@@ -28138,6 +28414,9 @@ function buildPirAbordaje(){                    // idx5 · ABORDAJE: el muelle l
   pirIsleBig(28, -28, { tower:false });
   pirIsle(-32, 21, 5.5, 4.4); pirIsle(6, 20, 6, 4.2); pirIsle(22, 23, 5, 4.6);
   pirDock(-22, -16); pirDock(-4, 16); pirDock(24, 16.5);
+  /* ►PIRWIDE · fila 2 */
+  pirDock(-10, -31, true);
+  pirPort(1, -12, -40); pirIsle(12, -37, 6, 4.4); pirTower(30, -40, 'small');
   addPad(-32, 21); addPad(28, -28);
 }
 const PIR_SEG_BUILDERS = [ buildPirIslas, buildPirConvoy, buildPirFuerte, buildPirNaufragio, buildPirPuerto, buildPirAbordaje ];
@@ -28149,7 +28428,12 @@ const PIR_SEG_BUILDERS = [ buildPirIslas, buildPirConvoy, buildPirFuerte, buildP
    Ahora dispara un BARCO DE GUERRA visible en el horizonte — fogonazo y humo en su costado — y la
    bala hace una parábola de ~2 s que puedes seguir con la vista. La marca del suelo vive TODO el
    vuelo: nace fina y se enciende conforme la bala llega. El aviso ES el juego. */
-const PIR_BALL_DMG = 22;
+/* ►PIRCANNON3 · daño de la andanada (elección de Toni: "un daño interesante"). Sube de 22 a 30 y, lo
+   que más cambia, EMPUJA de verdad: antes solo te levantaba (vel.y 6) y te quedabas donde estabas.
+   Ahora sale despedido en radial desde el punto de impacto, así que junto a la borda te puede echar al
+   agua — que es el sentido de tener un aviso de 2 s en el suelo. */
+const PIR_BALL_DMG = 30, PIR_BALL_BLOCK = 10, PIR_BALL_KB = 14, PIR_BALL_UP = 9;
+const PIR_BALL_R   = 3.2;            // radio de daño en XZ (y el del disco de aviso: se ve DÓNDE cae)
 const PIR_FLIGHT   = [1.9, 2.4];     // s de vuelo (se ve venir de sobra)
 const PIR_FOE = { g:null, side:1, t:0 };
 function _pirWarnMesh(){
@@ -28157,7 +28441,56 @@ function _pirWarnMesh(){
   g.rotateX(-Math.PI/2);
   const m = new THREE.MeshBasicMaterial({ color:0xff5a3c, transparent:true, opacity:0.85, depthWrite:false, fog:false });
   const r = new THREE.Mesh(g, m); r.userData.noOcc = true; r.frustumCulled = false;
-  return r;
+  /* ►PIRCANNON3 (12/08, pedido de Toni: "haz como los rayos: un círculo rojo en la cubierta que se va
+     intensificando"). El aro solo decía CUÁNDO (se cierra como un reloj); faltaba decir DÓNDE. Debajo
+     va ahora un DISCO del radio exacto del daño (3.2) con la misma receta que el aviso de los rayos
+     del stage 2: degradado radial invertido (centro suave, borde encendido), aditivo, girando y
+     subiendo de intensidad. Textura propia en ÁMBAR — reusar la azul del rayo multiplicada por naranja
+     da un tono sucio. */
+  const grp = new THREE.Group();
+  const d = new THREE.Mesh(new THREE.CircleGeometry(PIR_BALL_R, 40),
+    new THREE.MeshBasicMaterial({ map:_pirWarnTex(), color:0xffa050, transparent:true, opacity:0.25,
+                                  depthWrite:false, fog:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide }));
+  d.rotation.x = -Math.PI/2; d.renderOrder = 3;   // por encima del agua (PIR.water va en renderOrder 2)
+  r.renderOrder = 4;
+  grp.add(d, r); grp.userData.fill = d; grp.userData.ring = r;
+  grp.userData.noOcc = true;
+  return grp;
+}
+let _pirWarnTexC = null;
+function _pirWarnTex(){
+  if(_pirWarnTexC) return _pirWarnTexC;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const ctx = cv.getContext('2d');
+  const grd = ctx.createRadialGradient(64,64,6, 64,64,64);
+  grd.addColorStop(0.00, 'rgba(255,170,80,0.10)');    // centro: suave
+  grd.addColorStop(0.55, 'rgba(255,120,50,0.32)');
+  grd.addColorStop(0.86, 'rgba(255,150,70,0.80)');
+  grd.addColorStop(0.965,'rgba(255,235,200,1.00)');   // borde: máximo (ascua)
+  grd.addColorStop(1.00, 'rgba(255,235,200,0.00)');   // corte limpio
+  ctx.fillStyle = grd; ctx.fillRect(0,0,128,128);
+  _pirWarnTexC = new THREE.CanvasTexture(cv);
+  return _pirWarnTexC;
+}
+/* SILBIDO de la bala. `tone()` no vale: su ganancia decae exponencialmente DESDE t=0, o sea que se
+   apaga justo cuando la bala llega. Este sube el volumen y baja el tono a la vez, y se programa UNA
+   vez por bala con la duración real de su vuelo → queda clavado con el impacto y no cuesta nada por
+   frame. Devuelve el oscilador para poder cortarlo si se sale del stage. */
+function pirWhistle(dur, vol, f0){
+  if(typeof demo!=='undefined' && demo) return null;
+  try{
+    const ctx = audio(); if(ctx.state==='suspended') ctx.resume();
+    const t0 = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0 || 1500, t0);
+    o.frequency.exponentialRampToValueAtTime(300, t0 + dur);
+    g.gain.setValueAtTime(0.0008, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.01, vol || 0.07), t0 + dur*0.88);   // CRECE: "algo que cae hacia ti"
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.06);
+    o.connect(g); g.connect(master());
+    o.start(t0); o.stop(t0 + dur + 0.08);
+    return o;
+  }catch(e){ return null; }
 }
 /* el que dispara: silueta de un barco grande MUY lejos, del lado que no tiene costa */
 function pirBuildFoe(){
@@ -28186,17 +28519,21 @@ function pirVolley(){
     const p = live[(Math.random()*live.length)|0];
     const tz0 = PIR_HULL_Z*PIR_SHIP_L*0.72;                       // la andanada cae DENTRO de la cubierta
     const tx = p.pos.x + (Math.random()-0.5)*8, tz = THREE.MathUtils.clamp(p.pos.z + (Math.random()-0.5)*8, -tz0, tz0);
-    const ty = (typeof platformTopAt==='function' ? platformTopAt(tx, tz) : null);
-    const y = (ty === null || ty === undefined) ? PIR_DECK : ty;
+    /* ►PIRFXY: el suelo bajo el objetivo, pero NUNCA una verga o una cofa por encima de él — con
+       `platformTopAt` pelado, un jugador bajo la verga mayor hacía que la bala apuntase a y=34. */
+    const y = fxFloorY(tx, tz, p.pos.y) || PIR_DECK;
     /* boca del cañón: el costado del barco enemigo, un poco escalonada por disparo (es una ANDANADA) */
     const ox = (foe ? foe.position.x : -24) + (i-0.5)*9;
     const oz = (foe ? foe.position.z : 118) - PIR_FOE.side*4;
     const oy = PIR_SHIP_Y + PIR_SHIP_L*0.20;
-    const warn = _pirWarnMesh(); warn.position.set(tx, y+0.06, tz); warn.scale.setScalar(0.5); scene.add(warn);
+    const warn = _pirWarnMesh(); warn.position.set(tx, y+0.06, tz); scene.add(warn);
     const m = pirProp('p_ball', ox, oy, oz, { shadow:false, noOcc:true });
     const dur = PIR_FLIGHT[0] + Math.random()*(PIR_FLIGHT[1]-PIR_FLIGHT[0]);
-    PIR.balls.push({ m, warn, x:tx, z:tz, ty:y, ox, oy, oz, t:0, dur, hit:false,
-                     arc: 16 + Math.random()*10, smokeT:0 });
+    /* ►PIRCANNON3: el silbido se programa AQUÍ, con la duración real del vuelo. Con varias balas se
+       reparte el volumen y se desafina cada una, o baten entre ellas y suena a sirena. */
+    const osc = pirWhistle(dur, 0.075/n, 1500 + i*160);
+    PIR.balls.push({ m, warn, x:tx, z:tz, ty:y, ox, oy, oz, t:0, dur, hit:false, osc,
+                     arc: 16 + Math.random()*10, smokeT:0, sparkT:0 });
     /* FOGONAZO en la boca: se ve el disparo aunque estés mirando a otro lado (el humo queda un rato) */
     const c = new THREE.Vector3(ox, oy, oz);
     burst(c.clone(), 0xffd9a0, 14, 9, 7, 1.2); burst(c.clone(), 0xb0b8bd, 10, 5, 9, 1.6);
@@ -28217,12 +28554,27 @@ function updateStagePir(dt){
     const b = PIR.balls[i];
     b.t += dt;
     const k = Math.min(1, b.t/b.dur);
-    /* MARCA: nace pequeña y tenue y se cierra sobre el punto de impacto conforme la bala llega — el
-       jugador tiene los 2 s del vuelo para leerla y apartarse (idea de los rayos del stage 2). */
+    /* MARCA (►PIRCANNON3, calcada del aviso de los rayos del stage 2): el DISCO dice dónde —radio
+       exacto del daño, quieto— y se va encendiendo, girando y parpadeando cada vez más rápido; el ARO
+       dice cuándo, cerrándose sobre el punto. Y chispas que suben, cada vez más densas. */
     if(b.warn){
-      b.warn.scale.setScalar(0.5 + (1-k)*2.4 + Math.sin(PIR.t*14)*0.05*k);
-      b.warn.material.opacity = 0.18 + 0.75*k*k;
-      b.warn.material.color.setRGB(1, 0.36 - 0.22*k, 0.24 - 0.16*k);   // ámbar → rojo al llegar
+      const fill = b.warn.userData.fill, ring1 = b.warn.userData.ring;
+      if(fill){
+        fill.material.opacity = 0.25 + 0.70*k*k;
+        fill.rotation.z += dt*(0.6 + 1.8*k);
+        fill.scale.setScalar(1 + 0.05*Math.sin(PIR.t*(6 + 18*k)));
+      }
+      if(ring1){
+        ring1.scale.setScalar(0.5 + (1-k)*2.4 + Math.sin(PIR.t*14)*0.05*k);
+        ring1.material.opacity = 0.18 + 0.75*k*k;
+        ring1.material.color.setRGB(1, 0.36 - 0.22*k, 0.24 - 0.16*k);   // ámbar → rojo al llegar
+      }
+      b.sparkT -= dt;
+      if(b.sparkT <= 0){
+        b.sparkT = 0.16 - 0.09*k;
+        const a = Math.random()*6.283, rr = Math.sqrt(Math.random())*PIR_BALL_R*0.92;
+        burst(new THREE.Vector3(b.x + Math.cos(a)*rr, b.ty + 0.15, b.z + Math.sin(a)*rr), 0xffc070, 2, 1.1, 2.6, 0.45);
+      }
     }
     if(b.m){                                            // PARÁBOLA de verdad: recta en XZ + arco en Y
       b.m.position.set(b.ox + (b.x-b.ox)*k, b.oy + (b.ty-b.oy)*k + b.arc*4*k*(1-k), b.oz + (b.z-b.oz)*k);
@@ -28232,19 +28584,33 @@ function updateStagePir(dt){
     }
     if(k >= 1 && !b.hit){
       b.hit = true;
+      /* ►PIRCANNON3 · EXPLOSIÓN: dos ráfagas (ascuas + humo), dos aros desfasados, sacudida y
+         fogonazo de pantalla — el mismo lenguaje que el impacto del rayo del stage 2. */
       const c = new THREE.Vector3(b.x, b.ty+0.4, b.z);
-      burst(c.clone(), 0xffb070, 18, 8, 6, 1.0); ring(c.clone(), 0xffe0a0, 16, 0.45);
-      shake = Math.max(shake, 0.35); sfx && sfx.smash && sfx.smash();
+      burst(c.clone(), 0xffd48a, 26, 11, 8, 1.2); burst(c.clone(), 0xffb070, 18, 7, 5, 1.0);
+      burst(c.clone(), 0x9a958c, 14, 4, 7, 1.8);                       // humo, que sube despacio y queda
+      ring(c.clone(), 0xffe0a0, 18, 0.45); ring(c.clone(), 0xff7a30, 30, 0.7);
+      shake = Math.max(shake, 0.55); fovKick = Math.max(fovKick, 0.3);
+      if(typeof flashT!=='undefined') flashT = Math.max(flashT, 0.10);
+      sfx && sfx.smash && sfx.smash();
+      try{ noiseBurst(.5,.55, 1600,'lowpass',0.6, 180); tone(58,.7,'sine',.3,-18); }catch(e){}   // el "boom" grave
       for(const p of players){
         if(!p || p.out || p.dead || p.invuln>0) continue;
-        if(Math.hypot(p.pos.x-b.x, p.pos.z-b.z) > 3.2 || Math.abs(p.pos.y - b.ty) > 3.5) continue;
-        if(p.block){ p.damage += 7*defMul(p); p.shieldFlash = .2; sfx && sfx.chip && sfx.chip(); continue; }
-        p.damage += PIR_BALL_DMG*defMul(p); p.hitFlash = .2; p.hitstun = Math.max(p.hitstun, .3);
-        p.vel.y = Math.max(p.vel.y, 6); p.onGround = false; jiggle(p, 12); sfx && sfx.hit && sfx.hit(p.damage);
+        const dx = p.pos.x-b.x, dz = p.pos.z-b.z;
+        if(Math.hypot(dx,dz) > PIR_BALL_R || Math.abs(p.pos.y - b.ty) > 3.5) continue;
+        if(p.block){ p.damage += PIR_BALL_BLOCK*defMul(p); p.shieldFlash = .2; sfx && sfx.chip && sfx.chip(); continue; }
+        p.damage += PIR_BALL_DMG*defMul(p); p.hitFlash = .2; p.hitstun = Math.max(p.hitstun, .35);
+        /* EMPUJE radial: te saca del sitio (y de la borda al agua, si estabas ahí) */
+        let nx = dx, nz = dz, nl = Math.hypot(nx,nz);
+        if(nl < 0.001){ const a = Math.random()*6.283; nx = Math.cos(a); nz = Math.sin(a); nl = 1; }
+        nx /= nl; nz /= nl;
+        const kb = PIR_BALL_KB*(1 - 0.45*(nl/PIR_BALL_R)) + p.damage*0.05;   // más cerca = más empuje, y escala con el daño acumulado
+        p.vel.x = nx*kb; p.vel.z = nz*kb; p.vel.y = Math.max(p.vel.y, PIR_BALL_UP);
+        p.onGround = false; jiggle(p, 14); sfx && sfx.hit && sfx.hit(p.damage);
       }
       for(const mn of minions){                          // y a la horda también: una bala no distingue
         if(mn.dead || mn._boss) continue;
-        if(Math.hypot(mn.pos.x-b.x, mn.pos.z-b.z) > 3.2 || Math.abs(mn.pos.y - b.ty) > 3.5) continue;
+        if(Math.hypot(mn.pos.x-b.x, mn.pos.z-b.z) > PIR_BALL_R || Math.abs(mn.pos.y - b.ty) > 3.5) continue;
         hurtEnemy(mn, 40, false); mn.hitstun = Math.max(mn.hitstun, .25); mn.onGround = false; mn.vel.y = Math.max(mn.vel.y, 5);
       }
     }
