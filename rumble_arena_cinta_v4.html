@@ -29323,9 +29323,7 @@ function _leviEnrage(){
   if(_leviMat)    _leviMat.color.setHex(LEVI_COL_RAGE);
   if(_leviMatTip){ _leviMatTip.emissiveIntensity = 0.6; }
   const hp = LEVI.hpArm * 0.55;
-  LEVI.hpArm = hp; LEVI.hp0 = hp * LEVI_ARMS; LEVI.rage = false;
-  if(_leviMat) _leviMat.color.setHex(LEVI_COL);           // ►LEVIRAGE: el material vive entre partidas — hay que devolverlo al lila
-  if(_leviMatTip) _leviMatTip.emissiveIntensity = 0.35;
+  LEVI.hp0 = hp * LEVI_ARMS;
   for(const a of LEVI.arms){
     a.g.visible = true; a.g.scale.setScalar(0.001);
     a.state = 'rise'; a.st = 0; a.tgt = a.home; a.maxHp = hp;
