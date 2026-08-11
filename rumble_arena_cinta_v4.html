@@ -27756,46 +27756,13 @@ function pirSolids(key, cx, cz, baseY, opts){
     if(thin && thin[bi]) rec._pirRig = true;                       // ►PIRJARCIA: verga/cofa/tope de palo
     platforms.push(rec); recs.push(rec);
   }
-  /* ►PIRROOF (12/08, queja de Toni: "muchos puertos y plataformas no están bien mapeados y te caes al
-     mar"). No estaban mal medidos: el raycast que generó la colisión era CENITAL, así que donde el
-     muelle tiene cobertizo o grúa la única caja quedó en el TEJADO y bajo él no hay suelo ninguno.
-     Medido rasterizando la huella: el 23% de la cubierta de pq_port1, el 28% de la de port2 y el 54%
-     de la de port3 son agujeros INTERIORES (rodeados de tablero por 3-4 lados), no voladizos sobre el
-     agua. Como la cubierta es plana y su cota se conoce (PIR_PORTS[k].deckY), se aplica la regla obvia:
-     hay tejado ⇒ hay cubierta debajo. Se copia cada caja alta a la cota del tablero, recortada al
-     rectángulo del tablero para no dejar suelo fantasma sobre el mar. */
-  if(opts.roofFloor !== undefined){
-    const d = opts.roofFloor, topD = baseY + d*S;
-    let bx0=Infinity, bx1=-Infinity, bz0=Infinity, bz1=-Infinity;
-    for(const b of arr) if(b[4] <= d + 0.004){
-      bx0=Math.min(bx0,b[0],b[1]); bx1=Math.max(bx1,b[0],b[1]);
-      bz0=Math.min(bz0,b[2],b[3]); bz1=Math.max(bz1,b[2],b[3]);
-    }
-    /* de las más GRANDES a las más pequeñas y saltándose las que ya quedan dentro de una emitida: los
-       tejados son rejillas de celdas y sin esto se emiten decenas de cajas redundantes (medido: 261
-       copias en la cinta entera, y una consulta de plataforma mira todas las de su segmento). */
-    const cand = [];
-    if(bx0 < bx1) for(const b of arr){
-      if(b[4] <= d + 0.004) continue;
-      const ax0=Math.max(Math.min(b[0],b[1]), bx0), ax1=Math.min(Math.max(b[0],b[1]), bx1);
-      const az0=Math.max(Math.min(b[2],b[3]), bz0), az1=Math.min(Math.max(b[2],b[3]), bz1);
-      if(ax1 <= ax0 || az1 <= az0) continue;
-      cand.push([ax0, ax1, az0, az1, (ax1-ax0)*(az1-az0)]);
-    }
-    cand.sort((p,q)=> q[4]-p[4]);
-    const kept = [];
-    for(const c of cand){
-      let dentro = false;
-      for(const k of kept) if(c[0] >= k[0]-1e-6 && c[1] <= k[1]+1e-6 && c[2] >= k[2]-1e-6 && c[3] <= k[3]+1e-6){ dentro = true; break; }
-      if(dentro) continue;
-      kept.push(c);
-      let X0=c[0]*S*f, X1=c[1]*S*f, Z0=c[2]*S*f, Z1=c[3]*S*f;
-      if(X0>X1){ const t=X0; X0=X1; X1=t; } if(Z0>Z1){ const t=Z0; Z0=Z1; Z1=t; }
-      const rec = { minX:cx+X0, maxX:cx+X1, minZ:cz+Z0, maxZ:cz+Z1, topY:topD, baseY:topD-0.55,
-                    solid:true, step:0.9, _pirBox:true, _pirRoofFloor:true };
-      platforms.push(rec); recs.push(rec);
-    }
-  }
+  /* ►PIRROOF · RETIRADO (11/08): era un parche —copiar cada caja de TEJADO a la cota del tablero—
+     y se quedó corto: medido comparando la madera que se VE contra la colisión, al 24/37/39 % del
+     tablero de pq_port1/2/3 le seguía faltando suelo, porque los agujeros no están solo bajo los
+     tejados (cualquier grúa, poste o barandilla borraba el tablero de debajo: el generador viejo
+     guardaba SOLO el impacto más alto de cada columna). Ahora la colisión de los muelles y los
+     pantalanes está REGENERADA con raycast MULTI-IMPACTO (scratchpad/gen.js → stage_pirate_solids.js,
+     ►PIRSOLID v2), así que no hay nada que parchear. */
   /* ►PIRSHAFT (12/08, pedido de Toni: "que las torres tengan collide en sus paredes porque si no lo
      traspasas"). Mismo origen que lo anterior: el raycast cenital solo vio el REMATE, así que las
      torres son una losa flotante sin fuste — y `collideWalls` ignora toda caja con
@@ -28244,7 +28211,7 @@ function pirPort(kind, cx, cz, flip){
   const S = DECOR_DEFSP[P.key].size;
   const f = flip ? -1 : 1;                    // media vuelta: el muelle mira al otro costado (y sus cajas también)
   pirProp(P.key, cx, PIR_WL, cz, { yaw: flip ? Math.PI : 0, shadow:false });
-  pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip, roofFloor:P.deckY });   // ►PIRROOF: cubierta bajo los cobertizos
+  pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip });   // ►PIRSOLID v2: su colisión ya viene completa del generador multi-impacto
   const topY = PIR_WL + P.deckY*S;
   for(const q of P.post) pirPost(cx + f*q[0]*S, cz + f*q[1]*S, topY);   // ►PIRPOST: el muelle es zona enemiga, no un descansillo
   return topY;
