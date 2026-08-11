@@ -9858,20 +9858,11 @@ function updateDrone(mn, dt){
 const SPAWN_NEAR_CHANCE = 0.5;   // 50% cerca de un luchador, 50% repartido por el mapa
 const NEAR_R_MIN = 11, NEAR_R_MAX = 22;   // anillo: mín. 11u de distancia (no ultra cerca) — sube NEAR_R_MIN si aún agobia en solo
 function minionDropSpot(){
-  /* ►PIRSWAP (STAGE 12): del cielo SOLO caen sobre TU BARCO (pedido de Toni). Los que ocupan islotes,
-     torres, pantalanes y muelles no caen del cielo: están APOSTADOS desde que se construye la sala y
-     los pone updateStagePir (►PIRPOST). Si se dejara el reparto normal, la horda aparecería sola en la
-     orilla y bajar del barco dejaría de ser una decisión. */
-  if(STAGE===12 && typeof PIR!=='undefined' && PIR.plats.length){
-    for(let i=0;i<14;i++){
-      const d = PIR.plats[(Math.random()*PIR.plats.length)|0];
-      const x = THREE.MathUtils.lerp(d.minX+0.8, d.maxX-0.8, Math.random());
-      const z = THREE.MathUtils.lerp(d.minZ+0.8, d.maxZ-0.8, Math.random());
-      const top = platformTopAt(x, z);
-      if(top!==null) return { x, z, y0: top };
-    }
-    return null;
-  }
+  /* ►PIRHORDA (11/08): el mar pirata usaba un reparto PROPIO —del cielo solo caían sobre tu barco, y la
+     orilla la poblaban puestos fijos—. Fuera: pedido de Toni, "que aparezcan los mismos dentro que
+     fuera y que se vayan poblando allí donde hay jugadores", o sea el reparto de cualquier otro stage.
+     El que cae en la orilla se convierte solo en tirador de largo alcance (ver ►PIRHORDA en
+     updateMinion), así que sigue habiendo presión desde fuera sin que nadie intente cruzar el hueco. */
   const live = players.filter(p => p && !p.out);
   const near = live.length && Math.random() < SPAWN_NEAR_CHANCE;   // se decide UNA vez por spawn
   for(let i=0;i<24;i++){
@@ -10132,13 +10123,14 @@ function updateMinion(mn, dt){
     mn.yaw = Math.atan2(to.x, to.z);
     const spd = mn.type==='shooter'?4.2 : mn.type==='large'?2.3 : 3.6;   // tirador algo más lento (menos pesado)
     wantMove=true;
-    /* ►PIRPOST (STAGE 12): tirador APOSTADO — no persigue, no kitea, no salta huecos: se queda en su
-       islote/torre/barco y dispara cuando pasas cerca. Es el motor del stage: la horda no viene a ti,
-       tienes que bajar del barco a por ella. Alcance más largo que el shooter normal (15) porque
-       dispara de una plataforma a otra por encima del agua. */
-    if(mn._pirPost){
+    /* ►PIRHORDA (STAGE 12): EL QUE NO ESTÁ EN EL BARCO, DISPARA. Un minion que pisa la orilla no puede
+       llegar a ti —no cruza el hueco y si lo intentara se ahoga—, así que se planta y tira de lejos con
+       alcance largo (PIR_OUT_RANGE) para poder molestar en cubierta. Se decide por dónde tiene los PIES
+       (`_pirRide`, ►PIRRIDE), no por dónde nació: si consigue subir al barco, vuelve a ser horda normal.
+       Sustituye a los puestos fijos de ►PIRPOST, que se han retirado. */
+    if(STAGE===12 && mn.onGround && !mn._pirRide){
       mn.vel.x = 0; mn.vel.z = 0; wantMove = false;
-      if(mn.cd<=0 && dist < PIR_POST_RANGE){ minionShoot(mn, tgt); mn.cd = 1.7 + Math.random()*1.3; }
+      if(mn.cd<=0 && dist < PIR_OUT_RANGE){ minionShoot(mn, tgt); mn.cd = 1.7 + Math.random()*1.3; }
     }
     else if(mn.type==='shooter'){
       /* tirador: se acerca a distancia de tiro y se planta; NUNCA kitea.
@@ -10163,7 +10155,7 @@ function updateMinion(mn, dt){
       if(dist<reach && mn.cd<=0){ mn.atkPhase='wind'; mn.atkT=0; mn.cd=mn.type==='large'?2.6:1.1; }
     }
     /* navegación: salta huecos (con impulso, salto más largo) y trepa hacia objetivos altos */
-    if(mn.onGround && mn.jumpCD<=0 && !mn._kiting && !mn._pirPost){   // ►WESTERN: kiteando NO salta huecos — su velocidad va HACIA ATRÁS y el salto-embiste lo tiraría al vacío · ►PIRPOST: el apostado tampoco salta (se tiraría al mar)
+    if(mn.onGround && mn.jumpCD<=0 && !mn._kiting && !(STAGE===12 && !mn._pirRide)){   // ►WESTERN: kiteando NO salta huecos — su velocidad va HACIA ATRÁS y el salto-embiste lo tiraría al vacío · ►PIRHORDA: el de la orilla tampoco salta (se tiraría al mar)
       const mvl=Math.hypot(mn.vel.x,mn.vel.z);
       if(mvl>.5 && !overAnyPlatform(mn.pos.x+mn.vel.x/mvl*3.2, mn.pos.z+mn.vel.z/mvl*3.2)){ minionJump(mn); mn.vel.x*=1.5; mn.vel.z*=1.5; }
       else if(tgt.pos.y > mn.pos.y+1.6) minionJump(mn);
@@ -10192,6 +10184,10 @@ function updateMinion(mn, dt){
     if(mn.stuck>.3){ minionJump(mn); mn.stuck=0; }
   } else mn.stuck=0;
   if(mn.damage >= minionHP(mn.type)){ awardMinion(mn); killMinion(mn); return; }   // muere al llenar su vida (resistencia por tipo)
+  /* ►PIROLA: en el mar pirata el límite lo pone LA OLA, no un plano invisible 4 u más allá — la horda
+     que se queda atrás desaparece DENTRO del agua, con su chapuzón. Es lo que vende que barre todo. */
+  if(STAGE===12 && typeof PIROLA!=='undefined' && PIROLA.on && PIROLA.calm < 0.5 && Math.abs(mn.pos.x) > WALL_X - PIROLA.bite){
+    if(typeof pirSplash==='function') pirSplash(mn.pos); awardMinion(mn); killMinion(mn); return; }
   if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+4 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
   // pos/yaw/scale + ángulos se aplican en renderMinionInstances(); aquí: marcha (brazos+piernas) mezclada con ataque
   const walking = mn.onGround && (Math.abs(mn.vel.x)+Math.abs(mn.vel.z))>.5;
@@ -19225,6 +19221,14 @@ function updateFighter(p, dt){
     const _wx = _s10 ? WALL_X*S10_BLAST_MUL : WALL_X;
     const _zf = _s10 ? BLAST_Z_FAR*S10_BLAST_MUL : BLAST_Z_FAR*_pir;
     const _zn = _s10 ? BLAST_Z_NEAR*S10_BLAST_MUL : BLAST_Z_NEAR*_pir;
+    /* ►PIROLA (11/08, idea de Toni): en el mar pirata los muros laterales NO rebotan — son DOS OLAS
+       gigantes, una por proa y otra por popa, que barren todo a su paso. Tocarlas es morir, y no se
+       saltan por encima (la línea de muerte va en X, a cualquier altura). Es el peligro que le faltaba
+       a salir del barco: la orilla desfila hacia popa, así que si te duermes te alcanza el agua.
+       Con el jefe en escena las olas se calman (PIROLA.calm) y vuelve el rebote de siempre. */
+    if(STAGE===12 && typeof PIROLA!=='undefined' && PIROLA.on && PIROLA.calm < 0.5 && Math.abs(p.pos.x) > _wx - PIROLA.bite){
+      pirWaveKill(p); return;
+    }
     if(p.pos.x > _wx){ p.pos.x = _wx; if(p.vel.x > -WALL_PUSH) p.vel.x = -WALL_PUSH; wallHit(p, 1); }
     else if(p.pos.x < -_wx){ p.pos.x = -_wx; if(p.vel.x < WALL_PUSH) p.vel.x = WALL_PUSH; wallHit(p, -1); }
     if(p.pos.y < _loY || p.pos.z < -_zf || p.pos.z > _zn || (!_s10 && p.pos.y > _hiY)){ ko(p); return; }
@@ -20605,7 +20609,7 @@ function _applySegX(seg){
 
 function updateBelt(dt){
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? PIR_BELT_MUL : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? pirBeltMul() : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -23206,7 +23210,6 @@ function rebuildBelt(){
   platforms.length = 0; pads.length = 0; drifters.length = 0; bouncers.length = 0;
   _propSpots.length = 0; _fires.length = 0; _pathSpots.length = 0;
   S2_TOWERS.length = 0; S2_AMBUSHES.length = 0; _s2VineSpots.length = 0;   // ►CAMP: campamentos/emboscadas/hiedras mueren con sus segmentos
-  if(typeof _pirClearPosts==='function') _pirClearPosts();                  // ►PIRPOST: los puestos de tiradores viven en los grupos de sala
   if(typeof _wBarrels!=='undefined'){ _wBarrels.length = 0; _wTowers.length = 0; _wTrains.length = 0; _wSegProps.length = 0; }   // ►WEST: barriles, torres, trenes y props altos viven en los grupos de segmento
   if(typeof _wAnimals!=='undefined'){ for(const a of _wAnimals){ if(a.m && a.m.parent) a.m.parent.remove(a.m); } _wAnimals.length = 0; _wASpawnT = 3; }   // ►WEST: los animales viven en la RAÍZ → hay que quitarles la malla a mano (patrón pingüinos)
   if(typeof _s4Grids!=='undefined') _s4Grids.length = 0;                    // ►S5: las rejillas de losas-trampa mueren con sus segmentos
@@ -23255,7 +23258,7 @@ function rebuildBelt(){
      acaba de vaciar el array entero. Hay que re-inscribirlas DESPUÉS de construir los segmentos, en
      cada reconstrucción; si no, el suelo del stage desaparece al primer rebuild y todo el mundo cae
      al mar. (El grupo visual se construye una sola vez.) */
-  if(STAGE===12 && typeof buildPirateShip==='function'){ _pirBuildWater(); buildPirateShip(); }
+  if(STAGE===12 && typeof buildPirateShip==='function'){ _pirBuildWater(); buildPirateShip(); buildPirWaves(); }   // ►PIROLA: las dos olas-muro, también en la raíz
   warmupLigero('cinta reconstruida');   // ►WARMUP: materiales del stage nuevo, compilados AQUÍ y no cuando la plataforma asoma por el horizonte. LIGERO: reconstruir la cinta pasa EN PARTIDA (cambio de stage) y el warmup completo costaba ~1 s.
 }
 
@@ -27614,7 +27617,14 @@ const PIR_WL       = 2.0;    // línea del agua = cota de muerte (blastDownY la 
 const PIR_SEA_COL  = 0x14a8ad;   // superficie
 const PIR_BED_COL  = 0x1a6b74;   // lecho marino (antes 0x17415a, azul marino: agrisaba el agua entera)
 const PIR_BEDR_COL = 0x226f70;   // peñascos del fondo
-const PIR_BELT_MUL = 0.85;   // algo más lenta que el resto: aquí hay que calcular saltos a cosas que pasan
+/* ►PIRVEL (11/08, pedido de Toni: "el ritmo de avance debe ser como todos; llega un momento que el
+   barco va súper rápido"). Antes era un 0.85 FIJO, o sea que el mar acababa la partida más lento que
+   el prado. Ahora RAMPA con el caos: arranca tranquilo (el primer salto a la orilla se puede medir) y
+   a caos 10 va a 1.15 — más que un stage normal. Con las olas de ►PIROLA pisándote los talones, esa
+   rampa ES la dificultad del stage: al final, salir del barco es una decisión cara. */
+const PIR_BELT_MUL0 = 0.85, PIR_BELT_MUL1 = 1.15;
+function pirBeltMul(){ const k = Math.min(1, Math.max(0, (typeof chaosLvl!=='undefined' ? chaosLvl : 0)/10));
+                       return PIR_BELT_MUL0 + (PIR_BELT_MUL1 - PIR_BELT_MUL0)*k; }
 /* ►PIRBIG (11/08, pedido de Toni "hazlo más grande aún"): eslora 45 → 60.
    La trampa de escalar un barco es que la CUBIERTA SUBE con él (0.17·60 = 10.2 sobre la quilla), y
    con ella los saltos: de la cubierta a un islote pasaría de 2.8 a 5.4 y el stage dejaría de
@@ -27636,7 +27646,7 @@ const PIR_BLAST_MUL = 1.25;                       // → muerte en −67 / +55
 const PIR_HULL_Z   = 0.158;                       // semimanga del casco, en fracción de eslora (medida)
 const PIR_DECK_FORE = 0.2033, PIR_DECK_MAIN = 0.1698, PIR_DECK_AFT = 0.2296;   // cubiertas en fracción de eslora (medidas)
 const PIR_DECK     = PIR_SHIP_Y + PIR_SHIP_L * PIR_DECK_MAIN;   // cubierta principal (la referencia de altura del stage)
-const PIR = { ship:null, water:null, wake:null, plats:[], cannons:[], balls:[], posts:[], t:0, volleyT:7, postT:0 };
+const PIR = { ship:null, water:null, wake:null, plats:[], cannons:[], balls:[], t:0, volleyT:7 };   // ►PIRHORDA: sin `posts` (fuera el sistema de puestos fijos)
 
 /* fichas de los props del kit (size = dimensión MAYOR en unidades de juego) */
 const DECOR_DEFSP = {
@@ -27920,8 +27930,8 @@ function _pirClearShip(){
   if(PIR.ship){ scene.remove(PIR.ship); PIR.ship = null; }
   PIR.plats.length = 0;
   if(typeof PIR_FOE!=='undefined' && PIR_FOE.g){ scene.remove(PIR_FOE.g); PIR_FOE.g = null; }   // ►PIRCANNON2: el barco que dispara desde el horizonte
-  if(typeof _pirClearPosts==='function') _pirClearPosts();   // ►PIRPOST: al salir del stage no queda ni un puesto vivo
   if(PIR.water){ scene.remove(PIR.water); PIR.water = null; }
+  if(typeof _pirClearWaves==='function') _pirClearWaves();   // ►PIROLA: viven en la raíz, como el barco
   for(const b of PIR.balls){
     if(b.m && b.m.parent) b.m.parent.remove(b.m);
     if(b.warn && b.warn.parent) b.warn.parent.remove(b.warn);
@@ -27951,6 +27961,144 @@ function _pirBuildWater(){
   w.renderOrder = 2;
   scene.add(w); PIR.water = w;
   return w;
+}
+
+/* =====================================================================
+   ►PIROLA · LAS DOS OLAS (11/08, idea de Toni)
+   Los muros laterales de ±WALL_X rebotaban, y aquí eso no penalizaba nada: te
+   quedabas pinchado 12 u por detrás de la popa viendo pasar islotes, sin más
+   consecuencia. En su sitio hay ahora DOS OLAS GIGANTES, una por proa y otra por
+   popa, que barren todo a su paso:
+     · TOCARLAS MATA, al instante y a cualquier altura (la línea de muerte va en
+       X: no hay salto que las pase por encima, que era el requisito).
+     · CRECEN CON EL CAOS. A caos 0 son un oleaje alto; a caos 10 son un muro de
+       30 u rugiendo — y como la cinta también acelera, salir del barco al final
+       de la partida es una decisión de verdad.
+     · Se tragan la orilla: los islotes y los muelles desfilan hacia popa y
+       desaparecen DENTRO de la pared de agua, no se apagan en el aire. Y la
+       horda que se queda atrás muere con su chapuzón.
+     · Con el JEFE en escena PIERDEN FUERZA y bajan a reposo: la pelea es en el
+       barco y ya no hacen falta (PIROLA.calm).
+   Geometría: un perfil de ola (cara cóncava + cresta + lomo largo) extruido a lo
+   largo de Z y ondulado en la cresta, con los colores en los VÉRTICES (agua
+   abajo, espuma arriba) → 1 draw call por ola.
+   ===================================================================== */
+const PIROLA = { on:false, calm:0, bite:1.6, g:[], t:0, sprayT:0, warnT:0 };
+const PIR_WAVE_LEN = 210;        // largo en Z: tiene que pasarse de la niebla por los dos lados
+const PIR_WAVE_H0  = 17;         // altura a caos 0
+const PIR_WAVE_H1  = 31;         // altura a caos 10 (la cubierta está a 8.2: la tapa entera)
+function _pirWaveGeo(){
+  /* perfil en XY: x=0 es la CARA (mira al barco), x crece hacia fuera. Altura normalizada a 1. */
+  const sh = new THREE.Shape();
+  sh.moveTo( 1.30, 0.00);          // pie de la cara, adelantado: la ola va inclinada hacia ti
+  sh.lineTo( 0.55, 0.34);
+  sh.lineTo( 0.12, 0.62);
+  sh.lineTo( 0.00, 0.82);          // el labio, casi vertical
+  sh.lineTo( 0.34, 0.97);
+  sh.lineTo( 0.95, 1.00);          // cresta
+  sh.lineTo( 1.85, 0.93);
+  sh.lineTo( 3.20, 0.62);
+  sh.lineTo( 5.20, 0.28);
+  sh.lineTo( 7.60, 0.06);
+  sh.lineTo( 9.00, 0.00);          // lomo largo hacia fuera
+  const geo = new THREE.ExtrudeGeometry(sh, { depth:1, bevelEnabled:false, steps:56 });
+  geo.translate(0, 0, -0.5);       // centrado en Z
+  const pos = geo.attributes.position, n = pos.count;
+  const col = new Float32Array(n*3);
+  /* tres tonos, que una pared de un solo color no tiene volumen: hondo abajo, el turquesa del mar en
+     medio y espuma en el tercio de arriba */
+  const cHondo = new THREE.Color(0x0a6f7a).convertSRGBToLinear();
+  const cAgua  = new THREE.Color(PIR_SEA_COL).convertSRGBToLinear();
+  const cEsp   = new THREE.Color(0xeefaff).convertSRGBToLinear();
+  const c = new THREE.Color();
+  for(let i=0;i<n;i++){
+    const y = pos.getY(i), z = pos.getZ(i);
+    /* la cresta ONDULA a lo largo de Z (una ola recta como una regla no es una ola) y se adelanta */
+    const w = Math.sin(z*46.0)*0.055 + Math.sin(z*17.0 + 1.7)*0.085;
+    pos.setY(i, y + w*y);                       // el pie no se mueve, la cresta sí
+    pos.setX(i, pos.getX(i) - w*0.9*y);
+    c.copy(cHondo).lerp(cAgua, Math.min(1, y/0.55));
+    const k = Math.min(1, Math.max(0, (y - 0.66)/0.30));      // el tercio de arriba es espuma
+    c.lerp(cEsp, k*k);
+    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+function buildPirWaves(){
+  if(PIROLA.g.length) return;
+  const geo = _pirWaveGeo();
+  /* OPACA a propósito: con transparencia se veían A TRAVÉS los contornos de tinta de los muelles que
+     hay detrás (el inkPass dibuja por profundidad) y parecía un cristal, no una pared de agua. Opaca,
+     además, es lo que hace que la orilla se "trague" al pasar por ella. */
+  const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.38, metalness:.05,
+                                               flatShading:true });
+  /* OJO con los ejes: el perfil vive en XY y la extrusión YA va en Z, así que la malla se coloca SIN
+     rotar — `x` es el grosor de la ola (hacia fuera del recinto) y `z` su largo. Rotándola 90° (primer
+     intento) el largo se iba al eje X y la ola tapaba la pantalla entera. `scale.x` negativo espeja la
+     de proa: las dos miran hacia el barco. */
+  for(const s of [-1, 1]){
+    const m = new THREE.Mesh(geo, mat);
+    m.scale.set(s*3.0, PIR_WAVE_H0, PIR_WAVE_LEN);            // perfil ~9 de ancho y 1 de alto → 27 de grosor
+    m.position.set(s*WALL_X, PIR_WL - 1.2, -6);               // x=0 del perfil = la CARA, justo en el límite
+    m.userData.noOcc = true;                                  // NUNCA oclusor: es una pared, fundiría medio stage
+    m.renderOrder = 3;
+    scene.add(m); PIROLA.g.push(m);
+  }
+  PIROLA.on = true; PIROLA.calm = 0;
+}
+function _pirClearWaves(){
+  for(const m of PIROLA.g){ if(m.parent) m.parent.remove(m); if(m.geometry) m.geometry.dispose(); if(m.material) m.material.dispose(); }
+  PIROLA.g.length = 0; PIROLA.on = false; PIROLA.calm = 0;
+}
+/* KO por ola: no es "caerse", es que te ha barrido — chapuzón grande y aviso */
+function pirWaveKill(p){
+  const c = new THREE.Vector3(p.pos.x, Math.max(PIR_WL, p.pos.y), p.pos.z);
+  burst(c.clone(), 0xf2fbff, 26, 9, 7, 1.2); burst(c.clone(), 0x9fe0e6, 16, 6, 5, 1.0);
+  ring(c.clone(), 0xffffff, 20, 0.5);
+  shake = Math.max(shake, 0.45);
+  if(typeof pirSplash==='function') pirSplash(p.pos);
+  ko(p);
+}
+function updatePirWaves(dt){
+  if(!PIROLA.g.length) return;
+  PIROLA.t += dt;
+  /* CALMA con el jefe: baja a reposo en ~2 s y deja de matar (lo mira el límite de updateFighter) */
+  const quiere = (typeof bossActive!=='undefined' && bossActive) ? 1 : 0;
+  PIROLA.calm += (quiere - PIROLA.calm) * Math.min(1, dt*0.7);
+  if(quiere && PIROLA.calm > 0.985) PIROLA.calm = 1;
+  const k = Math.min(1, (typeof chaosLvl!=='undefined' ? chaosLvl : 0)/10);
+  const H = (PIR_WAVE_H0 + (PIR_WAVE_H1-PIR_WAVE_H0)*k) * (1 - 0.78*PIROLA.calm);
+  for(let i=0;i<PIROLA.g.length;i++){
+    const m = PIROLA.g[i], s = (i===0 ? -1 : 1);
+    const bob = Math.sin(PIROLA.t*(0.9 + 0.5*k) + i*2.1)*0.045 + Math.sin(PIROLA.t*2.3 + i)*0.02;
+    m.scale.y = H * (1 + bob);
+    m.position.y = PIR_WL - 1.2 + Math.sin(PIROLA.t*1.3 + i*1.7)*0.5*(1-PIROLA.calm);
+    m.position.z = -6 + Math.sin(PIROLA.t*0.45 + i)*2.2;        // se desliza a lo largo: la cresta nunca está quieta
+    m.rotation.z = s * (0.02 + 0.02*k) * Math.sin(PIROLA.t*1.1 + i);
+  }
+  /* ESPUMA en la cresta: dice "esto barre" sin coste — más densa cuanto más caos, nada en calma */
+  if(PIROLA.calm < 0.5){
+    PIROLA.sprayT -= dt;
+    if(PIROLA.sprayT <= 0){
+      PIROLA.sprayT = 0.22 - 0.13*k;
+      const s = Math.random()<0.5 ? -1 : 1;
+      const z = -6 + (Math.random()-0.5)*100;
+      burst(new THREE.Vector3(s*(WALL_X-1), PIR_WL - 1.2 + H*0.95, z), 0xf2fbff, 3, 3.5, 5.5, 1.1);
+    }
+  }
+  /* AVISO cuando el jugador local se acerca a la de popa (la que de verdad te come) */
+  const me = (typeof P1!=='undefined' && P1) ? P1 : null;
+  if(me && !me.dead && !me.out && PIROLA.calm < 0.5){
+    const d = (WALL_X - PIROLA.bite) - Math.abs(me.pos.x);
+    PIROLA.warnT -= dt;
+    if(d < 11 && PIROLA.warnT <= 0){
+      PIROLA.warnT = 0.9;
+      if(typeof showBanner==='function') showBanner('¡LA OLA!', 0.8);
+      try{ noiseBurst(.12, .5, 380, 'lowpass', 0.7, 1400); }catch(e){}   // rugido de agua que se acerca
+    }
+  }
 }
 
 /* ---------- TEMA: día de mar abierto ---------- */
@@ -28124,7 +28272,6 @@ function pirIsle(cx, cz, r, topY, opts){
   if(r > 4.5 && Math.random()<0.7){ const a=Math.random()*6.28;
     pirProp('p_rocksand_' + 'abc'[(Math.random()*3)|0], cx+Math.cos(a)*r*0.55, topY-0.3, cz+Math.sin(a)*r*0.55, { sc:0.6 }); }
   if(opts.barrel) pirProp('p_barrel', cx, topY, cz+1.2, {});
-  if(opts.post !== false && Math.random() < 0.55) pirPost(cx, cz, topY);   // ►PIRPOST: tirador plantado en la isla
   return pl;
 }
 /* ►PIRBIG · ISLOTE GRANDE Y COMPUESTO (pedido de Toni: "islotes más complejos y grandes de vez en
@@ -28152,7 +28299,6 @@ function pirIsleBig(cx, cz, opts){
   for(let i=0;i<3;i++){ const a=Math.random()*6.28, d=R*(0.55+Math.random()*0.4);
     pirProp('p_rocksand_' + 'abc'[(Math.random()*3)|0], cx+Math.cos(a)*d, base-0.35, cz+Math.sin(a)*d, { sc:0.7+Math.random()*0.5 }); }
   pirProp('p_barrel', cx+1.5, base, cz-1.2, {}); pirProp('p_crate', cx-1.8, base, cz+1.4, {});
-  pirPost(cx, cz, base); pirPost(cx + Math.cos(a1)*R*0.78, cz + Math.sin(a1)*R*0.78, base + 1.5);
   return base;
 }
 /* Cota PISABLE de cada prop sobre su base — solo para saber DÓNDE plantar al tirador y qué devuelve
@@ -28165,7 +28311,6 @@ function pirDock(cx, cz, big){
   pirProp(key, cx, PIR_WL, cz, { yaw:0, shadow:false });
   pirSolids(key, cx, cz, PIR_WL);                  // ►PIRSOLID: tablero, escalones y pilotes, medidos
   const topY = PIR_WL + PIR_TOP[key];
-  if(Math.random() < 0.5) pirPost(cx, cz, topY);   // ►PIRPOST
   return topY;
 }
 /* ATALAYA: SIEMPRE sobre tierra (pedido de Toni: "las torres no deben emerger del agua"). Se le
@@ -28187,7 +28332,6 @@ function pirTower(cx, cz, kind, opts){
   pirSolids(key, cx, cz, baseY - 0.25, K==='watch' ? undefined
             : { shaftW: (K==='small' ? 0.45 : 0.285) });   // ►PIRSOLID: remate, rellanos y almenas
   const topY = baseY - 0.25 + PIR_TOP[key];
-  pirPost(cx, cz, topY);                           // ►PIRPOST: la atalaya SIEMPRE tiene vigía — es el nido del stage
   return topY;
 }
 /* ►PIRNARROW (12/08) · FUERA LOS BARCOS PEQUEÑOS (pedido de Toni: "deja solo el principal").
@@ -28213,77 +28357,28 @@ function pirPort(kind, cx, cz, flip){
   pirProp(P.key, cx, PIR_WL, cz, { yaw: flip ? Math.PI : 0, shadow:false });
   pirSolids(P.key, cx, cz, PIR_WL, { flip:!!flip });   // ►PIRSOLID v2: su colisión ya viene completa del generador multi-impacto
   const topY = PIR_WL + P.deckY*S;
-  for(const q of P.post) pirPost(cx + f*q[0]*S, cz + f*q[1]*S, topY);   // ►PIRPOST: el muelle es zona enemiga, no un descansillo
   return topY;
 }
 
 /* =====================================================================
-   ►PIRPOST · LA HORDA APOSTADA (pedido de Toni)
-   En este stage la horda NO viene sola a por ti. Del cielo solo caen sobre
-   TU BARCO (minionDropSpot); el resto son TIRADORES —esqueletos sobre
-   todo, y goblins— plantados en los islotes, las atalayas, los pantalanes
-   y los muelles. No persiguen: esperan, y te disparan cuando pasas cerca.
-   Para que dejen de dispararte hay que bajar a por ellos, que es
-   exactamente el bucle que se buscaba (►PIRNARROW lo abarata: la orilla
-   está ahora a un salto, así que la excursión es una decisión y no una
-   expedición).
-   Un POST es un ancla dentro del grupo de su sala → viaja con la cinta y
-   getWorldPosition da su sitio real (el mismo truco que S2_AMBUSHES).
+   ►PIRHORDA (11/08, pedido de Toni: "que aparezca la misma cantidad de
+   minions dentro del barco que fuera; que sea como un stage normal y se
+   vayan poblando allí donde hay jugadores")
+   Fuera el sistema de PUESTOS FIJOS (►PIRPOST): anclas en los islotes que
+   soltaban un tirador cuando su sala desfilaba cerca. La horda del mar
+   pirata pasa a repartirse como en cualquier otro stage —`minionDropSpot`
+   normal, junto a los jugadores, estén donde estén— con UNA regla propia:
+
+     EL QUE NO ESTÁ EN EL BARCO, DISPARA.
+
+   Un minion que aterriza en la orilla no puede llegar a ti (no cruza el
+   hueco, y si lo intentara se ahogaría), así que se planta y tira de lejos.
+   Por eso su alcance sube de 26 a PIR_OUT_RANGE: desde un islote a 13-28 de
+   la borda tiene que poder molestar en cubierta. Lo decide `_pirOut` en
+   updateMinion, por dónde tiene los pies (`mn._pirRide`, ►PIRRIDE), no por
+   dónde nació: si salta a la cubierta, vuelve a ser horda normal.
    ===================================================================== */
-const PIR_POST_RANGE = 26;    // alcance de tiro del apostado (dispara de plataforma a plataforma sobre el agua)
-/* ►PIRNARROW · de 9 a 6. MEDIDO al acercar la orilla (10 cintas): antes la mayoría de los puestos
-   quedaban FUERA de los 26 u de alcance y solo disparaban los de la sala que tenías al lado; ahora el
-   81 % tiene la cubierta a tiro y la mediana de distancia es 9.8 u. Con 9 vivos son ~4 flechas por
-   segundo cayendo en cubierta, y sin distancia para verlas venir. Este es el knob si sigue agobiando
-   (o subir el enfriamiento de 1.7-3.0 s en updatePirPosts); NO se toca el alcance: es el que decide
-   qué puesto se despierta, y bajarlo dejaría la orilla muda justo cuando por fin se puede visitar. */
-const PIR_POST_MAX   = 6;     // vivos a la vez: por encima de esto el mar es una lluvia de flechas
-const PIR_POST_SKEL  = 0.72;  // reparto esqueleto/goblin ("sobre todo esqueletos, pero también goblins")
-const _pirPV = new THREE.Vector3();
-/* registra un puesto. Se llama DENTRO de un builder, así que el `scene.add` secuestrado mete el ancla
-   en el grupo de la sala — sin eso el puesto se quedaría clavado en el mundo mientras su islote desfila. */
-function pirPost(x, z, y){
-  if(typeof scene==='undefined') return null;
-  const anchor = new THREE.Object3D(); anchor.position.set(x, y, z); scene.add(anchor);
-  const P = { anchor, y, live:null, cd:0 };
-  PIR.posts.push(P);
-  return P;
-}
-function _pirPostSpawn(P, wx, wz){
-  let skin = null;
-  if(Math.random() < PIR_POST_SKEL && _gobTpl.skelshooter && _gobLive.skelshooter < GOBLIN_KINDS.skelshooter.max) skin = 'skelshooter';
-  const mn = spawnMinionAt(wx, wz, P.y, 'shooter', skin);
-  if(!mn) return;
-  mn.pos.y = P.y + 0.02; mn.vel.y = 0; mn.onGround = true;   // NO cae del cielo: ya está en su puesto
-  mn._pirPost = P; mn.cd = 0.8 + Math.random()*1.2;
-  P.live = mn;
-}
-function updatePirPosts(dt){
-  let live = 0;
-  for(const P of PIR.posts){ if(P.live && P.live.dead) P.live = null; if(P.live) live++; }
-  for(const P of PIR.posts){
-    if(P.cd > 0) P.cd -= dt;
-    P.anchor.getWorldPosition(_pirPV);
-    if(P.live){
-      /* su sala ya ha desfilado y se va a reciclar: se lleva a su tirador (si no, queda un esqueleto
-         de pie sobre el mar cuando la plataforma vuelve al principio de la cinta) */
-      if(_pirPV.x > WALL_X){ P.live._pirPost = null; killMinion(P.live); P.live = null; }
-      continue;
-    }
-    if(live >= PIR_POST_MAX || minions.length >= MINION_CAP || P.cd > 0) continue;
-    /* DENTRO de los muros. MEDIDO: con la ventana en −75 los tiradores nacían fuera de ±(WALL_X+4) y
-       el guarda de updateMinion los mataba al frame siguiente — 31 muertes en 30 s y el mar vacío. */
-    if(_pirPV.x < -WALL_X + 3 || _pirPV.x > 30) continue;
-    if(!players.some(p => !p.dead && !p.out && Math.abs(p.pos.x - _pirPV.x) < 62)) continue;
-    _pirPostSpawn(P, _pirPV.x, _pirPV.z);
-    if(P.live){ live++; P.cd = 6; }
-  }
-}
-function _pirClearPosts(){                                   // rebuildBelt borra las salas: los puestos mueren con ellas
-  for(const P of PIR.posts)
-    if(P.live) P.live._pirPost = null;                       // el tirador huérfano vuelve a ser horda normal (y lo culla el guarda de ±WALL_X)
-  PIR.posts.length = 0;                                      // ►PIRNARROW: sin barcos de canal, TODOS los puestos son de la cinta
-}
+const PIR_OUT_RANGE = 34;     // alcance del que se queda en la orilla (antes 26 estando apostado)
 
 /* ---------- las 6 salas de la cinta ---------- */
 /* REGLA DE ORO: nada dentro de |z| < PIR_LANE (ahí está el barco). idx1 cae en x=0 al empezar.
@@ -28511,7 +28606,7 @@ function pirVolley(){
 function updateStagePir(dt){
   if(STAGE !== 12) return;
   PIR.t += dt;
-  if(!demo && !bossActive) updatePirPosts(dt);   // ►PIRPOST: puebla islotes/torres/muelles/barcos según desfilan
+  if(typeof updatePirWaves==='function') updatePirWaves(dt);   // ►PIROLA: siempre, también con el jefe (es quien las calma)
   /* andanadas: solo en partida (ni en la home ni con el jefe en marcha) */
   if(!demo && !bossActive && BELT.on){
     PIR.volleyT -= dt;
