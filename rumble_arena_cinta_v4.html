@@ -8213,9 +8213,19 @@ function syncHeld(p){
 /* objetos que caen (armas + arcoíris + pasivos) */
 const items = [];
 let itemT = 1.0;                                 // primer objeto pronto (se ven enseguida)
+/* ►PIRLOOT (11/08, pedido de Toni): en el mar pirata el botín cae SOBRE TODO EN LA ORILLA y solo de
+   vez en cuando en tu barco. La cubierta es el sitio seguro: si además fuese donde aparecen las armas
+   y las cápsulas, no habría ningún motivo para saltar fuera. Así el reparto empuja a hacer la
+   excursión —con la ola por detrás y los tiradores enfrente— para volver con algo. */
+const PIR_LOOT_SHIP = 0.18;     // 18% en cubierta, 82% fuera
 function dropSpot(){
   let pl=null;
-  for(let i=0;i<24;i++){ const c=platforms[Math.floor(Math.random()*platforms.length)];
+  /* ►PIRLOOT: la tirada decide ANTES si va al barco o a la orilla, y busca en la bolsa que toque. Si se
+     deja al azar del montón sale un 4% en cubierta y no un 18%: las cajas del barco son 159 de ~1.200. */
+  const _pirShip = (STAGE===12 && PIR.plats.length && Math.random() < PIR_LOOT_SHIP);
+  const bolsa = _pirShip ? PIR.plats : platforms;
+  for(let i=0;i<24;i++){ const c=bolsa[Math.floor(Math.random()*bolsa.length)];
+    if(STAGE===12 && !_pirShip && c._pirDeck) continue;                    // esta tirada va a la orilla
     if((c.maxX-c.minX)>=2.4 && (c.maxZ-c.minZ)>=2.4){ pl=c; break; } }
   if(!pl) return null;
   return { x:THREE.MathUtils.lerp(pl.minX+.9, pl.maxX-.9, Math.random()),
@@ -29012,7 +29022,14 @@ function _leviBuildArm(i){
   const side = (i % 2) ? 1 : -1;
   const t = (Math.floor(i/2) + 0.5) / (LEVI_ARMS/2);            // 0..1 a lo largo del barco
   const bx = -16 + t * 44, bz = side * (PIR_HULL_Z*PIR_SHIP_L + 1.2);
-  g.position.set(bx, PIR_WL - 1.0, bz);
+  /* ►LEVIALTO (pedido de Toni: "las patas de los extremos un poco más altas, si no traspasan"). El
+     barco no es plano: la cubierta principal está a 8.2 pero el castillo de PROA sube a 10.2 y la
+     TOLDILLA a 11.8. Una pata calibrada para 8.2 en esas dos zonas entra POR DENTRO de la madera. Cada
+     pata nace a la altura que le toca según su x, y su punta apoya en la cubierta que tiene enfrente. */
+  const deck = (bx < -1.5) ? (PIR_SHIP_Y + PIR_DECK_FORE*PIR_SHIP_L)
+             : (bx > 18.5) ? (PIR_SHIP_Y + PIR_DECK_AFT*PIR_SHIP_L)
+             : PIR_DECK;
+  g.position.set(bx, PIR_WL - 1.0 + (deck - PIR_DECK), bz);
   /* cadena de segmentos: cada uno hijo del anterior, así una rotación arrastra al resto */
   const segs = [];
   let parent = g;
@@ -29040,7 +29057,7 @@ function _leviBuildArm(i){
     segs.push(pieza);
   }
   g.userData.segs = segs;
-  return { g, segs, bx, bz, side };
+  return { g, segs, bx, bz, side, deck };
 }
 function _leviRadio(s){ return 0.42 + 1.05*Math.max(0, 1 - s/LEVI_SEGS); }   // grosor por segmento: gordo abajo, fino arriba
 function _leviMakeGeo(){
@@ -29068,6 +29085,7 @@ function startLeviathan(){
     LEVI.g.add(a.g);
     a.g.scale.setScalar(0.001);                        // aún bajo el agua
     a.hp = hp; a.maxHp = hp; a.state = 'hidden'; a.st = 0; a.i = i;
+    a.deck = a.deck || PIR_DECK;   // ►LEVIALTO: la cubierta que tiene enfrente esta pata
     a.phase0 = Math.random()*Math.PI*2;
     a.ent = null; a.warn = null;
     /* objetivo de reposo: LA CUBIERTA, a la altura de su base. Sin esto el arco se dibujaba siempre
@@ -29110,12 +29128,23 @@ function _leviPose(a, dt, tt){
   const s = a.state;
   let arco = 2.1, vel = 6;
   if(s === 'idle' || s === 'exposed') arco = 2.10 + 0.12*Math.sin(tt*1.5 + a.phase0);
-  else if(s === 'wind'){ const k = Math.min(1, a.st/a.windT); arco = 2.10 - 1.55*k; vel = 7; }   // se arma: se yergue
-  else if(s === 'hit'){  const k = Math.min(1, a.st/0.22);   arco = 0.55 + 2.35*k; vel = 26; }   // latigazo
-  else if(s === 'rec'){  const k = Math.min(1, a.st/0.5);    arco = 2.90 - 0.80*k; vel = 8; }
+  /* ►LEVIBAJO (pedido de Toni: "que las patas no se levanten cuando se preparen para atacar"). El
+     amago era enderezarse (arco 2.1 → 0.55), o sea una torre de 18 u saliendo del encuadre. Ahora se
+     RECOGE: se enrosca sobre sí misma y retrocede sin subir, que además se lee mejor —el tentáculo
+     "toma carrerilla" a ras de cubierta— y deja la punta a mano todo el rato. */
+  else if(s === 'wind'){ const k = Math.min(1, a.st/a.windT); arco = 2.10 + 0.62*k; vel = 7; }
+  else if(s === 'hit'){
+    if(a.kind === 'barrido'){ arco = 2.62; vel = 10; }                                          // barre a ras: el arco NO cambia, gira el brazo
+    else { const k = Math.min(1, a.st/Math.max(0.05, a.hitT)); arco = 2.72 - 0.72*k; vel = 26; } // estirón hacia el punto
+  }
+  else if(s === 'rec'){  const k = Math.min(1, a.st/0.5);    arco = 2.00 + 0.10*k; vel = 8; }
   else if(s === 'rise'){ const k = Math.min(1, a.st/1.2);    arco = 0.20 + 1.90*k; vel = 5; }
   else if(s === 'die'){  const k = Math.min(1, a.st/1.1);    arco = 2.10 + 1.60*k; vel = 3; }    // se desploma al agua
-  if(a.tgt){                                                     // se orienta hacia su objetivo
+  /* el BARRIDO gobierna su propio giro (recorre la cubierta a lo largo); el resto apunta a su objetivo */
+  if(s === 'hit' && a.kind === 'barrido'){
+    const k = Math.min(1, a.st/Math.max(0.05, a.hitT));
+    a.g.rotation.y = a.swA + (a.swB - a.swA)*k;
+  } else if(a.tgt){
     const giro = Math.atan2(a.tgt.x - a.bx, a.tgt.z - a.bz);
     let d = giro - a.g.rotation.y;
     while(d >  Math.PI) d -= Math.PI*2;                          // por el camino corto, o da una vuelta entera
@@ -29131,47 +29160,95 @@ function _leviPose(a, dt, tt){
     segs[i].rotation.x += (objetivo - segs[i].rotation.x) * Math.min(1, dt*vel);
   }
 }
+/* =====================================================================
+   LOS TRES ATAQUES DE CADA PATA (11/08, pedido de Toni)
+     · PUNZADA   — APUNTA primero (una línea desde la punta marca por dónde va a ir) y luego se estira
+                   de golpe a ese punto. Radio pequeño: si te mueves, FALLA. Es el ataque que premia
+                   leer al bicho.
+     · BARRIDO   — recorre la cubierta a lo largo, a ras de suelo, con la punta por delante: el daño va
+                   DONDE ESTÁ LA PUNTA cada frame (no un área fija), así que se salta o se esquiva
+                   por los lados. Cada jugador lo come una sola vez por pasada.
+     · MARTILLAZO— el de siempre: marca en el suelo (la de los cañonazos) y golpe puntual y duro.
+   Ninguno se levanta para amagar: ver ►LEVIBAJO en _leviPose.
+   ===================================================================== */
+let _leviAimGeo = null, _leviAimMat = null;
+function _leviAimLine(a, from, to){
+  if(!_leviAimGeo){
+    _leviAimGeo = new THREE.CylinderGeometry(0.09, 0.09, 1, 6, 1, true);
+    _leviAimMat = new THREE.MeshBasicMaterial({ color:0xffd06a, transparent:true, opacity:0.55,
+                                                depthWrite:false, blending:THREE.AdditiveBlending, fog:false });
+  }
+  if(!a.aim){ a.aim = new THREE.Mesh(_leviAimGeo, _leviAimMat.clone()); a.aim.userData.noOcc = true; scene.add(a.aim); }
+  const d = new THREE.Vector3().subVectors(to, from), len = d.length() || 0.001;
+  a.aim.position.copy(from).addScaledVector(d, 0.5);
+  a.aim.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d.normalize());
+  a.aim.scale.set(1, len, 1);
+  a.aim.visible = true;
+}
+function _leviAimHide(a){ if(a.aim) a.aim.visible = false; }
 function _leviArmAttack(a){
   const vivos = players.filter(p=>!p.dead && !p.out);
   if(!vivos.length) return;
   const p = vivos[(Math.random()*vivos.length)|0];
   const r = Math.random();
-  a.kind  = r < 0.38 ? 'barrido' : r < 0.72 ? 'martillazo' : 'estocada';
+  a.kind  = r < 0.34 ? 'punzada' : r < 0.67 ? 'barrido' : 'martillazo';
   a.state = 'wind'; a.st = 0;
   /* ►LEVIRAGE: en la 2ª vuelta se arma MUCHO más rápido y la punta SIGUE al jugador durante todo el
      amago (a.track), así que ya no vale con apartarse al ver el aviso: hay que romper la línea. */
-  a.windT = (a.kind==='martillazo' ? 1.05 : a.kind==='barrido' ? 0.85 : 0.6) * (LEVI.rage ? 0.55 : 1);
+  a.windT = (a.kind==='martillazo' ? 1.05 : a.kind==='barrido' ? 0.9 : 0.75) * (LEVI.rage ? 0.55 : 1);
+  a.hitT  = (a.kind==='barrido') ? 0.75 : 0.22;
   a.track = LEVI.rage ? p : null;
   a.tgt   = { x:p.pos.x, z:p.pos.z, y:p.pos.y };
+  a.hitSet = null;
+  if(a.kind === 'barrido'){
+    /* de un extremo a otro de la cubierta PASANDO por el jugador: se apunta al centro del recorrido y
+       se guardan los dos giros límite (el sentido se sortea, para que no sea siempre igual). */
+    const dir = Math.random()<0.5 ? 1 : -1, largo = 13;
+    a.swA = Math.atan2((a.tgt.x - dir*largo) - a.bx, a.tgt.z - a.bz);
+    a.swB = Math.atan2((a.tgt.x + dir*largo) - a.bx, a.tgt.z - a.bz);
+  }
   /* el MARTILLAZO avisa con la marca del suelo de los cañonazos: mismo lenguaje, ya lo conoces */
   if(a.kind==='martillazo' && typeof _pirWarnMesh==='function'){
     a.warn = _pirWarnMesh();
     a.warn.position.set(a.tgt.x, (typeof fxFloorY==='function' ? fxFloorY(a.tgt.x, a.tgt.z, p.pos.y) : PIR_DECK) + 0.07, a.tgt.z);
     scene.add(a.warn);
   }
-  try{ tone(120, .35, 'sawtooth', .1, 90); }catch(e){}
+  try{ tone(a.kind==='punzada' ? 180 : 120, .35, 'sawtooth', .1, a.kind==='punzada' ? 160 : 90); }catch(e){}
 }
 function _leviArmHit(a){
+  _leviAimHide(a);
   const tip = _leviTipPos(a, new THREE.Vector3());
   const c = new THREE.Vector3(tip.x, tip.y, tip.z);
-  if(a.kind === 'barrido'){        // a ras de cubierta y ancho: se SALTA
-    bossHitPlayers(new THREE.Vector3(a.tgt.x, PIR_DECK+0.6, a.tgt.z), 7.5, 16, 13, 5, 0, true);
-    burst(c, 0xd8b6ff, 16, 8, 4, 1.0);
-  } else if(a.kind === 'martillazo'){   // puntual y fuerte: se ESQUIVA andando
-    bossHitPlayers(new THREE.Vector3(a.tgt.x, PIR_DECK+1.2, a.tgt.z), 4.2, 26, 15, 10, 0, false);
-    burst(new THREE.Vector3(a.tgt.x, PIR_DECK+0.4, a.tgt.z), 0xffd06a, 24, 9, 7, 1.2);
-    ring(new THREE.Vector3(a.tgt.x, PIR_DECK+0.2, a.tgt.z), 0xffc63a, 22, 0.5);
+  if(a.kind === 'barrido'){
+    a.hitSet = new Set();                       // el daño lo aplica _leviSweepTick, frame a frame
+    burst(c, 0xd8b6ff, 12, 7, 3, 1.0);
+    try{ noiseBurst(.16,.5, 900,'bandpass',0.6, 2600); }catch(e){}
+  } else if(a.kind === 'martillazo'){           // puntual y fuerte: se ESQUIVA andando
+    bossHitPlayers(new THREE.Vector3(a.tgt.x, (a.deck||PIR_DECK)+1.2, a.tgt.z), 4.2, 26, 15, 10, 0, false);
+    burst(new THREE.Vector3(a.tgt.x, (a.deck||PIR_DECK)+0.4, a.tgt.z), 0xffd06a, 24, 9, 7, 1.2);
+    ring(new THREE.Vector3(a.tgt.x, (a.deck||PIR_DECK)+0.2, a.tgt.z), 0xffc63a, 22, 0.5);
     shake = Math.max(shake, 0.5);
-  } else {                              // ESTOCADA: recta, rápida, poco área
-    /* al PUNTO APUNTADO, no a donde esté la punta: el latigazo dura 0.22 s y si se toma la posición
-       del tentáculo al empezar el golpe, la estocada pega donde estaba antes de lanzarse (medido: casi
-       siempre fallaba). Lo honesto es que dé donde apuntó. */
-    const cc = new THREE.Vector3(a.tgt.x, PIR_DECK + 1.0, a.tgt.z);
-    bossHitPlayers(cc, 3.6, 20, 16, 6, 0, false);
-    burst(cc, 0xd8b6ff, 14, 10, 5, 0.9); burst(c, 0xd8b6ff, 8, 6, 4, 0.7);
+    try{ sfx.smash && sfx.smash(); }catch(e){}
+  } else {                                      // PUNZADA: al punto APUNTADO, radio corto, puede fallar
+    const cc = new THREE.Vector3(a.tgt.x, (a.deck||PIR_DECK) + 1.0, a.tgt.z);
+    bossHitPlayers(cc, 2.6, 22, 17, 6, 0, false);
+    burst(cc, 0xffd06a, 16, 11, 5, 0.9); burst(c, 0xd8b6ff, 8, 6, 4, 0.7);
+    try{ sfx.smash && sfx.smash(); }catch(e){}
   }
   if(a.warn){ scene.remove(a.warn); a.warn = null; }
-  try{ sfx.smash && sfx.smash(); }catch(e){}
+}
+/* BARRIDO · el daño viaja CON la punta: cada jugador lo encaja una vez por pasada */
+function _leviSweepTick(a, _v){
+  if(!a.hitSet) return;
+  _leviTipPos(a, _v);
+  for(const p of players){
+    if(p.dead || p.out || p.invuln>0 || a.hitSet.has(p)) continue;
+    if(Math.hypot(p.pos.x-_v.x, p.pos.z-_v.z) > 2.9) continue;
+    if(!p.onGround) continue;                                  // a ras de cubierta: SALTAR lo esquiva
+    a.hitSet.add(p);
+    bossHitPlayers(new THREE.Vector3(_v.x, p.pos.y+0.4, _v.z), 3.0, 17, 14, 5, 0, true);
+  }
+  if(Math.random() < 0.5) burst(new THREE.Vector3(_v.x, _v.y, _v.z), 0xd8b6ff, 2, 4, 2, 0.8);
 }
 function _leviArmDie(a){
   a.state = 'die'; a.st = 0;
@@ -29269,8 +29346,15 @@ function updateLeviathan(dt, rawDt){
       a.tgt.z += (q.pos.z + q.vel.z*lead - a.tgt.z) * Math.min(1, dt*7);
       if(a.warn) a.warn.position.set(a.tgt.x, a.warn.position.y, a.tgt.z);
     }
+    /* PUNZADA: mientras se arma, la LÍNEA de mira dice por dónde va a pasar la punta */
+    if(a.state === 'wind' && a.kind === 'punzada'){
+      _leviTipPos(a, _v);
+      _leviAimLine(a, _v, new THREE.Vector3(a.tgt.x, (a.deck||PIR_DECK) + 1.0, a.tgt.z));
+      if(a.aim) a.aim.material.opacity = 0.25 + 0.5*Math.min(1, a.st/a.windT);
+    } else if(a.state !== 'wind') _leviAimHide(a);
     if(a.state === 'wind'  && a.st >= a.windT){ a.state='hit'; a.st=0; _leviArmHit(a); }
-    else if(a.state === 'hit' && a.st >= 0.22){ a.state='rec'; a.st=0; }
+    else if(a.state === 'hit' && a.kind === 'barrido' && a.st < a.hitT){ _leviSweepTick(a, _v); }
+    else if(a.state === 'hit' && a.st >= (a.hitT || 0.22)){ a.state='rec'; a.st=0; a.hitSet=null; }
     else if(a.state === 'rec' && a.st >= 0.5){ a.state='exposed'; a.st=0; }
     else if(a.state === 'exposed' && a.st >= 1.5){ a.state='idle'; a.st=0; a.tgt = a.home; }   // vuelve a mirar a su sitio
     else if(a.state === 'die' && a.st >= 1.2 && a.state!=='gone'){
@@ -29362,7 +29446,9 @@ function _leviOpenRing(){
   BOSSFIGHT.phase = 'won'; BOSSFIGHT.t = 0;     // ►el resto del final (pausa + interstage) es el de siempre
 }
 function _leviClear(){
-  for(const a of LEVI.arms){ if(a.ent){ a.ent.dead = true; a.ent = null; } if(a.warn && a.warn.parent) a.warn.parent.remove(a.warn); }
+  for(const a of LEVI.arms){ if(a.ent){ a.ent.dead = true; a.ent = null; }
+    if(a.warn && a.warn.parent) a.warn.parent.remove(a.warn);
+    if(a.aim && a.aim.parent) a.aim.parent.remove(a.aim); }
   LEVI.arms.length = 0;
   if(LEVI.g && LEVI.g.parent) LEVI.g.parent.remove(LEVI.g);
   LEVI.g = null; LEVI.phase = 'none'; LEVI.t = 0; LEVI.beltK = 1; LEVI.dead = 0; LEVI.won = false; LEVI.rage = false;
