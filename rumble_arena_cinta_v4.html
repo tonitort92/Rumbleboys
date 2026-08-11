@@ -5016,6 +5016,17 @@ function applyCharModel(p){
     p._thumbR = [findBone(/right.*hand.*thumb1$/i), findBone(/right.*hand.*thumb2$/i)].filter(Boolean);
     p._curlL = [findBone(/left.*hand.*index1$/i), findBone(/left.*hand.*index2$/i)].filter(Boolean);
     p._thumbL = [findBone(/left.*hand.*thumb1$/i), findBone(/left.*hand.*thumb2$/i)].filter(Boolean);
+    /* ►FGGRAB: cadenas brazo/pierna DEL PROPIO MODELO para el agarre (manos imantadas + pataleo).
+       OJO: findBone recorre TODA la escena y devuelve el primero que casa → con 4 luchadores en
+       pantalla posaría los huesos de OTRO jugador. Aquí se busca dentro de p._charModel. */
+    const ownBone = re => { let f=null; p._charModel.traverse(o=>{ if(!f && o.name && re.test(o.name)) f=o; }); return f; };
+    const chain = (up, lo, end) => { const u=ownBone(up), l=ownBone(lo), e=ownBone(end); return (u&&e) ? {u,l,e} : null; };
+    p._gArms = [chain(/rightarm$/i, /rightforearm$/i, /righthand$/i),
+                chain(/leftarm$/i,  /leftforearm$/i,  /lefthand$/i)].filter(Boolean);
+    p._gLegs = [chain(/rightupleg$/i, /rightleg$/i, /rightfoot$/i),
+                chain(/leftupleg$/i,  /leftleg$/i,  /leftfoot$/i)].filter(Boolean);
+    p._gHead  = ownBone(/head$/i);                       // ►FLINCH: sacudida de cabeza al recibir
+    p._gSpine = ownBone(/spine2$/i) || ownBone(/spine1$/i) || ownBone(/spine$/i);   // …y giro del torso
     p._mixer = new THREE.AnimationMixer(scene);
     const anims = tpl.animations||[];
     p._acts = {}; p._actDur = {};
@@ -5489,6 +5500,49 @@ function updateCharMixers(dt){
         for(const b of p._curlR) b.rotation[GRIP_AXIS] += BARB_EXTRA_CURL;
         for(const b of p._thumbR) b.rotation[GRIP_AXIS] += BARB_EXTRA_CURL*0.6;
       }
+    }
+    /* ===== ►FGGRAB · POSE DEL AGARRE (additiva, DESPUÉS del mixer: el clip reescribe los huesos
+       cada frame). Vale para los 6 personajes ricos y para el humanoide de fallback — va ANTES del
+       `continue` de _richAnim justo por eso. Ningún clip nuevo: se dobla el que esté sonando.
+         · AGARRADOR: los DOS brazos apuntan al pecho del rival → manos "imantadas" a él.
+         · AGARRADO: brazos y piernas pataleando hacia puntos que oscilan (forcejeo), más rápido
+           cuanto más lleva el forcejeo cargado.                                          ===== */
+    if(p.holding && p._gArms && p._gArms.length){
+      const v = p.holding;
+      _aGrip.set(v.pos.x, v.pos.y + HOLD_CHEST_Y, v.pos.z);
+      for(const c of p._gArms){
+        c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
+        if(c.l){ c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.l, _aCh, _aGrip); }
+      }
+    }
+    if(p.heldBy && p._gArms){
+      const rush = 1 + 1.4*Math.min(1, (p._escape||0)/ESC_NEED);        // cuanto más forcejea, más rápido patalea
+      const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                 // "delante" del agarrado = hacia quien lo tiene
+      p._gArms.forEach((c, i) => {
+        const s = i ? -1 : 1, w = Math.sin(t*13*rush + i*2.1);
+        _aGrip.set(p.pos.x + fx*0.5 + s*0.75*Math.cos(p.yaw),           // manoteo lateral, alto y variable
+                   p.pos.y + 1.55 + 0.45*w,
+                   p.pos.z + fz*0.5 - s*0.75*Math.sin(p.yaw));
+        c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
+      });
+      if(p._gLegs) p._gLegs.forEach((c, i) => {
+        const w = Math.sin(t*15*rush + i*Math.PI);                      // patadas alternas
+        _aGrip.set(p.pos.x + fx*(0.55 + 0.45*w), p.pos.y - 0.15 + 0.3*Math.max(0,w), p.pos.z + fz*(0.55 + 0.45*w));
+        c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
+      });
+    }
+    /* ►FLINCH · SACUDIDA DE DAÑO (additiva, sobre cualquier clip): la cabeza se va hacia donde te
+       han mandado y el torso gira con ella. Envolvente de LATIGAZO: entra en el 18% del tiempo y
+       se recupera durante el resto → se ve el golpe, no un tambaleo. Dura lo que el aturdimiento,
+       que es justo lo que no te deja atacar: si te encadenan, lo ves venir y buscas el hueco. */
+    if((p._flT||0) > 0 && FLINCH_AMP > 0 && (p._gHead || p._gSpine) && !p.dead){
+      const u = 1 - p._flT/(p._flMax||1);                       // 0 = justo golpeado · 1 = recuperado
+      const k = (u < .18 ? u/.18 : 1 - (u-.18)/.82) * FLINCH_AMP;
+      const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+      const back = (p._flDx||0)*fx + (p._flDz||0)*fz;           // +1 golpe por la ESPALDA · -1 de frente
+      const side = (p._flDx||0)*fz - (p._flDz||0)*fx;           // lateral (izq/dcha)
+      if(p._gHead){  p._gHead.rotation.x  += back*0.30*k; p._gHead.rotation.y  += -side*0.42*k; p._gHead.rotation.z += side*0.16*k; }
+      if(p._gSpine){ p._gSpine.rotation.x += back*0.16*k; p._gSpine.rotation.y += -side*0.20*k; p._gSpine.rotation.z += side*0.10*k; }
     }
     /* el samurái con set rico ya anima TODO por clip → sin overrides procedurales de huesos */
     if(p._richAnim) continue;
@@ -14996,6 +15050,24 @@ const ESC_NEED      = 3.0;    // forcejeo necesario para zafarse (≈1,2 s pele�
 const ESC_STICK     = 0.12;   // por unidad de MOVIMIENTO del stick (agitarlo; mantenerlo fijo no vale)
 const ESC_JUMP      = 0.25;   // por cada pulsación de salto
 const ESC_DECAY     = 1.1;    // /s: si dejas de forcejear se te escapa el progreso
+/* ►FGGRAB (11/08, petición de Toni: "que se parezca muchísimo más a Fall Guys") — tres cosas:
+   1) IMANTADO: al enganchar, el rival NO aparece de golpe delante; entra volando a tus manos en
+      HOLD_MAG_T y luego las SIGUE con retardo elástico (HOLD_LAG) → se lee como arrastrarlo.
+   2) MANOS PEGADAS: los dos brazos del agarrador apuntan al pecho del rival y el rival PATALEA
+      (todo additivo sobre el clip, en updateCharMixers) — antes no había pose de agarre ninguna.
+   3) NUNCA se zafa al instante: por mucho que forcejee, no se suelta antes de HOLD_MIN_T.
+   ►►► AJUSTA ◄◄◄ */
+const HOLD_MIN_T    = 0.75;   // s mínimos agarrado: aunque llene el forcejeo, hasta aquí no se suelta
+const HOLD_RESIST   = 0.6;    // cuánto llega a amortiguar el forcejeo del empujón final (0.6 = hasta un 60%)
+const HOLD_MAG_T    = 0.18;   // s del imantado (de donde estaba a tus manos)
+const HOLD_LAG      = 14;     // /s del seguimiento elástico: ↑ más rígido, ↓ más "peso muerto"
+const HOLD_CHEST_Y  = 1.05;   // altura del punto donde se clavan las manos (pecho del rival)
+/* ►FLINCH · sacudida al recibir daño: corta y sutil (cabeza + torso), y dura lo mismo que el
+   aturdimiento → el rival que encadena golpes te mantiene sacudido y tú tienes que leer el hueco.
+   ►►► AJUSTA ◄◄◄ (sube AMP para más aparatoso; MAX para que se note más rato) */
+const FLINCH_MIN  = 0.12;     // s: suelo (un roce también se nota)
+const FLINCH_MAX  = 0.28;     // s: techo (no queremos un tambaleo largo)
+const FLINCH_AMP  = 1.0;      // multiplicador general de la sacudida (0 = apagada)
 /* ===== ►LTSHOVE · EMPUJÓN DE AGUANTE (LT en el SUELO) — SUSTITUYE al agarrar-y-pasear =============
    Pedido de Toni: LT ya NO agarra al rival para pasearlo. Ahora, si tienes la barra de AGUANTE
    LLENA, sueltas un EMPUJÓN FUERTE a quien tengas delante y a cambio te gastas la barra ENTERA:
@@ -15858,13 +15930,18 @@ function _grabImmune(v){
    que lo tuviste. pushK<=0 = te lo quitaron de encima o se zafó él → SIN empuje (no te lo has ganado). */
 function releaseGrab(p, pushK){
   const v = p.holding; if(!v) return;
+  const _esc = v._escape || 0;              // ►FGGRAB: cuánto forcejeó (se lee ANTES de limpiarlo)
   p.holding = null; p.holdT = 0;
   v.heldBy = null; v._escape = 0;
   if(pushK > 0){
-    const k = Math.max(0, Math.min(1, pushK));
+    /* ►FGGRAB · el empujón va con el RATO que lo tuviste, pero el otro puede RESISTIRLO: lo que haya
+       forcejeado (sin llegar a zafarse) amortigua hasta HOLD_RESIST del empujón y del aturdimiento.
+       Así forcejear nunca es tirar el rato aunque no consigas soltarte. */
+    const resist = Math.min(1, (_esc/ESC_NEED)) * HOLD_RESIST;
+    const k = Math.max(0, Math.min(1, pushK)) * (1 - resist);
     const f = (HOLD_PUSH_MIN + (HOLD_PUSH_MAX-HOLD_PUSH_MIN)*k) * kbMul(p);
     const dir = _fxV2.set(Math.sin(p.yaw), 0, Math.cos(p.yaw));   // hacia donde MIRAS: lo apartas de ti
-    v.vel.set(dir.x*f, HOLD_PUSH_UP, dir.z*f);
+    v.vel.set(dir.x*f, HOLD_PUSH_UP*(1-resist*.5), dir.z*f);
     v.onGround = false; v.hitstun = Math.max(v.hitstun, .18 + .22*k); v.hitFlash = .12;
     v.comboWindow = 0; v.comboStage = 0;
     addPower(p, 6);                                  // molestar da algo de barra, pero poco (no es pegar)
@@ -15912,12 +15989,22 @@ function tryGrabPlayer(p){
   best.vel.set(0,0,0);
   p.yaw = Math.atan2(best.pos.x-p.pos.x, best.pos.z-p.pos.z);     // te giras hacia él al engancharlo
   best.yaw = p.yaw + Math.PI;                                     // …y él a ti (ya desde el primer frame)
+  /* ►FGGRAB · IMANTADO: se guarda DE DÓNDE viene para que entre volando a tus manos en HOLD_MAG_T
+     (antes se le teletransportaba delante en un frame, que es lo que hacía que no se leyera el agarre) */
+  best._magFrom = (best._magFrom || new THREE.Vector3()).copy(best.pos);
+  best._magT = HOLD_MAG_T;
+  ring(best.pos.clone().add(new THREE.Vector3(0, HOLD_CHEST_Y, 0)), 0xffffff, 13, .26);
+  burst(best.pos.clone().add(new THREE.Vector3(0, HOLD_CHEST_Y, 0)), p.color, 9, 4.5, 2.5, .5);
+  camKick(Math.sin(p.yaw), Math.cos(p.yaw), .28);
   p.sc.specials++;
   sfx.grab(); showCombo(p, '¡TE PILLÉ!'); jiggle(best, 12);
   return true;
 }
 
-/* ►LTSHOVE · EMPUJÓN: gasta TODA la barra de aguante (queda vacía y parpadeando STAM_CD s) y a cambio
+/* ⚠️ YA NO ESTÁ ENCHUFADO (11/08): LT en el suelo volvió a ser AGARRAR (►FGGRAB) y el empujón ahora
+   sale AL SOLTAR al rival, proporcional al rato que lo tuviste. Se conserva la función por si Toni
+   quiere recuperar el empujón suelto en otro botón; si se decide que no, se borra entera.
+   ►LTSHOVE · EMPUJÓN: gasta TODA la barra de aguante (queda vacía y parpadeando STAM_CD s) y a cambio
    suelta un empujón FUERTE hacia donde MIRAS. Hace falta la barra LLENA. ►Toni: a un RIVAL (jugador) lo
    empuja INDIVIDUAL (sin área); a la HORDA le hace efecto de ÁREA hacia delante (aparta a los minions
    cercanos de delante en línea recta, sin destruirlos, nada detrás). */
@@ -18333,7 +18420,7 @@ const MS_COMMON = [   // utilidad compartida por todas las clases (botón mando 
   { pad:'A',  key:'Esp', name:'Saltar', desc:'Salta; en el aire, dos saltos más (3 en total).', dmg:0 },
   { pad:'RT', key:'May', name:'Dash',   desc:'Impulso rápido para esquivar o entrar.',           dmg:0 },
   { pad:'LB', key:'T',   name:'Escudo', desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.', dmg:0 },
-  { pad:'LT', key:'L / clic dcho.', name:'Empujón', desc:'Suelo: gastas TODA la barra de aguante y sueltas un EMPUJÓN fuerte a quien tengas delante (queda vacía y parpadeando ~3 s). Aire: te agarras a un borde.', dmg:0 },   // ►LTSHOVE: LT ya no agarra-pasea; empujón que cuesta la barra entera
+  { pad:'LT', key:'L / clic dcho.', name:'Agarrar', desc:'Suelo: MANTÉN y agarras al rival que tengas cerca; lo arrastras mientras te dure el aguante y al soltar sale despedido (cuanto más lo tuviste, más fuerte). Él se zafa forcejeando: mover y saltar. Aire: te agarras a un borde.', dmg:0 },   // ►FGGRAB: LT vuelve a ser agarrar-y-arrastrar; el empujón sale AL SOLTAR
   { pad:'↑',  key:'H',   name:'Cura',   desc:'Recuperas vida (con enfriamiento).',               dmg:0 },
 ];
 const MS_ROLE = { voxelhero:'Bruto cuerpo a cuerpo', samurai:'Espadachín ágil', archer:'Tiradora veloz',
@@ -18400,7 +18487,7 @@ function renderCtrlBar(){
    · ATAQUES con COOLDOWN (E·Q·F·R): botón relleno con carga vertical (updateAtkBar por frame).
    · UTILIDAD (MS_COMMON): botones fijos, sin relleno. El básico (J) ya no se muestra (no tiene cooldown). */
 const ATK_SLOTS = [   // botones CON relleno de enfriamiento · slot + botón de mando + tecla
-  { slot:'shove', pad:'LT', key:'L', name:'Empujón' },   // ►LTSHOVE: LT en el suelo — se rellena con la barra de AGUANTE (STAM_CD)
+  { slot:'shove', pad:'LT', key:'L', name:'Agarrar' },   // ►FGGRAB: LT en el suelo — el relleno es la barra de AGUANTE, que es lo que dura el agarre (STAM_CD)
   { slot:'e', pad:'B',  key:'E' }, { slot:'q', pad:'RB', key:'Q' },
   { slot:'f', pad:'L3', key:'F' }, { slot:'r', pad:'Y',  key:'R' },
   { slot:'shield', pad:'LB', key:'T', name:'Escudo' },   // ►SHIELDCD: el escudo también se rellena con su enfriamiento
@@ -18586,6 +18673,19 @@ function updateFighter(p, dt){
   p.hangCD = Math.max(0, p.hangCD-dt);
   p.wallJumpCD = Math.max(0, (p.wallJumpCD||0)-dt);
   p.coyote = Math.max(0, p.coyote-dt);
+  /* ►FLINCH (11/08, Toni) — SACUDIDA DE DAÑO. El bloqueo ya existía (startAttack corta con
+     hitstun>0), pero no se VEÍA: sin una reacción legible no puedes buscarle el hueco a quien
+     te encadena golpes. La sacudida dura EXACTAMENTE lo que el aturdimiento (topada a FLINCH_MAX),
+     así que la animación ES el aviso de cuándo puedes devolverla.
+     La dirección se lee de p.vel al recibir — mismo truco que ►IMPACT: cero call-sites que tocar. */
+  if(p.hitstun > (p._hsPrev||0) + 1e-4){
+    p._flMax = p._flT = Math.min(FLINCH_MAX, Math.max(FLINCH_MIN, p.hitstun));
+    const sp = Math.hypot(p.vel.x, p.vel.z);
+    if(sp > 0.05){ p._flDx = p.vel.x/sp; p._flDz = p.vel.z/sp; }        // hacia donde te mandan = de donde vino
+    else { p._flDx = -Math.sin(p.yaw); p._flDz = -Math.cos(p.yaw); }    // sin empuje (chip/bloqueo): recula
+  }
+  p._hsPrev = p.hitstun;
+  p._flT = Math.max(0, (p._flT||0) - dt);
   p.hitstun = Math.max(0, p.hitstun-dt);
   p.stun = Math.max(0, p.stun-dt);
   p.shardCD = Math.max(0, p.shardCD-dt);
@@ -18755,8 +18855,22 @@ function updateFighter(p, dt){
     else if(!p.isAI && !grabHeld) releaseGrab(p, Math.min(1, p.holdT/STAM_MAX));   // sueltas TÚ → empuje ∝ rato
     else {
       p.holdT += dt;
-      /* fijado DELANTE de ti y ENCARÁNDOTE (así puede pelearte con su básico) */
-      v.pos.set(p.pos.x + Math.sin(p.yaw)*HOLD_DIST, p.pos.y, p.pos.z + Math.cos(p.yaw)*HOLD_DIST);
+      /* ►FGGRAB · va DELANTE de ti y ENCARÁNDOTE (así puede pelearte con su básico), pero ya no
+         clavado al punto: primero el IMANTADO (entra volando desde donde estaba) y luego un
+         seguimiento ELÁSTICO — al girar o correr se queda un pelín atrás y se lee que lo ARRASTRAS. */
+      const tx = p.pos.x + Math.sin(p.yaw)*HOLD_DIST, tz = p.pos.z + Math.cos(p.yaw)*HOLD_DIST;
+      if((v._magT||0) > 0){
+        v._magT = Math.max(0, v._magT - dt);
+        const k = 1 - v._magT/HOLD_MAG_T, e = k*k*(3-2*k);        // suavizado (arranca y frena)
+        v.pos.set(THREE.MathUtils.lerp(v._magFrom.x, tx, e),
+                  THREE.MathUtils.lerp(v._magFrom.y, p.pos.y, e),
+                  THREE.MathUtils.lerp(v._magFrom.z, tz, e));
+        if(Math.random() < dt*30) burst(_fxV.set(v.pos.x, v.pos.y+HOLD_CHEST_Y, v.pos.z), p.color, 2, 3, 1.6, .4);   // chispas del tirón
+      } else {
+        const a = 1 - Math.exp(-HOLD_LAG*dt);                     // independiente de los fps
+        v.pos.x += (tx - v.pos.x)*a; v.pos.z += (tz - v.pos.z)*a;
+        v.pos.y += (p.pos.y - v.pos.y)*Math.min(1, a*1.8);        // la altura sí lo sigue casi al momento
+      }
       v.vel.set(0,0,0); v.yaw = p.yaw + Math.PI; v.onGround = p.onGround; v.hang = null;
       if(Math.random() < dt*7) burst(_fxV.set(v.pos.x, v.pos.y+.9, v.pos.z), v.color, 1, 1.6, 1.4, .35);   // forcejeo visible
     }
@@ -18784,7 +18898,10 @@ function updateFighter(p, dt){
       move.set(0,0,0); wantDash = false; wantGrab = grabHeld = false;         // no te mueves ni agarras: solo básicos
       wantJump = false;                                                       // el salto se gasta en forcejear, no saltas
       p.superBuf = 0; p.throwBuf = 0; p.spinBuf = 0;
-      if(p._escape >= ESC_NEED){                                              // ¡ZAFADO! (se soltó él → sin empuje)
+      /* ►FGGRAB: aunque llene el forcejeo a machacar botones, NUNCA se suelta antes de HOLD_MIN_T
+         (petición de Toni: "puede zafarse pero nunca inmediatamente"). El progreso SÍ se acumula
+         durante ese rato — forcejear pronto no se desperdicia, solo no puede romper todavía. */
+      if(p._escape >= ESC_NEED && g.holdT >= HOLD_MIN_T){                     // ¡ZAFADO! (se soltó él → sin empuje)
         releaseGrab(g, 0);
         p.vel.set(0, 5, 0); p.onGround = false;
         p._noGrabT = 0.7; g._noGrabT = 0.35;                                  // ni te re-agarra al instante ni le vale insistir
@@ -18984,12 +19101,15 @@ function updateFighter(p, dt){
        `else if` y el buffer del martillo (siempre vivo en combate) se tragaba el turno → LT "no iba".
        Y va por SOSTENIDO: mientras lo mantengas te enganchas EN CUANTO entras en la banda del borde
        (antes era un flanco de 1 frame = lotería).
-       Reparto sin ambigüedad: EN EL AIRE = agarre de BORDE · EN EL SUELO = ►LTSHOVE EMPUJÓN.
-       El BORDE va por SOSTENIDO (caes con LT apretado y te enganchas solo); el EMPUJÓN va por
-       PULSAR (flanco): gasta la barra ENTERA y suelta un buen empujón hacia delante. */
+       Reparto sin ambigüedad: EN EL AIRE = agarre de BORDE · EN EL SUELO = ►FGGRAB AGARRE.
+       Los DOS van por SOSTENIDO: mantienes LT y te enganchas —al borde o al rival— en cuanto entra
+       en alcance, como en Fall Guys (correr hacia alguien con el botón apretado y quedarse pegado).
+       ►FGGRAB (11/08): en el suelo LT vuelve a AGARRAR SIEMPRE (antes ►LTSHOVE gastaba la barra en
+       un empujón suelto). El empujón no se pierde: sale AL SOLTAR, ∝ al rato que lo tuviste y
+       amortiguado por lo que el otro haya forcejeado (ver releaseGrab). */
     if(!p.isAI && !p.hang && !p.holding && !p.heldBy && !p.block){
       if(!p.onGround){ if(grabHeld) tryLedgeGrab(p); }
-      else if(wantGrab) staminaShove(p);
+      else if(grabHeld) tryGrabPlayer(p);
     }
   }
 
@@ -19275,11 +19395,14 @@ function updateFighter(p, dt){
     /* ►LEVIATAN: con el monstruo agarrado al barco el recinto se CIERRA en torno al casco. Cabe caerse
        al agua por los costados (el mar sigue matando) pero ya no se llega a las pasarelas: la pelea es
        en la cubierta, que es lo que se pidió. Se cierra al salir las patas, no antes. */
-    if(STAGE===12 && typeof LEVI!=='undefined' && (LEVI.phase==='rise' || LEVI.phase==='fight' || LEVI.phase==='dead')){
-      if(p.pos.z < -LEVI_ARENA_Z){ p.pos.z = -LEVI_ARENA_Z; if(p.vel.z<0) p.vel.z = 0; }
-      else if(p.pos.z > LEVI_ARENA_Z){ p.pos.z = LEVI_ARENA_Z; if(p.vel.z>0) p.vel.z = 0; }
-      if(p.pos.x < LEVI_ARENA_X[0]){ p.pos.x = LEVI_ARENA_X[0]; if(p.vel.x<0) p.vel.x = 0; }
-      else if(p.pos.x > LEVI_ARENA_X[1]){ p.pos.x = LEVI_ARENA_X[1]; if(p.vel.x>0) p.vel.x = 0; }
+    if(STAGE===12 && typeof LEVI!=='undefined' && LEVI.phase!=='none' && LEVI.phase!=='brake'){
+      /* MURO de verdad, no un tope blando: además de clavar la posición, mata la velocidad hacia fuera
+         y marca `_wallHit` — así el salto de pared y el rebote se comportan como en cualquier muro y
+         nadie se escapa a los islotes de un empujón. Empieza en 'quake' (ya se oye venir al bicho). */
+      if(p.pos.z < -LEVI_ARENA_Z){ p.pos.z = -LEVI_ARENA_Z; if(p.vel.z<0) p.vel.z = 0; p._wallHit = { nx:0, nz:1 }; }
+      else if(p.pos.z > LEVI_ARENA_Z){ p.pos.z = LEVI_ARENA_Z; if(p.vel.z>0) p.vel.z = 0; p._wallHit = { nx:0, nz:-1 }; }
+      if(p.pos.x < LEVI_ARENA_X[0]){ p.pos.x = LEVI_ARENA_X[0]; if(p.vel.x<0) p.vel.x = 0; p._wallHit = { nx:1, nz:0 }; }
+      else if(p.pos.x > LEVI_ARENA_X[1]){ p.pos.x = LEVI_ARENA_X[1]; if(p.vel.x>0) p.vel.x = 0; p._wallHit = { nx:-1, nz:0 }; }
     }
     /* ►PIROLA (11/08, idea de Toni): en el mar pirata los muros laterales NO rebotan — son DOS OLAS
        gigantes, una por proa y otra por popa, que barren todo a su paso. Tocarlas es morir, y no se
@@ -28059,7 +28182,7 @@ function _pirBuildWater(){
    abajo, espuma arriba) → 1 draw call por ola.
    ===================================================================== */
 const PIROLA = { on:false, calm:0, bite:1.6, g:[], t:0, sprayT:0, warnT:0 };
-const PIR_WAVE_LEN = 210;        // largo en Z: tiene que pasarse de la niebla por los dos lados
+const PIR_WAVE_LEN = 300;        // largo en Z: tiene que pasarse de la niebla por los dos lados, y sus puntas se apagan solas (►PIROLA2)
 const PIR_WAVE_H0  = 17;         // altura a caos 0
 const PIR_WAVE_H1  = 31;         // altura a caos 10 (la cubierta está a 8.2: la tapa entera)
 function _pirWaveGeo(){
@@ -28076,10 +28199,12 @@ function _pirWaveGeo(){
   sh.lineTo( 5.20, 0.28);
   sh.lineTo( 7.60, 0.06);
   sh.lineTo( 9.00, 0.00);          // lomo largo hacia fuera
-  const geo = new THREE.ExtrudeGeometry(sh, { depth:1, bevelEnabled:false, steps:56 });
+  const geo = new THREE.ExtrudeGeometry(sh, { depth:1, bevelEnabled:false, steps:96 });
   geo.translate(0, 0, -0.5);       // centrado en Z
   const pos = geo.attributes.position, n = pos.count;
   const col = new Float32Array(n*3);
+  const alt = new Float32Array(n);   // ►PIROLA2: altura ORIGINAL del perfil (0..1) para el shader — después de
+                                     // ondular y afilar los extremos ya no se puede deducir de position.y
   /* tres tonos, que una pared de un solo color no tiene volumen: hondo abajo, el turquesa del mar en
      medio y espuma en el tercio de arriba */
   const cHondo = new THREE.Color(0x0a6f7a).convertSRGBToLinear();
@@ -28088,18 +28213,62 @@ function _pirWaveGeo(){
   const c = new THREE.Color();
   for(let i=0;i<n;i++){
     const y = pos.getY(i), z = pos.getZ(i);
+    alt[i] = y;
+    /* ►PIROLA2 · EXTREMOS QUE MUEREN EN EL MAR (pedido de Toni). La ola se alarga y sus dos puntas se
+       apagan con una curva suave en vez de cortarse en seco: el 22% de cada extremo baja de altura y
+       adelgaza hasta fundirse con el agua, así no se ve dónde acaba. */
+    const e = Math.min(1, (0.5 - Math.abs(z)) / 0.22);
+    const fade = e*e*(3 - 2*e);                                   // smoothstep
     /* la cresta ONDULA a lo largo de Z (una ola recta como una regla no es una ola) y se adelanta */
     const w = Math.sin(z*46.0)*0.055 + Math.sin(z*17.0 + 1.7)*0.085;
-    pos.setY(i, y + w*y);                       // el pie no se mueve, la cresta sí
-    pos.setX(i, pos.getX(i) - w*0.9*y);
+    const yy = (y + w*y) * fade;
+    pos.setY(i, yy);
+    pos.setX(i, (pos.getX(i) - w*0.9*y) * (0.30 + 0.70*fade));    // y adelgaza: en la punta es una loma, no un muro
     c.copy(cHondo).lerp(cAgua, Math.min(1, y/0.55));
     const k = Math.min(1, Math.max(0, (y - 0.66)/0.30));      // el tercio de arriba es espuma
     c.lerp(cEsp, k*k);
     col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('alt',   new THREE.BufferAttribute(alt, 1));
   geo.computeVertexNormals();
   return geo;
+}
+/* ►PIROLA2 · EL SHADER DE LA OLA (pedido de Toni: "fluctuaciones en la zona superior más acentuadas" y
+   "filas de espuma que van subiendo por su cara interna").
+   Va en el material y no en la CPU porque son 6.000 vértices por ola a 60 Hz: en la CPU es un bucle
+   por frame, aquí es gratis. Dos efectos:
+     · VÉRTICE: la cresta se mueve —tres senos desfasados en Z y en el tiempo— con peso `alt²`, así el
+       pie de la ola no se despega del mar y solo baila lo de arriba.
+     · FRAGMENTO: bandas de espuma que SUBEN por la cara cóncava (la que mira al barco), no por el
+       lomo. `fract(alt*N − t·v)` da las filas; el `smoothstep` las convierte en crestas blancas.
+   Gotcha del proyecto: el uniform se crea DENTRO de onBeforeCompile, así que hay que guardarse el
+   shader en `material.userData` o no hay forma de tocarlo en vivo. */
+function _pirWaveMat(){
+  const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.38, metalness:.05, flatShading:true });
+  mat.onBeforeCompile = (sh)=>{
+    sh.uniforms.uPT = { value:0 };
+    sh.uniforms.uPCalm = { value:0 };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float alt;\nvarying float vAlt;\nvarying float vFace;\nuniform float uPT;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vAlt = alt;
+        vFace = 1.0 - smoothstep(1.2, 3.4, abs(position.x));            // 1 en la cara cóncava, 0 en el lomo
+        float _w = alt*alt;
+        transformed.y += (sin(position.z*38.0 + uPT*2.3) * 0.055
+                        + sin(position.z*13.0 - uPT*1.5) * 0.075) * _w;
+        transformed.x += (sin(position.z*21.0 + uPT*1.9) * 0.30
+                        + sin(position.z*7.0  - uPT*1.1) * 0.42) * _w;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vAlt;\nvarying float vFace;\nuniform float uPT;\nuniform float uPCalm;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float _b = fract(vAlt*5.0 - uPT*0.42);
+        float _f = smoothstep(0.80, 0.97, _b) * (1.0 - smoothstep(0.62, 0.95, vAlt));   // filas que suben y se deshacen al llegar arriba
+        _f *= vFace * (1.0 - uPCalm);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93,0.99,1.0), _f*0.55);`);
+    mat.userData.sh = sh;
+  };
+  return mat;
 }
 function buildPirWaves(){
   if(PIROLA.g.length) return;
@@ -28107,8 +28276,7 @@ function buildPirWaves(){
   /* OPACA a propósito: con transparencia se veían A TRAVÉS los contornos de tinta de los muelles que
      hay detrás (el inkPass dibuja por profundidad) y parecía un cristal, no una pared de agua. Opaca,
      además, es lo que hace que la orilla se "trague" al pasar por ella. */
-  const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.38, metalness:.05,
-                                               flatShading:true });
+  const mat = _pirWaveMat();
   /* OJO con los ejes: el perfil vive en XY y la extrusión YA va en Z, así que la malla se coloca SIN
      rotar — `x` es el grosor de la ola (hacia fuera del recinto) y `z` su largo. Rotándola 90° (primer
      intento) el largo se iba al eje X y la ola tapaba la pantalla entera. `scale.x` negativo espeja la
@@ -28144,23 +28312,47 @@ function updatePirWaves(dt){
   PIROLA.calm += (quiere - PIROLA.calm) * Math.min(1, dt*0.7);
   if(quiere && PIROLA.calm > 0.985) PIROLA.calm = 1;
   const k = Math.min(1, (typeof chaosLvl!=='undefined' ? chaosLvl : 0)/10);
-  const H = (PIR_WAVE_H0 + (PIR_WAVE_H1-PIR_WAVE_H0)*k) * (1 - 0.78*PIROLA.calm);
+  /* ►PIROLA2: con el jefe NO se quedan pequeñas, se VAN (pedido de Toni). El 0.78 dejaba un murete de
+     6 u a los lados de la pelea; ahora la altura llega a cero y la malla se apaga, que además ahorra
+     dos draw calls durante todo el combate. */
+  const H = (PIR_WAVE_H0 + (PIR_WAVE_H1-PIR_WAVE_H0)*k) * Math.max(0, 1 - PIROLA.calm*1.12);
+  const fuera = (PIROLA.calm > 0.9);
   for(let i=0;i<PIROLA.g.length;i++){
     const m = PIROLA.g[i], s = (i===0 ? -1 : 1);
+    m.visible = !fuera;
+    if(fuera) continue;
     const bob = Math.sin(PIROLA.t*(0.9 + 0.5*k) + i*2.1)*0.045 + Math.sin(PIROLA.t*2.3 + i)*0.02;
-    m.scale.y = H * (1 + bob);
+    m.scale.y = Math.max(0.001, H * (1 + bob));
     m.position.y = PIR_WL - 1.2 + Math.sin(PIROLA.t*1.3 + i*1.7)*0.5*(1-PIROLA.calm);
     m.position.z = -6 + Math.sin(PIROLA.t*0.45 + i)*2.2;        // se desliza a lo largo: la cresta nunca está quieta
     m.rotation.z = s * (0.02 + 0.02*k) * Math.sin(PIROLA.t*1.1 + i);
+    const sh = m.material.userData.sh;                          // ►PIROLA2: el reloj del shader (cresta + filas de espuma)
+    if(sh){ sh.uniforms.uPT.value = PIROLA.t; sh.uniforms.uPCalm.value = PIROLA.calm; }
   }
-  /* ESPUMA en la cresta: dice "esto barre" sin coste — más densa cuanto más caos, nada en calma */
-  if(PIROLA.calm < 0.5){
+  /* ►PIROLA2 · GOTEO Y ROCIADA EN LA CRESTA (pedido de Toni: "que dripeen o salpiquen en sus puntas").
+     Dos cosas distintas a propósito: ROCIADA, una nube corta de espuma que sale hacia arriba del labio,
+     y GOTEO, gotas gordas que caen del alero y tardan en llegar al agua. Juntas dan la sensación de
+     que la ola está rompiendo TODO el rato y no es un decorado quieto. */
+  if(!fuera){
+    const H2 = H;
     PIROLA.sprayT -= dt;
     if(PIROLA.sprayT <= 0){
-      PIROLA.sprayT = 0.22 - 0.13*k;
+      PIROLA.sprayT = 0.14 - 0.08*k;
+      for(let q=0;q<2;q++){
+        const s = Math.random()<0.5 ? -1 : 1;
+        const z = -6 + (Math.random()-0.5)*PIR_WAVE_LEN*0.78;
+        const cx = s*(WALL_X - 0.6), cy = PIR_WL - 1.2 + H2*(0.93 + Math.random()*0.09);
+        burst(new THREE.Vector3(cx, cy, z), 0xf2fbff, 3, 3.2, 6.0, 1.15);
+      }
+    }
+    PIROLA.dripT = (PIROLA.dripT || 0) - dt;
+    if(PIROLA.dripT <= 0){
+      PIROLA.dripT = 0.10 - 0.05*k;
       const s = Math.random()<0.5 ? -1 : 1;
-      const z = -6 + (Math.random()-0.5)*100;
-      burst(new THREE.Vector3(s*(WALL_X-1), PIR_WL - 1.2 + H*0.95, z), 0xf2fbff, 3, 3.5, 5.5, 1.1);
+      const z = -6 + (Math.random()-0.5)*PIR_WAVE_LEN*0.8;
+      /* del LABIO hacia dentro y hacia abajo: velocidad baja y `up` pequeño = gotas que caen, no chispas */
+      burst(new THREE.Vector3(s*(WALL_X - 1.6), PIR_WL - 1.2 + H2*(0.72 + Math.random()*0.2), z),
+            0xdff5ff, 2, 1.4, 0.6, 0.85);
     }
   }
   /* AVISO cuando el jugador local se acerca a la de popa (la que de verdad te come) */
@@ -28802,12 +28994,16 @@ const LEVI_LEN    = 2.6;        // largo del primer segmento (los siguientes men
    supervivientes, así que 8 patas × 80 (× la misma escala por jugadores y por fuerza) dejan al
    leviatán en la misma liga. Con 150 (primer intento) eran 3.900 y la pelea no acababa nunca. */
 const LEVI_HP     = 80;         // vida POR PATA y por superviviente que llega
-const LEVI_ARENA_Z = 13.5;      // |z| del recinto durante la pelea: cabe caerse al agua, no llegar a la orilla
-const LEVI_ARENA_X = [-26, 36]; // ídem en X (el barco va de −19 a +30)
+/* RECINTO DE LA PELEA. Con 13.5 (primer intento) NO servía: el borde interior de los pantalanes cae en
+   12.5, o sea que aún se podía saltar a la orilla y escaparse del jefe. Va a 11.0 — 1.5 u de agua
+   desde el casco: cabe caerse (y morir), no cabe llegar a nada. */
+const LEVI_ARENA_Z = 11.0;      // |z| del recinto durante la pelea
+const LEVI_ARENA_X = [-24, 34]; // ídem en X (el barco va de −19 a +30)
 const LEVI_COL    = 0x8b3fd6;   // lila
 const LEVI_COL2   = 0x5f22a0;   // lila oscuro (base de la pata)
 const LEVI_GOLD   = 0xffc63a;   // punta dorada
-const LEVI = { phase:'none', t:0, arms:[], g:null, beltK:1, dead:0, hp0:0, grabbed:[], nextAtk:0 };
+const LEVI_COL_RAGE = 0xd42a2a;   // ►LEVIRAGE: el lila se vuelve ROJO en la segunda vuelta
+const LEVI = { phase:'none', t:0, arms:[], g:null, beltK:1, dead:0, hp0:0, hpArm:0, grabbed:[], nextAtk:0, rage:false, smokeT:0 };
 let _leviGeoSegs = null, _leviGeoTip = null, _leviMat = null, _leviMatTip = null;
 
 function _leviBuildArm(i){
@@ -28880,7 +29076,9 @@ function startLeviathan(){
     a.g.rotation.y = Math.atan2(a.home.x - a.bx, a.home.z - a.bz);
     LEVI.arms.push(a);
   }
-  LEVI.hp0 = hp * LEVI_ARMS;
+  LEVI.hpArm = hp; LEVI.hp0 = hp * LEVI_ARMS; LEVI.rage = false;
+  if(_leviMat) _leviMat.color.setHex(LEVI_COL);           // ►LEVIRAGE: el material vive entre partidas — hay que devolverlo al lila
+  if(_leviMatTip) _leviMatTip.emissiveIntensity = 0.35;
   buildBossBar(); if(BOSSFIGHT.bar){ BOSSFIGHT.bar.wrap.style.display='block'; if(BOSSFIGHT.timer) BOSSFIGHT.timer.textContent=''; }
   showBanner('¡ALGO SUBE DEL FONDO!', 2.6);
   shake = Math.max(shake, 0.5);
@@ -28940,7 +29138,10 @@ function _leviArmAttack(a){
   const r = Math.random();
   a.kind  = r < 0.38 ? 'barrido' : r < 0.72 ? 'martillazo' : 'estocada';
   a.state = 'wind'; a.st = 0;
-  a.windT = a.kind==='martillazo' ? 1.05 : a.kind==='barrido' ? 0.85 : 0.6;
+  /* ►LEVIRAGE: en la 2ª vuelta se arma MUCHO más rápido y la punta SIGUE al jugador durante todo el
+     amago (a.track), así que ya no vale con apartarse al ver el aviso: hay que romper la línea. */
+  a.windT = (a.kind==='martillazo' ? 1.05 : a.kind==='barrido' ? 0.85 : 0.6) * (LEVI.rage ? 0.55 : 1);
+  a.track = LEVI.rage ? p : null;
   a.tgt   = { x:p.pos.x, z:p.pos.z, y:p.pos.y };
   /* el MARTILLAZO avisa con la marca del suelo de los cañonazos: mismo lenguaje, ya lo conoces */
   if(a.kind==='martillazo' && typeof _pirWarnMesh==='function'){
@@ -29026,9 +29227,28 @@ function updateLeviathan(dt, rawDt){
       if(LEVI.nextAtk <= 0 && vivas.length){
         const libres = vivas.filter(a=>a.state==='idle' || a.state==='exposed');
         if(libres.length) _leviArmAttack(libres[(Math.random()*libres.length)|0]);
-        LEVI.nextAtk = (2.4 - 0.16*(LEVI_ARMS - vivas.length)) * (0.75 + Math.random()*0.5);
+        LEVI.nextAtk = (2.4 - 0.16*(LEVI_ARMS - vivas.length)) * (LEVI.rage ? 0.55 : 1) * (0.75 + Math.random()*0.5);
       }
-      if(!vivas.length){ LEVI.phase='dead'; LEVI.t=0; }
+      /* ►LEVIRAGE (pedido de Toni): al caer las 8 patas la primera vez, el bicho NO muere — vuelve a
+         salir ENFURECIDO. La 2ª vuelta es la de verdad. */
+      if(!vivas.length){
+        if(!LEVI.rage){ _leviEnrage(); }
+        else { LEVI.phase='dead'; LEVI.t=0; }
+      }
+      break;
+    }
+    case 'rage': {                                    // 2 s de rabia: humo, rugido y las patas volviendo
+      shake = Math.max(shake, 0.25 + 0.35*(LEVI.t/2));
+      if(Math.random() < dt*26){
+        const a = Math.random()*6.283, r = 6 + Math.random()*26;
+        burst(new THREE.Vector3(Math.cos(a)*r, PIR_WL + 0.4 + Math.random()*3, Math.sin(a)*r), 0x3a2030, 3, 2.2, 3.2, 1.6);
+      }
+      const k2 = Math.min(1, LEVI.t/1.3);
+      for(const a of LEVI.arms) a.g.scale.setScalar(0.001 + 0.999*k2);
+      if(LEVI.t >= 1.6){
+        LEVI.phase = 'fight'; LEVI.t = 0; LEVI.nextAtk = 0.5;
+        for(const a of LEVI.arms){ a.state='idle'; a.st=0; a.tgt=a.home; if(!a.ent) _leviSpawnEnt(a); }
+      }
       break;
     }
     case 'dead': {
@@ -29040,6 +29260,15 @@ function updateLeviathan(dt, rawDt){
   const _v = new THREE.Vector3();
   for(const a of LEVI.arms){
     a.st += dt;
+    /* ►LEVIRAGE · SEGUIMIENTO: mientras se arma, la pata corrige su puntería hacia el jugador (con un
+       poco de anticipación por su velocidad). En la 1ª vuelta esto no pasa: el aviso es un compromiso
+       y apartarse basta. */
+    if(a.track && a.state === 'wind' && !a.track.dead && !a.track.out){
+      const q = a.track, lead = 0.16;
+      a.tgt.x += (q.pos.x + q.vel.x*lead - a.tgt.x) * Math.min(1, dt*7);
+      a.tgt.z += (q.pos.z + q.vel.z*lead - a.tgt.z) * Math.min(1, dt*7);
+      if(a.warn) a.warn.position.set(a.tgt.x, a.warn.position.y, a.tgt.z);
+    }
     if(a.state === 'wind'  && a.st >= a.windT){ a.state='hit'; a.st=0; _leviArmHit(a); }
     else if(a.state === 'hit' && a.st >= 0.22){ a.state='rec'; a.st=0; }
     else if(a.state === 'rec' && a.st >= 0.5){ a.state='exposed'; a.st=0; }
@@ -29061,12 +29290,52 @@ function updateLeviathan(dt, rawDt){
       if(a.ent.damage >= a.ent.maxHp) _leviArmDie(a);
     }
   }
+  /* ►LEVIRAGE: humito de bicho cabreado saliendo del agua alrededor del casco, TODA la segunda vuelta */
+  if(LEVI.rage && (LEVI.phase==='fight' || LEVI.phase==='rage')){
+    LEVI.smokeT -= dt;
+    if(LEVI.smokeT <= 0){
+      LEVI.smokeT = 0.09;
+      const s = Math.random()<0.5 ? -1 : 1;
+      burst(new THREE.Vector3(-16 + Math.random()*46, PIR_WL + 0.2, s*(9.5 + Math.random()*2.5)),
+            0x3a2030, 2, 1.3, 3.4, 1.7);
+    }
+  }
   /* barra de vida: la suma de las 8 patas */
   if(BOSSFIGHT.bar){
     let vida = 0; for(const a of LEVI.arms) vida += a.ent ? Math.max(0, a.ent.maxHp - a.ent.damage) : 0;
     BOSSFIGHT.bar.fill.style.width = (100*vida/Math.max(1, LEVI.hp0)).toFixed(1) + '%';
     if(BOSSFIGHT.bar.poise) BOSSFIGHT.bar.poise.style.width = (100*(LEVI_ARMS-LEVI.dead)/LEVI_ARMS) + '%';
   }
+}
+/* =====================================================================
+   ►LEVIRAGE · LA SEGUNDA VUELTA (pedido de Toni)
+   Al caer las 8 patas el monstruo NO muere: vuelve a salir con más rabia. Lo que cambia:
+     · COLOR: el lila pasa a ROJO (se tiñe el material, que es uno solo y compartido por las 8) y sale
+       HUMO oscuro del agua alrededor del barco todo el rato.
+     · PUNTERÍA: las patas SIGUEN al jugador mientras se arman (`a.track`), con un pelín de
+       anticipación. Ya no vale apartarse al ver el aviso: hay que romper la línea o saltar.
+     · CADENCIA: se arman en la mitad de tiempo y atacan casi el doble de seguido.
+     · VIDA: 55% de la primera vuelta. La 2ª fase tiene que ser más corta y más tensa, no el doble de
+       larga; lo que sube es la presión, no el saco de vida.
+   ===================================================================== */
+function _leviEnrage(){
+  LEVI.rage = true; LEVI.phase = 'rage'; LEVI.t = 0; LEVI.dead = 0;
+  if(_leviMat)    _leviMat.color.setHex(LEVI_COL_RAGE);
+  if(_leviMatTip){ _leviMatTip.emissiveIntensity = 0.6; }
+  const hp = LEVI.hpArm * 0.55;
+  LEVI.hpArm = hp; LEVI.hp0 = hp * LEVI_ARMS; LEVI.rage = false;
+  if(_leviMat) _leviMat.color.setHex(LEVI_COL);           // ►LEVIRAGE: el material vive entre partidas — hay que devolverlo al lila
+  if(_leviMatTip) _leviMatTip.emissiveIntensity = 0.35;
+  for(const a of LEVI.arms){
+    a.g.visible = true; a.g.scale.setScalar(0.001);
+    a.state = 'rise'; a.st = 0; a.tgt = a.home; a.maxHp = hp;
+    if(a.ent){ a.ent.dead = true; a.ent = null; }
+  }
+  showBanner('¡NO ESTABA MUERTO! ¡ESTÁ FURIOSO!', 3.0);
+  flashT = Math.max(flashT, 0.25); shake = Math.max(shake, 0.9);
+  if(typeof fovKick!=='undefined') fovKick = Math.max(fovKick, 0.6);
+  try{ tone(52, 2.2, 'sawtooth', .34, -22); noiseBurst(.3, 1.6, 220, 'lowpass', 0.8, 120); }catch(e){}
+  if(typeof crowdCheer==='function') crowdCheer(.6);
 }
 /* ►LEVIATAN · RESCATE: el que esté fuera del barco cuando salen las patas, entra. Una pata lo agarra
    (se le congela el control con el mismo flag que el portal) y lo deja en cubierta. */
@@ -29098,7 +29367,8 @@ function _leviClear(){
   for(const a of LEVI.arms){ if(a.ent){ a.ent.dead = true; a.ent = null; } if(a.warn && a.warn.parent) a.warn.parent.remove(a.warn); }
   LEVI.arms.length = 0;
   if(LEVI.g && LEVI.g.parent) LEVI.g.parent.remove(LEVI.g);
-  LEVI.g = null; LEVI.phase = 'none'; LEVI.t = 0; LEVI.beltK = 1; LEVI.dead = 0; LEVI.won = false;
+  LEVI.g = null; LEVI.phase = 'none'; LEVI.t = 0; LEVI.beltK = 1; LEVI.dead = 0; LEVI.won = false; LEVI.rage = false;
+  if(_leviMat) _leviMat.color.setHex(LEVI_COL);
   if(BOSSFIGHT.bar) BOSSFIGHT.bar.wrap.style.display = 'none';
 }
 
@@ -35232,7 +35502,7 @@ function refreshSetup(){
        Maqueta de Toni: el mando en el centro, etiquetas a los lados con línea guía, y SIEMPRE el
        marcador de botón DELANTE en negrita ("LT Agarre", "RT Dash", "Y <definitiva>"…).
        Lo ÚNICO que cambia por clase son las 5 habilidades: X=básico · B=E · Y=R · Click(L3)=F · RB=Q.
-       Fijos para todos: A=Saltar · LT=Empujón · LB=Escudo · RT=Dash · Mover · cruceta · stick dcho.
+       Fijos para todos: A=Saltar · LT=Agarrar · LB=Escudo · RT=Dash · Mover · cruceta · stick dcho.
        Todo contrastado contra readInput() — que es la única verdad (el diagrama viejo MENTÍA).
 
        ESCALA: la columna mide ~460 px y el viewBox 760 → 0.605. Por eso las fuentes se DECLARAN
@@ -35299,7 +35569,7 @@ function refreshSetup(){
       '<g class="ctl" id="pad-A"><circle class="hit" cx="'+px(420)+'" cy="'+py(150)+'" r="18"/></g>'+
       '<g class="ctl" id="pad-X"><circle class="hit" cx="'+px(383)+'" cy="'+py(113)+'" r="18"/></g>'+
       /* --- rótulos: marcador SIEMPRE delante --- */
-      tag(LX,  42, 'LT', 'Empujón', null,      'end')+
+      tag(LX,  42, 'LT', 'Agarrar', null,      'end')+
       tag(LX,  68, 'LB', 'Escudo',  null,      'end')+
       tag(LX, 152, 'Mover', 'Moverse', null,   'end')+
       tag(LX, 178, 'Click', f,      col,       'end')+
@@ -35395,8 +35665,8 @@ function refreshSetup(){
       desc:'Impulso rápido para esquivar o entrar.' },
     { slot:'escudo', pad:'LB', kbdId:'T',       kbd:'T',       nm:'Escudo', vid:'escudo',
       desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.' },
-    { slot:'agarre', pad:'LT', kbdId:'MOUSER',  kbd:'Clic dcho.',     nm:'Empujón', vid:null,
-      desc:'Suelo: gastas TODA la barra de aguante y sueltas un empujón fuerte a quien tengas delante. Aire: te agarras a un borde.' },
+    { slot:'agarre', pad:'LT', kbdId:'MOUSER',  kbd:'Clic dcho.',     nm:'Agarrar', vid:null,
+      desc:'Suelo: MANTÉN para agarrar al rival de al lado y arrastrarlo mientras te dure el aguante; al soltar sale despedido, más fuerte cuanto más lo tuviste. Él se zafa forcejeando (mover y saltar), pero nunca al instante. Aire: te agarras a un borde.' },
     { slot:'curar',  pad:'DPAD', kbdId:'H',     kbd:'H',       nm:'Curar',  vid:'curar',
       desc:'Recuperas vida (con enfriamiento). Cada clase se cura a su manera.' },
     /* --- sin vídeo por naturaleza: se enseña la ficha sin clip --- */
