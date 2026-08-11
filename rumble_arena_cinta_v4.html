@@ -7729,6 +7729,7 @@ function killCapsule(i){
   capsules.splice(i,1);
 }
 function updateCapsules(dt){
+  if(STAGE===13) return;   // ►CUADRIMANIA: en la torre no caen objetos (petición de Toni) — aquí el único recurso es el SUELO
   capT -= dt;
   if(capT<=0){
     const boss = inBossArena();                             // ►BOSSDROP: corazones escasos en la arena del jefe
@@ -8226,7 +8227,7 @@ function dropWeapon(p){
 }
 function updateItems(dt){
   itemT -= dt;
-  if(itemT<=0){ if(!inBossArena() && items.length < 12) spawnItem(); itemT = (Math.max(0.9, 3.5 - chaosLvl*.3)/1.5)*(0.6+Math.random()*.6); }   // ►BOSSDROP: NADA de armas/pasivos/arcoíris en la arena del jefe · muchas más fuera, y más con el caos (con tope simultáneo)
+  if(itemT<=0){ if(!inBossArena() && STAGE!==13 && items.length < 12) spawnItem(); itemT = (Math.max(0.9, 3.5 - chaosLvl*.3)/1.5)*(0.6+Math.random()*.6); }   // ►BOSSDROP: NADA de armas/pasivos/arcoíris en la arena del jefe · ►CUADRIMANIA: ni en la torre (petición de Toni) · muchas más fuera, y más con el caos (con tope simultáneo)
   for(let i=items.length-1;i>=0;i--){
     const it = items[i];
     it.t += dt;
@@ -10244,7 +10245,7 @@ function trainMinions(dt){
 function updateMinions(dt){
   if(TRAIN.on){
     trainMinions(dt);
-  } else if(!bossActive && STAGE!==6){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío
+  } else if(!bossActive && STAGE!==6 && STAGE!==13){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego)
     minionT-=dt;
     if(minionT<=0){
       const cap=maxMinions();
@@ -13972,7 +13973,7 @@ function updateBrute(mn, dt){
     /* ►ELITE: suelta una CÁPSULA garantizada donde cae → matarlo es un evento con premio, no un
        minion gordo. Va antes de killMinion: después, mn.pos sigue siendo válido pero el orden
        deja el drop atado a la muerte de forma obvia. */
-    try{ spawnCapsule({ x:mn.pos.x, z:mn.pos.z, topY:(mn._groundY!=null?mn._groundY:mn.pos.y) }); }catch(e){ console.warn('[elite drop]', e); }
+    if(STAGE!==13) try{ spawnCapsule({ x:mn.pos.x, z:mn.pos.z, topY:(mn._groundY!=null?mn._groundY:mn.pos.y) }); }catch(e){ console.warn('[elite drop]', e); }   // ►CUADRIMANIA: en la torre no cae NADA, tampoco de los élite
     awardMinion(mn); killMinion(mn); return;
   }
   const tgt = nearestPlayer(mn) || players[0];
@@ -15561,7 +15562,7 @@ const BLAST_XZ = 44, BLAST_DOWN = -13, BLAST_UP = 58;
 /* ►P5: el kill-plane inferior es la LAVA en el pozo (sube con ella); resto de stages = -13 de siempre */
 /* ►PIRATA: en el mar la muerte NO está en el vacío de −13, está en la SUPERFICIE. El plano se pone
    justo por encima de la línea de flotación para que el KO coincida con el chapuzón que se ve. */
-function blastDownY(){ return (STAGE===12 && typeof PIR_WL!=='undefined') ? PIR_WL + 0.6 : (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
+function blastDownY(){ return (STAGE===13 && window.CUAD) ? CUAD.lavaY + 1.2 : (STAGE===12 && typeof PIR_WL!=='undefined') ? PIR_WL + 0.6 : (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
 /* ►S10ZEROG · GRAVEDAD CERO (Vía Arcoíris, STAGE 10): salto ~3× de alto, caída SUAVE y simétrica,
    sin techo de muerte, y expulsión ~3× más lejos (para volar y planear sin perder vida).
    Todo detrás de constantes ajustables (se afinan mirándolo en juego). */
@@ -16532,8 +16533,12 @@ const DEFAULT_KIT = { basic:p=>startAttack(p,'hammer'), sup:beamSuper, ult:start
 function classKit(p){ return (p && p._charKey && CLASS_KIT[p._charKey]) || DEFAULT_KIT; }
 function classBasic(p){ return classKit(p).basic(p); }
 function classSuper(p){ return classKit(p).sup(p); }
-function classUlt(p){ const _was = ultActive(p); const r = classKit(p).ult(p); if(!_was && ultActive(p)) narrateAwe(); return r; }   // definitiva lanzada → asombro (raro)
-function classF(p){ return (classKit(p).f||barbSpinF)(p); }   // F única por clase
+/* ►CUADRIMANIA: en la torre SOLO vale el ataque básico. El gate de readInput cubría al humano, pero
+   la CPU no pasa por ahí (tiene su propia rama con aiThink y llama a classF/classUlt directamente),
+   así que los rivales seguían usando sus especiales. Se cierra en la PUERTA de cada especial, que es
+   el único sitio por el que pasan los dos. */
+function classUlt(p){ if(STAGE===13) return false; const _was = ultActive(p); const r = classKit(p).ult(p); if(!_was && ultActive(p)) narrateAwe(); return r; }   // definitiva lanzada → asombro (raro)
+function classF(p){ if(STAGE===13) return false; return (classKit(p).f||barbSpinF)(p); }   // F única por clase
 function classQ(p){ return (classKit(p).q||barbAxeQ)(p); }    // Q única por clase
 
 function startAttack(p, kind='hammer'){
@@ -17074,6 +17079,18 @@ function safeSpawn(p){            // reaparece CAYENDO sobre la franja central s
     return (x>=top.minX+mx && x<=top.maxX-mx && z>=top.minZ+mz && z<=top.maxZ-mz);
   };
   let sx = px, sz = 0, found = false;
+  /* ►CUADRIMANIA: la torre no pasa la validación de arriba (exige plataformas ANCHAS y topY<6, y las
+     losetas son pequeñas y están a 100 u de altura). Su punto de aparición lo decide el minijuego:
+     el piso más alto que aún tenga losetas de sobra, repartidos por ángulo como una parrilla. */
+  if(STAGE===13 && window.CUAD){
+    const sp = CUAD.spawnPoint(players.indexOf(p), players.length);
+    if(sp){
+      p.pos.set(sp.x, sp.y, sp.z); p.vel.set(0,0,0);
+      p.onGround = false; p.respDrop = true;
+      p.invuln = Math.max(p.invuln, 2.2);
+      return;
+    }
+  }
   if(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none' && BOSSFIGHT.aplat){
     const ap = BOSSFIGHT.aplat;
     const lo = Math.max(ap.minX+3, -WALL_X+2), hi = Math.min(ap.maxX-3, WALL_X-2);
@@ -17504,7 +17521,7 @@ function updateShopTimer(dt){ updateInterstage(dt); }   // alias: lo llama _veri
    da este array y buildRoadmap ya pinta el número por POSICIÓN (i+1), así que el jugador ve
    1..9 correlativos con el western en 4ª posición. */
 const CAMPAIGN_STAGES = [1,2,3,11,4,5,12,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance) · ►PIRATA: el 12 entra entre la pirámide y el hielo
-const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS' };
+const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS', 13:'CUADRIMANÍA' };   // ►CUADRIMANIA: el 13 es un MINIJUEGO suelto (?cuadrimania), NO va en CAMPAIGN_STAGES
 /* ►WEST · el número que VE el jugador es la POSICIÓN en la ruta, no el ID interno. Con el western
    metido en medio, el desierto (ID 4) es el 5º stage de la campaña. buildRoadmap ya pintaba por
    posición; esta función es para todo lo demás que imprime "STAGE N" en pantalla. Los stages
@@ -17850,10 +17867,17 @@ function endGame(){
     /* ►INTERSTAGE: el REY es quien MÁS PUNTÚA — criterio ÚNICO en todo el juego (HUD, roadmap, tabla
        y coronación). Antes la corona iba por SUPERVIVENCIA y el tablero por PUNTOS: se contradecían.
        El ×1.3 de superviviente ya premia de sobra aguantar en pie. Desempate: el que más aguantó. */
-    const ranked = players.slice().sort((a,b)=>{
-      const d = scoreTotal(b) - scoreTotal(a);
-      return d !== 0 ? d : ((b.sc.surv||0) - (a.sc.surv||0));
-    });   // roster de la PARTIDA (capturar ANTES de startDemo, que cambia players y pone sc a cero)
+    /* ►CUADRIMANIA: aquí el criterio del juego NO vale — el minijuego es "el último en pie", así que
+       manda el ORDEN DE CAÍDA (outOrder alto = cayó el último; 0 = sigue vivo, o sea, ganó). */
+    const ranked = players.slice().sort(STAGE===13
+      ? (a,b)=>{
+          const ao = a.out ? a.outOrder : Infinity, bo = b.out ? b.outOrder : Infinity;
+          return bo !== ao ? bo - ao : ((b.sc.surv||0) - (a.sc.surv||0));
+        }
+      : (a,b)=>{
+          const d = scoreTotal(b) - scoreTotal(a);
+          return d !== 0 ? d : ((b.sc.surv||0) - (a.sc.surv||0));
+        });   // roster de la PARTIDA (capturar ANTES de startDemo, que cambia players y pone sc a cero)
     const humanRank = ranked.indexOf(P1)+1;
     const won = ranked[0]===P1;
     const grade = gradeFor(P1);
@@ -18279,6 +18303,7 @@ function readInput(p){
   move.addScaledVector(camRight, ax);
   if(move.lengthSq() > 1) move.normalize();
   const padDown = !!(pad && ((pad.axes[1]||0) > .55));   // fast-fall: stick abajo (la cruceta abajo ahora hace zoom)
+  const _sinEsp13 = (typeof STAGE!=='undefined' && STAGE===13);   // ►CUADRIMANIA: torre = solo ataque básico
   return {
     move,
     jump:  (kb && !!keys['Space']) || B(0),                                          // A
@@ -18287,11 +18312,15 @@ function readInput(p){
     brk:   (kb && (keys['KeyL'] || mouseGrab)) || B(6),                              // LT · AGARRE/AGUANTE: tecla L o CLIC DERECHO (pedido de Toni: el derecho es el botón bueno y lo usa más)
     block: (kb && (keys['KeyT'] || keys['KeyI'])) || B(4),                            // LB · ESCUDO: se mudó del clic derecho a la T (la I se conserva de alias)
     drop:  false,                                                                   // CAÍDA RÁPIDA eliminada (S / abajo solo mueven; ya no precipitan)
-    throw: (kb && (keys['KeyU']||keys['KeyQ'])) || B(5),                             // RB (cristal)
-    sup:   (kb && (keys['KeyO']||keys['KeyE'])) || B(1),                             // B (súper)
+    /* ►CUADRIMANIA: en la torre SOLO vale el ataque básico. Los cuatro especiales de clase se
+       apagan aquí, en el único sitio por el que pasan todos (teclado, mando y CPU comparten esta
+       estructura), así que ni el jugador ni la IA pueden lanzarlos. El kit común —salto, dash,
+       empujón, escudo, cura— sigue: eso lo tienen las seis clases por igual. */
+    throw: !_sinEsp13 && ((kb && (keys['KeyU']||keys['KeyQ'])) || B(5)),             // RB (cristal)
+    sup:   !_sinEsp13 && ((kb && (keys['KeyO']||keys['KeyE'])) || B(1)),             // B (súper)
     heal:  (kb && !!keys['KeyH']) || B(12),                                          // cruceta ARRIBA (D-pad up) — CURA por clase
-    ult:   (kb && !!keys['KeyR']) || B(3),                                           // Y (definitiva)
-    spin:  (kb && !!keys['KeyF']) || B(10),                                          // L3 (clic stick izq.)
+    ult:   !_sinEsp13 && ((kb && !!keys['KeyR']) || B(3)),                           // Y (definitiva)
+    spin:  !_sinEsp13 && ((kb && !!keys['KeyF']) || B(10)),                          // L3 (clic stick izq.)
     parry: false,                                                                   // PARRY/CONTRA eliminado (antes P · R3)
   };
 }
@@ -18407,7 +18436,11 @@ function renderAtkBar(){
       '<span class="hName">'+u.name+'</span>'+
     '</div>';
   let atk='', util='';
-  for(const s of ATK_SLOTS) atk  += cd(s);
+  /* ►CUADRIMANIA: en la torre los personajes van SOLO con el ataque básico (petición de Toni), así
+     que sus cuatro especiales de clase (E/Q/F/R) no se pintan — el kit común (empujón, escudo,
+     cura, salto, dash) sí se queda: eso lo tienen todos, no es "un especial". Ver readInput. */
+  const _sinEsp = (typeof STAGE!=='undefined' && STAGE===13);
+  for(const s of ATK_SLOTS){ if(_sinEsp && (s.slot==='e'||s.slot==='q'||s.slot==='f'||s.slot==='r')) continue; atk += cd(s); }
   for(const u of MS_COMMON){ if(u.pad==='LB' || u.pad==='LT' || u.pad==='↑') continue; util += ut(u); }   // Escudo(T)/Empujón(LT)/Cura(H) ya viven en el grupo CON relleno; aquí solo quedan Saltar/Dash
   el.innerHTML = '<div class="atkGroup">'+atk+'</div><div class="atkSep"></div><div class="atkGroup util">'+util+'</div>';
 }
@@ -18675,6 +18708,10 @@ function updateFighter(p, dt){
      escudándose no podría desviar el golpe justo cuando más lo necesita.
      Vale igual para humano y para CPU — `move` ya es la dirección que quiere cada uno. */
   { const dv = p._diVec || (p._diVec = new THREE.Vector3()); dv.copy(move); }
+  /* ►CUADRIMANIA: y aquí se vacían los BUFFERS de especial, que es por donde salen la Q (throwBuf),
+     la E (superBuf) y la F (spinBuf) tanto del humano como de la CPU. Con esto, en la torre lo único
+     que queda es el ataque básico (clic izquierdo) más el kit común: salto, dash, empujón y escudo. */
+  if(STAGE===13){ p.throwBuf = 0; p.superBuf = 0; p.spinBuf = 0; }
   if(p.spin){ wantJump=wantDash=wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // girando: solo se permite moverse (lento)
   if(p.shieldT>0){ wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // ESCUDO: no atacas (mover lento + saltar sí); dash/ataques ya van bloqueados por !p.block
   if(p.parryT>0 || p.counter){ move.set(0,0,0); wantJump=wantDash=wantAtk=wantGrab=grabHeld=false; p.superBuf=0; p.throwBuf=0; p.atkBuf=0; }   // CONTRA: congelado en la pose / ejecutando el combo
@@ -19212,7 +19249,19 @@ function updateFighter(p, dt){
      caerse del borde = KO (ring-out) mucho antes de llegar a la cinta congelada de abajo */
   const _loY = p._bossArena ? BOSS_ARENA_Y - 14 : blastDownY();
   const _hiY = p._bossArena ? BOSS_ARENA_Y + BLAST_UP : BLAST_UP;
-  if(BELT.on || bossActive){   // durante el JEFE: los muros laterales de SIEMPRE (±WALL_X) siguen activos (la cinta está congelada pero NO pasamos al modo clásico de muerte cuadrada → si te empujan al lado, REBOTAS como en la cinta, no mueres)
+  if(STAGE===13){
+    /* ►CUADRIMANIA · TORRE: aquí lo ÚNICO que mata es la LAVA del fondo. Ni planos de muerte en Z
+       ni techo: si te mandan volando fuera de la torre no mueres por cruzar una línea invisible,
+       mueres porque debajo ya no hay suelo y acabas en la lava — que es justo lo que hace que el
+       % de daño y el suelo que desaparece se hablen entre sí. Los muros laterales siguen
+       REBOTANDO (±WALL_X) para que nadie salga despedido al infinito. */
+    if(p.pos.x >  WALL_X){ p.pos.x =  WALL_X; if(p.vel.x > -WALL_PUSH) p.vel.x = -WALL_PUSH; wallHit(p,  1); }
+    else if(p.pos.x < -WALL_X){ p.pos.x = -WALL_X; if(p.vel.x < WALL_PUSH) p.vel.x = WALL_PUSH; wallHit(p, -1); }
+    const _pz = BLAST_Z_FAR;                                  // el tubo de la torre: rebote también en Z
+    if(p.pos.z < -_pz){ p.pos.z = -_pz; if(p.vel.z < WALL_PUSH) p.vel.z = WALL_PUSH; }
+    else if(p.pos.z > BLAST_Z_NEAR){ p.pos.z = BLAST_Z_NEAR; if(p.vel.z > -WALL_PUSH) p.vel.z = -WALL_PUSH; }
+    if(p.pos.y < _loY){ ko(p); return; }
+  } else if(BELT.on || bossActive){   // durante el JEFE: los muros laterales de SIEMPRE (±WALL_X) siguen activos (la cinta está congelada pero NO pasamos al modo clásico de muerte cuadrada → si te empujan al lado, REBOTAS como en la cinta, no mueres)
     /* ►S10ZEROG: en la Vía Arcoíris todo el "recinto" se ensancha ×3 (muros laterales lejanos + muerte
        en Z ×3) y NO hay techo de muerte → puedes volar/planear muy lejos y arriba antes de que te saquen. */
     const _s10 = (STAGE===10);
@@ -20233,8 +20282,20 @@ function updateCamera(dt){
        arena flotante del jefe. El heurístico my*.5 (mitad de la altura de salto) asumía suelo≈0 → en la
        arena del cielo la mira caía a ~61 (60u POR DEBAJO de la acción) y el modo GENERAL no encuadraba
        nada. Anclamos el my*.5 al suelo real del combate. */
-    const baseY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? BOSS_ARENA_Y : 0;
-    const _lift = (STAGE===10) ? ((my-baseY)*0.9 + 2) : Math.max(1.5, (my-baseY)*.5+1);   // ►S10ZEROG: sigue la altura casi 1:1 (vuelos altos)
+    let baseY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? BOSS_ARENA_Y : 0;
+    let _lift = (STAGE===10) ? ((my-baseY)*0.9 + 2) : Math.max(1.5, (my-baseY)*.5+1);   // ►S10ZEROG: sigue la altura casi 1:1 (vuelos altos)
+    /* ►CUADRIMANIA: en una TORRE el suelo no está en y=0 — está donde estén los vivos, y además se
+       desparraman en VERTICAL, que es la dimensión que `spread` (sólo XZ) no mira. Sin esto la mira
+       se queda en el suelo del mundo y la cámara no encuadra nada, igual que pasaba en la arena del
+       cielo del jefe. Se sigue al que va MÁS BAJO (es quien está a punto de perder). */
+    if(STAGE===13){
+      let miny=1e9, maxy=-1e9;
+      for(const q of alive){ miny=Math.min(miny,q.pos.y); maxy=Math.max(maxy,q.pos.y); }
+      baseY = miny; _lift = Math.max(2, (maxy-miny)*0.5 + 2);
+      const vspread = Math.max(spread, (maxy-miny)*1.25);
+      back   = THREE.MathUtils.clamp(18 + vspread*.7, 20, 62) * camZoom;
+      height = THREE.MathUtils.clamp(9  + vspread*.35, 10, 34) * camZoom;
+    }
     look.set(cx, baseY + _lift, cz);
     if(camZoom<1 && !P1.dead) look.lerp(_camTmp.set(P1.pos.x, look.y, P1.pos.z), Math.min(1,(1-camZoom)/0.45));
     desired.set(look.x*.55, look.y + height, look.z*.55 + back);
@@ -20561,7 +20622,7 @@ function buildSegment(idx){
   const origAdd = scene.add;
   _CAP = true;
   scene.add = function(){ for(let i=0;i<arguments.length;i++) seg.group.add(arguments[i]); return scene; };
-  const _tbl = (STAGE===12) ? PIR_SEG_BUILDERS : (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
+  const _tbl = (STAGE===13 && window.CUAD) ? CUAD.segBuilders : (STAGE===12) ? PIR_SEG_BUILDERS : (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
   const buildVariant = _tbl[((idx % _tbl.length) + _tbl.length) % _tbl.length];
   if(STAGE===3){ _sjSegProps.length = 0; _sjBridgeQ.length = 0; }   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento · ►S3PUENTES: y la cola de puentes pendientes
   if(STAGE===11 && typeof _wSegProps!=='undefined') _wSegProps.length = 0;   // ►WEST: ídem para el western
@@ -20620,7 +20681,7 @@ function _applySegX(seg){
 
 function updateBelt(dt){
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? pirBeltMul()*((typeof LEVI!=='undefined') ? LEVI.beltK : 1) : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===13 ? 0 : STAGE===12 ? pirBeltMul()*((typeof LEVI!=='undefined') ? LEVI.beltK : 1) : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical) · ►CUADRIMANIA: 13 = 0 (torre vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -20972,6 +21033,8 @@ function applyStageTheme(stage){
     _applyS9Theme();                                                                 // ►P8 STAGE 9 · CIELO ROTO (definido junto al bloque S9)
   } else if(stage===10){
     _applyS10Theme();                                                                 // ►P9 STAGE 10 · VÍA ARCOÍRIS (definido junto al bloque S10)
+  } else if(stage===13 && window.CUAD){
+    CUAD.applyTheme();                                                               // ►CUADRIMANIA STAGE 13 · TORRE DE CUADRADOS (definido en cuadrimania.js)
   }
   applyVisual();
 }
@@ -34032,7 +34095,7 @@ function updateS10Wave(dt){
 function stageResetPlayers(){
   outCount = 0;                                          // el orden de muerte es POR STAGE
   for(const p of players){
-    p.stocks = 4 + (p.own.lives||0)*2;                   // vidas base + las COMPRADAS (carta +2 VIDAS)
+    p.stocks = (STAGE===13 ? 2 : 4) + (p.own.lives||0)*2;   // vidas base + las COMPRADAS (carta +2 VIDAS) · ►CUADRIMANIA: 2
     p.out = false; p.outOrder = 0;
     p._disCancel = true; p._portalOut = false;                                              // corta el dissolve del portal si sigue en vuelo · ►PORTALOUT: descongela
     if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); fighterShow(p.gfx); }   // deshace la desintegración del portal (►LUZFIJA)
@@ -34573,11 +34636,14 @@ function frame(now){
       updateFireLines(dt);
       updateMinions(dt);
       updateBouncers(dt);
+      if(STAGE===13 && window.CUAD) CUAD.tick(dt);   // ►CUADRIMANIA: losetas que caen, lava y fin por último en pie
     }
     /* el reloj del CAOS */
     if(stageIntroT<=0 && !demo && !TRAIN.on) matchT += dt;   // reloj de la partida real (alimenta la nota proporcional a la duración) · ►INTERSTAGE VIVO: parado durante la presentación
     if(stageIntroT<=0 && !(S10WAVE.phase==='fight')) chaosT += dt;   // ►INTERSTAGE VIVO: el caos no avanza durante la cuenta 3·2·1 · ►S10WAVE: ni durante una oleada de jefes
-    if(!TRAIN.on && S10WAVE.phase!=='fight' && chaosT >= CHAOS_EVERY && chaosLvl < CHAOS_MAX){
+    /* ►CUADRIMANIA: en la torre no hay caos que suba ni jefe al final — la presión la da el suelo
+       que se acaba (y, pasado un rato, la lava que sube). */
+    if(!TRAIN.on && STAGE!==13 && S10WAVE.phase!=='fight' && chaosT >= CHAOS_EVERY && chaosLvl < CHAOS_MAX){
       chaosT = 0; chaosLvl++;
       showBanner('¡CAOS NIVEL '+chaosLvl+'!', 1.5);
       const ch = document.getElementById('chaos');
@@ -34597,9 +34663,9 @@ function frame(now){
     /* ►LEVIATAN: el mar pirata NO abre portal ni arena del cielo — su jefe sube del fondo y la pelea es
        en tu propia cubierta. Se entra por aquí, en el mismo momento (caos 10 agotado) que el resto. */
     if(CAMPAIGN && !TRAIN.on && STAGE===12 && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && LEVI.phase==='none' && BOSSFIGHT.phase==='none') startLeviathan();
-    else if(CAMPAIGN && !TRAIN.on && STAGE!==12 && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►PORTAL-BOSS: Japón (S3) también entra por aquí
+    else if(CAMPAIGN && !TRAIN.on && STAGE!==12 && STAGE!==13 && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►PORTAL-BOSS: Japón (S3) también entra por aquí
     /* SALVAVIDAS: si la plantilla FBX del jefe no cargó (caché/404), la campaña no puede terminar → 20s de gracia y fin por puntos */
-    else if(CAMPAIGN && !TRAIN.on && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
+    else if(CAMPAIGN && !TRAIN.on && STAGE!==13 && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
     updateBossArena(rawDt);
     /* ►LEVIATAN: fuera de updateBelt a propósito — la pelea PARA la cinta (BELT.on=false) y updateBelt
        sale por su guarda, así que updateStagePir dejaría de correr justo cuando hace falta. */
@@ -34891,10 +34957,14 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   if(STAGE!==MENU_STAGE){ STAGE = MENU_STAGE; _stagePreview = MENU_STAGE; applyStageTheme(MENU_STAGE); rebuildBelt(); enableWeather(MENU_STAGE>=2); }   // ►RONDA2: la partida empieza en el stage ELEGIDO en el menú (F9); la campaña anterior pudo dejar STAGE=2/3
   if(typeof applyStageMusic==='function') applyStageMusic(STAGE);   // ►cada partida arranca con la playlist del stage (o vuelve a la principal tras una campaña que acabó en S2/3/4)
   beltReset();
+  /* ►CUADRIMANIA: la torre se levanta AQUÍ y no antes — rebuildBelt() hace `platforms.length = 0`,
+     así que cualquier plataforma suelta creada antes se perdería. Y tiene que ser ANTES del
+     safeSpawn de abajo, o los jugadores aparecerían sobre el vacío. */
+  if(STAGE===13 && window.CUAD) CUAD.build();
   for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
   document.getElementById('chaos').textContent = '';
   for(const p of players){
-    p.stocks = 4; p.damage = 0; p.dead = false;
+    p.stocks = (STAGE===13) ? 2 : 4; p.damage = 0; p.dead = false;   // ►CUADRIMANIA: 2 vidas (petición de Toni)
     safeSpawn(p); p.vel.set(0,0,0);
     p.hang = null; p.hitstun = 0; p.atk.phase='none'; p.sandSink = 0;
     p.rollT = 0; p._rollWin = 0; p.rollCD = 0;   // ►ROLL: sin rodada a medias de la partida anterior
@@ -36704,5 +36774,6 @@ window.__I18N_DYN=[{"es":"mundo {0} · sin ganar","t":["world {0} · not won","m
      la URL el fichero sale en su primera línea y no hace nada. -->
 <script src="snowboard_model.js?v=1"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
 <script src="descenso.js?v=1"></script>
+<script src="cuadrimania.js?v=1"></script>  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
 </body>
 </html>
