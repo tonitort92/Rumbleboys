@@ -141,6 +141,12 @@ const HUMANS = Math.max(1, Math.min(4, parseInt(_qs.get('humanos')||'1', 10) || 
    ahorra un parámetro y es lo primero que se teclea para probar una piel. */
 const _pielQS = (_qs.get('piel') || _qs.get('descenso') || '').toLowerCase();
 const SKIN   = /^(arena|nieve|mar)$/.test(_pielQS) ? _pielQS : 'arena';
+/* ►KITE: la piel de mar no es surf a secas, es KITESURF — el rider va colgado de
+   una barra y tira de una vela. Vive aquí arriba (y no junto a su bloque) porque
+   `montaPersonaje` lo consulta: un `const` más abajo también valdría, pero este
+   fichero ya se ha comido una TDZ y no merece la pena arriesgar otra.
+   `?kite=0` lo apaga y el mar vuelve a ser el surf de antes. */
+const KITE_ON = (SKIN === 'mar') && _qs.get('kite') !== '0';
 const TAU    = Math.PI * 2;
 const RAD    = Math.PI / 180;
 const clamp  = (v, a, b) => v < a ? a : (v > b ? b : v);
@@ -3017,6 +3023,8 @@ function montaPersonaje(r){
     r.body.add(tb);
     r.tabla = tb;
   }
+
+  if(KITE_ON) kiteMonta(r);   // ►KITE: barra + vela + líneas (solo en la piel de mar)
 }
 
 /* Cambia de clip con fundido. Los de una sola pasada se reinician al entrar. */
@@ -3038,7 +3046,9 @@ function animA(r, nom){
    El surf (piel de mar) se queda con el clip de salto, que ahí sí es un salto. */
 function animEstado(r){
   if(!r.montado || r.fall > 0) return;
-  if(r.air && SKIN === 'mar') animA(r, 'jump');  // animA ya reinicia al entrar
+  /* con KITE el aire tampoco cambia de pose: vas colgado de la barra, no
+     saltando. Sin kite (`?kite=0`), el mar conserva su clip de salto. */
+  if(r.air && SKIN === 'mar' && !KITE_ON) animA(r, 'jump');  // animA ya reinicia al entrar
   else if(r.grind)          animA(r, 'board');
   else if(r.turbo)          animA(r, 'turbo');
   /* ►EL CLIP DE GIRO Y SU LADO — CERRADO CON UNA MEDIDA, no con un argumento.
@@ -3060,6 +3070,313 @@ function animEstado(r){
   else if(r._canto)               animA(r, r._canto > 0 ? 'carve' : 'carveM');
   else if((r._cruce || 0) > 0.45) animA(r, r.yaw >= 0 ? 'carve' : 'carveM');
   else                      animA(r, 'board');
+}
+
+/* =====================================================================
+   ►KITE — KITESURF en la piel de MAR
+
+   La idea es de Toni: en el mar, el rider lleva una BARRA cogida con las dos
+   manos y de ahí salen las líneas de una vela.
+
+   NO se tocan los clips. Los clips board/turbo/carve son los MISMOS que usan
+   sandboard y snowboard (se inyectaron por nombre de hueso en las 6 clases);
+   duplicarlos para el mar significaría rehacer el pipeline de Blender entero
+   por dos brazos. En su lugar, DESPUÉS de `mixer.update` se sobrescriben los
+   cuatro huesos de los brazos con un IK de dos eslabones que lleva las manos a
+   la barra. El resto de la pose (torso, piernas, el crouch del turbo, el carve)
+   sigue saliendo del clip, intacta.
+
+   Esto se puede hacer porque:
+     · los clips del descenso son SOLO canales de rotación → escribir el
+       quaternion de un hueso no pelea con nada,
+     · cada corredor tiene su propio esqueleto (SkeletonUtils.clone), así que
+       escribir huesos no contamina la plantilla del juego,
+     · las 6 clases comparten rig Mixamo (medido: 41 huesos, mismos nombres).
+
+   Nada de números por clase: la barra se coloca a partir de los huesos MEDIDOS
+   de cada modelo al montarlo (alcance de brazo 0,69-0,76 u según la clase), y
+   el lado de cada mano se decide comparando sus coordenadas, no suponiéndolo.
+   ===================================================================== */
+const KITE = {
+  alto:      8.6,    // altura de la vela sobre el rider
+  dist:      4.6,    // cuánto se adelanta (va hacia -Z, que es "delante")
+  ladeo:     4.2,    // cuánto se va la vela hacia el lado del giro
+  altoAire:  2.2,    // ...y cuánto sube cuando estás en el aire (te levanta)
+  /* TAMAÑO: un kite real anda por 4-6 veces la envergadura de quien lo lleva.
+     Con R 3,1 la vela medía 5,7 u contra un rider de 2 y parecía una cometa de
+     playa; con 4,6 salen ~8,5 u de punta a punta, que es la proporción buena. */
+  R:         4.6,    // radio del arco de la vela
+  arco:      3.0,    // apertura del arco, en radianes (con 2,5 leía como un cilindro; a 3 las puntas ya caen hacia el rider)
+  cuerda:    2.6,    // fondo de la vela (borde de ataque → borde de fuga)
+  barraAdel: 0.62,   // separación de la barra al pecho, en ALCANCES de brazo
+  barraBaja: 0.20,   // ...y cuánto cuelga por debajo de la línea de hombros
+  barraAncho:0.85,   // ancho de la barra, TAMBIÉN en alcances de brazo (ver kiteMonta)
+  fade:      7,      // velocidad con la que se coge/suelta la barra
+};
+
+/* --- la vela: arco tipo "C" con panza, franjas del color de la clase --- */
+function kiteVela(col){
+  const NU = 20, NV = 5, pos = [], color = [], idx = [];
+  const c1 = new THREE.Color(col), c2 = new THREE.Color(0xf2f6ff);
+  for(let iu = 0; iu <= NU; iu++){
+    const u = iu / NU, ang = (u - 0.5) * KITE.arco;
+    /* franjas: 5 paneles alternos, como cualquier kite */
+    const cc = (Math.floor(u * 5) % 2 === 0) ? c1 : c2;
+    /* la cuerda estrecha hacia las puntas */
+    const ch = KITE.cuerda * (0.45 + 0.55 * Math.cos(ang * 0.85));
+    for(let iv = 0; iv <= NV; iv++){
+      const v = iv / NV;
+      /* +Z apunta al rider: la vela se orienta luego con lookAt sobre la barra */
+      /* el -0,72·R centra el arco en el origen del grupo (si no, la vela cuelga
+         entera por encima del punto al que se le manda ir) */
+      pos.push(KITE.R * Math.sin(ang),
+               KITE.R * Math.cos(ang) - KITE.R * 0.72 - ch * v * v * 0.30,
+               ch * v);
+      color.push(cc.r, cc.g, cc.b);
+    }
+  }
+  for(let iu = 0; iu < NU; iu++) for(let iv = 0; iv < NV; iv++){
+    const a = iu * (NV + 1) + iv, b = a + NV + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(color, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const vela = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors:true, side:THREE.DoubleSide }));
+  vela.frustumCulled = false;
+
+  /* borde de ataque inflado: es lo que hace que se lea como un kite y no como
+     un trozo de tela. Va sobre la fila v=0 de la propia vela, no inventado. */
+  const puntos = [];
+  for(let iu = 0; iu <= NU; iu++){
+    const k = iu * (NV + 1) * 3;
+    puntos.push(new THREE.Vector3(pos[k], pos[k + 1], pos[k + 2]));
+  }
+  const tubo = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(puntos), 24, 0.14, 6, false),
+    new THREE.MeshLambertMaterial({ color: col }));
+  tubo.frustumCulled = false;
+  const g2 = new THREE.Group();
+  g2.add(vela); g2.add(tubo);
+  /* ANCLAS de las líneas, en local: la punta de cada lado y un punto algo más
+     adentro (un kite lleva cuatro líneas, no dos) */
+  g2.userData.puntas = [[puntos[0].clone(), puntos[3].clone()],
+                        [puntos[NU].clone(), puntos[NU - 3].clone()]];
+  return g2;
+}
+
+/* --- montaje: mide el rig del modelo y cuelga barra, vela y líneas --- */
+function kiteMonta(r){
+  const B = {};
+  r.model.traverse(o => { if(o.isBone) B[o.name] = o; });
+  const hI = B.mixamorigLeftArm,  fI = B.mixamorigLeftForeArm,  mI = B.mixamorigLeftHand;
+  const hD = B.mixamorigRightArm, fD = B.mixamorigRightForeArm, mD = B.mixamorigRightHand;
+  if(!hI || !fI || !mI || !hD || !fD || !mD){ console.warn('[kite] rig sin brazos:', r.clase); return; }
+
+  r.gfx.updateMatrixWorld(true);
+  /* ►LA BARRA CUELGA DEL `body`, NO DEL MODELO. Primero la colgué del modelo
+     dando por hecho que "delante = +Z" (los chars del juego miran a +Z). MEDIDO:
+     no vale para todos los GLB — con esa suposición el hombro derecho del
+     voxelhero quedaba a 1,019 u de su agarre con 0,690 de alcance (y el del
+     caballero a 0,964 con 0,763), o sea el brazo no llegaba ni estirado,
+     mientras samurái y arquera clavaban 0,000. Cada GLB trae su propia
+     orientación interna; el `body` es común a todos. */
+  const local = o => r.body.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+  const pI = local(hI), pD = local(hD), pcI = local(fI), pmI = local(mI);
+  const alcance = pI.distanceTo(pcI) + pcI.distanceTo(pmI);   // brazo estirado
+
+  /* ►LA BASE DEL PECHO SALE DEL RIG, no de los ejes del body, y se recalcula
+     CADA FRAME (ver kiteSitúaBarra). Tres medidas lo obligaron:
+       · el ANCHO no puede venir de la separación de hombros: el clip 'board'
+         los abre, y salía una barra de 1,25 u (el brazo mide 0,69) con los
+         agarres tan separados que las manos no llegaban;
+       · "delante" tampoco es -Z del body: el torso va girado respecto al board
+         (charYaw + el contragiro al cruzar), así que empujar la barra en -Z la
+         acercaba a un hombro y la alejaba del otro;
+       · y sobre todo: colocarla UNA VEZ al montar no vale. `kiteMonta` corre
+         con el modelo en bind pose, y en cuanto suena 'board' el torso se pone
+         de lado sobre la tabla: un hombro se iba a 0,90 del agarre (alcance
+         0,69) y el otro se quedaba a 0,32. Por eso la barra sigue a los
+         hombros: es donde el cuerpo la sostiene, no un punto fijo del body. */
+  const ancho = alcance * KITE.barraAncho;             // la barra se mide en BRAZOS
+
+  const barra = new THREE.Group();
+  barra.rotation.order = 'YXZ';
+  const tubo = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, ancho, 8),
+                              new THREE.MeshLambertMaterial({ color:0x2b3038 }));
+  tubo.rotation.z = Math.PI / 2;                     // a lo largo de X
+  barra.add(tubo);
+  const gomaMat = new THREE.MeshLambertMaterial({ color:0x11151b });
+  for(const s of [-1, 1]){
+    const puno = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, ancho * 0.30, 8), gomaMat);
+    puno.rotation.z = Math.PI / 2; puno.position.x = s * ancho * 0.34;
+    barra.add(puno);
+  }
+  r.body.add(barra);
+
+  /* el +X de la barra se alinea con el eje hombro-izquierdo→hombro-derecho (lo
+     hace kiteSitúaBarra), así que el agarre de +X es el de la mano derecha: no
+     hay nada que adivinar sobre la orientación del GLB */
+  const agarreI = new THREE.Object3D(), agarreD = new THREE.Object3D();
+  agarreD.position.x =  ancho * 0.34;
+  agarreI.position.x = -ancho * 0.34;
+  barra.add(agarreI); barra.add(agarreD);
+
+  const vela = kiteVela(colorDe(r.clase, r.i));
+  r.gfx.add(vela);
+
+  /* 4 líneas (2 por lado): de cada agarre a cada punta de la vela */
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
+  /* OSCURAS a propósito: en WebGL una línea es de 1 px pase lo que pase
+     (linewidth no hace nada), así que lo único que las salva contra un cielo
+     claro es el contraste — en claro no se veían en la captura. */
+  const lineas = new THREE.LineSegments(lgeo, new THREE.LineBasicMaterial({ color:0x1b2026 }));
+  lineas.frustumCulled = false;
+  /* ►A LA ESCENA, NO AL `world`. Los vértices se escriben en coordenadas de
+     MUNDO, y `DESC.world` está ROTADO -7° (la pendiente de la pista): metidas
+     ahí, las líneas se reinterpretan como locales y a 2.000 u de la salida eso
+     las manda a cientos de unidades de distancia. Se veían perfectas en los
+     números (el vértice 0 coincidía con la mano) y no aparecían en la captura:
+     el que mentía era el padre. La escena sí es identidad. */
+  DESC.scene.add(lineas);
+
+  r.kite = { barra, agarreI, agarreD, vela, lineas, alcance, ancho, peso:0, lat:0,
+             brazoI:[hI, fI, mI], brazoD:[hD, fD, mD] };
+}
+
+/* --- IK de DOS ESLABONES (ley del coseno) ---------------------------------
+   Se resuelve en el espacio del PADRE del hombro: ahí las longitudes locales
+   de los huesos y el objetivo comparten escala, así que no hay que pelearse
+   con la escala del modelo. `peso` mezcla con lo que puso el clip (slerp), que
+   es lo que evita el tirón al coger y soltar la barra. */
+const _kv = [0,0,0,0,0,0,0].map(() => new THREE.Vector3());
+const _kq = new THREE.Quaternion(), _kq2 = new THREE.Quaternion();
+function ikBrazo(h1, h2, h3, objetivoMundo, poloMundo, peso){
+  const P = h1.parent; if(!P) return;
+  P.updateWorldMatrix(true, false);
+  const t    = P.worldToLocal(_kv[0].copy(objetivoMundo));
+  const polo = P.worldToLocal(_kv[1].copy(poloMundo));
+  const org  = h1.position;
+  const dir  = _kv[2].subVectors(t, org);
+  const L1 = h2.position.length(), L2 = h3.position.length();
+  let d = dir.length(); if(d < 1e-5) return;
+  d = clamp(d, Math.abs(L1 - L2) + 1e-4, L1 + L2 - 1e-4);
+  dir.normalize();
+  const a1 = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+  /* eje de flexión = perpendicular al plano (dirección al objetivo, polo) */
+  const haciaPolo = _kv[3].subVectors(polo, org);
+  const eje = _kv[4].crossVectors(haciaPolo, dir);
+  if(eje.lengthSq() < 1e-8) return;
+  eje.normalize();
+  /* el SIGNO no se razona: se prueban los dos y gana el que deja el codo del
+     lado del polo (con el otro, el brazo se dobla al revés) */
+  const cA = _kv[5].copy(dir).applyAxisAngle(eje,  a1);
+  const cB = _kv[6].copy(dir).applyAxisAngle(eje, -a1);
+  const perp = haciaPolo.addScaledVector(dir, -haciaPolo.dot(dir));
+  const dirUpper = (cA.dot(perp) >= cB.dot(perp)) ? cA : cB;
+
+  /* OJO con los temporales: `t` (_kv[0]) tiene que sobrevivir hasta el
+     antebrazo, así que el eje del hueso se arma en _kv[3] (perp ya no hace
+     falta) y no en _kv[0]. */
+  _kq.setFromUnitVectors(_kv[3].copy(h2.position).normalize(), dirUpper);
+  h1.quaternion.slerp(_kq, peso);
+
+  /* antebrazo: apunta del codo al objetivo, expresado en el espacio del hombro */
+  const codo = _kv[1].copy(org).addScaledVector(dirUpper, L1);
+  const dirLower = _kv[2].subVectors(t, codo).normalize()
+                    .applyQuaternion(_kq2.copy(h1.quaternion).invert());
+  _kq.setFromUnitVectors(_kv[3].copy(h3.position).normalize(), dirLower);
+  h2.quaternion.slerp(_kq, peso);
+}
+
+/* --- la barra va DONDE ESTÁ EL PECHO, frame a frame -----------------------
+   Se lee la línea de hombros que ha dejado el clip y se planta la barra
+   perpendicular a ella, un poco por delante y por debajo. Amortiguado, porque
+   el carve zarandea el torso y una barra clavada al hueso tiembla. */
+const _kb = [0,1,2,3].map(() => new THREE.Vector3());
+function kiteSituaBarra(r, dt){
+  const K2 = r.kite, b = K2.barra;
+  const pI = r.body.worldToLocal(K2.brazoI[0].getWorldPosition(_kb[0]));
+  const pD = r.body.worldToLocal(K2.brazoD[0].getWorldPosition(_kb[1]));
+  const lateral = _kb[2].subVectors(pD, pI).normalize();
+  const delante = _kb[3].set(-lateral.z, 0, lateral.x).normalize();
+  if(delante.z > 0) delante.negate();                  // el board avanza hacia -Z
+  const cx = (pI.x + pD.x) * 0.5, cy = (pI.y + pD.y) * 0.5, cz = (pI.z + pD.z) * 0.5;
+  const k = Math.min(1, dt * 12);
+  b.position.set(
+    lerp(b.position.x, cx + delante.x * K2.alcance * KITE.barraAdel, k),
+    lerp(b.position.y, cy - K2.alcance * KITE.barraBaja,             k),
+    lerp(b.position.z, cz + delante.z * K2.alcance * KITE.barraAdel, k));
+  /* el ángulo se interpola por el camino corto: sin esto, un paso por ±π da un
+     latigazo de la barra entera */
+  const obj = Math.atan2(-lateral.z, lateral.x);
+  let d = obj - b.rotation.y;
+  while(d >  Math.PI) d -= TAU;
+  while(d < -Math.PI) d += TAU;
+  b.rotation.y += d * k;
+}
+
+/* --- por frame: mueve la vela, engancha las manos y tensa las líneas --- */
+const _kw = [0,1,2,3,4].map(() => new THREE.Vector3());
+function updateKite(r, dt){
+  const K2 = r.kite; if(!K2) return;
+  /* ORDEN, que aquí importa: el mixer acaba de mover los huesos, así que
+     primero se refresca la rama entera (gfx → body → modelo → huesos y barra),
+     luego se planta la barra sobre los hombros nuevos, y sólo entonces se leen
+     los agarres en mundo para el IK. */
+  r.gfx.updateMatrixWorld(true);
+  kiteSituaBarra(r, dt);
+  K2.barra.updateMatrixWorld(true);
+
+  /* se suelta la barra al caerse (wipeout/getup) y se recoge al levantarse */
+  const quiere = (r.fall > 0 || r.crash > 0) ? 0 : 1;
+  K2.peso = lerp(K2.peso, quiere, Math.min(1, dt * KITE.fade));
+
+  /* la vela se va hacia el lado del giro y sube en el aire */
+  K2.lat = lerp(K2.lat, clamp(r.yaw * 1.1, -1, 1), Math.min(1, dt * 3));
+  K2.vela.position.set(K2.lat * KITE.ladeo,
+                       KITE.alto + (r.air ? KITE.altoAire : 0),
+                       -KITE.dist);
+  K2.vela.updateMatrixWorld(true);
+  K2.barra.getWorldPosition(_kw[0]);
+  K2.vela.lookAt(_kw[0]);                  // la panza siempre encarada al rider
+  K2.vela.updateMatrixWorld(true);
+
+  if(K2.peso > 0.01){
+    K2.agarreI.getWorldPosition(_kw[1]);
+    K2.agarreD.getWorldPosition(_kw[2]);
+    /* polo = hacia dónde apunta el codo: abajo, hacia fuera y hacia atrás
+       (+Z del body es atrás, ver kiteMonta) */
+    const polo = sx => r.body.localToWorld(
+      _kw[3].set(sx * K2.alcance * 1.4, -K2.alcance * 1.5, K2.alcance * 0.4));
+    ikBrazo(K2.brazoI[0], K2.brazoI[1], K2.brazoI[2], _kw[1], polo(-1), K2.peso);
+    ikBrazo(K2.brazoD[0], K2.brazoD[1], K2.brazoD[2], _kw[2], polo( 1), K2.peso);
+  }
+
+  /* líneas: viven en el mundo, así que se reescriben con posiciones de mundo.
+     Qué punta le toca a qué mano NO se supone (la vela gira con lookAt y el
+     lado cambia): se mide cuál cae más cerca, o salen cruzadas en aspa. */
+  const p = K2.lineas.geometry.attributes.position;
+  K2.agarreI.getWorldPosition(_kw[1]);
+  K2.agarreD.getWorldPosition(_kw[2]);
+  const pu = K2.vela.userData.puntas;
+  const ladoI = K2.vela.localToWorld(_kw[3].copy(pu[0][0])).distanceToSquared(_kw[1]) <=
+                K2.vela.localToWorld(_kw[4].copy(pu[1][0])).distanceToSquared(_kw[1]) ? 0 : 1;
+  for(let s = 0; s < 2; s++){
+    const mano = s === 0 ? _kw[1] : _kw[2];
+    const anclas = pu[s === 0 ? ladoI : 1 - ladoI];
+    for(let l = 0; l < 2; l++){
+      const punta = K2.vela.localToWorld(_kw[4].copy(anclas[l]));
+      const k = (s * 2 + l) * 6;
+      p.array[k]     = mano.x;  p.array[k + 1] = mano.y;  p.array[k + 2] = mano.z;
+      p.array[k + 3] = punta.x; p.array[k + 4] = punta.y; p.array[k + 5] = punta.z;
+    }
+  }
+  p.needsUpdate = true;
 }
 
 function makeRacer(i, human){
@@ -3106,7 +3423,7 @@ function makeRacer(i, human){
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
     gfx:g, body, capsula, board, shadow:sh,
     clase, montado:false, model:null, mixer:null,
-    acts:null, animCur:null, tabla:null,
+    acts:null, animCur:null, tabla:null, kite:null,
     padIndex: human ? (HUMANS === 1 ? 0 : i) : -1,
     kb: human && i === 0,
     x:x0, y:terrainY(x0, 0), z:0,
@@ -4936,6 +5253,8 @@ DESC.tick = function(dt){
     }
     animEstado(r);
     if(r.mixer) r.mixer.update(dt);
+    /* ►KITE: DESPUÉS del mixer — el IK de los brazos pisa lo que puso el clip */
+    if(r.kite) updateKite(r, dt);
   }
 
   updateGlobos(dt);
