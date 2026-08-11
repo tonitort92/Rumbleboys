@@ -15644,7 +15644,7 @@ const BLAST_XZ = 44, BLAST_DOWN = -13, BLAST_UP = 58;
 /* ►P5: el kill-plane inferior es la LAVA en el pozo (sube con ella); resto de stages = -13 de siempre */
 /* ►PIRATA: en el mar la muerte NO está en el vacío de −13, está en la SUPERFICIE. El plano se pone
    justo por encima de la línea de flotación para que el KO coincida con el chapuzón que se ve. */
-function blastDownY(){ return (STAGE===13 && window.CUAD) ? CUAD.lavaY + 1.2 : (STAGE===12 && typeof PIR_WL!=='undefined') ? PIR_WL + 0.6 : (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
+function blastDownY(){ return (STAGE===14 && window.ARENA) ? ARENA.suelo - 26 : (STAGE===13 && window.CUAD) ? CUAD.lavaY + 1.2 : (STAGE===12 && typeof PIR_WL!=='undefined') ? PIR_WL + 0.6 : (STAGE===6 && typeof S6!=='undefined') ? S6.lavaY + 1.2 : (STAGE===10 ? BLAST_DOWN*S10_BLAST_MUL : BLAST_DOWN); }
 /* ►S10ZEROG · GRAVEDAD CERO (Vía Arcoíris, STAGE 10): salto ~3× de alto, caída SUAVE y simétrica,
    sin techo de muerte, y expulsión ~3× más lejos (para volar y planear sin perder vida).
    Todo detrás de constantes ajustables (se afinan mirándolo en juego). */
@@ -17179,6 +17179,16 @@ function safeSpawn(p){            // reaparece CAYENDO sobre la franja central s
   /* ►CUADRIMANIA: la torre no pasa la validación de arriba (exige plataformas ANCHAS y topY<6, y las
      losetas son pequeñas y están a 100 u de altura). Su punto de aparición lo decide el minijuego:
      el piso más alto que aún tenga losetas de sobra, repartidos por ángulo como una parrilla. */
+  /* ►ARENA (stage 14): el disco flota y sus losetas tampoco pasan la validación de arriba; se
+     reaparece en el NÚCLEO, que es el trozo que no se cae nunca. */
+  if(STAGE===14 && window.ARENA){
+    const sp = ARENA.spawnPoint(players.indexOf(p), players.length);
+    if(sp){
+      p.pos.set(sp.x, sp.y, sp.z); p.vel.set(0,0,0);
+      p.onGround = false; p.respDrop = true;
+      return;
+    }
+  }
   if(STAGE===13 && window.CUAD){
     const sp = CUAD.spawnPoint(players.indexOf(p), players.length);
     if(sp){
@@ -20755,7 +20765,7 @@ function buildSegment(idx){
   const origAdd = scene.add;
   _CAP = true;
   scene.add = function(){ for(let i=0;i<arguments.length;i++) seg.group.add(arguments[i]); return scene; };
-  const _tbl = (STAGE===13 && window.CUAD) ? CUAD.segBuilders : (STAGE===12) ? PIR_SEG_BUILDERS : (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
+  const _tbl = (STAGE===14 && window.ARENA) ? ARENA.segBuilders : (STAGE===13 && window.CUAD) ? CUAD.segBuilders : (STAGE===12) ? PIR_SEG_BUILDERS : (STAGE===11) ? SW_SEG_BUILDERS : (STAGE===10) ? S10_SEG_BUILDERS : (STAGE===9) ? S9_SEG_BUILDERS : (STAGE===8) ? S8_SEG_BUILDERS : (STAGE===7) ? S7_SEG_BUILDERS : (STAGE===6) ? S6_SEG_BUILDERS : (STAGE===5) ? S5_SEG_BUILDERS : (STAGE===4) ? S4_SEG_BUILDERS : (STAGE===3) ? S3_SEG_BUILDERS : (STAGE===2) ? S2_SEG_BUILDERS : _SEG_BUILDERS;   // STAGE 2 = bosque · ►JAPAN 3 = jardín sakura · 4 = desierto · 5 = pirámide · ►P5: 6 = pozo
   const buildVariant = _tbl[((idx % _tbl.length) + _tbl.length) % _tbl.length];
   if(STAGE===3){ _sjSegProps.length = 0; _sjBridgeQ.length = 0; }   // ►S3CLEAR: empieza el rastreo de props altos de ESTE segmento · ►S3PUENTES: y la cola de puentes pendientes
   if(STAGE===11 && typeof _wSegProps!=='undefined') _wSegProps.length = 0;   // ►WEST: ídem para el western
@@ -21168,6 +21178,8 @@ function applyStageTheme(stage){
     _applyS10Theme();                                                                 // ►P9 STAGE 10 · VÍA ARCOÍRIS (definido junto al bloque S10)
   } else if(stage===13 && window.CUAD){
     CUAD.applyTheme();                                                               // ►CUADRIMANIA STAGE 13 · TORRE DE CUADRADOS (definido en cuadrimania.js)
+  } else if(stage===14 && window.ARENA){
+    ARENA.applyTheme();                                                              // ►ARENA STAGE 14 · DISCO DE COMBATE JAPONÉS (definido en arena.js)
   }
   applyVisual();
 }
@@ -34990,6 +35002,7 @@ function frame(now){
       updateFireLines(dt);
       updateMinions(dt);
       updateBouncers(dt);
+      if(STAGE===14 && window.ARENA) ARENA.tick(dt);   // ►ARENA: secciones que caen, marcador y reloj de 2 min
       if(STAGE===13 && window.CUAD) CUAD.tick(dt);   // ►CUADRIMANIA: losetas que caen, lava y fin por último en pie
     }
     /* el reloj del CAOS */
@@ -35314,6 +35327,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   /* ►CUADRIMANIA: la torre se levanta AQUÍ y no antes — rebuildBelt() hace `platforms.length = 0`,
      así que cualquier plataforma suelta creada antes se perdería. Y tiene que ser ANTES del
      safeSpawn de abajo, o los jugadores aparecerían sobre el vacío. */
+  if(STAGE===14 && window.ARENA) ARENA.build();
   if(STAGE===13 && window.CUAD) CUAD.build();
   for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
   document.getElementById('chaos').textContent = '';
@@ -37128,6 +37142,7 @@ window.__I18N_DYN=[{"es":"mundo {0} · sin ganar","t":["world {0} · not won","m
      la URL el fichero sale en su primera línea y no hace nada. -->
 <script src="snowboard_model.js?v=1"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
 <script src="descenso.js?v=1"></script>
-<script src="cuadrimania.js?v=1"></script>  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
+<script src="cuadrimania.js?v=1"></script>
+<script src="arena.js?v=1"></script>   <!-- ►ARENA · STAGE 14: disco japonés que se deshace por secciones; combate a puntos con reaparición -->  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
 </body>
 </html>
