@@ -7626,6 +7626,8 @@ function _buildBoostProc(ty){
     const chev=(xo)=>{ const u=new THREE.Mesh(new THREE.BoxGeometry(.1,.4,.13), m); u.position.set(xo,.14,0); u.rotation.z=-.72;
       const d=new THREE.Mesh(new THREE.BoxGeometry(.1,.4,.13), m); d.position.set(xo,-.14,0); d.rotation.z=.72; g.add(u,d); };
     chev(-.16); chev(.14);
+  } else if(ty.k==='airj'){              // SALTO EXTRA → MUELLE (el modelo del pasivo MUELLE retirado, ahora en el lila de la cápsula)
+    for(let k=0;k<4;k++){ const r=new THREE.Mesh(new THREE.TorusGeometry(.28,.06,7,14), m); r.rotation.x=Math.PI/2; r.position.y=-.3+k*.2; g.add(r); }
   } else {                               // SALTO → alas
     const wL=new THREE.Mesh(new THREE.BoxGeometry(.55,.07,.32), m); wL.position.set(-.3,0,0); wL.rotation.z=.42; wL.rotation.y=.2; g.add(wL);
     const wR=new THREE.Mesh(new THREE.BoxGeometry(.55,.07,.32), m); wR.position.set(.3,0,0); wR.rotation.z=-.42; wR.rotation.y=-.2; g.add(wR);
