@@ -10252,7 +10252,8 @@ function updateMinions(dt){
       minionT=Math.max(.32, 1.5 - chaosLvl*.18);
     }
   }
-  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
+  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn._levi){ continue; }   // ►LEVIATAN: la punta dorada de una pata es una entidad dañable, pero la mueve su tentáculo (updateLeviathan), no una IA
+      if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
   renderMinionInstances();               // re-empaqueta las matrices instanciadas de los vivos en [0,n)
   updateMprojs(dt);
 }
@@ -14440,15 +14441,16 @@ function trophyLeader(){
 }
 
 /* nace EN el aro de salida, en el instante en que se abre (= el jefe ha caído) */
-function spawnTrophy(){
+function spawnTrophy(atPos){
   if(TROPHY) return;                                    // idempotente: la fase 'opened' puede reentrar
-  const ring = BOSSFIGHT.ring; if(!ring || !ring.g) return;
+  const ring = BOSSFIGHT.ring;
+  if((!ring || !ring.g) && !atPos) return;              // ►LEVIATAN: sin aro (la arena es el barco) el trofeo sale del punto que le pasen
   _TROPHY_WINNER = null;                                // el trofeo del stage anterior ya no cuenta
   const mat = new THREE.MeshStandardMaterial({ color:_TROPHY_GREY, emissive:0x000000,
                                                roughness:.55, metalness:.15, flatShading:true });
   const m = new THREE.Mesh(new THREE.BoxGeometry(TROPHY_SIZE, TROPHY_SIZE, TROPHY_SIZE), mat);
   m.castShadow = true;
-  ring.g.getWorldPosition(m.position);                  // la arena flota a BOSS_ARENA_Y → posición de MUNDO
+  if(atPos) m.position.copy(atPos); else ring.g.getWorldPosition(m.position);   // la arena flota a BOSS_ARENA_Y → posición de MUNDO
   m.position.y += .4;
   scene.add(m);
   TROPHY = { m, mat, owner:null, t:0, lit:0 };
@@ -19221,6 +19223,15 @@ function updateFighter(p, dt){
     const _wx = _s10 ? WALL_X*S10_BLAST_MUL : WALL_X;
     const _zf = _s10 ? BLAST_Z_FAR*S10_BLAST_MUL : BLAST_Z_FAR*_pir;
     const _zn = _s10 ? BLAST_Z_NEAR*S10_BLAST_MUL : BLAST_Z_NEAR*_pir;
+    /* ►LEVIATAN: con el monstruo agarrado al barco el recinto se CIERRA en torno al casco. Cabe caerse
+       al agua por los costados (el mar sigue matando) pero ya no se llega a las pasarelas: la pelea es
+       en la cubierta, que es lo que se pidió. Se cierra al salir las patas, no antes. */
+    if(STAGE===12 && typeof LEVI!=='undefined' && (LEVI.phase==='rise' || LEVI.phase==='fight' || LEVI.phase==='dead')){
+      if(p.pos.z < -LEVI_ARENA_Z){ p.pos.z = -LEVI_ARENA_Z; if(p.vel.z<0) p.vel.z = 0; }
+      else if(p.pos.z > LEVI_ARENA_Z){ p.pos.z = LEVI_ARENA_Z; if(p.vel.z>0) p.vel.z = 0; }
+      if(p.pos.x < LEVI_ARENA_X[0]){ p.pos.x = LEVI_ARENA_X[0]; if(p.vel.x<0) p.vel.x = 0; }
+      else if(p.pos.x > LEVI_ARENA_X[1]){ p.pos.x = LEVI_ARENA_X[1]; if(p.vel.x>0) p.vel.x = 0; }
+    }
     /* ►PIROLA (11/08, idea de Toni): en el mar pirata los muros laterales NO rebotan — son DOS OLAS
        gigantes, una por proa y otra por popa, que barren todo a su paso. Tocarlas es morir, y no se
        saltan por encima (la línea de muerte va en X, a cualquier altura). Es el peligro que le faltaba
@@ -20609,7 +20620,7 @@ function _applySegX(seg){
 
 function updateBelt(dt){
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? pirBeltMul() : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===12 ? pirBeltMul()*((typeof LEVI!=='undefined') ? LEVI.beltK : 1) : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -27932,6 +27943,7 @@ function _pirClearShip(){
   if(typeof PIR_FOE!=='undefined' && PIR_FOE.g){ scene.remove(PIR_FOE.g); PIR_FOE.g = null; }   // ►PIRCANNON2: el barco que dispara desde el horizonte
   if(PIR.water){ scene.remove(PIR.water); PIR.water = null; }
   if(typeof _pirClearWaves==='function') _pirClearWaves();   // ►PIROLA: viven en la raíz, como el barco
+  if(typeof _leviClear==='function') _leviClear();           // ►LEVIATAN: y el monstruo, igual
   for(const b of PIR.balls){
     if(b.m && b.m.parent) b.m.parent.remove(b.m);
     if(b.warn && b.warn.parent) b.warn.parent.remove(b.warn);
@@ -28688,6 +28700,343 @@ function pirSplash(pos){
   const c = new THREE.Vector3(pos.x, PIR_WL+0.2, pos.z);
   burst(c.clone(), 0xbfe6ff, 20, 7, 5, 1.0);
   ring(c.clone(), 0xffffff, 14, 0.5);
+}
+
+/* =====================================================================
+   ►LEVIATAN · EL JEFE DEL MAR PIRATA (11/08, diseño de Toni)
+   "Llegamos a caos 10, mueren todos los monstruos, el barco se frena en 3 s y
+    la escena vibra otros 3. Salen 8 patas de un monstruo marino lila con las
+    puntas doradas, agarran el barco y atacan. Si hay alguien fuera, una pata lo
+    mete dentro. Todo ocurre EN EL BARCO. Se le vence pegando a las puntas."
+
+   Tres decisiones que explican el código:
+
+   1) SIN ASSETS. Las 8 patas son geometría procedural: una cadena de conos
+      encajados padre→hijo, así que animarlas es poner ángulos (nada de
+      reconstruir mallas por frame). Comparten geometría y material → 2 draw
+      calls por segmento como mucho, y el tinte lila/dorado va en el material.
+
+   2) LA PUNTA DORADA ES UNA ENTIDAD DE `minions`, no un hitbox propio. Ese es
+      el truco que ahorra medio sistema: al ser un enemigo de verdad, TODO lo
+      que ya sabe pegar —melé, flechas, la R de la arquera, el campo del mago,
+      las definitivas— le hace daño sin tocar una línea. Lleva `_levi`, así que
+      el despachador de minions no le pasa ninguna IA: la mueve su pata. Y como
+      el cuerpo del tentáculo NO es entidad, pegarle a la pata no hace nada:
+      sale gratis el "solo las puntas".
+
+   3) LA ARENA ES EL BARCO. No hay arena del cielo ni portal de entrada: el
+      recinto se cierra alrededor del casco (LEVI_ARENA_Z), las olas se calman
+      (►PIROLA) y la cinta se para. Al caer las 8 patas se abre el aro de salida
+      SOBRE LA CUBIERTA y sigue el flujo normal de fin de stage.
+   ===================================================================== */
+const LEVI_ARMS   = 8;          // patas
+const LEVI_SEGS   = 9;          // segmentos por pata (el último es la punta)
+/* LARGO: con 9 segmentos de ~2 u la pata mide ~18 u, que es lo que hay que recorrer para salir del
+   agua (y=1), pasar la borda (8.7) y apoyar la punta en la cubierta. Con 4.6 (primer intento) medía 32
+   y no había arco que la dejara donde tocaba: o se iba a 28 u de altura o se enroscaba bajo el agua. */
+const LEVI_LEN    = 2.6;        // largo del primer segmento (los siguientes menguan)
+/* VIDA POR PATA. Calibrada contra el jefe normal: BOSS_HP_PER da ~1.270 de vida total con 4
+   supervivientes, así que 8 patas × 80 (× la misma escala por jugadores y por fuerza) dejan al
+   leviatán en la misma liga. Con 150 (primer intento) eran 3.900 y la pelea no acababa nunca. */
+const LEVI_HP     = 80;         // vida POR PATA y por superviviente que llega
+const LEVI_ARENA_Z = 13.5;      // |z| del recinto durante la pelea: cabe caerse al agua, no llegar a la orilla
+const LEVI_ARENA_X = [-26, 36]; // ídem en X (el barco va de −19 a +30)
+const LEVI_COL    = 0x8b3fd6;   // lila
+const LEVI_COL2   = 0x5f22a0;   // lila oscuro (base de la pata)
+const LEVI_GOLD   = 0xffc63a;   // punta dorada
+const LEVI = { phase:'none', t:0, arms:[], g:null, beltK:1, dead:0, hp0:0, grabbed:[], nextAtk:0 };
+let _leviGeoSegs = null, _leviGeoTip = null, _leviMat = null, _leviMatTip = null;
+
+function _leviBuildArm(i){
+  const g = new THREE.Group();
+  /* la pata nace en el AGUA, alrededor del casco: 4 por banda, repartidas a lo largo de la eslora */
+  const side = (i % 2) ? 1 : -1;
+  const t = (Math.floor(i/2) + 0.5) / (LEVI_ARMS/2);            // 0..1 a lo largo del barco
+  const bx = -16 + t * 44, bz = side * (PIR_HULL_Z*PIR_SHIP_L + 1.2);
+  g.position.set(bx, PIR_WL - 1.0, bz);
+  /* cadena de segmentos: cada uno hijo del anterior, así una rotación arrastra al resto */
+  const segs = [];
+  let parent = g;
+  for(let s=0; s<LEVI_SEGS; s++){
+    const k = 1 - s/LEVI_SEGS;
+    const pieza = new THREE.Group();
+    const L = LEVI_LEN * (0.55 + 0.45*k);
+    /* geometría PROPIA por índice, con el radio de abajo = el de arriba del segmento anterior. Con una
+       sola geometría escalada (primer intento) cada tronco arrancaba más ancho que el anterior y la
+       pata parecía una pila de conos, con escalones a la vista. */
+    const m = new THREE.Mesh(_leviGeoSegs[s], _leviMat);
+    m.scale.y = L;
+    m.position.y = L*0.5;                                        // el cilindro se dibuja centrado
+    pieza.add(m);
+    if(s === LEVI_SEGS-1){                                       // LA PUNTA: el punto débil, bien gorda y dorada
+      const tip = new THREE.Mesh(_leviGeoTip, _leviMatTip);
+      tip.position.y = L;
+      pieza.add(tip);
+      pieza.userData.tip = tip;
+    }
+    pieza.userData.L = L;
+    if(s > 0) pieza.position.y = parent.userData.L;              // encadenado a la punta del anterior
+    parent.add(pieza);
+    parent = pieza;
+    segs.push(pieza);
+  }
+  g.userData.segs = segs;
+  return { g, segs, bx, bz, side };
+}
+function _leviRadio(s){ return 0.42 + 1.05*Math.max(0, 1 - s/LEVI_SEGS); }   // grosor por segmento: gordo abajo, fino arriba
+function _leviMakeGeo(){
+  if(_leviGeoSegs) return;
+  _leviGeoSegs = [];
+  for(let s=0; s<LEVI_SEGS; s++)                                       // radio de arriba = radio de abajo del siguiente → sin escalones
+    _leviGeoSegs.push(new THREE.CylinderGeometry(_leviRadio(s+1), _leviRadio(s), 1, 7, 1, true));
+  _leviGeoTip = new THREE.IcosahedronGeometry(1.15, 0);                // la PUNTA: un bulbo facetado, el "pégame aquí"
+  _leviMat    = new THREE.MeshStandardMaterial({ color:LEVI_COL, roughness:.55, metalness:.12, flatShading:true });
+  _leviMatTip = new THREE.MeshStandardMaterial({ color:LEVI_GOLD, roughness:.35, metalness:.45, flatShading:true,
+                                                 emissive:LEVI_GOLD, emissiveIntensity:0.35 });
+}
+function startLeviathan(){
+  if(LEVI.phase !== 'none' || STAGE !== 12) return;
+  _leviMakeGeo();
+  bossActive = true;                                   // congela la horda y calma las olas (►PIROLA)
+  LEVI.phase = 'brake'; LEVI.t = 0; LEVI.beltK = 1; LEVI.dead = 0; LEVI.grabbed.length = 0;
+  for(const mn of minions.slice()) killMinion(mn);     // "mueren todos los monstruos, como siempre"
+  LEVI.g = new THREE.Group(); scene.add(LEVI.g);
+  const arrivals = players.filter(p=>!p.dead && !p.out).length || 1;
+  const hp = LEVI_HP * (1 + 0.5*(arrivals-1)) * (typeof bossPowerHpMul==='function' ? bossPowerHpMul() : 1);
+  LEVI.arms.length = 0;
+  for(let i=0;i<LEVI_ARMS;i++){
+    const a = _leviBuildArm(i);
+    LEVI.g.add(a.g);
+    a.g.scale.setScalar(0.001);                        // aún bajo el agua
+    a.hp = hp; a.maxHp = hp; a.state = 'hidden'; a.st = 0; a.i = i;
+    a.phase0 = Math.random()*Math.PI*2;
+    a.ent = null; a.warn = null;
+    /* objetivo de reposo: LA CUBIERTA, a la altura de su base. Sin esto el arco se dibujaba siempre
+       hacia +Z y las 4 patas de estribor se doblaban hacia FUERA del barco (punta a z=22). */
+    a.home = { x:a.bx, z:0 }; a.tgt = a.home;
+    a.g.rotation.y = Math.atan2(a.home.x - a.bx, a.home.z - a.bz);
+    LEVI.arms.push(a);
+  }
+  LEVI.hp0 = hp * LEVI_ARMS;
+  buildBossBar(); if(BOSSFIGHT.bar){ BOSSFIGHT.bar.wrap.style.display='block'; if(BOSSFIGHT.timer) BOSSFIGHT.timer.textContent=''; }
+  showBanner('¡ALGO SUBE DEL FONDO!', 2.6);
+  shake = Math.max(shake, 0.5);
+  if(music) fadeMusic(.2, 1.2);
+  try{ tone(38, 2.4, 'sine', .34, 10); noiseBurst(.28, 2.0, 160, 'lowpass', 0.9, 90); }catch(e){}
+}
+function _leviTipPos(a, out){                          // posición de mundo de la punta dorada
+  const seg = a.segs[LEVI_SEGS-1];
+  seg.updateWorldMatrix(true, false);
+  out.set(0, seg.userData.L, 0).applyMatrix4(seg.matrixWorld);
+  return out;
+}
+function _leviSpawnEnt(a){
+  const p = _leviTipPos(a, new THREE.Vector3());
+  a.ent = { type:'boss', _boss:true, _levi:a, scale: BOSS_HIT_SCALE*0.55,
+            pos:p.clone(), vel:new THREE.Vector3(), yaw:0, onGround:true,
+            damage:0, maxHp:a.maxHp, hitstun:0, invuln:0, hitCD:0, dead:false,
+            atkPhase:'none', aHead:0, aArmL:0, aArmR:0, aLegL:0, aLegR:0, bodyRoll:0, bodyLean:0 };
+  minions.push(a.ent);
+}
+/* ---- LA POSE DE UNA PATA ----
+   Nada de ángulos sueltos por segmento (primer intento: las puntas acababan a 28 u de altura o bajo el
+   agua). Se describe con UN número: el ARCO TOTAL que dibuja la pata, repartido entre sus segmentos.
+   0 = tiesa hacia arriba · 2.1 rad ≈ 120° = encorvada sobre la borda con la punta a la altura de la
+   cubierta · 2.8 = latigazo. El giro en Y apunta la pata a su objetivo, así que todo el arco cae en el
+   plano que va de la pata al jugador. */
+function _leviPose(a, dt, tt){
+  const segs = a.segs, n = segs.length;
+  const s = a.state;
+  let arco = 2.1, vel = 6;
+  if(s === 'idle' || s === 'exposed') arco = 2.10 + 0.12*Math.sin(tt*1.5 + a.phase0);
+  else if(s === 'wind'){ const k = Math.min(1, a.st/a.windT); arco = 2.10 - 1.55*k; vel = 7; }   // se arma: se yergue
+  else if(s === 'hit'){  const k = Math.min(1, a.st/0.22);   arco = 0.55 + 2.35*k; vel = 26; }   // latigazo
+  else if(s === 'rec'){  const k = Math.min(1, a.st/0.5);    arco = 2.90 - 0.80*k; vel = 8; }
+  else if(s === 'rise'){ const k = Math.min(1, a.st/1.2);    arco = 0.20 + 1.90*k; vel = 5; }
+  else if(s === 'die'){  const k = Math.min(1, a.st/1.1);    arco = 2.10 + 1.60*k; vel = 3; }    // se desploma al agua
+  if(a.tgt){                                                     // se orienta hacia su objetivo
+    const giro = Math.atan2(a.tgt.x - a.bx, a.tgt.z - a.bz);
+    let d = giro - a.g.rotation.y;
+    while(d >  Math.PI) d -= Math.PI*2;                          // por el camino corto, o da una vuelta entera
+    while(d < -Math.PI) d += Math.PI*2;
+    a.g.rotation.y += d * Math.min(1, dt*(s==='hit' ? 14 : 3));
+  }
+  /* el arco NO se reparte igual: la base aguanta más recta y la punta cierra más (silueta de tentáculo) */
+  const paso = arco / (n - 1);
+  for(let i=0;i<n;i++){
+    const peso = (i===0) ? 0.45 : (0.75 + 0.5*(i/(n-1)));        // 0 = base tiesa · el final cierra
+    const w = Math.sin(tt*2.2 + a.phase0 + i*0.55) * (s==='hit' ? 0.015 : 0.05);
+    const objetivo = paso*peso + w;
+    segs[i].rotation.x += (objetivo - segs[i].rotation.x) * Math.min(1, dt*vel);
+  }
+}
+function _leviArmAttack(a){
+  const vivos = players.filter(p=>!p.dead && !p.out);
+  if(!vivos.length) return;
+  const p = vivos[(Math.random()*vivos.length)|0];
+  const r = Math.random();
+  a.kind  = r < 0.38 ? 'barrido' : r < 0.72 ? 'martillazo' : 'estocada';
+  a.state = 'wind'; a.st = 0;
+  a.windT = a.kind==='martillazo' ? 1.05 : a.kind==='barrido' ? 0.85 : 0.6;
+  a.tgt   = { x:p.pos.x, z:p.pos.z, y:p.pos.y };
+  /* el MARTILLAZO avisa con la marca del suelo de los cañonazos: mismo lenguaje, ya lo conoces */
+  if(a.kind==='martillazo' && typeof _pirWarnMesh==='function'){
+    a.warn = _pirWarnMesh();
+    a.warn.position.set(a.tgt.x, (typeof fxFloorY==='function' ? fxFloorY(a.tgt.x, a.tgt.z, p.pos.y) : PIR_DECK) + 0.07, a.tgt.z);
+    scene.add(a.warn);
+  }
+  try{ tone(120, .35, 'sawtooth', .1, 90); }catch(e){}
+}
+function _leviArmHit(a){
+  const tip = _leviTipPos(a, new THREE.Vector3());
+  const c = new THREE.Vector3(tip.x, tip.y, tip.z);
+  if(a.kind === 'barrido'){        // a ras de cubierta y ancho: se SALTA
+    bossHitPlayers(new THREE.Vector3(a.tgt.x, PIR_DECK+0.6, a.tgt.z), 7.5, 16, 13, 5, 0, true);
+    burst(c, 0xd8b6ff, 16, 8, 4, 1.0);
+  } else if(a.kind === 'martillazo'){   // puntual y fuerte: se ESQUIVA andando
+    bossHitPlayers(new THREE.Vector3(a.tgt.x, PIR_DECK+1.2, a.tgt.z), 4.2, 26, 15, 10, 0, false);
+    burst(new THREE.Vector3(a.tgt.x, PIR_DECK+0.4, a.tgt.z), 0xffd06a, 24, 9, 7, 1.2);
+    ring(new THREE.Vector3(a.tgt.x, PIR_DECK+0.2, a.tgt.z), 0xffc63a, 22, 0.5);
+    shake = Math.max(shake, 0.5);
+  } else {                              // ESTOCADA: recta, rápida, poco área
+    /* al PUNTO APUNTADO, no a donde esté la punta: el latigazo dura 0.22 s y si se toma la posición
+       del tentáculo al empezar el golpe, la estocada pega donde estaba antes de lanzarse (medido: casi
+       siempre fallaba). Lo honesto es que dé donde apuntó. */
+    const cc = new THREE.Vector3(a.tgt.x, PIR_DECK + 1.0, a.tgt.z);
+    bossHitPlayers(cc, 3.6, 20, 16, 6, 0, false);
+    burst(cc, 0xd8b6ff, 14, 10, 5, 0.9); burst(c, 0xd8b6ff, 8, 6, 4, 0.7);
+  }
+  if(a.warn){ scene.remove(a.warn); a.warn = null; }
+  try{ sfx.smash && sfx.smash(); }catch(e){}
+}
+function _leviArmDie(a){
+  a.state = 'die'; a.st = 0;
+  if(a.ent){ a.ent.dead = true; a.ent = null; }
+  if(a.warn){ scene.remove(a.warn); a.warn = null; }
+  LEVI.dead++;
+  const tip = _leviTipPos(a, new THREE.Vector3());
+  burst(tip.clone(), LEVI_GOLD, 30, 10, 8, 1.4); burst(tip.clone(), 0x8b3fd6, 22, 8, 6, 1.2);
+  ring(tip.clone(), LEVI_GOLD, 26, 0.6);
+  shake = Math.max(shake, 0.55);
+  showBanner(LEVI.dead >= LEVI_ARMS ? '¡EL MONSTRUO SE HUNDE!' : ('¡PATA ' + LEVI.dead + '/' + LEVI_ARMS + '!'), 1.6);
+  try{ sfx.chaos && sfx.chaos(); }catch(e){}
+}
+function updateLeviathan(dt, rawDt){
+  if(LEVI.phase === 'none') return;
+  LEVI.t += dt;
+  const tt = (typeof t!=='undefined' ? t : LEVI.t);
+  switch(LEVI.phase){
+    case 'brake': {                                   // 3 s frenando hasta parar
+      LEVI.beltK = Math.max(0, 1 - LEVI.t/3);
+      if(LEVI.t >= 3){ LEVI.beltK = 0; BELT.on = false; LEVI.phase='quake'; LEVI.t=0;
+                       showBanner('...', 0.6); }
+      break;
+    }
+    case 'quake': {                                   // 3 s de temblor: algo enorme sube
+      shake = Math.max(shake, 0.15 + 0.5*(LEVI.t/3));
+      if(Math.random() < dt*14){
+        const a = Math.random()*6.283, r = 12 + Math.random()*18;
+        burst(new THREE.Vector3(Math.cos(a)*r, PIR_WL+0.2, Math.sin(a)*r), 0xbfe6ff, 3, 4, 5, 1.0);
+      }
+      if(LEVI.t >= 3){
+        LEVI.phase = 'rise'; LEVI.t = 0;
+        for(const a of LEVI.arms){ a.state='rise'; a.st=0; a.tgt=null; }
+        showBanner('¡EL LEVIATÁN!', 2.6); flashT = Math.max(flashT, 0.2); shake = Math.max(shake, 0.8);
+        try{ tone(46, 1.6, 'sawtooth', .3, -18); }catch(e){}
+        _leviRescue();                                // el que esté fuera, para dentro
+      }
+      break;
+    }
+    case 'rise': {
+      const k = Math.min(1, LEVI.t/1.4);
+      for(const a of LEVI.arms) a.g.scale.setScalar(0.001 + 0.999*k);
+      if(LEVI.t >= 1.6){
+        LEVI.phase = 'fight'; LEVI.t = 0; LEVI.nextAtk = 0.8;
+        for(const a of LEVI.arms){ a.state='idle'; a.st=0; if(!a.ent) _leviSpawnEnt(a); }
+      }
+      break;
+    }
+    case 'fight': {
+      /* CADENCIA: con menos patas vivas, las que quedan atacan más seguido (el final es frenético) */
+      const vivas = LEVI.arms.filter(a=>a.state!=='die' && a.state!=='gone');
+      LEVI.nextAtk -= dt;
+      if(LEVI.nextAtk <= 0 && vivas.length){
+        const libres = vivas.filter(a=>a.state==='idle' || a.state==='exposed');
+        if(libres.length) _leviArmAttack(libres[(Math.random()*libres.length)|0]);
+        LEVI.nextAtk = (2.4 - 0.16*(LEVI_ARMS - vivas.length)) * (0.75 + Math.random()*0.5);
+      }
+      if(!vivas.length){ LEVI.phase='dead'; LEVI.t=0; }
+      break;
+    }
+    case 'dead': {
+      if(LEVI.t >= 2.2){ _leviOpenRing(); LEVI.phase='opened'; LEVI.t=0; }
+      break;
+    }
+  }
+  /* --- cada pata: máquina de estados + pose + entidad de la punta --- */
+  const _v = new THREE.Vector3();
+  for(const a of LEVI.arms){
+    a.st += dt;
+    if(a.state === 'wind'  && a.st >= a.windT){ a.state='hit'; a.st=0; _leviArmHit(a); }
+    else if(a.state === 'hit' && a.st >= 0.22){ a.state='rec'; a.st=0; }
+    else if(a.state === 'rec' && a.st >= 0.5){ a.state='exposed'; a.st=0; }
+    else if(a.state === 'exposed' && a.st >= 1.5){ a.state='idle'; a.st=0; a.tgt = a.home; }   // vuelve a mirar a su sitio
+    else if(a.state === 'die' && a.st >= 1.2 && a.state!=='gone'){
+      a.state = 'gone'; a.g.visible = false;
+    }
+    if(a.state === 'gone') continue;
+    /* la punta EXPUESTA brilla: es el "pégame aquí" */
+    const punta = a.segs[LEVI_SEGS-1].userData.tip;
+    if(punta && punta.material){
+      const exp = (a.state==='exposed' || a.state==='rec');
+      punta.material.emissiveIntensity = 0.35 + (exp ? 0.55 + 0.25*Math.sin(tt*9) : 0);
+    }
+    _leviPose(a, dt, tt);
+    if(a.ent){
+      _leviTipPos(a, _v); a.ent.pos.copy(_v);
+      a.ent.invuln = (a.state==='exposed' || a.state==='rec' || a.state==='idle') ? 0 : 0.02;   // fuera de la ventana, casi intocable
+      if(a.ent.damage >= a.ent.maxHp) _leviArmDie(a);
+    }
+  }
+  /* barra de vida: la suma de las 8 patas */
+  if(BOSSFIGHT.bar){
+    let vida = 0; for(const a of LEVI.arms) vida += a.ent ? Math.max(0, a.ent.maxHp - a.ent.damage) : 0;
+    BOSSFIGHT.bar.fill.style.width = (100*vida/Math.max(1, LEVI.hp0)).toFixed(1) + '%';
+    if(BOSSFIGHT.bar.poise) BOSSFIGHT.bar.poise.style.width = (100*(LEVI_ARMS-LEVI.dead)/LEVI_ARMS) + '%';
+  }
+}
+/* ►LEVIATAN · RESCATE: el que esté fuera del barco cuando salen las patas, entra. Una pata lo agarra
+   (se le congela el control con el mismo flag que el portal) y lo deja en cubierta. */
+function _leviRescue(){
+  for(const p of players){
+    if(p.dead || p.out) continue;
+    if(Math.abs(p.pos.z) < 9.5 && p.pos.x > -20 && p.pos.x < 31) continue;   // ya está en el barco
+    const dx = THREE.MathUtils.clamp(p.pos.x, 2, 14);
+    burst(p.pos.clone().add(new THREE.Vector3(0,1,0)), LEVI_COL, 18, 7, 6, 1.1);
+    p.pos.set(dx, PIR_DECK + 2.5, (Math.random()-0.5)*5);
+    p.vel.set(0,0,0); p.onGround = false; p._pirRide = true; p.hitstun = 0; p.invuln = Math.max(p.invuln, 1.2);
+    burst(p.pos.clone(), LEVI_GOLD, 14, 6, 5, 1.0);
+    showBanner('¡TE HAN SUBIDO A BORDO!', 1.8);
+  }
+}
+/* VICTORIA. Aquí no hay aro que cruzar —la arena es el barco y ya estás dentro—, así que se entra
+   directamente en la fase 'won' del flujo normal de jefes: trofeo, pausa dramática y tablero de
+   mejoras → siguiente stage. El trofeo sale de la CUBIERTA en vez de del aro (spawnTrophy acepta un
+   punto suelto cuando no hay anillo). */
+function _leviOpenRing(){
+  if(typeof spawnTrophy==='function') spawnTrophy(new THREE.Vector3(10, PIR_DECK + 2.2, 0));
+  showBanner('¡VICTORIA! ¡EL MAR ES VUESTRO!', 3.2);
+  crowdCheer && crowdCheer(.9, true);
+  if(music) fadeMusic(.4, 1.5);
+  LEVI.won = true;
+  BOSSFIGHT.phase = 'won'; BOSSFIGHT.t = 0;     // ►el resto del final (pausa + interstage) es el de siempre
+}
+function _leviClear(){
+  for(const a of LEVI.arms){ if(a.ent){ a.ent.dead = true; a.ent = null; } if(a.warn && a.warn.parent) a.warn.parent.remove(a.warn); }
+  LEVI.arms.length = 0;
+  if(LEVI.g && LEVI.g.parent) LEVI.g.parent.remove(LEVI.g);
+  LEVI.g = null; LEVI.phase = 'none'; LEVI.t = 0; LEVI.beltK = 1; LEVI.dead = 0; LEVI.won = false;
+  if(BOSSFIGHT.bar) BOSSFIGHT.bar.wrap.style.display = 'none';
 }
 
 /* =====================================================================
@@ -34245,10 +34594,19 @@ function frame(now){
     if(STAGE===10 && CAMPAIGN && !TRAIN.on && S10WAVE.phase==='none' && !S10WAVE._cleared[chaosLvl] && S10_WAVES[chaosLvl] && BOSSFIGHT.phase==='none') _s10StartWave(chaosLvl);
     updateS10Wave(rawDt);
     /* ►►► JEFE FINAL (solo en CAMPAÑA): al TERMINAR el último tramo de caos (caos 10 corre sus 25s), se abre el PORTAL del jefe ◄◄◄ */
-    if(CAMPAIGN && !TRAIN.on && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►PORTAL-BOSS: Japón (S3) también entra por aquí
+    /* ►LEVIATAN: el mar pirata NO abre portal ni arena del cielo — su jefe sube del fondo y la pelea es
+       en tu propia cubierta. Se entra por aquí, en el mismo momento (caos 10 agotado) que el resto. */
+    if(CAMPAIGN && !TRAIN.on && STAGE===12 && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && LEVI.phase==='none' && BOSSFIGHT.phase==='none') startLeviathan();
+    else if(CAMPAIGN && !TRAIN.on && STAGE!==12 && S10WAVE.phase!=='fight' && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY && BOSSFIGHT.phase==='none' && _bossTpl) startBossArena();   // ►PORTAL-BOSS: Japón (S3) también entra por aquí
     /* SALVAVIDAS: si la plantilla FBX del jefe no cargó (caché/404), la campaña no puede terminar → 20s de gracia y fin por puntos */
     else if(CAMPAIGN && !TRAIN.on && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
     updateBossArena(rawDt);
+    /* ►LEVIATAN: fuera de updateBelt a propósito — la pelea PARA la cinta (BELT.on=false) y updateBelt
+       sale por su guarda, así que updateStagePir dejaría de correr justo cuando hace falta. */
+    if(STAGE===12 && typeof updateLeviathan==='function'){
+      updateLeviathan(dt, rawDt);
+      if(LEVI.phase!=='none' && typeof updatePirWaves==='function' && !BELT.on) updatePirWaves(dt);   // las olas siguen bajando a reposo con la cinta parada
+    }
     updateDyingInsts(rawDt);   // ►ROBOTDEATH: mallas sueltas reproduciendo su muerte (trío de oleada S10) — se limpian solas
   }
 
