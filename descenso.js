@@ -2261,7 +2261,10 @@ function buildScene(){
     }
     const mesh = new THREE.Mesh(geo, matSuelo);
     mesh.receiveShadow = true;
-    if(MAR) mesh.frustumCulled = false;   // el desplazamiento del shader se sale de la caja original
+    if(MAR){
+      mesh.frustumCulled = false;              // el desplazamiento del shader se sale de la caja original
+      mesh.userData._olaMode = 'vertice';      // ►el pase del contorno necesita saber que ESTE se mueve
+    }
     world.add(mesh);
     DESC.terrain = mesh;
     if(MAR){ DESC.olaza = creaOlaza(); world.add(DESC.olaza); }   // ►OLAZA: la pared de agua de atrás
@@ -2694,7 +2697,7 @@ function buildScene(){
     }
     const malla = new THREE.Mesh(geo, matRampa);
     malla.castShadow = true; malla.receiveShadow = true;
-    if(MAR) malla.frustumCulled = false;   // el shader lo mueve fuera de su caja
+    if(MAR){ malla.frustumCulled = false; malla.userData._olaMode = 'ancla'; }   // el shader lo mueve fuera de su caja
     malla.userData._kickers = ramps.length;      // etiqueta para poder CONTAR en la sonda
     world.add(malla);
 
@@ -3502,57 +3505,53 @@ const KITE = {
   barraAncho:0.85,   // ancho de la barra, TAMBIÉN en alcances de brazo (ver kiteMonta)
   fade:      7,      // velocidad con la que se coge/suelta la barra
   /* postura de la vela (ver updateKite): va DE PIE, no mirando al rider */
-  pitch:    -0.42,   // cuánto se echa hacia atrás el arco
+  pitch:    -0.72,   // cuánto se inclina el arco HACIA DELANTE (Toni pidió más)
   yawLadeo:  0.55,   // cuánto gira en horizontal hacia el lado del giro
   rollLadeo: 0.35,   // ...y cuánto se tumba con él
 };
 
 /* --- la vela: arco tipo "C" con panza, franjas del color de la clase --- */
 function kiteVela(col){
-  const NU = 20, NV = 5, pos = [], color = [], idx = [];
+  /* ►TILES CUADRADOS, SIN DEGRADADO (Toni). Antes la vela era una rejilla con
+     vértices COMPARTIDOS: el color se interpolaba entre franjas y salía un
+     degradado. Ahora cada casilla lleva sus cuatro vértices propios y un color
+     plano, en tablero de ajedrez entre el color de la clase y el blanco. Con
+     `flatShading` tampoco la luz mete gradientes dentro de la casilla. */
+  const NU = 16, NV = 4, pos = [], color = [];
   const c1 = new THREE.Color(col), c2 = new THREE.Color(0xf2f6ff);
-  for(let iu = 0; iu <= NU; iu++){
-    const u = iu / NU, ang = (u - 0.5) * KITE.arco;
-    /* franjas: 5 paneles alternos, como cualquier kite */
-    const cc = (Math.floor(u * 5) % 2 === 0) ? c1 : c2;
-    /* la cuerda estrecha hacia las puntas */
+  /* ►LA VELA IBA AL REVÉS (Toni). El arco estaba en el plano frontal y la cuerda
+     salía recta hacia atrás: eso es un cilindro cortado, no un kite. Un kite se
+     ARQUEA HACIA EL RIDER — las puntas se vienen hacia ti. Ese arqueo es el
+     término en z. El -0,72·R centra el arco en el origen del grupo. */
+  const P = (u, v) => {
+    const ang = (u - 0.5) * KITE.arco;
     const ch = KITE.cuerda * (0.45 + 0.55 * Math.cos(ang * 0.85));
-    for(let iv = 0; iv <= NV; iv++){
-      const v = iv / NV;
-      /* +Z apunta al rider: la vela se orienta luego con lookAt sobre la barra */
-      /* ►LA VELA IBA AL REVÉS (Toni). El arco estaba en el plano frontal y la
-         cuerda salía recta hacia atrás: eso es un cilindro cortado, no un kite.
-         Un kite se ARQUEA HACIA EL RIDER — las puntas se vienen hacia ti, y por
-         eso desde abajo se ve el intradós cóncavo abrazándote. Ese arqueo es el
-         término en z: cuanto más lejos del centro del arco, más se acerca la
-         punta. El -0,72·R centra el arco en el origen del grupo (si no, la vela
-         cuelga entera por encima del punto al que se le manda ir). */
-      pos.push(KITE.R * Math.sin(ang),
-               KITE.R * Math.cos(ang) - KITE.R * 0.72 - ch * v * v * 0.30,
-               ch * v + KITE.R * (1 - Math.cos(ang)) * 0.62);
+    return [KITE.R * Math.sin(ang),
+            KITE.R * Math.cos(ang) - KITE.R * 0.72 - ch * v * v * 0.30,
+            ch * v + KITE.R * (1 - Math.cos(ang)) * 0.62];
+  };
+  for(let iu = 0; iu < NU; iu++) for(let iv = 0; iv < NV; iv++){
+    const u0 = iu / NU, u1 = (iu + 1) / NU, v0 = iv / NV, v1 = (iv + 1) / NV;
+    const A = P(u0, v0), B = P(u1, v0), C = P(u1, v1), D = P(u0, v1);
+    const cc = ((iu + iv) % 2 === 0) ? c1 : c2;
+    for(const t of [A, B, D, B, C, D]){
+      pos.push(t[0], t[1], t[2]);
       color.push(cc.r, cc.g, cc.b);
     }
   }
-  for(let iu = 0; iu < NU; iu++) for(let iv = 0; iv < NV; iv++){
-    const a = iu * (NV + 1) + iv, b = a + NV + 1;
-    idx.push(a, b, a + 1, a + 1, b, b + 1);
-  }
+  const puntosBorde = [];
+  for(let iu = 0; iu <= NU; iu++) puntosBorde.push(P(iu / NU, 0));
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color',    new THREE.Float32BufferAttribute(color, 3));
-  g.setIndex(idx);
   g.computeVertexNormals();
   const vela = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
-    vertexColors:true, side:THREE.DoubleSide }));
+    vertexColors:true, side:THREE.DoubleSide, flatShading:true }));
   vela.frustumCulled = false;
 
   /* borde de ataque inflado: es lo que hace que se lea como un kite y no como
      un trozo de tela. Va sobre la fila v=0 de la propia vela, no inventado. */
-  const puntos = [];
-  for(let iu = 0; iu <= NU; iu++){
-    const k = iu * (NV + 1) * 3;
-    puntos.push(new THREE.Vector3(pos[k], pos[k + 1], pos[k + 2]));
-  }
+  const puntos = puntosBorde.map(t => new THREE.Vector3(t[0], t[1], t[2]));
   const tubo = new THREE.Mesh(
     new THREE.TubeGeometry(new THREE.CatmullRomCurve3(puntos), 24, 0.14, 6, false),
     new THREE.MeshLambertMaterial({ color: col }));
@@ -3701,7 +3700,10 @@ function ikBrazo(h1, h2, h3, objetivoMundo, poloMundo, peso){
    vez, cubre todo el ancho de la travesía y se recoloca cada frame detrás del
    corredor más atrasado.
    ===================================================================== */
-const OLAZA = { alto: 20, fondo: 40, tras: 50, ancho: 900, crestas: 7, rizo: 2.6 };
+/* `tras` tiene que dejar sitio a la CÁMARA, que va por detrás del rider: con 50
+   y un fondo de 40 la ola llegaba hasta 10 u del corredor y la cámara se metía
+   DENTRO — la pantalla se llenaba de blanco. */
+const OLAZA = { alto: 22, fondo: 26, tras: 96, ancho: 900, crestas: 7, rizo: 2.6 };
 function creaOlaza(){
   const NU = 64, NV = 12, pos = [], col = [], idx = [];
   /* el azul OSCURO del fondo del mar (PAL.hard) la dejaba como una loma negra en
@@ -3881,7 +3883,9 @@ function makeRacer(i, human){
 
   DESC.world.add(g); DESC.world.add(sh);
 
-  const x0 = (i - 1.5) * 9;
+  /* SEPARACIÓN EN LA PARRILLA (Toni: "que salgan más separados"). En el mar,
+     además, la pista es el doble de ancha: caben de sobra. */
+  const x0 = (i - 1.5) * (MAR ? 26 : 16);
   /* ►DESCINTRO: COLOCARLOS YA EN LA PARRILLA. r.gfx solo se movía dentro de
      stepRacer, y stepRacer no corre hasta que empieza la carrera → durante toda
      la presentación los cuatro estaban APILADOS en el origen. No se notaba con
@@ -5147,6 +5151,18 @@ function introCue(){
 }
 function raceGo(){
   DESC.phase = 'race';
+  /* ►ARRANCAR PISANDO EL SUELO (Toni: "en casi todos los ?descensos empiezas
+     cayendo y volando desde muy arriba; no siempre, pero a menudo").
+     La altura de salida se fija en `makeRacer`, que corre ANTES de que existan
+     rampas y raíles y —en el mar— con el oleaje en otro instante; entre eso y
+     los segundos de presentación, el suelo de debajo ya no es el mismo y el
+     primer frame de carrera te encuentra en el aire. Aquí se reasienta a cada
+     corredor sobre el suelo REAL del momento de arrancar, con `_vT` a NaN para
+     que el detector de despegue no crea que el terreno se le escapa. */
+  for(const r of DESC.racers){
+    const gy = groundYAt(r.x, r.z);
+    if(gy > VACIO){ r.y = gy; r.vy = 0; r.air = false; r._vT = NaN; r.sink = 0; }
+  }
   descPopupOff();
   descBanner('¡YA!', 1.0);
   try { sndBip(880, 0.20, 0.5); } catch(e){}
@@ -5822,6 +5838,20 @@ const DINK_LAYER = 5;
 DESC.ink = DINK;   // los knobs, tocables en vivo desde consola (todo lo demás vive dentro del IIFE)
 let _dkRT = null, _dkSc = null, _dkCam = null, _dkU = null, _dkDepth = null;
 const _dkSil = {}, _dkHid = [], _dkSwap = [];
+/* material de PROFUNDIDAD para lo que flota con la ola, uno por modo. Va sobre
+   Lambert y no sobre Basic a propósito: el parche de la ola se engancha en
+   `beginnormal_vertex`, y el vertex de MeshBasicMaterial sólo lo incluye si hay
+   envMap — con Basic el reemplazo no encontraría su ancla y el shader saldría
+   sin compilar. `colorWrite:false` deja el pase igual de barato. */
+const _dkProf = {};
+function _matProfOla(modo){
+  if(!_dkProf[modo]){
+    const m = new THREE.MeshLambertMaterial({ colorWrite:false });
+    aplicaOlaShader(m, modo === 'ancla');
+    _dkProf[modo] = m;
+  }
+  return _dkProf[modo];
+}
 let _dkTmpC = null, _dkTmpV = null;
 
 function dinkBuild(rr){
@@ -5963,9 +5993,42 @@ function dinkDraw(rr){
       if(m && (m.transparent === true || m.depthWrite === false)){ o.visible = false; _dkHid.push(o); }
     });
     if(!_dkDepth) _dkDepth = new THREE.MeshBasicMaterial({ colorWrite:false });   // solo depth: sin skinning (ver cabecera)
+    /* ►EL CONTORNO NO FLOTABA (Toni: "hay el outline que no flota y el contenido
+       sí"). Este pase dibuja TODA la escena con un overrideMaterial para sacar
+       la profundidad, y ese material no lleva el desplazamiento de la ola: el
+       mapa de profundidad se quedaba con el mar y los kickers en calma mientras
+       el render de verdad los subía y bajaba, así que el borde entintado se
+       despegaba de su objeto. En el mar, las mallas que flotan se dibujan con SU
+       material de profundidad —el mismo parche de ola, en su modo— en lugar del
+       override general. */
+    const swapD = [];
+    if(MAR){
+      sc.traverse(o => {
+        const modo = o.isMesh && o.userData && o.userData._olaMode;
+        if(!modo) return;
+        swapD.push(o, o.material);
+        o.material = _matProfOla(modo);
+      });
+      for(let i = 0; i < swapD.length; i += 2) swapD[i].visible = true;
+    }
     sc.overrideMaterial = _dkDepth;
-    rr.render(sc, cam);
-    sc.overrideMaterial = pOv;
+    if(swapD.length){                       // los que flotan se pintan aparte, sin override
+      for(let i = 0; i < swapD.length; i += 2) swapD[i].visible = false;
+      rr.render(sc, cam);
+      sc.overrideMaterial = pOv;
+      for(let i = 0; i < swapD.length; i += 2) swapD[i].visible = true;
+      /* segundo pase, sólo para lo que flota: conserva su propio vertex shader */
+      const ocultos = [];
+      sc.traverse(o => {
+        if(o.isMesh && !(o.userData && o.userData._olaMode) && o.visible){ o.visible = false; ocultos.push(o); }
+      });
+      rr.render(sc, cam);
+      for(const o of ocultos) o.visible = true;
+      for(let i = 0; i < swapD.length; i += 2) swapD[i].material = swapD[i+1];
+    } else {
+      rr.render(sc, cam);
+      sc.overrideMaterial = pOv;
+    }
     for(const o of _dkHid) o.visible = true;
     _dkHid.length = 0;
   }
