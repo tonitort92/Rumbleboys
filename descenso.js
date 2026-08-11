@@ -830,12 +830,189 @@ const SKINS = {
 const PAL = SKINS[SKIN] || SKINS.arena;
 if(SKIN === 'mar') K.tilt = 7;
 
+/* =====================================================================
+   ►OLA — EL MAR ES MAR, no una ladera pintada de azul
+
+   Toni: "el agua está en forma de montañas; haz un mar con oleaje que afecte a
+   los jugadores con la física del oleaje, espuma, movimientos más resistidos
+   por la fricción del agua".
+
+   La pieza que lo hace posible es que en este juego TODO el terreno es
+   analítico: `terrainY(x,z)` es la única fuente de verdad y de ella cuelgan la
+   normal (`surfaceAt`), la huella de la tabla (`padY`), el despegue y la fuerza
+   normal. Así que basta con que en la piel de mar los lomos de RUIDO (que son
+   las "montañas") los sustituya una suma de olas que VIAJAN con el tiempo:
+     · subes y bajas con la ola porque el suelo sube y baja,
+     · la cara de la ola te acelera o te frena porque la normal se inclina,
+     · una ola que se va de debajo de la tabla te LANZA — eso ya lo hacía el
+       terreno cuando "cae más rápido de lo que la gravedad te baja",
+     · y pesas más en el valle y menos en la cresta (`nForce`), que es
+       exactamente lo que hace una ola de verdad.
+   Nada de eso hay que programarlo aparte: sale de mover el suelo.
+
+   La misma fórmula va en el VERTEX SHADER de la malla (ver oleGLSL) para que lo
+   que se ve y lo que se pisa sean lo mismo. Los números viven aquí y se
+   inyectan al GLSL: hay dos implementaciones, pero UNA sola tabla de valores.
+   ===================================================================== */
+const MAR = (SKIN === 'mar');
+/* cada ola: amplitud, longitud de onda, dirección (dx,dz normalizada) y
+   velocidad de avance. La dominante viaja hacia +z, o sea DE CARA al rider (que
+   baja hacia -z): es la que se surfea. Las otras dos cruzan para que el mar no
+   sea un acordeón de líneas rectas. */
+/* ►LAS OLAS SE MIDEN POR SU CURVATURA, NO POR SU ALTURA. Primera tirada con
+   longitudes de 96/57/34/17 u: el rider se pasaba el **66% del tiempo volando**
+   (medido), que es justo la "cama elástica" que este juego ya sufrió una vez
+   (ver K.airThr). La culpa no era la altura sino las olas CORTAS: al cruzar un
+   campo de olas a 57 u/s, la aceleración vertical que te exige el suelo es
+   v²·(A·k²), y con k grande eso se dispara — la de 17 u sola pedía 156 u/s²
+   contra los 135 del umbral de despegue. Con olas largas y el rizado bajito la
+   suma queda en ~50 u/s² a velocidad de crucero: el mar te mece, y sólo te
+   lanza cuando varias crestas se alinean o vas muy rápido. Que es lo suyo. */
+/* ►EL SENTIDO DE LA OLA DOMINANTE SE MIDIÓ TAMBIÉN. Viajando DE CARA (+z) el
+   rider se pasa la vida subiendo caras y la velocidad media se quedó en 24 u/s
+   contra los 57 de la piel de arena: remar contra el mar es realista y un peñazo.
+   Viajando HACIA -z, o sea EN TU MISMA DIRECCIÓN y más despacio que tú, la
+   alcanzas y bajas por su cara delantera: eso es surfear una ola. Las cruzadas
+   sí vienen de costado, que es lo que impide que el mar sea un tobogán liso. */
+const OLAS = [
+  { amp: 1.15, lon: 250, dx:  0.00, dz: -1.00, vel: 20 },   // mar de fondo, va contigo: la que se surfea
+  { amp: 0.60, lon: 140, dx:  0.52, dz:  0.85, vel: 16 },   // cruzada, de cara
+  { amp: 0.24, lon: 110, dx: -0.70, dz:  0.71, vel: 12 },   // cruzada al otro lado
+  { amp: 0.05, lon:  55, dx:  0.30, dz:  0.95, vel:  8 },   // rizado
+  /* NO HAY OLAS MÁS CORTAS, y esto se decidió con dos números. Probé un rizado
+     de 26 y 15 u para dar textura de agua: (1) NO SE VE — la malla tiene ~8,5 u
+     por fila y no puede representar una onda de 15; y (2) el término v²·A·k²
+     que decide si despegas es proporcional a k², así que esas dos aportaban más
+     curvatura ellas solas que las cuatro grandes juntas: el rider volvía a
+     pasarse el 44% del tiempo por los aires. La textura fina del agua, si hace
+     falta, va por color en el fragment, no por geometría. */
+];
+const OLA = {
+  alto:    3.6,    // AMPLITUD GENERAL (u). Sube esto y el mar se pica entero
+  cresta:  0.35,   // por encima de esta fracción de la cresta hay ESPUMA
+  espumaK: 0.95,   // cuánta espuma (0 = nada, 1 = crestas blancas del todo)
+};
+/* altura del oleaje en (x,z) en el instante t. `zoneProp(z,'bump')` ya decía
+   cuánto relieve toca en cada banda de la pista: aquí eso pasa a ser LO PICADO
+   que está el mar en esa zona, así que el mar se encrespa en las bandas duras
+   igual que la nieve se hacía rugosa. */
+function olaY(x, z, t){
+  let y = 0;
+  for(let i = 0; i < OLAS.length; i++){
+    const o = OLAS[i], k = TAU / o.lon;
+    y += o.amp * Math.sin(k * (x * o.dx + z * o.dz) - k * o.vel * t);
+  }
+  return y * OLA.alto;
+}
+/* Para la espuma NO vale la cresta teórica (la suma de todas las amplitudes):
+   esa altura exige que las cuatro olas se alineen y casi nunca pasa, así que
+   normalizando por ella la espuma no aparecía. La cresta TÍPICA de una suma de
+   senos independientes es la RMS. */
+const OLA_AMP = Math.sqrt(OLAS.reduce((s, o) => s + o.amp * o.amp, 0)) * OLA.alto;
+/* EL MISMO oleaje, en GLSL, generado desde la MISMA tabla: la malla se desplaza
+   en el vertex shader (coste 0 en CPU sobre ~73.000 vértices) y la física lo
+   evalúa en CPU sólo en los cuatro riders. Si esto se toca, se toca la tabla
+   OLAS, no el texto del shader. Escribe `_ola` (altura) y `_dx`/`_dz` (las
+   derivadas, para la normal analítica). */
+function olaGLSL(){
+  let s = '';
+  for(const o of OLAS){
+    const k = (TAU / o.lon).toFixed(6);
+    s += `{ float f = ${k} * (P.x * ${o.dx.toFixed(4)} + P.z * ${o.dz.toFixed(4)}) - ${(TAU / o.lon * o.vel).toFixed(6)} * uTime;
+           _ola += ${o.amp.toFixed(4)} * sin(f);
+           _dx  += ${o.amp.toFixed(4)} * ${k} * ${o.dx.toFixed(4)} * cos(f);
+           _dz  += ${o.amp.toFixed(4)} * ${k} * ${o.dz.toFixed(4)} * cos(f); }\n`;
+  }
+  return `float _ola = 0.0, _dx = 0.0, _dz = 0.0;
+          { vec3 P = position;
+          ${s} }
+          _ola *= ${OLA.alto.toFixed(4)} * aOla;
+          _dx  *= ${OLA.alto.toFixed(4)} * aOla;
+          _dz  *= ${OLA.alto.toFixed(4)} * aOla;`;
+}
+const OLA_U = { uTime: { value: 0 } };   // el reloj del mar, compartido por los materiales de agua
+
+/* Parche del material del mar: desplaza los vértices con el oleaje, rehace la
+   normal ANALÍTICAMENTE (con diferencias finitas en el shader habría que
+   muestrear tres veces) y pinta ESPUMA en las crestas.
+   La normal se compone en el terreno del GRADIENTE, no de la normal: una altura
+   h(x,z) tiene normal (-dh/dx, 1, -dh/dz), así que se pasa la normal horneada
+   de la malla a gradiente, se le SUMA el de la ola y se vuelve a normalizar.
+   Sumar normales sin más habría aplanado la pendiente de la pista. */
+function aplicaOlaShader(mat){
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uTime = OLA_U.uTime;
+    sh.vertexShader = `attribute float aOla;
+      uniform float uTime;
+      varying float vEspuma;
+      ` + sh.vertexShader.replace('#include <beginnormal_vertex>', `
+      #include <beginnormal_vertex>
+      ${olaGLSL()}
+      {
+        float ny = max(0.0001, objectNormal.y);
+        float gx = -objectNormal.x / ny + _dx;
+        float gz = -objectNormal.z / ny + _dz;
+        objectNormal = normalize(vec3(-gx, 1.0, -gz));
+      }`).replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      transformed.y += _ola;
+      /* ESPUMA: en la cresta (la ola alta) y donde la cara se empina, que es
+         donde el agua rompe de verdad */
+      /* ►LA ESPUMA SE MIDE CONTRA LA OLA DE SU ZONA, no contra la mayor del
+         mapa. Normalizando por la amplitud global, en la pista (donde aOla ≈
+         0,55) el numerador ya venía multiplicado por aOla y la espuma salía
+         prácticamente nula: se comprobó pintándola de verde y sólo teñía las
+         laderas. Dividiendo por aOla, "estar en la cresta" significa lo mismo
+         en mar picado que en mar calmo. */
+      float _rel  = (_ola / max(0.15, aOla)) / ${OLA_AMP.toFixed(4)};
+      float _pend = clamp(length(vec2(_dx, _dz)) * 5.5, 0.0, 1.0);
+      vEspuma = clamp(smoothstep(${OLA.cresta.toFixed(3)}, 1.05, _rel) * 0.9 + _pend * _pend * 0.55, 0.0, 1.0)
+                * ${OLA.espumaK.toFixed(3)};`);
+    sh.fragmentShader = 'varying float vEspuma;\n' + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 1.0, 1.0), vEspuma);`);
+  };
+  /* dos materiales con el mismo parche comparten programa; si algún día se
+     parchea otro material con distinto código, hay que cambiar esta firma */
+  mat.customProgramCacheKey = () => 'descOla1';
+}
+
 /* ►AJUSTES DE K POR PIEL. El polvo de arena y la nevada son el MISMO sistema
    (motas recicladas por caja alrededor de la cámara); lo que cambia es cómo se
    mueven, y eso son tres números. Una mota de arena flota y deriva con el
    viento; un copo CAE. Los velos largos ("ráfagas") también valen tal cual:
    sobre nieve leen como ventisca a ras de suelo, que es justo lo que hay en una
    pista. Se suben en número y se bajan en opacidad. */
+/* ►OLA · EL AGUA FRENA. Toni: "movimientos más resistidos por la fricción del
+   agua". No es un multiplicador global (eso solo haría el mar lento y aburrido):
+   es que en el agua lo que se paga es MOVERSE DE LADO. La tabla se desliza casi
+   igual hacia delante y en cambio el derrape y el canto tienen que empujar
+   agua, y a poca velocidad el casco se hunde y te para.
+     · dragC algo mayor: el agua opone más que el aire a igualdad de velocidad.
+     · muBase el doble: es el rozamiento que se lleva la velocidad residual.
+     · skidDrag arriba: cruzarte en el agua te clava, no te desliza.
+     · grip un poco menor: el canto en agua agarra menos que en nieve prensada.
+   Todo esto se MIDE después (velocidad de equilibrio y tiempo de bajada), que
+   es como se calibró la piel original. */
+if(SKIN === 'mar'){
+  /* CALIBRADO CONTRA LA PIEL DE ARENA, no a ojo: con dragC 0,0056 y muBase 2,2
+     la media se quedaba en 24 u/s contra 57 (menos de la mitad) y el mar era
+     un barrizal. Estos valores buscan un mar ~15% más lento que la arena. */
+  K.dragC     = 0.0048;
+  K.muBase    = 1.5;
+  K.skidDrag  = (K.skidDrag || 0.5) * 1.45;
+  K.grip      = 112;
+  K.dragSoft  = 1.35;    // el "material" del mar apenas varía: no hay nieve profunda
+  K.dragHard  = 0.75;
+  K.chatSube  = (K.chatSube || 0) * 0.5;   // el castañeteo es de tabla dura sobre hielo, no de agua
+  /* UNA TABLA SOBRE AGUA PLANEA. En la zona rápida (equilibrio 59 u/s) el rider
+     salía despedido en el 60% de los frames: cruzar un campo de olas a esa
+     velocidad exige al suelo una aceleración v²·(A·k²) que se come el umbral de
+     despegue. Que en agua cueste más despegar no es un parche: es lo que hace
+     la sustentación de una tabla planeando. */
+  K.airThr    = 4.2;
+}
+
 if(SKIN === 'nieve'){
   K.polvoN     = 420;    // más motas: es nevada, no bruma
   K.polvoOp    = 0.55;   // y un copo SE VE (una mota de polvo, no)
@@ -1416,6 +1593,11 @@ const DESC = window.DESC = {
   finishOrder:[], hud:null, _built:false, _why:{},
   orb:{ yaw:0, pitch:0, idle:9, mx:0, my:0, down:false, wheel:0 },
   kick:{ y:0, v:0 },
+  /* ►OLA a mano desde la consola: DESC.ola.OLA.alto (hay que reconstruir para
+     que el shader lo vea: el tamaño va horneado en el GLSL), DESC.ola.U.uTime
+     para congelar/adelantar el mar, y DESC.ola.y(x,z,t) para preguntarle la
+     altura a la misma función que usa la física */
+  ola: { OLA, OLAS, U:OLA_U, y:olaY },
 };
 
 const BUCKET = 60;
@@ -1449,6 +1631,15 @@ function terrainY(x, z){
   const cuenco = K.bowl * u * u;                         // los bordes suben
   const P = PIPES.length ? pipeAt(x, z) : null;
   const damp = P ? (1 - P.mask * 0.78) : 1;              // dentro del pipe, liso
+  /* ►OLA · EN EL MAR NO HAY LOMOS DE RUIDO: hay OLEAJE. Los `big`/`sml` de
+     ruido son justo lo que Toni ve como "montañas de agua" — un relieve fijo,
+     que ni se mueve ni tiene cara de ola. Se cambian por olas que viajan; todo
+     lo demás (cuenco, pipes, espolones, bandas) se queda igual. */
+  if(MAR){
+    const picado = 0.55 + 0.45 * clamp(zoneProp(z, 'bump') / 3.2, 0, 1.4);
+    return baseY(z) + cuenco + olaY(x, z, DESC.t) * picado * damp
+                    + parteAt(x, z) + (P ? P.add : 0);
+  }
   const big = n(x * K.bumpFreqB, z * K.bumpFreqB) * zoneProp(z, 'bump') * damp;
   const sml = n(x * K.bumpFreqS, z * K.bumpFreqS) * K.bumpSmall * damp;
   return baseY(z) + cuenco + big + sml + parteAt(x, z) + (P ? P.add : 0);
@@ -1616,9 +1807,13 @@ DESC._hw = hwAt;
    la tabla PUENTEA los baches pequeños, exactamente como en la realidad.
    Sin esto, la detección de despegue por curvatura es una traca. */
 function padY(x, z, fx, fz){
-  const a = groundYAt(x - fx*2.3, z - fz*2.3);
+  /* ►OLA: en el mar la huella se alarga. Una tabla de kite/surf apoya sobre más
+     agua que un snowboard sobre nieve, y ese promedio más largo es justo lo que
+     filtra el rizado corto que lanzaba al rider por los aires. */
+  const L = MAR ? 3.6 : 2.3;
+  const a = groundYAt(x - fx*L, z - fz*L);
   const b = groundYAt(x, z);
-  const c = groundYAt(x + fx*2.3, z + fz*2.3);
+  const c = groundYAt(x + fx*L, z + fz*L);
   /* si CUALQUIER punto de la tabla está sobre el vacío, no hay apoyo: promediar
      -100000 con dos alturas normales daría un suelo fantasma a mitad del abismo */
   if(a <= VACIO || b <= VACIO || c <= VACIO) return VACIO;
@@ -1812,6 +2007,11 @@ function buildScene(){
     const FALDA = 85, FALDA_ALZA = 12;
     const nv = (COLS + 1) * (ROWS + 1);
     const pos = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
+    /* ►OLA · cuánto oleaje le toca a ESTE vértice (picado de la banda × el
+       amortiguado del pipe). Se calcula aquí, donde ya se conocen x y z, y el
+       shader sólo multiplica: así la ola que se DIBUJA es la misma que la que
+       se PISA, sin repetir en GLSL la lógica de bandas ni de half-pipes. */
+    const olaFac = new Float32Array(nv);
     const idx = new Uint32Array(COLS * ROWS * 6);
     const cSoft = new THREE.Color(PAL.soft), cHard = new THREE.Color(PAL.hard), cz = new THREE.Color();
     const _cFalda = new THREE.Color(PAL.wall);
@@ -1830,7 +2030,19 @@ function buildScene(){
            largas para el faldón, donde el detalle no se aprecia */
         const x = Math.sign(u) * Math.pow(Math.abs(u), 1.35) * hw;
         const faldaT = clamp((Math.abs(x) - hwPista * OUT) / FALDA, 0, 1);
-        const y = terrainY(x, z) + smooth(faldaT) * FALDA_ALZA;
+        let y = terrainY(x, z) + smooth(faldaT) * FALDA_ALZA;
+        if(MAR){
+          /* la malla se guarda con el mar EN CALMA y el oleaje entero lo pone el
+             shader; si no, la ola de t=0 quedaría horneada y sumada dos veces */
+          const P2 = PIPES.length ? pipeAt(x, z) : null;
+          /* EXACTAMENTE el mismo factor que usa terrainY. Tenía aquí además un
+             atenuado por el faldón, que quedaba más bonito pero metía una
+             divergencia entre lo que se ve y lo que se pisa: no compensa. */
+          const fac = (0.55 + 0.45 * clamp(zoneProp(z, 'bump') / 3.2, 0, 1.4))
+                    * (P2 ? (1 - P2.mask * 0.78) : 1);
+          olaFac[vi] = fac;
+          y -= olaY(x, z, DESC.t) * fac;
+        }
         pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
         const h = hardnessAt(x, z);
         c.copy(cSoft).lerp(cHard, h);
@@ -1893,8 +2105,14 @@ function buildScene(){
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setIndex(new THREE.BufferAttribute(idx.subarray(0, ii), 1));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+    const matSuelo = new THREE.MeshLambertMaterial({ vertexColors:true });
+    if(MAR){
+      geo.setAttribute('aOla', new THREE.BufferAttribute(olaFac, 1));
+      aplicaOlaShader(matSuelo);
+    }
+    const mesh = new THREE.Mesh(geo, matSuelo);
     mesh.receiveShadow = true;
+    if(MAR) mesh.frustumCulled = false;   // el desplazamiento del shader se sale de la caja original
     world.add(mesh);
     DESC.terrain = mesh;
     DESC._quadsHueco = saltados;
@@ -5203,6 +5421,10 @@ DESC.tick = function(dt){
     while(DESC._acc >= K.fixed && guard++ < 12){
       DESC._acc -= K.fixed;
       DESC.t += K.fixed;
+      /* ►OLA: el reloj del mar va DENTRO del paso fijo y con el mismo valor que
+         usa terrainY, o la ola que se dibuja iría medio frame por delante de la
+         que se pisa */
+      if(MAR) OLA_U.uTime.value = DESC.t;
       for(const r of DESC.racers) stepRacer(r, K.fixed);
       leash();
     }
