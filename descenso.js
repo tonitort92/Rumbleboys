@@ -147,6 +147,9 @@ const SKIN   = /^(arena|nieve|mar)$/.test(_pielQS) ? _pielQS : 'arena';
    fichero ya se ha comido una TDZ y no merece la pena arriesgar otra.
    `?kite=0` lo apaga y el mar vuelve a ser el surf de antes. */
 const KITE_ON = (SKIN === 'mar') && _qs.get('kite') !== '0';
+/* MAR vive aquí arriba porque lo consultan cosas que se evalúan al cargar el
+   módulo (el PLAN de la travesía, las zonas): más abajo sería una TDZ. */
+const MAR = (SKIN === 'mar');
 const TAU    = Math.PI * 2;
 const RAD    = Math.PI / 180;
 const clamp  = (v, a, b) => v < a ? a : (v > b ? b : v);
@@ -567,6 +570,17 @@ const TRICKS = {
    Cada banda es un tramo de montaña con su inclinación, su material, su
    relieve y su color. `hard` 1 = prensado (corre y agarra), 0 = profundo.
    ===================================================================== */
+/* ►MAR PLANO. Las zonas del mar tienen `deg:0` — y con eso el mar es plano DE
+   VERDAD, sin tocar `baseY`: el perfil de altura es la integral de la pendiente
+   de cada banda, así que a pendiente cero la superficie es horizontal y lo
+   único que la mueve es el oleaje. Lo que distingue una banda de otra ya no es
+   lo inclinada que está sino lo PICADA (bump) y lo ancha que es. */
+const ZONA_MAR = {
+  calma:     { deg:0, nombre:'MAR EN CALMA', col:0x4fc4e0, hard:0.95, bump:0.8, rock:0.35, ramp:1.15 },
+  brisa:     { deg:0, nombre:'BRISA',        col:0x3fb2d8, hard:0.92, bump:1.6, rock:0.55, ramp:1.05 },
+  marejada:  { deg:0, nombre:'MAREJADA',     col:0x2f9fc4, hard:0.88, bump:2.6, rock:0.75, ramp:0.95 },
+  temporal:  { deg:0, nombre:'TEMPORAL',     col:0x1f7fa4, hard:0.84, bump:3.8, rock:0.95, ramp:0.80 },
+};
 const ZONA = {
   verde: { deg:11, nombre:'PISTA VERDE', col:0x3fbe63, hard:0.90, bump:0.5, rock:0.30, ramp:1.15 },
   azul:  { deg:18, nombre:'PISTA AZUL',  col:0x3d86e0, hard:0.84, bump:0.9, rock:0.50, ramp:1.05 },
@@ -594,7 +608,37 @@ const ZONA = {
 
    Largo total ≈ 6.200 u ⇒ unos DOS MINUTOS a la velocidad media medida.
    ===================================================================== */
-const PLAN = [
+/* ►LA TRAVESÍA DEL MAR SE SORTEA EN CADA PARTIDA. En las pieles de tierra el
+   PLAN es una tabla escrita a mano: los mismos tramos, los mismos anchos y los
+   mismos raíles siempre (lo aleatorio eran sólo las rocas y las rampas). Toni:
+   "randomiza que no sea la misma pantalla". Aquí se sortean el número de
+   tramos, su largo, su anchura, el estado de la mar y dónde caen los raíles,
+   con la MISMA semilla que ya usa todo lo demás — así dos clientes con la misma
+   semilla siguen viendo el mismo mar, que es lo que hará falta para el online.
+   La pista sale al DOBLE de ancha que la de tierra (140-400 de semianchura).
+   Sin `pipe` ni `parte`: los half-pipes y los espolones son roca, y esto es
+   agua abierta. */
+const SEED0 = parseInt(_qs.get('semilla') || '', 10) || ((Math.random() * 1e9) | 0);
+function planMar(){
+  const rng = mulberry32(SEED0 ^ 0x3a17);
+  const pick = a => a[(rng() * a.length) | 0];
+  const out = [];
+  const tramos = 16 + ((rng() * 5) | 0);
+  /* se empieza suave y se acaba bravo, pero con altibajos sorteados */
+  for(let i = 0; i < tramos; i++){
+    const t = i / (tramos - 1);
+    const dureza = clamp(t + (rng() - 0.5) * 0.45, 0, 1);
+    const z = dureza < 0.28 ? 'calma' : dureza < 0.55 ? 'brisa'
+            : dureza < 0.82 ? 'marejada' : 'temporal';
+    const b = { z, len: 220 + ((rng() * 160) | 0), hw: 140 + ((rng() * 260) | 0) };
+    if(rng() < 0.34) b.rail = { x: ((rng() * 2 - 1) * 40) | 0, largo: 100 + ((rng() * 60) | 0) };
+    out.push(b);
+  }
+  /* el último tramo, ancho y en calma: la meta se ve venir */
+  out.push({ z:'calma', len:260, hw:340 });
+  return out;
+}
+const PLAN = MAR ? planMar() : [
   /* HUECOS Y TÚNELES RETIRADOS a peticion de Toni ("quita los precipicios y
      los túneles de momento"). El código de ambos sigue vivo y probado: basta
      volver a poner `hueco:N` o `tunel:true` en un tramo para recuperarlos. */
@@ -660,20 +704,21 @@ function bandIdx(z){
 }
 /* Propiedad de zona en z, con las transiciones suavizadas en K.zoneBlend.
    En el borde exacto sale la media de las dos bandas: continuo pero corto. */
+const ZN = MAR ? ZONA_MAR : ZONA;   // ►MAR: las bandas del mar son estados de la mar, no pendientes
 function zoneProp(z, key){
   const i = bandIdx(z), b = BANDS[i], B = K.zoneBlend;
-  let v = ZONA[b.tipo][key];
+  let v = ZN[b.tipo][key];
   if(i < BANDS.length - 1){
     const d = z - b.z1;
-    if(d < B){ const t = 0.5 + 0.5 * smooth(Math.max(0, d) / B); return lerp(ZONA[BANDS[i+1].tipo][key], v, t); }
+    if(d < B){ const t = 0.5 + 0.5 * smooth(Math.max(0, d) / B); return lerp(ZN[BANDS[i+1].tipo][key], v, t); }
   }
   if(i > 0){
     const d = b.z0 - z;
-    if(d < B){ const t = 0.5 + 0.5 * smooth(Math.max(0, d) / B); return lerp(ZONA[BANDS[i-1].tipo][key], v, t); }
+    if(d < B){ const t = 0.5 + 0.5 * smooth(Math.max(0, d) / B); return lerp(ZN[BANDS[i-1].tipo][key], v, t); }
   }
   return v;
 }
-function zoneAt(z){ return ZONA[BANDS[bandIdx(z)].tipo]; }
+function zoneAt(z){ return ZN[BANDS[bandIdx(z)].tipo]; }
 
 /* --- PERFIL DE ALTURA: integral acumulada de la pendiente de cada banda ---
    Se tabula una vez (no depende de la semilla) y se interpola. Así una banda
@@ -694,7 +739,7 @@ buildHeights();
 function baseY(z){
   const f = (HZ0 - z) / HSTEP;
   /* por detrás del arranque de la tabla: sigue subiendo con la 1ª banda */
-  if(f <= 0) return (z - HZ0) * Math.tan(ZONA[BANDS[0].tipo].deg * RAD);
+  if(f <= 0) return (z - HZ0) * Math.tan(ZN[BANDS[0].tipo].deg * RAD);
   const i = f | 0;
   if(i >= HTAB.length - 1) return HTAB[HTAB.length - 1];
   return lerp(HTAB[i], HTAB[i + 1], f - i);
@@ -854,7 +899,6 @@ if(SKIN === 'mar') K.tilt = 7;
    que se ve y lo que se pisa sean lo mismo. Los números viven aquí y se
    inyectan al GLSL: hay dos implementaciones, pero UNA sola tabla de valores.
    ===================================================================== */
-const MAR = (SKIN === 'mar');
 /* cada ola: amplitud, longitud de onda, dirección (dx,dz normalizada) y
    velocidad de avance. La dominante viaja hacia +z, o sea DE CARA al rider (que
    baja hacia -z): es la que se surfea. Las otras dos cruzan para que el mar no
@@ -889,20 +933,45 @@ const OLAS = [
 ];
 const OLA = {
   alto:    3.6,    // AMPLITUD GENERAL (u). Sube esto y el mar se pica entero
-  cresta:  0.35,   // por encima de esta fracción de la cresta hay ESPUMA
-  espumaK: 0.95,   // cuánta espuma (0 = nada, 1 = crestas blancas del todo)
+  /* con el mar PLANO la cámara lo mira casi de canto y las crestas se apilan
+     unas sobre otras: con espumaK 0,95 el mar de media distancia salía lechoso,
+     como si hubiera niebla. Menos espuma y sólo en lo alto de la cresta. */
+  cresta:  0.60,   // por encima de esta fracción de la cresta hay ESPUMA
+  espumaK: 0.55,   // cuánta espuma (0 = nada, 1 = crestas blancas del todo)
 };
 /* altura del oleaje en (x,z) en el instante t. `zoneProp(z,'bump')` ya decía
    cuánto relieve toca en cada banda de la pista: aquí eso pasa a ser LO PICADO
    que está el mar en esa zona, así que el mar se encrespa en las bandas duras
    igual que la nieve se hacía rugosa. */
+/* ►SETS — LAS OLAS GRANDES QUE SE SURFEAN (Toni: "que de vez en cuando se
+   generen olas en dirección a la marcha del jugador para subirse"). Son crestas
+   MUCHO más altas que el oleaje de fondo, largas y separadas, que viajan hacia
+   -z igual que tú pero más despacio: las alcanzas por detrás, subes por su cara
+   trasera y sales lanzado por la cresta. Cada una es una campana en z, así que
+   entre set y set el mar sigue siendo el de siempre.
+   `SET.sep` es la distancia entre olas y `SET.vel` lo que corren: con vel menor
+   que tu velocidad de crucero (~48) siempre acabas alcanzándolas. */
+/* MEDIDO: con alto 5,2 y ancho 46 la ola grande existía (el perfil iba de -4,4
+   a +6,5) pero su cara tenía 9,6° — una loma, no una ola: ni se sube ni lanza.
+   Estrechándola a 18 la cara sube a ~20°, que ya se surfea y, a velocidad de
+   crucero, te despide por la cresta. */
+const SET = { alto: 7.0, ancho: 18, sep: 560, vel: 26, fase: 0.37 };
+function setY(z, t){
+  /* posición de la cresta más cercana: las olas están cada `sep` y todas se
+     desplazan a la vez (un tren), así que basta con el resto de la división */
+  const d = ((z + SET.vel * t + SET.fase * SET.sep) % SET.sep + SET.sep) % SET.sep;
+  const u = (d - SET.sep * 0.5) / SET.ancho;          // 0 en la cresta
+  if(u < -1.6 || u > 1.6) return 0;
+  const c = Math.cos(u * (Math.PI / 2 / 1.6));
+  return SET.alto * c * c * c;                        // campana con faldas suaves
+}
 function olaY(x, z, t){
   let y = 0;
   for(let i = 0; i < OLAS.length; i++){
     const o = OLAS[i], k = TAU / o.lon;
     y += o.amp * Math.sin(k * (x * o.dx + z * o.dz) - k * o.vel * t);
   }
-  return y * OLA.alto;
+  return y * OLA.alto + setY(z, t);
 }
 /* Para la espuma NO vale la cresta teórica (la suma de todas las amplitudes):
    esa altura exige que las cuatro olas se alineen y casi nunca pasa, así que
@@ -923,12 +992,23 @@ function olaGLSL(){
            _dx  += ${o.amp.toFixed(4)} * ${k} * ${o.dx.toFixed(4)} * cos(f);
            _dz  += ${o.amp.toFixed(4)} * ${k} * ${o.dz.toFixed(4)} * cos(f); }\n`;
   }
-  return `float _ola = 0.0, _dx = 0.0, _dz = 0.0;
+  /* el SET (la ola grande que se surfea) va aparte porque ya viene en unidades
+     de mundo: se le aplica `aOla` pero NO la amplitud general del oleaje */
+  const kU = (Math.PI / 2 / 1.6).toFixed(6);
+  return `float _ola = 0.0, _dx = 0.0, _dz = 0.0, _set = 0.0, _setD = 0.0;
           { vec3 P = position;
-          ${s} }
-          _ola *= ${OLA.alto.toFixed(4)} * aOla;
+          ${s}
+            float d = mod(P.z + ${SET.vel.toFixed(3)} * uTime + ${(SET.fase * SET.sep).toFixed(3)}, ${SET.sep.toFixed(1)});
+            float u = (d - ${(SET.sep * 0.5).toFixed(2)}) / ${SET.ancho.toFixed(2)};
+            if(abs(u) < 1.6){
+              float c = cos(u * ${kU});
+              _set  = ${SET.alto.toFixed(3)} * c * c * c;
+              _setD = -3.0 * ${SET.alto.toFixed(3)} * c * c * sin(u * ${kU}) * ${kU} / ${SET.ancho.toFixed(2)};
+            }
+          }
+          _ola = (_ola * ${OLA.alto.toFixed(4)} + _set) * aOla;
           _dx  *= ${OLA.alto.toFixed(4)} * aOla;
-          _dz  *= ${OLA.alto.toFixed(4)} * aOla;`;
+          _dz  = (_dz * ${OLA.alto.toFixed(4)} + _setD) * aOla;`;
 }
 const OLA_U = { uTime: { value: 0 } };   // el reloj del mar, compartido por los materiales de agua
 
@@ -1010,8 +1090,30 @@ if(SKIN === 'mar'){
      velocidad exige al suelo una aceleración v²·(A·k²) que se come el umbral de
      despegue. Que en agua cueste más despegar no es un parche: es lo que hace
      la sustentación de una tabla planeando. */
-  K.airThr    = 4.2;
+  /* 4,2 era para el mar CON pendiente, donde el oleaje sobre la ladera lanzaba
+     sin parar. Con el mar plano el oleaje de fondo pide ~36 u/s² y la ola
+     grande ~130: en 2,9 (umbral 151) el mar te mece y la ola te despide. */
+  K.airThr    = 2.9;
+  /* ►MAR PLANO: sin pendiente no hay cuenco que te devuelva (el límite lo
+     marcan los arrecifes de los lados, decisión de Toni) y tampoco hace falta
+     la inclinación falsa: ahora quien empuja es el VIENTO. */
+  K.bowl      = 0;
+  K.tilt      = 0;
 }
+
+/* ►VIENTO — EL MOTOR DEL MAR (decisión de Toni: "te hace avanzar el viento que
+   mueve el kite"). En las pieles de tierra lo que te mueve es la gravedad
+   proyectada en la pendiente; aquí el suelo es horizontal, así que el empuje lo
+   pone la vela: tira en el eje del board, a tope cuando apuntas a donde sopla y
+   dejando lo justo cuando vas ceñido. Además el kite te SOSTIENE: en el aire
+   pesas menos y al despegar tira un poco hacia arriba. */
+const VIENTO = {
+  fuerza:  16,     // u/s² con el board alineado con el viento (equilibrio ~48 u/s con el roce del agua)
+  cenida:  0.34,   // fracción del empuje que queda yendo de través
+  flota:   0.55,   // gravedad en el aire mientras la vela tira
+  subida:  9.0,    // u/s² extra hacia arriba justo tras despegar
+  subidaT: 0.45,   // ...durante este tiempo
+};
 
 if(SKIN === 'nieve'){
   K.polvoN     = 420;    // más motas: es nevada, no bruma
@@ -1158,8 +1260,14 @@ const DECOR = {
   nieve: { mata:  ['s6_bush', 's6_crystal', 's6_crystal2'],
            borde: ['s6_pine', 's6_deadtrees', 's6_crystal2'],
            hito:  ['s6_igloo', 's6_snowman', 's6_sled'] },
-  mar:   { mata:  ['s6_bush', 's3_agave'],
-           borde: ['s3_palm', 's3_palm2', 's3_datepalm'] },
+  /* ►MAR · FUERA EL DESIERTO (Toni: "quita las palmeras y las cosas del
+     desierto del medio de la pista"). En mar abierto no hay matas: el agua no
+     lleva nada plantado, así que `mata` va vacío y la pista queda limpia. A los
+     lados, lo que puede haber flotando de verdad: los barcos, botes y muelles
+     del stage 12 (los `pq_*` de piratas) y roca de arrecife. */
+  mar:   { mata:  [],
+           borde: ['s3_rock', 's3_rock2', 's3_boulder'],
+           hito:  ['pq_shipsm', 'pq_boat', 'pq_port2', 'pq_port3'] },
 };
 /* Los cristales del mapa de hielo llevan brillo frío EN EL JUEGO (getModel les
    clona el material y les pone emissive). Aquí se replica: sin él, un cristal
@@ -1680,7 +1788,9 @@ function genTrack(rng){
     /* rampas: en pista, no en el fuera pista */
     if(sinceRamp >= 2 && rng() < 0.42 * zn.ramp){
       sinceRamp = 0;
-      const n = 1 + (rng() < 0.5 ? 1 : 0);
+      /* ►MAR: el doble de kickers, porque la pista es el DOBLE de ancha y con la
+         densidad de tierra pasabas de largo sin encontrarte ninguno */
+      const n = (1 + (rng() < 0.5 ? 1 : 0)) * (MAR ? 2 : 1);
       for(let k = 0; k < n; k++){
         const r = rng();
         /* 'xl' = KICKER de salto grande (Toni: "añade kickers de salto").
@@ -1696,9 +1806,15 @@ function genTrack(rng){
     }
 
     /* rocas: el fuera pista está sembrado, la verde casi limpia */
-    const nr = Math.floor(rng() * 1.4 + zn.rock * 1.5);
+    const nr = Math.floor(rng() * 1.4 + zn.rock * 1.5) * (MAR ? 2 : 1);
     for(let k = 0; k < nr; k++){
-      const rx2 = (rng()*2-1)*hw, rz2 = z + (rng()-0.5)*26;
+      /* ►MAR · ARRECIFES A LOS LADOS, NO EN MEDIO. En el mar la roca ya no es un
+         obstáculo suelto por la pista: es lo que marca el límite (Toni), porque
+         al no haber cuenco no hay nada más que te devuelva al centro. Se siembra
+         en la franja exterior, del 72% de la semianchura para afuera. */
+      const rx2 = MAR ? (rng() < 0.5 ? -1 : 1) * hw * (0.72 + rng() * 0.30)
+                      : (rng()*2-1)*hw;
+      const rz2 = z + (rng()-0.5)*26;
       if(parteAt(rx2, rz2) > 1.5) continue;      // no sembrar sobre el espolón
       obst.push({ type:'rock', x:rx2, z:rz2, r: 2.2 + rng()*1.6 + zn.rock * 1.1 });
     }
@@ -2349,7 +2465,7 @@ function buildScene(){
          entras en negra". --- */
   {
     const filas = [];
-    for(let i = 1; i < BANDS.length; i++) filas.push({ z: BANDS[i].z0, col: ZONA[BANDS[i].tipo].col });
+    for(let i = 1; i < BANDS.length; i++) filas.push({ z: BANDS[i].z0, col: ZN[BANDS[i].tipo].col });
     const perFila = 15;
     const im = new THREE.InstancedMesh(_cajaBandas(7, 0.52, 1.45),
       new THREE.MeshLambertMaterial({ color:0xffffff, vertexColors:true, flatShading:true }),
@@ -3345,11 +3461,16 @@ function kiteVela(col){
     for(let iv = 0; iv <= NV; iv++){
       const v = iv / NV;
       /* +Z apunta al rider: la vela se orienta luego con lookAt sobre la barra */
-      /* el -0,72·R centra el arco en el origen del grupo (si no, la vela cuelga
-         entera por encima del punto al que se le manda ir) */
+      /* ►LA VELA IBA AL REVÉS (Toni). El arco estaba en el plano frontal y la
+         cuerda salía recta hacia atrás: eso es un cilindro cortado, no un kite.
+         Un kite se ARQUEA HACIA EL RIDER — las puntas se vienen hacia ti, y por
+         eso desde abajo se ve el intradós cóncavo abrazándote. Ese arqueo es el
+         término en z: cuanto más lejos del centro del arco, más se acerca la
+         punta. El -0,72·R centra el arco en el origen del grupo (si no, la vela
+         cuelga entera por encima del punto al que se le manda ir). */
       pos.push(KITE.R * Math.sin(ang),
                KITE.R * Math.cos(ang) - KITE.R * 0.72 - ch * v * v * 0.30,
-               ch * v);
+               ch * v + KITE.R * (1 - Math.cos(ang)) * 0.62);
       color.push(cc.r, cc.g, cc.b);
     }
   }
@@ -4148,6 +4269,15 @@ function stepRacer(r, dt){
              (Math.random()-0.5)*5, 0.06 + Math.random()*0.10);
     }
 
+    /* ►VIENTO: el empuje de la vela. Va por el eje del board igual que el
+       turbo, y se cobra por apuntar mal, no por ir de lado. */
+    if(MAR && KITE_ON && r.fall <= 0 && r.crash <= 0){
+      const cos = -fz;                       // fz = -cos(yaw): recto (yaw 0) = a favor del viento
+      const emp = VIENTO.fuerza * (VIENTO.cenida + (1 - VIENTO.cenida) * Math.max(0, cos));
+      ax += emp * fx; az += emp * fz;
+      r._viento = emp;                       // el HUD y la IA lo pueden mirar
+    }
+
     /* el empuje del turbo sí va por el eje del board */
     let push = r.turbo ? K.turboThrust : 0;
     push *= (r._ai.targetMul || 1);
@@ -4169,7 +4299,17 @@ function stepRacer(r, dt){
       const f = K.dragC * K.dragAir * v3;
       r.vx -= r.vx * f * dt; r.vz -= r.vz * f * dt; r.vy -= r.vy * f * dt;
     }
-    r.vy -= K.grav * dt;
+    /* ►VIENTO EN EL AIRE (Toni): "un poco de flotabilidad al caer por el viento
+       y una leve subida tras saltar". La vela sigue tirando mientras vuelas: se
+       cae más despacio, y en el primer medio segundo del salto el kite te
+       levanta un poco más. */
+    if(MAR && KITE_ON){
+      r.vy -= K.grav * VIENTO.flota * dt;
+      if(r._kiteLift > 0){ r.vy += VIENTO.subida * dt; r._kiteLift -= dt; }
+      /* la vela empuja hacia delante también en el aire, si no el salto frena */
+      const emp = VIENTO.fuerza * 0.45;
+      r.vx += emp * fx * dt; r.vz += emp * fz * dt;
+    } else r.vy -= K.grav * dt;
     r.y  += r.vy * dt;
   }
 
@@ -4230,6 +4370,7 @@ function stepRacer(r, dt){
       r.air = true;
       r.vy = r._vT + (r.charge > 0 ? K.olliePop * (r.charge / K.ollieChg) : 0);
       r.airVy0 = r.vy; r.charge = 0; r._noLand = true;
+      r._kiteLift = VIENTO.subidaT;                     // ►VIENTO: la vela levanta al salir de la ola
       if(r.vy > 3) spray(r, 8, 2.4);
     } else {
       r.y = gy;
@@ -4247,6 +4388,7 @@ function stepRacer(r, dt){
       r.air = true;
       r.vy = lerp(K.ollieMin, K.ollieMax, r.charge / K.ollieChg);
       r.airVy0 = r.vy; r.charge = 0;
+      r._kiteLift = VIENTO.subidaT;                     // ►VIENTO: leve subida tras saltar
       r._noLand = true;                  // ← ver la nota en el bloque de AIRE
       r.y += 0.06;
       spray(r, 8, 2.2);
