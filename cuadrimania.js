@@ -74,10 +74,12 @@ const K = {
                      //  vecinas se SOLAPAN y no existe la costura por la que colarse ("no quiero
                      //  que te puedas caer por los huecos entre cuadraditos"). Al caer una loseta,
                      //  la de al lado invade su agujero un 2% del lado: invisible.
-  nTop:    64,       // losetas del piso de ARRIBA
-  nBot:   148,       // losetas del piso de ABAJO — ►la torre se ENSANCHA hacia abajo, como el
+  nTop:   128,       // losetas del piso de ARRIBA
+  nBot:   296,       // losetas del piso de ABAJO — ►la torre se ENSANCHA hacia abajo, como el
                      //  original: es lo que hace que "bajar pronto al piso grande" sea una jugada
-                     //  de verdad y no un suicidio
+                     //  de verdad y no un suicidio.
+                     //  ►v3: el DOBLE de losetas que la v2 (era 64/148) — el area de juego se
+                     //  duplica y el radio crece un 41% (el piso de abajo pasa de ~24 a ~34).
   dH:      15,       // separacion vertical entre pisos. ►DEBE superar la altura de salto alcanzable
                      //  (salto triple: 13,8 u) o se podria volver a subir y esto deja de converger.
                      //  CUAD.medirSalto() lo comprueba.
@@ -115,14 +117,14 @@ const K = {
   pctArquero: 0.25,  // proporcion de esqueletos ARQUEROS (el resto, de melee)
 
   /* --- recinto --- */
-  muroR:   30,       // ►MURO INVISIBLE circular alrededor de la torre (el piso mas ancho llega a
-                     //  ~24). Pedido de Toni: que nadie pueda llegar al decorado. Rebota como los
+  muroR:   40,       // ►MURO INVISIBLE circular alrededor de la torre (el piso mas ancho llega a
+                     //  ~34). Pedido de Toni: que nadie pueda llegar al decorado. Rebota como los
                      //  muros laterales del juego; no impide caer, que es la unica muerte de aqui.
 
   /* --- decorado de fondo --- */
   decorN:    34,     // plataformas de piramide flotando al fondo (solo VISUALES)
-  decorRmin: 46,     // ►muy por fuera del muro (30): imposible llegar ni de milagro
-  decorRmax: 92,
+  decorRmin: 56,     // ►muy por fuera del muro (40): imposible llegar ni de milagro
+  decorRmax: 108,
   decorSep:  4,      // separacion MINIMA entre dos plataformas de decorado ("que no se fusione")
 };
 
