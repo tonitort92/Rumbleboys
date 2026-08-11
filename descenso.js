@@ -923,6 +923,14 @@ const OLAS = [
   { amp: 0.60, lon: 140, dx:  0.52, dz:  0.85, vel: 16 },   // cruzada, de cara
   { amp: 0.24, lon: 110, dx: -0.70, dz:  0.71, vel: 12 },   // cruzada al otro lado
   { amp: 0.05, lon:  55, dx:  0.30, dz:  0.95, vel:  8 },   // rizado
+  /* ►BACHES (Toni: "sensible al aire por el mero hecho de coger baches y de
+     golpe tener un cambio de rasante"). Sin estas dos, MEDIDO: la velocidad
+     vertical del suelo bajo la tabla iba de -1,9 a +12 — o sea, el mar sólo
+     empujaba hacia arriba y no había un solo cambio de rasante en toda la
+     bajada, por bajo que pusiera el umbral de despegue. Son cortas y bajitas: lo
+     que aportan es CURVATURA (que es lo que despega), no altura. */
+  { amp: 0.16, lon:  60, dx: -0.45, dz:  0.89, vel: 10 },
+  { amp: 0.10, lon:  34, dx:  0.62, dz:  0.78, vel:  7 },
   /* NO HAY OLAS MÁS CORTAS, y esto se decidió con dos números. Probé un rizado
      de 26 y 15 u para dar textura de agua: (1) NO SE VE — la malla tiene ~8,5 u
      por fila y no puede representar una onda de 15; y (2) el término v²·A·k²
@@ -983,7 +991,7 @@ const OLA_AMP = Math.sqrt(OLAS.reduce((s, o) => s + o.amp * o.amp, 0)) * OLA.alt
    evalúa en CPU sólo en los cuatro riders. Si esto se toca, se toca la tabla
    OLAS, no el texto del shader. Escribe `_ola` (altura) y `_dx`/`_dz` (las
    derivadas, para la normal analítica). */
-function olaGLSL(){
+function olaGLSL(fuenteP){
   let s = '';
   for(const o of OLAS){
     const k = (TAU / o.lon).toFixed(6);
@@ -996,7 +1004,7 @@ function olaGLSL(){
      de mundo: se le aplica `aOla` pero NO la amplitud general del oleaje */
   const kU = (Math.PI / 2 / 1.6).toFixed(6);
   return `float _ola = 0.0, _dx = 0.0, _dz = 0.0, _set = 0.0, _setD = 0.0;
-          { vec3 P = position;
+          { vec3 P = ${fuenteP || 'position'};
           ${s}
             float d = mod(P.z + ${SET.vel.toFixed(3)} * uTime + ${(SET.fase * SET.sep).toFixed(3)}, ${SET.sep.toFixed(1)});
             float u = (d - ${(SET.sep * 0.5).toFixed(2)}) / ${SET.ancho.toFixed(2)};
@@ -1019,21 +1027,28 @@ const OLA_U = { uTime: { value: 0 } };   // el reloj del mar, compartido por los
    h(x,z) tiene normal (-dh/dx, 1, -dh/dz), así que se pasa la normal horneada
    de la malla a gradiente, se le SUMA el de la ola y se vuelve a normalizar.
    Sumar normales sin más habría aplanado la pendiente de la pista. */
-function aplicaOlaShader(mat){
+/* `ancla` = el objeto FLOTA ENTERO con la ola de un punto fijo (su amarre) en
+   vez de deformarse con la ola de cada vértice. Es lo que necesitan los kickers:
+   su física ya se movía con la ola (rampSurfaceY llama a terrainY, que es
+   dinámico) mientras su malla se había horneado una vez — de ahí que Toni
+   "pasara por debajo de los kickers". Con el ancla, malla y física vuelven a ser
+   lo mismo. */
+function aplicaOlaShader(mat, ancla){
   mat.onBeforeCompile = sh => {
     sh.uniforms.uTime = OLA_U.uTime;
     sh.vertexShader = `attribute float aOla;
+      ${ancla ? 'attribute vec2 aAncla;' : ''}
       uniform float uTime;
       varying float vEspuma;
       ` + sh.vertexShader.replace('#include <beginnormal_vertex>', `
       #include <beginnormal_vertex>
-      ${olaGLSL()}
-      {
+      ${olaGLSL(ancla ? 'vec3(aAncla.x, 0.0, aAncla.y)' : 'position')}
+      ${ancla ? '' : `{
         float ny = max(0.0001, objectNormal.y);
         float gx = -objectNormal.x / ny + _dx;
         float gz = -objectNormal.z / ny + _dz;
         objectNormal = normalize(vec3(-gx, 1.0, -gz));
-      }`).replace('#include <begin_vertex>', `
+      }`}`).replace('#include <begin_vertex>', `
       #include <begin_vertex>
       transformed.y += _ola;
       /* ESPUMA: en la cresta (la ola alta) y donde la cara se empina, que es
@@ -1044,17 +1059,17 @@ function aplicaOlaShader(mat){
          prácticamente nula: se comprobó pintándola de verde y sólo teñía las
          laderas. Dividiendo por aOla, "estar en la cresta" significa lo mismo
          en mar picado que en mar calmo. */
-      float _rel  = (_ola / max(0.15, aOla)) / ${OLA_AMP.toFixed(4)};
+      ${ancla ? 'vEspuma = 0.0;' : `float _rel  = (_ola / max(0.15, aOla)) / ${OLA_AMP.toFixed(4)};
       float _pend = clamp(length(vec2(_dx, _dz)) * 5.5, 0.0, 1.0);
       vEspuma = clamp(smoothstep(${OLA.cresta.toFixed(3)}, 1.05, _rel) * 0.9 + _pend * _pend * 0.55, 0.0, 1.0)
-                * ${OLA.espumaK.toFixed(3)};`);
+                * ${OLA.espumaK.toFixed(3)};`}`);
     sh.fragmentShader = 'varying float vEspuma;\n' + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 1.0, 1.0), vEspuma);`);
   };
-  /* dos materiales con el mismo parche comparten programa; si algún día se
-     parchea otro material con distinto código, hay que cambiar esta firma */
-  mat.customProgramCacheKey = () => 'descOla1';
+  /* dos materiales con el mismo parche comparten programa; los DOS MODOS tienen
+     firmas distintas o three les daría el mismo programa compilado */
+  mat.customProgramCacheKey = () => (ancla ? 'descOlaAncla1' : 'descOla1');
 }
 
 /* ►AJUSTES DE K POR PIEL. El polvo de arena y la nevada son el MISMO sistema
@@ -1090,10 +1105,14 @@ if(SKIN === 'mar'){
      velocidad exige al suelo una aceleración v²·(A·k²) que se come el umbral de
      despegue. Que en agua cueste más despegar no es un parche: es lo que hace
      la sustentación de una tabla planeando. */
-  /* 4,2 era para el mar CON pendiente, donde el oleaje sobre la ladera lanzaba
-     sin parar. Con el mar plano el oleaje de fondo pide ~36 u/s² y la ola
-     grande ~130: en 2,9 (umbral 151) el mar te mece y la ola te despide. */
-  K.airThr    = 2.9;
+  /* ►SENSIBLE AL AIRE (Toni): "más flotabilidad por el mero hecho de coger
+     baches y de golpe tener un cambio de rasante". El umbral de despegue es
+     justo eso: cuánto tiene que caer el suelo bajo la tabla para que te vayas
+     al aire. 4,2 (mar con pendiente) y 2,9 lo hacían tan difícil que la bajada
+     entera salía con 0% de vuelo; a 1,5 —POR DEBAJO del 2,6 de la nieve, porque
+     aquí tiras de una vela que te sostiene— cualquier rasante te despega. */
+  K.airThr    = 0.55;
+  K.airMin    = 0.5;   // ...y basta menos velocidad vertical para que cuente como vuelo
   /* ►MAR PLANO: sin pendiente no hay cuenco que te devuelva (el límite lo
      marcan los arrecifes de los lados, decisión de Toni) y tampoco hace falta
      la inclinación falsa: ahora quien empuja es el VIENTO. */
@@ -1110,9 +1129,13 @@ if(SKIN === 'mar'){
 const VIENTO = {
   fuerza:  16,     // u/s² con el board alineado con el viento (equilibrio ~48 u/s con el roce del agua)
   cenida:  0.34,   // fracción del empuje que queda yendo de través
-  flota:   0.55,   // gravedad en el aire mientras la vela tira
-  subida:  9.0,    // u/s² extra hacia arriba justo tras despegar
-  subidaT: 0.45,   // ...durante este tiempo
+  /* ►FLOTABILIDAD (Toni). Colgado de una vela no se cae como una piedra: la
+     gravedad en el aire se queda en un tercio, y encima el kite tira hacia
+     arriba durante el primer tramo del vuelo. Con 0,55 los saltos duraban un
+     suspiro y "pasabas por debajo de los kickers" en vez de volar por encima. */
+  flota:   0.34,   // gravedad en el aire mientras la vela tira
+  subida:  13.0,   // u/s² extra hacia arriba justo tras despegar
+  subidaT: 0.80,   // ...durante este tiempo
 };
 
 if(SKIN === 'nieve'){
@@ -1732,6 +1755,17 @@ function pipeAt(x, z){
   return null;
 }
 
+/* ►CUÁNTO OLEAJE LE TOCA A UN PUNTO. Vive en una función porque lo consultan
+   tres sitios que TIENEN que coincidir: terrainY (la física), el horneado del
+   atributo `aOla` de la malla del mar, y lo que flota encima (los kickers).
+   `damp` es el amortiguado del half-pipe, que el llamante ya suele tener. */
+function olaFacAt(z, damp){
+  return (0.55 + 0.45 * clamp(zoneProp(z, 'bump') / 3.2, 0, 1.4)) * (damp === undefined ? 1 : damp);
+}
+/* el mar EN CALMA en ese punto: lo que habría debajo si no hubiera oleaje. Con
+   esto se construyen las cosas que FLOTAN, y luego el shader les suma la ola de
+   su ancla — así suben y bajan enteras en vez de deformarse. */
+function marCalma(x, z){ return terrainY(x, z) - olaY(x, z, DESC.t) * olaFacAt(z); }
 function terrainY(x, z){
   const n = DESC.noise; if(!n) return 0;
   const hw  = hwAt(z);
@@ -1744,8 +1778,7 @@ function terrainY(x, z){
      que ni se mueve ni tiene cara de ola. Se cambian por olas que viajan; todo
      lo demás (cuenco, pipes, espolones, bandas) se queda igual. */
   if(MAR){
-    const picado = 0.55 + 0.45 * clamp(zoneProp(z, 'bump') / 3.2, 0, 1.4);
-    return baseY(z) + cuenco + olaY(x, z, DESC.t) * picado * damp
+    return baseY(z) + cuenco + olaY(x, z, DESC.t) * olaFacAt(z, damp)
                     + parteAt(x, z) + (P ? P.add : 0);
   }
   const big = n(x * K.bumpFreqB, z * K.bumpFreqB) * zoneProp(z, 'bump') * damp;
@@ -1926,7 +1959,7 @@ function padY(x, z, fx, fz){
   /* ►OLA: en el mar la huella se alarga. Una tabla de kite/surf apoya sobre más
      agua que un snowboard sobre nieve, y ese promedio más largo es justo lo que
      filtra el rizado corto que lanzaba al rider por los aires. */
-  const L = MAR ? 3.6 : 2.3;
+  const L = MAR ? 2.6 : 2.3;   // (3,6 se comía los baches: el promedio los alisaba antes de que llegaran a la física)
   const a = groundYAt(x - fx*L, z - fz*L);
   const b = groundYAt(x, z);
   const c = groundYAt(x + fx*L, z + fz*L);
@@ -2151,11 +2184,11 @@ function buildScene(){
           /* la malla se guarda con el mar EN CALMA y el oleaje entero lo pone el
              shader; si no, la ola de t=0 quedaría horneada y sumada dos veces */
           const P2 = PIPES.length ? pipeAt(x, z) : null;
-          /* EXACTAMENTE el mismo factor que usa terrainY. Tenía aquí además un
-             atenuado por el faldón, que quedaba más bonito pero metía una
-             divergencia entre lo que se ve y lo que se pisa: no compensa. */
-          const fac = (0.55 + 0.45 * clamp(zoneProp(z, 'bump') / 3.2, 0, 1.4))
-                    * (P2 ? (1 - P2.mask * 0.78) : 1);
+          /* EXACTAMENTE el mismo factor que usa terrainY (por eso vive en una
+             función compartida). Tenía aquí además un atenuado por el faldón,
+             que quedaba más bonito pero metía una divergencia entre lo que se ve
+             y lo que se pisa: no compensa. */
+          const fac = olaFacAt(z, P2 ? (1 - P2.mask * 0.78) : 1);
           olaFac[vi] = fac;
           y -= olaY(x, z, DESC.t) * fac;
         }
@@ -2231,6 +2264,7 @@ function buildScene(){
     if(MAR) mesh.frustumCulled = false;   // el desplazamiento del shader se sale de la caja original
     world.add(mesh);
     DESC.terrain = mesh;
+    if(MAR){ DESC.olaza = creaOlaza(); world.add(DESC.olaza); }   // ►OLAZA: la pared de agua de atrás
     DESC._quadsHueco = saltados;
   }
 
@@ -2554,23 +2588,37 @@ function buildScene(){
            impide que 17 u de pared se lean como una plancha lisa. */
     const NX = 4, NZ = 6, NB = 4, HUNDE = 2.5;
     const vPos = [], vCol = [];
+    /* ►MAR · EL KICKER FLOTA. Se hornea con el mar EN CALMA y cada vértice se
+       lleva el AMARRE de su kicker (aAncla) y su factor de oleaje: el shader los
+       sube y baja enteros con la ola de ese punto. Así la malla vuelve a estar
+       donde la física dice que está — que es lo que Toni notaba como "paso por
+       debajo de los kickers". */
+    const vAnc = [], vFac = [];
+    let _anc = [0, 0], _fac = 1;
     const cCara = new THREE.Color(PAL.ramp);
     const cFalda = new THREE.Color(PAL.hard);
     const _t = new THREE.Color();
     const tri3 = (ax,ay,az, bx,by,bz, cx,cy,cz, cc) => {
       vPos.push(ax,ay,az, bx,by,bz, cx,cy,cz);
-      for(let k = 0; k < 3; k++) vCol.push(cc.r, cc.g, cc.b);
+      for(let k = 0; k < 3; k++){
+        vCol.push(cc.r, cc.g, cc.b);
+        if(MAR){ vAnc.push(_anc[0], _anc[1]); vFac.push(_fac); }
+      }
     };
 
     for(const o of ramps){
-      o.baseY = terrainY(o.x, o.z);
+      if(MAR){ _anc = [o.x, o.z]; _fac = olaFacAt(o.z); }
+      /* en el mar se hornea SIN oleaje (lo pone el shader con el ancla); en
+         tierra, el terreno de siempre */
+      const suelo = MAR ? marCalma : terrainY;
+      o.baseY = suelo(o.x, o.z);
       const x0 = o.x - o.w/2, zBack = o.z + o.len/2, zFront = o.z - o.len/2;
       /* cara de subida = LA DE LA FÍSICA (rampSurfaceY), sin inventar nada */
       const cara = (x, z) => Math.max(o.baseY + ((zBack - z) / o.len) * o.h,
-                                      terrainY(x, z) + 0.06);
+                                      suelo(x, z) + 0.06);
       /* base del faldón: el terreno de ahí mismo, hundido; nunca por encima
          de la cara (si no, el faldón asomaría por la pista) */
-      const pie = (x, z, yTop) => Math.min(terrainY(x, z) - HUNDE, yTop - 0.4);
+      const pie = (x, z, yTop) => Math.min(suelo(x, z) - HUNDE, yTop - 0.4);
       _tono(rng, _t, 0.9);
       const cc = new THREE.Color();
 
@@ -2637,9 +2685,16 @@ function buildScene(){
        y con la cámara orbitable no hay un "fuera" fiable para todas ellas.
        En r128 el material de dos caras ya invierte la normal en la cara de
        atrás, así que la luz sigue siendo correcta. */
-    const malla = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-      vertexColors:true, flatShading:true, side:THREE.DoubleSide }));
+    const matRampa = new THREE.MeshLambertMaterial({
+      vertexColors:true, flatShading:true, side:THREE.DoubleSide });
+    if(MAR){
+      geo.setAttribute('aAncla', new THREE.Float32BufferAttribute(vAnc, 2));
+      geo.setAttribute('aOla',   new THREE.Float32BufferAttribute(vFac, 1));
+      aplicaOlaShader(matRampa, true);     // ►flota entero con la ola de su amarre
+    }
+    const malla = new THREE.Mesh(geo, matRampa);
     malla.castShadow = true; malla.receiveShadow = true;
+    if(MAR) malla.frustumCulled = false;   // el shader lo mueve fuera de su caja
     malla.userData._kickers = ramps.length;      // etiqueta para poder CONTAR en la sonda
     world.add(malla);
 
@@ -3446,6 +3501,10 @@ const KITE = {
   barraBaja: 0.20,   // ...y cuánto cuelga por debajo de la línea de hombros
   barraAncho:0.85,   // ancho de la barra, TAMBIÉN en alcances de brazo (ver kiteMonta)
   fade:      7,      // velocidad con la que se coge/suelta la barra
+  /* postura de la vela (ver updateKite): va DE PIE, no mirando al rider */
+  pitch:    -0.42,   // cuánto se echa hacia atrás el arco
+  yawLadeo:  0.55,   // cuánto gira en horizontal hacia el lado del giro
+  rollLadeo: 0.35,   // ...y cuánto se tumba con él
 };
 
 /* --- la vela: arco tipo "C" con panza, franjas del color de la clase --- */
@@ -3632,6 +3691,73 @@ function ikBrazo(h1, h2, h3, objetivoMundo, poloMundo, peso){
   h2.quaternion.slerp(_kq, peso);
 }
 
+/* =====================================================================
+   ►OLAZA — la pared de agua que va DETRÁS del grupo (petición de Toni: "una ola
+   como la del stage de los piratas, pero quieta").
+
+   No ondula ni rompe: es una masa de agua fija que acompaña al pelotón a una
+   distancia constante. Sirve de telón y de referencia de "por aquí no se vuelve"
+   sin necesidad de un muro invisible ni de un temporizador. Se construye una
+   vez, cubre todo el ancho de la travesía y se recoloca cada frame detrás del
+   corredor más atrasado.
+   ===================================================================== */
+const OLAZA = { alto: 20, fondo: 40, tras: 50, ancho: 900, crestas: 7, rizo: 2.6 };
+function creaOlaza(){
+  const NU = 64, NV = 12, pos = [], col = [], idx = [];
+  /* el azul OSCURO del fondo del mar (PAL.hard) la dejaba como una loma negra en
+     el horizonte: va en el azul CLARO del agua, con la mitad de arriba en espuma */
+  const cAgua = new THREE.Color(PAL.soft), cCresta = new THREE.Color(0xffffff), c = new THREE.Color();
+  for(let iu = 0; iu <= NU; iu++){
+    const u = iu / NU;
+    /* MEDIDO A OJO EN CAPTURA: con 26 u de alto y sin relieve esto salía como un
+       MURO gris de lado a lado. Una ola se lee por su CRESTA: aquí la línea de
+       arriba ondula (varias crestas a lo largo del ancho) y la pared cae a los
+       lados, así que ya no es un tabique. */
+    const perfilX = Math.cos((u - 0.5) * Math.PI * 0.88);
+    const rizo = Math.sin(u * Math.PI * 2 * OLAZA.crestas) * OLAZA.rizo
+               + Math.sin(u * Math.PI * 2 * OLAZA.crestas * 0.37 + 1.2) * OLAZA.rizo * 0.7;
+    for(let iv = 0; iv <= NV; iv++){
+      const v = iv / NV;                            // 0 = pie de la ola · 1 = cresta
+      /* la cara se echa hacia delante conforme sube: una ola a punto de romper */
+      const y = (OLAZA.alto + rizo) * Math.pow(v, 1.35) * (0.30 + 0.70 * perfilX);
+      const z = OLAZA.fondo * (1 - v) - OLAZA.fondo * 0.34 * Math.pow(v, 2.2);
+      pos.push((u - 0.5) * OLAZA.ancho, y, z);
+      /* espuma: toda la mitad de arriba, que es lo que hace que se lea como agua
+         y no como una pared pintada */
+      c.copy(cAgua).lerp(cCresta, clamp((v - 0.35) / 0.5, 0, 1));
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  for(let iu = 0; iu < NU; iu++) for(let iv = 0; iv < NV; iv++){
+    const a = iu * (NV + 1) + iv, b = a + NV + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  /* EMISIVA a propósito: la cara que ve el jugador es la de ATRÁS de la ola, o
+     sea la que está a contraluz — con Lambert puro salía como una loma negra en
+     el horizonte por mucho que se le pusiera color claro. */
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors:true, side:THREE.DoubleSide,
+    emissive:0xffffff, emissiveIntensity:0.55 }));
+  m.frustumCulled = false;
+  return m;
+}
+function updateOlaza(){
+  if(!DESC.olaza) return;
+  /* ►DETRÁS DEL JUGADOR, no del pelotón. Al principio la colgué del corredor más
+     atrasado para no adelantar a nadie, y con el grupo estirado la ola se
+     quedaba a 800 u del líder: nunca se veía. Lo que Toni quiere es una pared
+     de agua pisándole los talones a ÉL, así que sigue al humano (y si va el
+     último, pues igual). */
+  const r = DESC.racers.find(x => x.human) || DESC.racers[0];
+  if(!r) return;
+  DESC.olaza.position.set(0, 0, r.z + OLAZA.tras);
+}
+
 /* --- la barra va DONDE ESTÁ EL PECHO, frame a frame -----------------------
    Se lee la línea de hombros que ha dejado el clip y se planta la barra
    perpendicular a ella, un poco por delante y por debajo. Amortiguado, porque
@@ -3680,9 +3806,16 @@ function updateKite(r, dt){
   K2.vela.position.set(K2.lat * KITE.ladeo,
                        KITE.alto + (r.air ? KITE.altoAire : 0),
                        -KITE.dist);
-  K2.vela.updateMatrixWorld(true);
-  K2.barra.getWorldPosition(_kw[0]);
-  K2.vela.lookAt(_kw[0]);                  // la panza siempre encarada al rider
+  /* ►ORIENTACIÓN DE LA VELA — SIN `lookAt`. Con lookAt hacia la barra, y estando
+     la vela 8 u por encima del rider, su eje de mirada apuntaba hacia ABAJO: eso
+     tumbaba el plano del arco hasta dejarlo casi horizontal y la vela se leía
+     como un paraguas visto desde abajo (Toni, dos veces: "la has puesto mal
+     igual, debías rotarla horizontalmente"). Una vela de kite va DE PIE, girada
+     en horizontal hacia donde tira y sólo un poco inclinada. Así que la
+     orientación se compone a mano: yaw = hacia donde va el rider más el ladeo
+     del kite, y un pitch fijo. Nada de mirar al rider. */
+  K2.vela.rotation.order = 'YXZ';
+  K2.vela.rotation.set(KITE.pitch, K2.lat * KITE.yawLadeo, -K2.lat * KITE.rollLadeo);
   K2.vela.updateMatrixWorld(true);
 
   if(K2.peso > 0.01){
@@ -5623,6 +5756,7 @@ DESC.tick = function(dt){
 
   updateGlobos(dt);
   updatePop(dt);
+  updateOlaza();          // ►OLAZA: se recoloca detrás del pelotón
   stepCamera(dt);
   /* ►DESCINTRO: la cinemática va DESPUÉS de la cámara de juego, no en su lugar
      — así stepCamera converge por debajo y el último plano puede fundirse con
