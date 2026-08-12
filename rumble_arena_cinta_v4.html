@@ -35154,6 +35154,7 @@ function mapSelApply(){
   const e = RUTA[MENU_RUTA_I] || RUTA[0];
   const s = e.st || _rutaMundoPrevio(MENU_RUTA_I);
   if(e.st) MENU_STAGE = e.st;
+  MENU_MINI = (e.mini && typeof e.mini === 'string') ? e : null;   // lo consume el arranque
   try{
     STAGE = s; _stagePreview = s;
     applyStageTheme(s);
@@ -35175,12 +35176,13 @@ function mapSelGo(dir){
   MENU_RUTA_I = (mapSelIdx() + dir + n) % n;
   mapSelApply();
 }
-/* ►¿lo elegido en la portada es un minijuego MÓDULO? Lo consulta el botón de
-   jugar: esos no arrancan una partida, se lanzan solos y devuelven a la home. */
-function menuMiniModulo(){
-  const e = RUTA[MENU_RUTA_I];
-  return (e && e.mini && typeof e.mini === 'string') ? e : null;
-}
+/* ►¿lo elegido en la portada es un minijuego MÓDULO? Esos no arrancan una
+   partida: se lanzan solos y devuelven a la home.
+   Se lee de `MENU_MINI`, que escribe SOLO el selector, y no del índice: así el
+   arranque suelto de arena.js/cuadrimania.js (que ponen `MENU_STAGE` y llaman a
+   `launchMatch` por su cuenta) no puede desviarse a un módulo por accidente. */
+let MENU_MINI = null;
+function menuMiniModulo(){ return MENU_MINI; }
 /* lanza el minijuego elegido DESDE LA PORTADA y vuelve a ella al acabar */
 function jugarMiniDesdeHome(e){
   const mod = (RUTA_MINIS[e.mini] || (()=>null))();
@@ -35676,6 +35678,17 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   if(typeof resetBossFight==='function') resetBossFight();  // desmonta arena/aro/jefe y restaura BELT/bossActive
 }
 function launchMatch(){
+  /* ►MAPSEL · LA GUARDA VA AQUÍ, que es por donde pasan TODOS los caminos de
+     arranque (el asistente, "OTRA VEZ", el mando por UINAV…). Ponerla solo en
+     el botón del asistente dejaba fuera a los demás: si en la portada está
+     elegido un minijuego MÓDULO, lo que hay que lanzar es el módulo, no una
+     partida — y lanzar la partida cargaba el mundo que tocara. */
+  if(MENU_MINI){
+    const _m = MENU_MINI;
+    MENU_MINI = null;                       // se consume: un solo uso
+    if(jugarMiniDesdeHome(_m)) return;
+    console.warn('[mapsel] no se pudo lanzar "' + _m.mini + '": se arranca la partida normal');
+  }
   /* ►WARMUP: aquí NO se pre-calienta. Medido en la máquina de Toni: esta llamada era el peor frame de
      todo un informe de 150 s — 1.151 ms de congelación justo al entrar. Lo que hubiera compilado ya lo
      compila el bucle de reposo mientras se lee el menú. */
@@ -36494,12 +36507,10 @@ function startMatch(){
   document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep(MATCH.mode==='training' ? 1 : 2); });   // en entrenamiento no hay paso de CPUs
   document.getElementById('startGameBtn').addEventListener('click', ()=>{
     closeModal();                                                  // saca el carrusel del popup primero
-    /* ►MAPSEL: si en la portada está elegido un minijuego MÓDULO (descenso o
-       tubo), no hay partida que lanzar — se juega él solo y se vuelve al menú.
-       Los minijuegos que SON stages (13/14) caen por el camino normal. */
-    const _mini = (typeof menuMiniModulo === 'function') ? menuMiniModulo() : null;
-    if(_mini && jugarMiniDesdeHome(_mini)) return;
-    document.getElementById('startOverlay').style.display = 'none';
+    /* la desviación a un minijuego módulo la hace `launchMatch` (ahí pasan
+       todos los caminos); aquí solo se oculta el menú si NO va a haber módulo,
+       porque el módulo se encarga él de esconderlo y de volver a enseñarlo */
+    if(!menuMiniModulo()) document.getElementById('startOverlay').style.display = 'none';
     launchMatch();                                                 // usa MATCH.mode / MATCH.cpus / MATCH.cls
   });
 })();
