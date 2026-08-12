@@ -62,11 +62,20 @@ const K = {
   h:        2.2,     // grosor
   y:        0,       // altura del disco
 
-  /* --- ►KOTH · el PODIO del centro: el nucleo sube en dos escalones --- */
-  Rcima:    6.8,     // radio de la CIMA (el sitio que se disputa)
-  altoMedio:2.4,     // escalon intermedio; con JUMP=19/GRAV=-36 un salto sube ~5 u
-  altoCima: 4.6,     // la cima: dos saltos, o uno desde el escalon
-  kothPts:  8,      // puntos por segundo mandando SOLO en la cima
+  /* --- ►KOTH · la TORRE del centro: una pagoda escalonada de UNA casilla arriba ---
+     ►SE MIDE EN CASILLAS, NO EN RADIO. Con un umbral circular sobre una rejilla
+     cuadrada, dos losetas VECINAS pueden caer en pisos distintos: medido, en los
+     ejes salia un escalon de 4,8 (de 9,6 a 4,8 de golpe) mientras en diagonal
+     eran 2,4 — o sea una subida que a veces no existe. Por anillos CUADRADOS
+     (Chebyshev) cada loseta esta exactamente UN escalon por encima de su vecina,
+     se suba por donde se suba.
+     Escalon de 4,0 contra un salto de 5,01 (JUMP 19 / GRAV −36): se sube de un
+     brinco, y el doble salto perdona el error. */
+  torreN:   3,       // anillos de la torre (0 = la cima, UNA sola loseta) → 4 pisos
+  torrePaso:4.4,     // ...y lo que sube cada uno → CIMA A 17,6 en una loseta de 3,7 de lado
+  torreFija:2,       // ►y solo los 3 de arriba se salvan: el escalon de abajo se lo come el disco
+                     //   con el resto, y al final la torre queda FLOTANDO — mucha altura, cero horizontal
+  kothPts:  12,      // puntos por segundo mandando SOLO en la cima (sube: aguantar ahi es dificil)
   kothPop:  2.0,     // cada cuanto sale el "+N" (no hay marcador: el popup es el aviso)
 
   /* --- ►BOMBA · el objeto que se agarra y se lanza --- */
@@ -116,8 +125,14 @@ const _v3 = new THREE.Vector3(), _q4 = new THREE.Quaternion(),
 const TINTES = [[1.00,1.00,1.00], [0.94,0.95,0.97], [1.06,1.04,1.05], [0.90,0.93,0.96]];
 /* el ANILLO EXTERIOR vivo se enciende en ROJO: es el aviso de "esto es lo siguiente" */
 const TINTE_BORDE = [1.55, 0.62, 0.52];
-/* ►KOTH: el podio, mas claro segun sube — la altura se lee sin salirse de la paleta */
-const TINTE_CIMA = [1.75, 1.62, 1.70], TINTE_MEDIO = [1.34, 1.25, 1.31];
+/* ►KOTH: la torre ACLARA segun sube (la altura se lee sin salirse de la paleta) y
+   la casilla de la cima va casi blanca: es el premio, tiene que cantar de lejos */
+const TINTE_CIMA = [1.95, 1.80, 1.90];
+function tinteTorre(piso){                         // piso 0 = cima
+  if(piso === 0) return TINTE_CIMA;
+  const k = 1.06 + 0.14 * (K.torreN - piso) / Math.max(1, K.torreN - 1);   // abajo 1,06 → arriba 1,20
+  return [k, k * 0.97, k * 0.99];
+}
 
 /* ►SJLOOK · materiales del disco: los MISMOS del jardin japones (tapa magenta
    sakura multitono + cuerpo de piedra gris), en el orden de grupos que trae una
@@ -164,7 +179,14 @@ function clear(){
    devuelve anillo -1 y no entra en el sorteo de caidas. */
 function celda(cx, cz){
   const r = Math.hypot(cx, cz);
-  if(r < K.Rmin) return { anillo:-1, sector:0 };
+  /* ►lo que NO se cae nunca es LA TORRE, y se mide en casillas como ella: con el
+     radio se quedaban fuera sus esquinas (y se habrian caido con el suelo) */
+  const pi = pisoDe(cx, cz);
+  if(pi >= 0 && pi <= K.torreFija) return { anillo:-1, sector:0 };
+  /* ►(12/08) el llano de alrededor SI se cae, hasta el ultimo palmo (antes se
+     salvaba todo r < Rmin) — y con el se va el escalon de abajo de la torre. Es
+     lo que pidio Toni: que al final no quede horizontal donde pelear, solo la
+     aguja flotando. */
   const paso = (K.R - K.Rmin) / K.anillos;
   const anillo = Math.min(K.anillos - 1, Math.floor((K.R - r) / paso));   // 0 = el mas exterior
   let a = Math.atan2(cz, cx); if(a < 0) a += Math.PI * 2;
@@ -172,16 +194,25 @@ function celda(cx, cz){
   return { anillo, sector };
 }
 
-/* ►KOTH · ALTURA de una loseta por su radio: el nucleo deja de ser una losa lisa
-   y sube en dos escalones. Un salto normal cubre ~5 u, asi que cada escalon se
-   sube de un brinco y la cima obliga a encadenar dos (o a subir por el de al
-   lado): pelearse ARRIBA cuesta, que es justo lo que la hace disputada. */
-function alturaDe(cx, cz){
-  const r = Math.hypot(cx, cz);
-  if(r < K.Rcima) return K.altoCima;
-  if(r < K.Rmin)  return K.altoMedio;
-  return 0;
+/* ►KOTH · ALTURA de una loseta por su radio. El nucleo deja de ser una losa lisa:
+   es una TORRE escalonada tipo pagoda y arriba del todo hay UNA casilla.
+
+   Toda la gracia esta en lo estrecha que es la cima: ahi arriba no hay sitio para
+   esquivar, asi que un empujon te saca — y cuando el disco se ha comido los
+   laterales lo que queda es una aguja de 14 u sin horizontal, o sea que caerse
+   deja de ser un accidente y pasa a ser lo normal. */
+/* anillo CUADRADO de una loseta: 0 = la del centro, 1 = las 8 de alrededor... */
+function pisoDe(cx, cz){
+  const a = Math.max(Math.abs(Math.round(cx / K.cell)), Math.abs(Math.round(cz / K.cell)));
+  return a <= K.torreN ? a : -1;                      // -1 = suelo llano (el que se cae)
 }
+function alturaDe(cx, cz){
+  const a = pisoDe(cx, cz);
+  return a < 0 ? 0 : (K.torreN - a + 1) * K.torrePaso;
+}
+/* atajos de la CIMA, que es lo que mira el rey de la colina */
+function cimaR(){ return K.cell * 0.72; }             // la loseta de arriba + un pelo
+function cimaY(){ return K.y + K.torrePaso * (K.torreN + 1); }
 
 /* ---------------------------------------------------------------------
    CONSTRUCCION
@@ -250,7 +281,8 @@ function build(){
                    topY:K.y + alt, baseY:K.y - K.h - 0.1, solid:true };
     const jt = 0.96 + Math.random() * 0.08;   // ►SJLOOK: jitter CORTO — la variedad la pone ya la textura de campo
     let tinte = TINTES[(Math.abs(Math.round(cx/K.cell) * 3 + Math.round(cz/K.cell) * 7)) % TINTES.length];
-    if(alt > 0) tinte = (alt === K.altoCima) ? TINTE_CIMA : TINTE_MEDIO;   // el podio se lee de un vistazo
+    const piso = pisoDe(cx, cz);
+    if(piso >= 0) tinte = tinteTorre(piso);   // la torre se lee de un vistazo
     const tile = { i, cx, cz, y0, alt, sy, plat, anillo:c.anillo, sector:c.sector,
                    state:'idle', t:0, vy:0, rot:0,
                    r:tinte[0]*jt, g:tinte[1]*jt, b:tinte[2]*jt };
@@ -309,7 +341,10 @@ function pintaBorde(){
   for(const t of T.tiles) if(t.state === 'idle' && t.anillo >= 0 && (borde < 0 || t.anillo < borde)) borde = t.anillo;
   for(const t of T.tiles){
     if(t.state !== 'idle') continue;
-    const rojo = (t.anillo === borde);
+    /* ►`borde` se queda en −1 cuando ya no queda NADA por caerse, y sin esta
+       guarda casaba con el −1 de la torre: al final de la partida se encendia
+       la torre ENTERA en rojo, como si fuese a desplomarse. */
+    const rojo = (borde >= 0 && t.anillo === borde);
     _col.setRGB(rojo ? TINTE_BORDE[0] : t.r, rojo ? TINTE_BORDE[1] : t.g, rojo ? TINTE_BORDE[2] : t.b);
     T.inst.setColorAt(t.i, _col);
   }
@@ -454,10 +489,16 @@ function buildTrastos(){
      medido, 0 golpes en 4 s con un tio quieto en la cima. Tiene que pendular
      POR ENCIMA del punto que se disputa, no cerca. */
   if(typeof sjBell === 'function'){
-    const sitios = [
-      { x:0, z:0,                        y:K.y + K.altoCima, ax:'x', ph:0 },              // cruza la cima de lado a lado
-      { x:0, z:(K.Rcima + K.Rmin) * 0.5, y:K.y + K.altoMedio, ax:'x', ph:Math.PI },       // ...y otro barriendo el escalon
-    ];
+    /* ►el de arriba se planta EN la casilla de la cima: sus postes caen justo en
+       los bordes (SPAN/2 = 1,8 = media loseta) y el disco barre de lado a lado.
+       Con la cima de una sola casilla, aguantar ahi es esquivar sin sitio.
+       ►Y VAN SOBRE EL CENTRO DE UNA LOSETA, no sobre una coordenada bonita:
+       `sjBell` se planta solo si el suelo que encuentra debajo coincide con el
+       topY que le pasas (±0,65), y a media loseta de distancia ya es otro piso
+       de la torre — el segundo gong no llegaba a montarse por eso. */
+    const sitios = [ { x:0, z:0, y:cimaY(), ax:'x', ph:0 } ];
+    const t2 = T.mapa && T.mapa.get('0,' + K.torreFija);                      // el escalon mas bajo que se queda: guarda la subida hasta el final
+    if(t2) sitios.push({ x:t2.cx, z:t2.cz, y:K.y + t2.alt, ax:'x', ph:Math.PI });
     for(const s of sitios){
       const g = sjBell(s.x, s.z, s.y, s.ax, 0.9, 0.85, s.ph);
       if(g) apunta({ g, kind:'bell', reg:_sjBells, ent:_sjBells[_sjBells.length-1], fijo:true });
@@ -707,10 +748,10 @@ function updateBombas(dt){
    Toni): el aviso es el aro encendido y el "+N" que sale del que manda.
    ===================================================================== */
 function creaAro(){
-  const g = new THREE.Mesh(new THREE.TorusGeometry(K.Rcima * 0.92, 0.16, 8, 40),
+  const g = new THREE.Mesh(new THREE.TorusGeometry(K.cell * 0.46, 0.14, 8, 32),
     new THREE.MeshBasicMaterial({ color:0xffd15a, transparent:true, opacity:0.0 }));
   g.rotation.x = Math.PI / 2;
-  g.position.set(0, K.y + K.altoCima + 0.12, 0);
+  g.position.set(0, cimaY() + 0.12, 0);
   T.group.add(g); T.aro = g;
 }
 
@@ -718,8 +759,8 @@ function koth(dt){
   let rey = null, empate = false;
   for(const p of players){
     if(p.dead || p.out) continue;
-    if(Math.hypot(p.pos.x, p.pos.z) > K.Rcima + 0.5) continue;
-    if(Math.abs(p.pos.y - (K.y + K.altoCima)) > 2.4) continue;     // ARRIBA, no debajo del podio
+    if(Math.hypot(p.pos.x, p.pos.z) > cimaR()) continue;
+    if(Math.abs(p.pos.y - cimaY()) > 2.4) continue;     // ARRIBA de la torre, no a su pie
     if(rey) empate = true; else rey = p;
   }
   if(empate) rey = null;
@@ -847,9 +888,17 @@ function tick(dt){
 function spawnPoint(idx, total){
   const n = Math.max(1, total || 4);
   const a = (idx / n) * Math.PI * 2 + 0.4;
-  /* en el ESCALON, no en la cima: reaparecer no puede regalar el podio */
-  const r = (K.Rcima + K.Rmin) * 0.5;
-  return { x: Math.cos(a) * r, y: K.y + K.altoMedio + 2.2, z: Math.sin(a) * r };
+  /* en el LLANO, lejos de la torre: reaparecer no puede regalar la cima, hay que
+     volver a subirse los tres escalones.
+     ►pero el llano se acaba: si la loseta de ese sitio ya se cayo, se reaparece
+     en la BASE DE LA TORRE, que es el unico suelo que la partida garantiza (sin
+     esto, en el ultimo tercio se reaparece sobre el vacio y se muere en bucle). */
+  const r = K.Rmin + 4, x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if(hayLoseta(x, z)) return { x, y: K.y + 2.2, z };
+  const rb = K.cell * K.torreFija, bx = Math.cos(a) * rb, bz = Math.sin(a) * rb;   // el anillo mas bajo que NO se cae
+  /* la altura se PREGUNTA (en diagonal ese radio cae ya en el piso de arriba) */
+  const sy = (typeof platformTopAt === 'function') ? platformTopAt(bx, bz, 0.3) : null;
+  return { x: bx, y: (sy === null ? K.y + K.torrePaso : sy) + 2.2, z: bz };
 }
 
 /* ---------------------------------------------------------------------
