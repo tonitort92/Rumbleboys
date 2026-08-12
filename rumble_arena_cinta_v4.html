@@ -10309,7 +10309,7 @@ function trainMinions(dt){
 function updateMinions(dt){
   if(TRAIN.on){
     trainMinions(dt);
-  } else if(!bossActive && STAGE!==6 && STAGE!==13){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego)
+  } else if(!bossActive && STAGE!==6 && STAGE!==13 && STAGE!==14){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego) · ►ARENA: el 14 es un duelo (jugadores + bombas + cacharros); una horda cayéndose al vacío sin parar solo sería ruido
     minionT-=dt;
     if(minionT<=0){
       const cap=maxMinions();
@@ -19102,7 +19102,11 @@ function updateFighter(p, dt){
         if(classQ(p)) p.throwBuf = 0;   // HABILIDAD Q ÚNICA por clase: hacha / corte viento / perforante / orbe / jabalina / castigo
       }
       else if(wantAtk){
-        if(p.weapon && (p.weapon.kind==='bow' || p.weapon.kind==='bazooka')){
+        /* ►ARENA (stage 14): con una BOMBA en las manos el botón de ataque la LANZA
+           (y solo entonces: si no llevas ninguna, `lanza` devuelve false y sigue el
+           reparto normal de abajo). La CPU no pasa por aquí — la pilota arena.js. */
+        if(STAGE===14 && window.ARENA && ARENA.lanza(p)){ p.atkBuf = 0; }
+        else if(p.weapon && (p.weapon.kind==='bow' || p.weapon.kind==='bazooka')){
           if(p.wpnCD<=0){
             const ok = p.weapon.kind==='bow' ? fireBow(p) : fireBazooka(p);
             if(ok){ p.wpnCD = (p.weapon.kind==='bow' ? .45 : .95)*rateMul(p); p.weapon.ammo--; if(p.weapon.ammo<=0) p.weapon=null; }
@@ -24545,7 +24549,7 @@ const _sjKoi = [], _sjLanternsAnim = [];
 let _sjT = 0;
 const _sjWP = new THREE.Vector3();
 function updateStageJapan(dt){
-  if(STAGE!==3) return;
+  if(STAGE!==3 && STAGE!==14) return;   // ►ARENA (stage 14): el disco reutiliza los cacharros del jardín (taiko/gong/daruma) y necesita su animador; lo llama ARENA.tick, no la cinta
   _sjT += dt;
   /* ►SPLASH: jugadores vadeando un estanque → chapoteo + los KOI se ESPANTAN (nadan ×3 un rato) */
   for(const pd of _sjPonds){
