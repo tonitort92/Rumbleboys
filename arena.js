@@ -70,6 +70,13 @@ const K = {
   puenteW:  4.2,     // ancho del tablero
   puenteSag:1.6,     // comba
   carril:   0.55,    // margen del carril invisible respecto al borde
+  /* ►cuanto se meten los extremos DENTRO de la losa (1 = justo en su arista).
+     OJO al margen: el piso de abajo solo deja un ANILLO pisable entre el escalon
+     de arriba y su borde (aqui, de 10,5 a 13 de semilado). Con 0,70 el extremo
+     caia a 9,1, o sea DEBAJO del escalon siguiente: el puente nacia enterrado.
+     0,88 lo deja a 11,4 — dentro del anillo y a 1,6 de la esquina, que es lo que
+     hace falta para que la esquina redondeada de la tapa no lo deje al aire. */
+  anclaje:  0.88,
 
   /* --- rey de la colina --- */
   turno:    30,      // s que la colina se queda en un pico
@@ -85,7 +92,6 @@ const K = {
   dur:      120,     // 2 minutos (Toni) = 4 turnos de colina
   respawn:  1.4,
   y:        0,       // cota base (el suelo de las plataformas arranca aqui)
-  muroR:    108,     // ►MURO INVISIBLE, por fuera de la esquina mas lejana
 };
 
 const T = {
@@ -119,6 +125,7 @@ function clear(){
   if(T.reloj && T.reloj.parentNode) T.reloj.parentNode.removeChild(T.reloj);
   T.reloj = null;
   const ch = document.getElementById('chaos'); if(ch) ch.style.display = '';
+  if(typeof _boundaryWalls !== 'undefined') for(const w of _boundaryWalls) w.visible = true;   // se lo devolvemos al resto del juego
   T.built = false; T.over = false;
 }
 
@@ -241,10 +248,18 @@ function puente(ax, az, bx, bz, y){
 
 /* ►CARRIL: mientras estas sobre un puente no puedes salirte por el lado.
    Se proyecta la posicion sobre el vano y se pega el desvio lateral al
-   ancho del tablero (y se mata la velocidad que te sacaba). */
+   ancho del tablero (y se mata la velocidad que te sacaba).
+
+   ►Y NO ACTUA SI TIENES SUELO SOLIDO BAJO LOS PIES. Los puentes ANCLAN dentro
+   de las pagodas, asi que sus extremos pasan por encima de la plataforma: sin
+   esta guarda, pasear por esa zona de la losa te arrastraba de lado hacia el
+   carril en cada frame — un tiron constante en un sitio donde no hay puente
+   que valga. Es la misma familia de fallo que el muro del motor. */
 function carriles(){
   const lim = K.puenteW * 0.5 - K.carril;
   const uno = a => {
+    const sol = (typeof platformTopAt === 'function') ? platformTopAt(a.pos.x, a.pos.z, 0.3) : null;
+    if(sol !== null && Math.abs(a.pos.y - sol) < 0.8) return;      // de pie en una pagoda: el carril no pinta nada
     for(const b of T.puentes){
       const rx = a.pos.x - b.ax, rz = a.pos.z - b.az;
       const t = rx * b.ux + rz * b.uz;
@@ -276,6 +291,10 @@ function build(){
   scene.add(T.group);
 
   if(typeof enableSJScenery === 'function') enableSJScenery(true);   // el fondo del jardin (nubes, montanas, Fuji)
+  /* ►y FUERA el campo de fuerza translucido: son dos paneles con barras clavados
+     en ±WALL_X (42), o sea CRUZANDO las pagodas de las esquinas. Marcaban un
+     limite que en este stage ya no existe (ver el recinto desactivado). */
+  if(typeof _boundaryWalls !== 'undefined') for(const w of _boundaryWalls) w.visible = false;
 
   /* --- las cinco, como el cinco de un dado --- */
   const S = K.sep;
@@ -286,7 +305,12 @@ function build(){
          se tocan entre si por el perimetro (4 mas). Sin el perimetro, ir de
          una esquina a la de al lado obliga a pasar SIEMPRE por el centro. */
   const yB = centro.baseY;                       // los puentes enganchan al escalon de abajo
-  const h = centro.baseLado * 0.5;
+  /* ►ANCLAJE: los extremos entran DENTRO de la losa, no se paran en su borde.
+     Puestos justo en la arista —y peor en la ESQUINA, que es por donde salen las
+     diagonales— quedaban al aire: la tapa del stage tiene las esquinas
+     redondeadas (radio ~1,9), asi que la esquina geometrica del AABB no existe
+     en el dibujo. Metiendolos, los ultimos tablones se apoyan sobre la piedra. */
+  const h = centro.baseLado * 0.5 * K.anclaje;
   for(const q of T.torres){
     if(q === centro) continue;
     const sx = Math.sign(q.cx), sz = Math.sign(q.cz);
@@ -564,21 +588,11 @@ function updateBombas(dt){
   iaBombas(dt);
 }
 
-/* ---------------------------------------------------------------------
-   MURO INVISIBLE — mismo patron que los muros laterales del juego
-   --------------------------------------------------------------------- */
-function muro(a){
-  const d = Math.hypot(a.pos.x, a.pos.z);
-  if(d <= K.muroR || d < 0.001) return;
-  const nx = a.pos.x / d, nz = a.pos.z / d;
-  a.pos.x = nx * K.muroR; a.pos.z = nz * K.muroR;
-  const vn = a.vel.x * nx + a.vel.z * nz;
-  if(vn > 0){ a.vel.x -= vn * nx * 1.2; a.vel.z -= vn * nz * 1.2; }
-}
-function recinto(){
-  if(typeof players !== 'undefined') for(const p of players){ if(!p.out) muro(p); }
-  if(typeof minions !== 'undefined') for(const mn of minions){ if(!mn.dead) muro(mn); }
-}
+/* ►SIN MURO INVISIBLE (12/08, Toni: "quita los putos muros invisibles").
+   Aqui no hay recinto de ningun tipo: si te mandan volando fuera del mapa no
+   rebotas contra nada, caes — y caer ya cuesta el tiempo de volver. Los del
+   motor (±WALL_X y las lineas de muerte en Z) tambien estan desactivados para
+   este stage: caian dentro de las pagodas de las esquinas. */
 
 /* REAPARICION SIN FIN: caerse cuesta TIEMPO (y el tiempo son puntos de la
    colina que no estas haciendo), no la partida. */
@@ -624,7 +638,6 @@ function tick(dt){
   updateBombas(dt);
   koth(dt);
   carriles();
-  recinto();
   reponVidas();
   pintaReloj();
 

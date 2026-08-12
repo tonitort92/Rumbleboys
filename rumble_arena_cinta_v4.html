@@ -19405,6 +19405,16 @@ function updateFighter(p, dt){
     if(p.pos.z < -_pz){ p.pos.z = -_pz; if(p.vel.z < WALL_PUSH) p.vel.z = WALL_PUSH; }
     else if(p.pos.z > BLAST_Z_NEAR){ p.pos.z = BLAST_Z_NEAR; if(p.vel.z > -WALL_PUSH) p.vel.z = -WALL_PUSH; }
     if(p.pos.y < _loY){ ko(p); return; }
+  } else if(STAGE===14){
+    /* ►ARENA · EL RECINTO DE LA CINTA NO VALE AQUÍ. El mapa mide ~120 de punta a punta (5 pagodas
+       y sus puentes) y el recinto de siempre se le queda pequeño por los cuatro costados:
+       · los muros de ±WALL_X (42) caen DENTRO de las plataformas de las esquinas (x de 33 a 59),
+         así que pisar su mitad de fuera te empujaba —y disparaba la SACUDIDA DE PANTALLA de
+         `wallHit`— en CADA frame: el "terremoto" que reportó Toni;
+       · y la línea de muerte en Z (BLAST_Z_NEAR = 44) mataba nada más aterrizar en las dos pagodas
+         del fondo (z = 46).
+       Como en la torre del 13, aquí lo único que mata es CAERSE: ni muros, ni techo, ni líneas. */
+    if(p.pos.y < _loY){ ko(p); return; }
   } else if(BELT.on || bossActive){   // durante el JEFE: los muros laterales de SIEMPRE (±WALL_X) siguen activos (la cinta está congelada pero NO pasamos al modo clásico de muerte cuadrada → si te empujan al lado, REBOTAS como en la cinta, no mueres)
     /* ►S10ZEROG: en la Vía Arcoíris todo el "recinto" se ensancha ×3 (muros laterales lejanos + muerte
        en Z ×3) y NO hay techo de muerte → puedes volar/planear muy lejos y arriba antes de que te saquen. */
