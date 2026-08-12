@@ -50,7 +50,13 @@
    ===================================================================== */
 (function(){
 'use strict';
-if(!/[?&]arena(=|&|$)/.test(location.search)) return;
+/* ►SE DEFINE SIEMPRE, PERO NO ARRANCA SOLO.
+   Antes salia aqui mismo sin `?arena` en la URL, y eso rompia el STAGE 14
+   dentro de la campana: `applyStageTheme(14)` llama a `ARENA.applyTheme()`, que
+   no existia, la excepcion se comia el resto del tema y el mapa salia a medias
+   ("carga lo que le sale de la polla", dixit Toni). Ahora el modulo se define
+   siempre y lo unico que cuelga del parametro es el ARRANQUE AUTOMATICO. */
+const SUELTO = /[?&]arena(=|&|$)/.test(location.search);
 
 const _qs  = new URLSearchParams(location.search);
 const _num = (k, d)=>{ const v = parseFloat(_qs.get(k)); return isFinite(v) ? v : d; };
@@ -855,8 +861,10 @@ const ARENA = {
 };
 window.ARENA = ARENA;
 
+/* arranque SUELTO (?arena): monta una partida entera en el stage 14. En campana
+   no se pasa por aqui — se llega con goToStage14(), como a cualquier mundo. */
 function boot(){
-  if(ARENA.on) return;
+  if(ARENA.on || !SUELTO) return;
   if(typeof THREE === 'undefined') return;
   if(typeof launchMatch !== 'function' || typeof platforms === 'undefined' || typeof players === 'undefined') return;
   if(typeof _charTpls === 'undefined' || !_charTpls || !Object.keys(_charTpls).length) return;
@@ -866,7 +874,9 @@ function boot(){
   MENU_STAGE = 14;
   launchMatch();
 }
-const _bt = setInterval(()=>{ boot(); if(ARENA.on) clearInterval(_bt); }, 80);
-boot();
+if(SUELTO){
+  const _bt = setInterval(()=>{ boot(); if(ARENA.on) clearInterval(_bt); }, 80);
+  boot();
+}
 
 })();

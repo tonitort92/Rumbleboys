@@ -56,7 +56,11 @@
    ===================================================================== */
 (function(){
 'use strict';
-if(!/[?&]cuadrimania(=|&|$)/.test(location.search)) return;
+/* ►SE DEFINE SIEMPRE, PERO NO ARRANCA SOLO. Mismo motivo que en arena.js: sin
+   `?cuadrimania` no existia `window.CUAD`, y `applyStageTheme(13)` lo llama —
+   la excepcion se comia el resto del tema y el STAGE 13 salia a medias dentro
+   de la campana. Del parametro solo cuelga el ARRANQUE AUTOMATICO. */
+const SUELTO = /[?&]cuadrimania(=|&|$)/.test(location.search);
 
 const _qs = new URLSearchParams(location.search);
 const _num = (k, d)=>{ const v = parseFloat(_qs.get(k)); return isFinite(v) ? v : d; };
@@ -752,8 +756,9 @@ function applyTheme(){
 
 window.CUAD = CUAD;
 
+/* arranque SUELTO (?cuadrimania). En campana se llega con goToStage13(). */
 function boot(){
-  if(CUAD.on) return;
+  if(CUAD.on || !SUELTO) return;
   if(typeof THREE === 'undefined') return;
   if(typeof launchMatch !== 'function' || typeof platforms === 'undefined' || typeof players === 'undefined') return;
   if(typeof _charTpls === 'undefined' || !_charTpls || !Object.keys(_charTpls).length) return;   // sin modelos saldrian capsulas
@@ -763,7 +768,9 @@ function boot(){
   MENU_STAGE = 13;
   launchMatch();
 }
-const _bt = setInterval(()=>{ boot(); if(CUAD.on) clearInterval(_bt); }, 80);
-boot();
+if(SUELTO){
+  const _bt = setInterval(()=>{ boot(); if(CUAD.on) clearInterval(_bt); }, 80);
+  boot();
+}
 
 })();
