@@ -145,9 +145,28 @@ const K = {
   R:          15,
   NSEC:       24,      // sectores angulares (15° cada uno). La rejilla del dibujo Y la de la física
   segZ:       6,       // longitud de una celda a lo largo del tubo
-  largo:      4300,    // hasta la meta (≈80 s con la rampa de velocidad de abajo)
-  salida:     115,     // tramo limpio antes del primer peligro
+  largo:      6300,    // hasta la meta (≈100 s con la rampa de velocidad de abajo)
+  salida:     150,     // tramo limpio antes del primer peligro
   meta:       190,     // tramo limpio DESPUÉS de la meta (hay que frenar en algún sitio)
+  /* ►PARRILLA DE SALIDA (Toni: "que los jugadores no estén flotando en el aire
+     antes de empezar, que el tubo sea más profundo para ellos en esa zona y les
+     haga base pisable"). En los primeros metros el tubo tiene un SUELO PLANO —
+     una plataforma de verdad sobre la que se está de pie — que se funde con la
+     pared redonda al arrancar. La altura la da `pisoH()`, y la MALLA se genera
+     muestreando ESA MISMA función: el suelo que se ve es el que se pisa. */
+  salidaPiso: 108,     // hasta dónde llega la plataforma
+  pisoFade:   38,      // ...y en cuántas unidades se funde con el tubo
+  pisoLim:    0.62,    // semiancho angular de la plataforma (±35°)
+  /* ►MUROS A TOCHOS (Toni: "como las vallas del stage 1"). Cada celda se dibuja
+     como un SILLAR: cara de arriba metida hacia dentro y un faldón en talud
+     hasta la base. Es el mismo lenguaje que `organicSlabGeo` del juego (losa con
+     bisel + cima), que es lo que da a las vallas del S1 su aire de obra. */
+  grosorTocho:0.55,    // cuánto sobresale el sillar hacia fuera
+  biselTocho: 0.26,    // cuánto se mete la cara de arriba por cada lado
+  /* el relieve multiplica ×5 la geometría de la pared (una cara → cara + 4
+     faldones): 52k triángulos pasan a 260k. Se apaga en calidad Baja/Pelada —
+     no "por si acaso", sino cuando el jugador (o el selector) lo pide. */
+  tochos:     true,
   /* ►RANURA: con 0,5 u en un tubo sin trasdós, la primera captura salía como una
      REDECILLA — a contraluz rasante se ve el vacío entre celdas, no una junta.
      0,16 lee como llaga de baldosa y los agujeros de verdad siguen siendo obvios
@@ -157,9 +176,13 @@ const K = {
   anilloCada: 12,      // un anillo de neón cada N celdas (12 × 6 u = 72 u)
 
   /* --- velocidad: el tubo ACELERA con el tiempo (petición de Toni) --- */
+  /* ►MÁS LARGO Y ACABANDO MUCHO MÁS RÁPIDO (Toni). 34 → 98 u/s en 110 s, con
+     6.300 u de pista: ~100 s de carrera y el último tercio a 140-155 km/h en el
+     marcador. La rampa es más larga que la carrera A PROPÓSITO: así nunca hay un
+     tramo final "a velocidad constante", siempre está acelerando. */
   vel0:       34,      // u/s al arrancar
-  vel1:       70,      // u/s al final de la rampa
-  rampa:      78,      // segundos de rampa
+  vel1:       98,      // u/s al final de la rampa
+  rampa:      110,     // segundos de rampa
   rebufo:     0.12,    // ►ver decisión 4: empuje MÁXIMO del que va detrás (0 = como lo pidió Toni). Con 0,17 una caída (≈150 u) se recuperaba en 18 s y los cuatro llegaban EMPATADOS; con 0,12 cuesta ~25 s y el error se paga
   rebufoGap:  70,      // ...a partir de esta distancia al líder ya es el empuje máximo
 
@@ -192,9 +215,20 @@ const K = {
      que cuesta puesto pero no te saca de la carrera. */
   velFuera:   0.40,
 
+  /* --- obstáculos nuevos (assets del juego, ver buildProps) --- */
+  hurdleAlto: 1.5,     // s7_hurdle: la valla PEQUEÑA de la Forja. Baja: se salta o se rodea
+  hurdleZ:    1.4,
+  bolaR:      1.7,     // s4_spikeball: bola de pinchos
+  bolaH:      1.5,     // a qué altura sobre la pared barren (el apex del salto son 3,4: se pueden saltar)
+  bolaVel:    0.55,    // rad/s de giro del carrusel
+  flechaLargo:13,      // s7_arrow2: longitud del pad
+  boostMul:   1.30, boostT: 2.0,   // flecha CIAN: acelera
+  frenoMul:   0.70, frenoT: 1.6,   // flecha ROJA: frena (si la coges por error)
+
   /* --- puntos --- */
   ptsEstrella: 8,
-  ptsGrande:   40,
+  ptsVeta:     22,     // ►zona de recompensa: fuera del camino cómodo
+  ptsGrande:   60,
   ptsBomba:   -80,
   ptsPos:     [400, 240, 110, 0],   // mismo reparto que el descenso: por debajo de 3º no se cobra
 
@@ -213,7 +247,7 @@ const K = {
   blurCentro: 0.34,
 
   /* --- IA --- */
-  aiLook:     78,      // u que mira por delante para elegir carril
+  aiLook:     130,     // u que mira por delante para elegir carril (a 98 u/s, 78 u era 0,8 s: no daba)
   aiSkill:    [0.94, 0.87, 0.80],
   aiRebusca:  0.55,    // cuánto le tira una estrella frente a la seguridad
   /* ►DESPISTES. Con el barrido de vallas arreglado, las cuatro IAs hacían la
@@ -329,6 +363,23 @@ function orienta(obj, a){
   obj.quaternion.setFromRotationMatrix(_mTmp);
 }
 
+/* ►EL SUELO PISABLE EN (a, s), medido como ALTURA SOBRE LA PARED (igual que `h`).
+   Normalmente 0 = la propia pared del tubo. En la zona de salida devuelve la
+   altura de la PLATAFORMA PLANA: un plano horizontal a y = −y0 visto desde el
+   eje está, en el ángulo a, a radio y0/cos(a) — o sea a `R − y0/cos(a)` de la
+   pared. Con y0 = R·cos(pisoLim) el plano toca la pared justo en ±pisoLim y no
+   hay ni escalón ni costura.
+   LA MALLA DE LA PARRILLA SE GENERA CON ESTA MISMA FUNCIÓN: es la regla de este
+   fichero (ver ►DECISIÓN 1) — nada de "suelo dibujado" distinto del que se pisa. */
+function pisoH(a, s){
+  if(s > K.salidaPiso || s < -20) return 0;
+  const f = smooth(clamp((K.salidaPiso - s) / K.pisoFade, 0, 1));
+  const d = Math.abs(difA(a, 0));
+  if(d >= K.pisoLim) return 0;
+  const y0 = K.R * Math.cos(K.pisoLim);
+  return Math.max(0, K.R - y0 / Math.cos(d)) * f;
+}
+
 const dSEC = () => TAU / K.NSEC;
 const iSec = a => { const i = Math.floor(norm(a) / dSEC()); return i >= K.NSEC ? 0 : i; };
 const jCel = s => Math.floor(s / K.segZ);
@@ -353,9 +404,12 @@ function genPista(rng){
     agujeros: new Set(),     // clave j*NS+i — LA fuente de verdad (dibujo y física)
     vallas:   [],            // {s, i0, n, alto}
     bombas:   [],            // {s, a}
-    estrellas:[],            // {s, a, big, cog} — cog = MÁSCARA DE BITS por corredor
-    aviso:    new Set(),     // celdas que tocan un agujero (se pintan de ámbar)
-    _vb:      null, _bb:null, _eb:null,   // buckets por celda
+    estrellas:[],            // {s, a, tipo:0|1|2, cog} — cog = MÁSCARA DE BITS por corredor
+    hurdles:  [],            // {s, i0, n}  · s7_hurdle: la valla PEQUEÑA de la Forja
+    bolas:    [],            // {s, n, fase, giro, col} · CARRUSEL de s4_spikeball
+    flechas:  [],            // {s, i0, n, boost}  · s7_arrow2: acelera (cian) / frena (rojo)
+    aviso:    new Set(),     // celdas que tocan un agujero (franjas de peligro)
+    _vb:null, _bb:null, _eb:null, _hb:null, _fb:null,   // buckets por celda
   };
 
   /* marca un rectángulo de celdas como agujero */
@@ -385,10 +439,13 @@ function genPista(rng){
     const dado = rng();
     let patron;
     if(compas < 2)                       patron = 'recta';
-    else if(dado < 0.30 - 0.14 * prog)   patron = 'recta';
-    else if(dado < 0.55)                 patron = 'vallas';
-    else if(dado < 0.76)                 patron = 'agujeros';
-    else if(dado < 0.90)                 patron = 'bombas';
+    else if(dado < 0.16 - 0.10 * prog)   patron = 'recta';
+    else if(dado < 0.33)                 patron = 'vallas';
+    else if(dado < 0.48)                 patron = 'agujeros';
+    else if(dado < 0.59)                 patron = 'bombas';
+    else if(dado < 0.71)                 patron = 'slalom';    // ►vallas pequeñas de la Forja
+    else if(dado < 0.84)                 patron = 'carrusel';  // ►circuito de bolas de pinchos
+    else if(dado < 0.92)                 patron = 'flechas';   // ►acelera / frena
     else                                 patron = 'mixto';
     /* el anillo completo (obliga a saltar) solo aparece pasada la primera mitad */
     if(patron === 'vallas' && prog > 0.42 && rng() < 0.34) patron = 'anillo';
@@ -405,8 +462,8 @@ function genPista(rng){
       P.vallas.push({ s:sEv, i0:(i0 + hueco) % NS, n:NS - hueco, alto:K.vallaAlto });
     } else if(patron === 'anillo'){
       P.vallas.push({ s:sEv, i0:0, n:NS, alto:K.vallaAlto });
-      /* premio por saltarla: una estrella grande justo encima del labio */
-      P.estrellas.push({ s:sEv + 3, a:hilo, big:true, cog:0 });
+      /* premio por saltarla: un cristal GRANDE justo encima del labio */
+      P.estrellas.push({ s:sEv + 3, a:hilo, tipo:2, cog:0 });
     } else if(patron === 'agujeros'){
       /* el vacío ocupa casi toda la vuelta menos una pasarela sobre el hilo */
       const largoC = 2 + Math.floor(rng() * 3);                  // 2..4 celdas = 12..24 u (saltables de sobra)
@@ -433,19 +490,77 @@ function genPista(rng){
          da para volver a saltar tras aterrizar (el búfer de salto son 0,12 s);
          con 9 u el aterrizaje y el despegue se solapaban y era injusto. */
       P.vallas.push({ s: (j1 + 1) * K.segZ + 16, i0: i0, n: pasarela, alto: K.vallaAlto });
+    } else if(patron === 'slalom'){
+      /* ►SLALOM con la valla PEQUEÑA de la Forja (s7_hurdle). Es baja: se salta
+         O se rodea, y por eso puede ir en cadena — tres seguidas alternando lado
+         obligan a serpentear, que es lo que un tubo hace mejor que un pasillo. */
+      const n = 2 + Math.floor(rng() * (1 + prog * 2));
+      for(let b = 0; b < n; b++){
+        const lado = (b % 2 ? 1 : -1) * (1 + Math.floor(rng() * 2));
+        const ancho = 3 + Math.floor(rng() * 3);
+        const i0 = ((iH + lado * 2 - (ancho >> 1)) % NS + NS) % NS;
+        P.hurdles.push({ s: sEv + b * (13 + rng() * 8), i0, n: ancho });
+      }
+    } else if(patron === 'carrusel'){
+      /* ►CIRCUITO DE BOLAS DE PINCHOS (s4_spikeball): n bolas repartidas en la
+         vuelta que GIRAN alrededor del tubo. No hay ángulo seguro fijo — hay que
+         leer el giro y colarse por un hueco, o saltarlas (barren a 1,5 y el apex
+         del salto son 3,4). Los "colores de la Forja" van por bola. */
+      const cuantos = 1 + (prog > 0.45 ? 1 : 0);
+      for(let c = 0; c < cuantos; c++){
+        P.bolas.push({ s: sEv + c * 26, n: 3 + Math.floor(rng() * (2 + prog * 2)),
+                       fase: rng() * TAU, giro: (rng() < 0.5 ? -1 : 1) * K.bolaVel * (0.7 + rng() * 0.8),
+                       col: (rng() * 7) | 0 });
+      }
+    } else if(patron === 'flechas'){
+      /* ►FLECHAS (s7_arrow2). La CIAN acelera y la ROJA frena: las dos se ven de
+         lejos y las dos están fuera del hilo, así que coger la buena es un
+         desvío que se paga si fallas y aciertas la mala. */
+      const bueno = (rng() < 0.5 ? 1 : -1);
+      for(const lado of [1, -1]){
+        const ancho = 3;
+        const i0 = ((iH + lado * (3 + Math.floor(rng() * 2)) - 1) % NS + NS) % NS;
+        P.flechas.push({ s: sEv, i0, n: ancho, boost: lado === bueno });
+      }
     }
 
-    /* --- ►DECISIÓN 2: estrellas SOBRE el hilo, interpolando del anterior --- */
+    /* --- ►DECISIÓN 2: la cadena SOBRE el hilo, interpolando del anterior. Es el
+       camino cómodo y el que enseña por dónde se pasa; paga poco a propósito. --- */
+    const libre = (aa, ss) => !P.agujeros.has(jCel(ss) * NS + iSec(aa));
     if(patron !== 'recta' || rng() < 0.75){
       const paso2 = 11;
       for(let d = 0; d < paso; d += paso2){
-        const u = d / paso;
-        const aa = norm(hilo0 + difA(hilo, hilo0) * smooth(u));
+        const aa = norm(hilo0 + difA(hilo, hilo0) * smooth(d / paso));
         const ss = s + d;
         if(ss >= fin + 40) break;
-        /* no sembrar dentro de un agujero ni dentro de una valla */
-        if(P.agujeros.has(jCel(ss) * NS + iSec(aa))) continue;
-        P.estrellas.push({ s:ss, a:aa, big:false, cog:0 });
+        if(!libre(aa, ss)) continue;
+        P.estrellas.push({ s:ss, a:aa, tipo:0, cog:0 });
+      }
+    }
+
+    /* --- ►VETAS DE RECOMPENSA (petición de Toni: "que no siempre sean las
+       mismas zonas, que haya otras de mayor recompensa si es más difícil pasar
+       por ahí"). Una veta se siembra LEJOS del hilo (0,9-2,4 rad: media vuelta
+       de tubo), vale casi 3× y solo se cobra si sales de la línea segura y
+       vuelves a tiempo para lo que venga. Tres sabores, y los tres nacen de que
+       el sitio sea de verdad peor:
+         · pared opuesta  — te vas al otro lado del tubo y hay que volver
+         · entre bombas   — el pasillo estrecho que dejan dos bombas
+         · sobre el vacío — flotando a altura de salto justo al lado de un agujero
+       Si el sitio elegido resulta NO ser peligroso, no pasa nada: sigue estando
+       lejos del hilo, que ya es el coste principal. --- */
+    if(compas > 2 && rng() < 0.46){
+      const lejos = (0.95 + rng() * 1.45) * (rng() < 0.5 ? -1 : 1);
+      const aV = norm(hilo + lejos);
+      const alto = (patron === 'agujeros' || patron === 'mixto') && rng() < 0.6;
+      const nV = 3 + Math.floor(rng() * 4);
+      const largoV = 9;
+      for(let b = 0; b < nV; b++){
+        const ss = sEv - (nV - 1) * largoV * 0.5 + b * largoV;
+        if(ss < K.salida || ss >= fin + 40) continue;
+        /* sobre el vacío SÍ (van a altura de salto); en suelo, solo si hay suelo */
+        if(!alto && !libre(aV, ss)) continue;
+        P.estrellas.push({ s:ss, a:aV, tipo:1, cog:0, alto: alto ? 2.5 : 0 });
       }
     }
 
@@ -480,6 +595,13 @@ function genPista(rng){
   P._vb = bucket(P.vallas,    o => o.s);
   P._bb = bucket(P.bombas,    o => o.s);
   P._eb = bucket(P.estrellas, o => o.s);
+  P._hb = bucket(P.hurdles,   o => o.s);
+  P._fb = bucket(P.flechas,   o => o.s);
+  /* las bolas GIRAN, así que su cubeta cubre más celdas a lo largo (el carrusel
+     es fino en z pero hay que verlo venir): se indexan con ±2 */
+  P._cb = new Map();
+  for(const b of P.bolas){ const j = jCel(b.s);
+    for(let d = -2; d <= 2; d++){ if(!P._cb.has(j+d)) P._cb.set(j+d, []); P._cb.get(j+d).push(b); } }
   return P;
 }
 
@@ -526,7 +648,9 @@ function buildScene(){
   TUBO.world = world;
 
   buildTuboMalla(world);
+  buildParrilla(world);
   buildVallas(world);
+  buildProps(world);
   buildBombas(world);
   buildEstrellas(world);
   buildMeta(world);
@@ -537,6 +661,13 @@ function buildScene(){
   TUBO.scene = sc;
   TUBO.cam = new THREE.PerspectiveCamera(K.fovBase, innerWidth / innerHeight, 0.4, 4000);
   return sc;
+}
+
+/* hash entero estable por celda: da el multitono de cada sillar sin guardar nada */
+function _hashCel(a, b){
+  let h = (a * 374761393 + b * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  return (h ^ (h >>> 16)) >>> 0;
 }
 
 /* --- LA PARED, por celdas y en trozos (un trozo = 64 celdas de largo, para
@@ -565,6 +696,19 @@ function buildTuboMalla(world){
     const pos2 = [], col2 = [], idx2 = [];
     let v = 0, v2 = 0;
 
+    /* el anillo de neón del borde de celda, en su propia geometría (material
+       BASIC: es luz, no obra) */
+    const anilloDe = (a0, a1, z0, idc) => {
+      const zr0 = z0 + 0.05, zr1 = z0 - 0.55, rr = R - 0.06;
+      aLin(cA.setHex(PAL.arco[(idc + 3) % PAL.arco.length])).lerp(sRGB(0xffffff), 0.45);
+      for(const [aa, zz] of [[a0, zr0], [a1, zr0], [a1, zr1], [a0, zr1]]){
+        pos2.push(Math.sin(aa) * rr, -Math.cos(aa) * rr, zz);
+        col2.push(cA.r, cA.g, cA.b);
+      }
+      idx2.push(v2, v2 + 1, v2 + 2, v2, v2 + 2, v2 + 3);
+      v2 += 4;
+    };
+
     for(let j = c0; j < c1; j++){
       const z0 = -(j * K.segZ), z1 = -((j + 1) * K.segZ - K.ranuraZ);
       const anillo = (j % K.anilloCada) === 0;
@@ -579,25 +723,55 @@ function buildTuboMalla(world){
         const esAviso = P.aviso.has(j * NS + i);
         aLin(cA.setHex(esAviso ? ((i + j) & 1 ? PAL.aviso : PAL.aviso2) : PAL.arco[idc]));
         if(!esAviso && (j & 1)) cA.multiplyScalar(0.88);   // bandeado por tramos: da lectura de avance
-        for(const [aa, zz] of [[a0, z0], [a1, z0], [a1, z1], [a0, z1]]){
-          pos.push(Math.sin(aa) * R, -Math.cos(aa) * R, zz);
-          nor.push(-Math.sin(aa), Math.cos(aa), 0);
-          col.push(cA.r, cA.g, cA.b);
+        /* ►MULTITONO POR SILLAR: sin esto, 16.000 tochos del mismo color son una
+           calcomanía repetida. MULTIPLICATIVO (no offsetHSL: con el blanco no
+           varía nada — está medido en este proyecto, ver color-props-en-el-vertice). */
+        const hh = _hashCel(i, j);
+        cA.multiplyScalar(0.86 + (hh & 15) / 15 * 0.28);
+        cA.r *= 1 + (((hh >> 4) & 7) / 7 - 0.5) * 0.10;
+        cA.b *= 1 - (((hh >> 4) & 7) / 7 - 0.5) * 0.10;
+
+        /* --- EL SILLAR: cara de arriba METIDA (bisel) + faldón en talud hasta
+           la base, que sobresale `grosorTocho`. La cara de arriba se queda en
+           el radio R exacto: es la que se pisa, y la física sigue siendo R. --- */
+        if(!K.tochos){                                   // calidad baja: la celda plana de siempre
+          for(const [aa, zz] of [[a0, z0], [a1, z0], [a1, z1], [a0, z1]]){
+            pos.push(Math.sin(aa) * R, -Math.cos(aa) * R, zz);
+            nor.push(-Math.sin(aa), Math.cos(aa), 0);
+            col.push(cA.r, cA.g, cA.b);
+          }
+          idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+          v += 4;
+          if(anillo) anilloDe(a0, a1, z0, idc);
+          continue;
+        }
+        const bA = K.biselTocho / R, bZ = K.biselTocho;
+        const A0 = a0 + bA, A1 = a1 - bA;
+        const Z0 = z0 - bZ, Z1 = z1 + bZ;
+        const Rb = R + K.grosorTocho;
+        const pt = (aa, rr, zz) => [Math.sin(aa) * rr, -Math.cos(aa) * rr, zz];
+        const nIn = aa => [-Math.sin(aa), Math.cos(aa), 0];
+        /* cara superior (la pisable) */
+        for(const [aa, zz] of [[A0, Z0], [A1, Z0], [A1, Z1], [A0, Z1]]){
+          const p = pt(aa, R, zz), n2 = nIn(aa);
+          pos.push(p[0], p[1], p[2]); nor.push(n2[0], n2[1], n2[2]); col.push(cA.r, cA.g, cA.b);
         }
         idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
         v += 4;
+        /* los cuatro faldones. Van algo más oscuros: es lo que hace que el tocho
+           se lea como un volumen y no como una baldosa pintada. */
+        const cs = cA.clone().multiplyScalar(0.62);
+        const faldon = (pa, pb, pc, pd, nx, ny, nz) => {
+          for(const p of [pa, pb, pc, pd]){ pos.push(p[0], p[1], p[2]); nor.push(nx, ny, nz); col.push(cs.r, cs.g, cs.b); }
+          idx.push(v, v + 1, v + 2, v, v + 2, v + 3); v += 4;
+        };
+        faldon(pt(A0, R, Z0), pt(A1, R, Z0), pt(a1, Rb, z0), pt(a0, Rb, z0), 0, 0, 1);
+        faldon(pt(a0, Rb, z1), pt(a1, Rb, z1), pt(A1, R, Z1), pt(A0, R, Z1), 0, 0, -1);
+        const nl0 = nIn(a0), nl1 = nIn(a1);
+        faldon(pt(A0, R, Z1), pt(A0, R, Z0), pt(a0, Rb, z0), pt(a0, Rb, z1), -nl0[0], -nl0[1], 0);
+        faldon(pt(a1, Rb, z1), pt(a1, Rb, z0), pt(A1, R, Z0), pt(A1, R, Z1),  nl1[0],  nl1[1], 0);
 
-        /* --- anillo de neón en el borde de la celda --- */
-        if(anillo){
-          const zr0 = z0 + 0.05, zr1 = z0 - 0.55, rr = R - 0.06;
-          aLin(cA.setHex(PAL.arco[(idc + 3) % PAL.arco.length])).lerp(sRGB(0xffffff), 0.45);
-          for(const [aa, zz] of [[a0, zr0], [a1, zr0], [a1, zr1], [a0, zr1]]){
-            pos2.push(Math.sin(aa) * rr, -Math.cos(aa) * rr, zz);
-            col2.push(cA.r, cA.g, cA.b);
-          }
-          idx2.push(v2, v2 + 1, v2 + 2, v2, v2 + 2, v2 + 3);
-          v2 += 4;
-        }
+        if(anillo) anilloDe(a0, a1, z0, idc);
       }
     }
     if(v){
@@ -618,6 +792,64 @@ function buildTuboMalla(world){
   }
   console.log('[tubo] pared: ' + celdas + ' celdas de ' + (NC * NS) + ' · ' +
               TUBO.pista.agujeros.size + ' en agujeros · ' + Math.round(celdas * 2 / 1000) + 'k tris');
+}
+
+/* --- ►PARRILLA DE SALIDA: el suelo plano de los primeros metros. La malla se
+   MUESTREA de `pisoH()`, la misma función que decide dónde aterrizas, así que no
+   puede haber desfase entre lo que se ve y lo que se pisa. Deck oscuro con vetas
+   de neón + una marca del color de cada corredor en su hueco. --- */
+function buildParrilla(world){
+  const NA = 26, NZ = 30;                    // resolución del muestreo
+  const aMin = -K.pisoLim, aMax = K.pisoLim;
+  const sMax = K.salidaPiso + 6;
+  const pos = [], nor = [], col = [], idx = [];
+  const c1 = sRGB(0x1b2030), c2 = sRGB(0x2b3350);
+  let v = 0;
+  const P3 = (a, s) => { const h = pisoH(a, s); const r = K.R - h;
+    return [Math.sin(a) * r, -Math.cos(a) * r, -s]; };
+  for(let j = 0; j < NZ; j++){
+    const s0 = (j / NZ) * sMax, s1 = ((j + 1) / NZ) * sMax;
+    for(let i = 0; i < NA; i++){
+      const a0 = lerp(aMin, aMax, i / NA), a1 = lerp(aMin, aMax, (i + 1) / NA);
+      /* fuera de la plataforma no se dibuja nada: ahí ya está la pared del tubo */
+      if(pisoH(a0, s0) <= 0.02 && pisoH(a1, s0) <= 0.02 && pisoH(a0, s1) <= 0.02) continue;
+      const c = ((i + j) & 1) ? c1 : c2;
+      for(const p of [P3(a0, s0), P3(a1, s0), P3(a1, s1), P3(a0, s1)]){
+        pos.push(p[0], p[1], p[2]);
+        nor.push(0, 1, 0);                   // es un plano horizontal: la normal es +Y
+        col.push(c.r, c.g, c.b);
+      }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+      v += 4;
+    }
+  }
+  if(!v) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  const deck = new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors:true, flatShading:true, side:THREE.DoubleSide }));
+  deck.userData._parrilla = true;   // etiqueta para poder medirla sin recorrer el tubo entero
+  world.add(deck);
+  TUBO.deck = deck;
+
+  /* línea de salida + una marca por corredor, encima del deck */
+  const linea = new THREE.Mesh(new THREE.PlaneGeometry(2 * K.R * Math.sin(K.pisoLim) * 0.92, 1.4),
+    new THREE.MeshBasicMaterial({ color:sRGB(0xffffff), side:THREE.DoubleSide }));
+  linea.position.set(0, -K.R * Math.cos(K.pisoLim) + 0.05, -(K.salidaPiso * 0.16));
+  linea.rotation.x = -Math.PI / 2;
+  world.add(linea);
+  TUBO.marcas = [];
+  for(let i = 0; i < 4; i++){
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.5, 22),
+      new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.55,
+        side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending }));
+    m.rotation.x = -Math.PI / 2;
+    world.add(m);
+    TUBO.marcas.push(m);
+  }
 }
 
 /* --- VALLAS: un muro curvo que sale de la pared hacia el eje. Cuerpo en
@@ -668,6 +900,220 @@ function buildVallas(world){
   world.add(new THREE.Mesh(gt, new THREE.MeshBasicMaterial({ color:sRGB(PAL.vallaTop), side:THREE.DoubleSide })));
 }
 
+/* =====================================================================
+   ►PROPS DEL JUEGO — la valla pequeña y la flecha de la FORJA, y la bola de
+   pinchos. Petición de Toni, y además es la norma del proyecto: reutilizar los
+   assets que ya existen antes que inventar geometría.
+     s7_hurdle   · valla anti-velocidad del spaceport (DECOR_DEFS7)
+     s7_arrow2   · flecha del pad de velocidad (la misma que usa s4SpeedPad)
+     s4_spikeball· bola de pinchos (la que cuelga en la arena de hielo y el S5)
+   Se sirven con `getModel`, que los da como UNA malla con colores de vértice:
+   perfecto para meterlos en un InstancedMesh y pagar UNA draw call por tipo.
+   ►OJO: el clon de getModel COMPARTE geometría con la plantilla del juego. Aquí
+   se CLONA la geometría antes de hornearla, porque `start()` dispone lo que no
+   esté marcado y si no nos cargaríamos el asset para toda la partida.
+   ===================================================================== */
+function _geoDeModelo(key, defs){
+  let tpl = null;
+  try { if(typeof getModel === 'function') tpl = getModel(key, defs); } catch(e){ return null; }
+  if(!tpl) return null;
+  tpl.updateMatrixWorld(true);
+  let malla = null;
+  tpl.traverse(o => { if((o.isMesh || o.isSkinnedMesh) && !malla) malla = o; });
+  if(!malla || !malla.geometry) return null;
+  const geo = malla.geometry.clone();            // NUESTRA copia: disponible sin tocar la del juego
+  geo.applyMatrix4(malla.matrixWorld);
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  /* recentrado: base en y=0 y centrado en x/z, para poder apoyarlo en la pared
+     sin adivinar dónde tiene el origen (ver prop-desfasado-del-origen) */
+  geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+  geo.computeBoundingBox();
+  const mat = Array.isArray(malla.material) ? malla.material[0] : malla.material;
+  return { geo, mat: mat ? mat.clone() : null, alto: geo.boundingBox.max.y || 1,
+           ancho: (geo.boundingBox.max.x - geo.boundingBox.min.x) || 1 };
+}
+/* matriz de un objeto DE PIE sobre la pared en (a,s,h), con escala local
+   (x = tangencial, y = hacia el eje, z = el avance) */
+const _mProp = new THREE.Matrix4(), _qProp = new THREE.Quaternion(),
+      _pProp = new THREE.Vector3(), _sProp = new THREE.Vector3(), _oProp = new THREE.Object3D();
+function matrizEn(a, s, h, sx, sy, sz, out){
+  orienta(_oProp, a);
+  punto(a, s, h, _pProp);
+  _sProp.set(sx, sy, sz);
+  return (out || _mProp).compose(_pProp, _oProp.quaternion, _sProp);
+}
+
+function buildProps(world){
+  const P = TUBO.pista, dA = dSEC(), anchoSec = dA * K.R;
+  TUBO.hurdleIM = TUBO.bolaIM = TUBO.flechaIM = null;
+
+  /* --- 1 · VALLAS PEQUEÑAS (slalom) --- */
+  {
+    let total = 0; for(const H of P.hurdles) total += H.n;
+    if(total){
+      const M = _geoDeModelo('s7_hurdle', (typeof DECOR_DEFS7 !== 'undefined') ? DECOR_DEFS7 : null);
+      const geo = M ? M.geo : new THREE.BoxGeometry(1, K.hurdleAlto, 0.5);
+      if(!M) geo.translate(0, K.hurdleAlto / 2, 0);
+      const mat = (M && M.mat) ? M.mat : new THREE.MeshStandardMaterial({
+        color:sRGB(0x6a7078), emissive:sRGB(0xffd23f), emissiveIntensity:0.35, roughness:0.5, flatShading:true });
+      const im = new THREE.InstancedMesh(geo, mat, total);
+      im.frustumCulled = false;
+      const escY = K.hurdleAlto / (M ? M.alto : K.hurdleAlto);
+      const escX = anchoSec / (M ? M.ancho : 1) * 1.02;
+      let n = 0;
+      const ms = [], ss = [];
+      for(const H of P.hurdles) for(let k = 0; k < H.n; k++){
+        const a = (((H.i0 + k) % K.NSEC) + 0.5) * dA;
+        const m = matrizEn(a, H.s, 0, escX, escY, escY, new THREE.Matrix4());
+        im.setMatrixAt(n++, m); ms.push(m); ss.push(H.s);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.userData._ms = ms; im.userData._ss = ss; im.userData._vis = ms.map(() => true);
+      world.add(im);
+      TUBO.hurdleIM = im;
+    }
+  }
+
+  /* --- 2 · CARRUSELES DE BOLAS DE PINCHOS (se mueven: ver updateBolas) --- */
+  {
+    let total = 0; for(const B of P.bolas) total += B.n;
+    if(total){
+      const M = _geoDeModelo('s4_spikeball', (typeof DECOR_DEFS4 !== 'undefined') ? DECOR_DEFS4 : null);
+      let geo;
+      if(M){ geo = M.geo; const e = (K.bolaR * 2) / (M.alto || 1); geo.scale(e, e, e); geo.translate(0, -K.bolaR, 0); }
+      else  geo = new THREE.IcosahedronGeometry(K.bolaR, 1);
+      const mat = (M && M.mat) ? M.mat : new THREE.MeshStandardMaterial({
+        color:0xffffff, roughness:0.45, metalness:0.35, flatShading:true });
+      mat.vertexColors = !!(M && M.geo.attributes.color);
+      const im = new THREE.InstancedMesh(geo, mat, total);
+      im.frustumCulled = false;
+      /* ►"de colores de la Forja": cada carrusel con su tinte, por instanceColor.
+         Se crea con la cuenta final (r128: instanceColor nace del tamaño de
+         `count` en el momento de setColorAt — con 0 sale todo negro). */
+      const c = new THREE.Color();
+      let n = 0;
+      for(const B of P.bolas){ aLin(c.setHex(PAL.arco[B.col % PAL.arco.length])).multiplyScalar(1.25);
+        for(let k = 0; k < B.n; k++) im.setColorAt(n++, c); }
+      if(im.instanceColor) im.instanceColor.needsUpdate = true;
+      world.add(im);
+      TUBO.bolaIM = im;
+    }
+  }
+
+  /* --- 3 · FLECHAS: pad de neón (malla fija) + la flecha del juego encima --- */
+  {
+    if(P.flechas.length){
+      /* el PAD, fundido en una sola geometría con color por vértice */
+      const pos = [], col = [], idx = [];
+      const cB = sRGB(0x2affe0), cF = sRGB(0xff3b5c);
+      let v = 0;
+      for(const F of P.flechas){
+        const c = F.boost ? cB : cF;
+        for(let k = 0; k < F.n; k++){
+          const i = (F.i0 + k) % K.NSEC;
+          const a0 = i * dA + K.ranuraA, a1 = (i + 1) * dA - K.ranuraA;
+          const z0 = -F.s, z1 = -(F.s + K.flechaLargo);
+          const rr = K.R - 0.05;
+          for(const [aa, zz] of [[a0, z0], [a1, z0], [a1, z1], [a0, z1]]){
+            pos.push(Math.sin(aa) * rr, -Math.cos(aa) * rr, zz);
+            col.push(c.r, c.g, c.b);
+          }
+          idx.push(v, v + 1, v + 2, v, v + 2, v + 3); v += 4;
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
+      g.setIndex(idx);
+      world.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+        vertexColors:true, transparent:true, opacity:0.55, side:THREE.DoubleSide,
+        depthWrite:false, blending:THREE.AdditiveBlending })));
+
+      /* y los CHEVRONES: el asset del juego, 2 por pad y por sector */
+      const M = _geoDeModelo('s7_arrow2', (typeof DECOR_DEFS7 !== 'undefined') ? DECOR_DEFS7 : null);
+      const geo = M ? M.geo : new THREE.ConeGeometry(0.8, 1.6, 4);
+      if(!M) geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshStandardMaterial({ color:sRGB(0x0a2a26), emissive:0xffffff,
+        emissiveIntensity:1.5, roughness:0.4, metalness:0.1, vertexColors:false });
+      /* el tinte cian/rojo va por instanceColor sobre un material blanco emisivo:
+         un solo material para los dos tipos = una draw call */
+      let total = 0; for(const F of P.flechas) total += F.n * 2;
+      const im = new THREE.InstancedMesh(geo, mat, total);
+      im.frustumCulled = false;
+      const e = 1.9 / (M ? Math.max(M.ancho, M.alto) : 1.6);
+      const c = new THREE.Color();
+      let n = 0;
+      const ms = [], ss = [];
+      for(const F of P.flechas){
+        aLin(c.setHex(F.boost ? 0x2affe0 : 0xff3b5c));
+        for(let k = 0; k < F.n; k++){
+          const a = (((F.i0 + k) % K.NSEC) + 0.5) * dA;
+          for(let q = 0; q < 2; q++){
+            const m = matrizEn(a, F.s + K.flechaLargo * (0.28 + q * 0.44), 0.12, e, e, e, new THREE.Matrix4());
+            im.setMatrixAt(n, m); im.setColorAt(n, c); ms.push(m); ss.push(F.s); n++;
+          }
+        }
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.userData._ms = ms; im.userData._ss = ss; im.userData._vis = ms.map(() => true);
+      if(im.instanceColor) im.instanceColor.needsUpdate = true;
+      world.add(im);
+      TUBO.flechaIM = im;
+    }
+  }
+  console.log('[tubo] props: ' + P.hurdles.length + ' slalom · ' + P.bolas.length +
+              ' carruseles · ' + P.flechas.length + ' flechas');
+}
+
+/* las bolas GIRAN alrededor del tubo: hay que recolocarlas cada frame, y la
+   FÍSICA lee el mismo ángulo (`anguloBola`) que el dibujo */
+function anguloBola(B, k){ return norm(B.fase + B.giro * TUBO.t + k * TAU / B.n); }
+
+/* ►CULL POR DISTANCIA DE LOS PROPS INSTANCIADOS.
+   Una InstancedMesh NO se puede cullear por frustum: three usa la esfera
+   envolvente de la GEOMETRÍA transformada por el objeto, no una por instancia,
+   y aquí un solo objeto cubre los 6.300 u del tubo entero. O sea que dibujaba
+   las 22 norias, las 44 vallas y las 12 flechas SIEMPRE: medido, 292k
+   triángulos por frame con solo un puñado a la vista. Se esconden escalando a 0
+   las que quedan fuera de la ventana de la cámara, igual que los cristales. */
+const VENTANA = [-45, 540];
+function _visible(s, zc){ return s > zc + VENTANA[0] && s < zc + VENTANA[1]; }
+const _m0 = new THREE.Matrix4();
+function updateBolas(dt){
+  const im = TUBO.bolaIM; if(!im) return;
+  const zc = -TUBO.cam.position.z;
+  let n = 0;
+  for(const B of TUBO.pista.bolas){
+    const vis = _visible(B.s, zc);
+    for(let k = 0; k < B.n; k++){
+      if(!vis) _m0.makeScale(0, 0, 0);
+      else matrizEn(anguloBola(B, k), B.s, K.bolaH, 1, 1, 1, _m0);
+      im.setMatrixAt(n++, _m0);
+    }
+  }
+  im.instanceMatrix.needsUpdate = true;
+}
+/* los props ESTÁTICOS (vallas pequeñas y flechas) no se mueven, pero hay que
+   esconderlos igual: se guarda su matriz al construirlos y se restaura o se
+   pone a 0 según la ventana. */
+function updatePropsEstaticos(){
+  const zc = -TUBO.cam.position.z;
+  for(const P of [TUBO.hurdleIM, TUBO.flechaIM]){
+    if(!P || !P.userData._ms) continue;
+    const ms = P.userData._ms, ss = P.userData._ss;
+    let cambio = false;
+    for(let i = 0; i < ms.length; i++){
+      const vis = _visible(ss[i], zc);
+      if(vis === P.userData._vis[i]) continue;
+      P.userData._vis[i] = vis;
+      if(vis) P.setMatrixAt(i, ms[i]); else { _m0.makeScale(0, 0, 0); P.setMatrixAt(i, _m0); }
+      cambio = true;
+    }
+    if(cambio) P.instanceMatrix.needsUpdate = true;
+  }
+}
+
 /* --- BOMBAS: instanciadas. El parpadeo de la mecha va por instanceColor, y
    por eso la InstancedMesh se crea YA con su cuenta final: en r128
    instanceColor nace del tamaño de `count` en el momento de setColorAt (con 0
@@ -688,27 +1134,46 @@ function buildBombas(world){
   TUBO.bombas = im;
 }
 
-/* --- ESTRELLAS: octaedros de neón, un color del arcoíris cada una. Van a
-   1,4 u de la pared (a la altura del pecho): se cogen corriendo, no saltando,
-   salvo las que se ponen a propósito encima de un anillo. --- */
+/* --- ►CRISTALES (Toni: "los puntos que recoges currátelos más, que sean más
+   bonitos, más cristal"). Ya no es un octaedro plano: cada punto son DOS mallas
+   instanciadas superpuestas —
+     · NÚCLEO: bipirámide alargada (octaedro estirado en Y) en color puro y sin
+       tone mapping, que es lo que da el "canto de gema" al girar;
+     · HALO: la misma forma un 120% más grande, aditiva y translúcida, que hace
+       el resplandor. Un cristal es núcleo + brillo; con una sola malla opaca
+       parece un caramelo.
+   Tres clases, y se distinguen a simple vista porque valen distinto:
+     tipo 0 · cadena del hilo   — arcoíris, 8 pts
+     tipo 1 · VETA de riesgo    — oro, 22 pts, lejos del camino cómodo
+     tipo 2 · gran cristal      — blanco, 60 pts, encima de un anillo
+   --- */
+const CRIS = [ { esc:0.95, col:null,     alto:1.4 },        // arcoíris (color por índice)
+               { esc:1.35, col:0xffd23f, alto:1.5 },        // veta de oro
+               { esc:2.10, col:0xffffff, alto:2.6 } ];      // gran cristal
 function buildEstrellas(world){
   const P = TUBO.pista; const N = P.estrellas.length;
-  TUBO.estrellas = null; if(!N) return;
-  const geo = new THREE.OctahedronGeometry(0.85, 0);   // con 0,62 no se veían a 60 u, que es donde hay que decidir el carril
-  const im = new THREE.InstancedMesh(geo,
+  TUBO.estrellas = TUBO.halos = null; if(!N) return;
+  const gemGeo = () => { const g = new THREE.OctahedronGeometry(0.62, 0); g.scale(1, 1.85, 1); return g; };
+  const nucleo = new THREE.InstancedMesh(gemGeo(),
     new THREE.MeshBasicMaterial({ toneMapped:false }), N);
-  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  im.frustumCulled = false;
+  const halo = new THREE.InstancedMesh(gemGeo(),
+    new THREE.MeshBasicMaterial({ transparent:true, opacity:0.30, depthWrite:false,
+      blending:THREE.AdditiveBlending, toneMapped:false }), N);
+  for(const im of [nucleo, halo]){ im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; }
+  halo.renderOrder = 2;
   const c = new THREE.Color();
   for(let i = 0; i < N; i++){
-    const e = P.estrellas[i];
-    aLin(c.setHex(e.big ? 0xffffff : PAL.arco[i % PAL.arco.length]));
-    im.setColorAt(i, c);
+    const e = P.estrellas[i], d = CRIS[e.tipo || 0];
+    aLin(c.setHex(d.col != null ? d.col : PAL.arco[i % PAL.arco.length]));
+    nucleo.setColorAt(i, c);
+    halo.setColorAt(i, c);
   }
-  if(im.instanceColor) im.instanceColor.needsUpdate = true;
-  world.add(im);
-  TUBO.estrellas = im;
-  console.log('[tubo] ' + N + ' estrellas · ' + P.vallas.length + ' vallas · ' + P.bombas.length + ' bombas');
+  for(const im of [nucleo, halo]) if(im.instanceColor) im.instanceColor.needsUpdate = true;
+  world.add(nucleo); world.add(halo);
+  TUBO.estrellas = nucleo; TUBO.halos = halo;
+  const porTipo = [0, 0, 0]; for(const e of P.estrellas) porTipo[e.tipo || 0]++;
+  console.log('[tubo] cristales: ' + porTipo[0] + ' cadena · ' + porTipo[1] + ' veta · ' +
+              porTipo[2] + ' grandes · ' + P.vallas.length + ' vallas · ' + P.bombas.length + ' bombas');
 }
 
 /* --- META: anillo blanco grueso + un aro de neón que gira --- */
@@ -759,7 +1224,13 @@ function buildEspacio(sc){
       const gr = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
       gr.addColorStop(0, hex + 'cc'); gr.addColorStop(0.5, hex + '44'); gr.addColorStop(1, hex + '00');
       ctx.fillStyle = gr; ctx.fillRect(0, 0, 128, 128);
-      return new THREE.CanvasTexture(cv);
+      const t = new THREE.CanvasTexture(cv);
+      /* ►`Texture.userData` NO viene inicializado en r128: asignarle una clave a
+         pelo lanza y —peor— la excepción se come el resto de buildScene, así que
+         el tubo se quedaba sin escena y sin arrancar, en silencio. */
+      t.userData = t.userData || {};
+      t.userData._mio = true;                 // nuestra: sí se dispone al reiniciar
+      return t;
     };
     const NEB = [['#7a4aff', -600, 260, -700, 460], ['#ff4a9a', 620, 170, -520, 380],
                  ['#3ac8ff', -260, 400, -860, 520], ['#ffb84a', 340, 110, -820, 300]];
@@ -959,7 +1430,11 @@ function makeRacer(i, human){
   TUBO.world.add(g);
   TUBO.world.add(iman);
 
-  const a0 = norm((i - 1.5) * 0.42);
+  /* ►EN LA PARRILLA, DE PIE SOBRE EL SUELO PLANO. Antes salían a h=0 (pegados a
+     la pared redonda) y los de los extremos quedaban trepados por la curva: eso
+     es lo que Toni veía como "flotando en el aire" antes de empezar. Ahora la
+     altura la da `pisoH`, la misma que la malla de la parrilla. */
+  const a0 = norm((i - 1.5) * 0.30);
   const r = {
     i, human, col, clase,
     name: human ? ('P' + (i + 1)) : ('CPU-' + 'ABC'[Math.max(0, i - HUMANS)]),
@@ -968,11 +1443,12 @@ function makeRacer(i, human){
     padIndex: human ? (HUMANS === 1 ? 0 : i) : -1,
     kb: human && i === 0,
     /* --- estado en el marco del tubo --- */
-    s:0, a:a0, h:0, vh:0, vlat:0, vel:K.vel0,
+    s:0, a:a0, h:pisoH(a0, 0), vh:0, vlat:0, vel:K.vel0,
     air:false, saltoUsado:false, _coy:0, _buf:0,
     crash:0, crashFase:0, fuera:0, fueraFase:0, parp:0, inv:0, rueda:0,
+    mulV:1, mulT:0,
     /* --- marcador --- */
-    pts:0, estrellas:0, golpes:0, caidas:0, bombas:0,
+    pts:0, estrellas:0, vetas:0, golpes:0, caidas:0, bombas:0,
     done:false, parado:false, place:0, time:0,
     _inp:null, _ai:{ carril:a0, saltoT:0 },
   };
@@ -985,7 +1461,9 @@ function ponEnPared(r){
   punto(r.a, r.s, r.h, _vTmp);
   r.gfx.position.copy(_vTmp);
   orienta(r.gfx, r.a);
-  punto(r.a, r.s, 0, _vTmp);
+  /* el imán marca DÓNDE PISARÍAS, que en la parrilla no es la pared sino el
+     suelo plano — por eso lee `pisoH` y no 0 */
+  punto(r.a, r.s, pisoH(r.a, r.s), _vTmp);
   r.iman.position.copy(_vTmp);
   orienta(r.iman, r.a);
   r.iman.rotateX(-Math.PI / 2);
@@ -1039,7 +1517,29 @@ function costeCarril(r, i, skill){
     const es = enCubo(P._eb, s);
     if(es) for(const e of es){
       if((e.cog & (1 << r.i)) || e.s < r.s + 4 || e.s > r.s + look) continue;
-      if(Math.abs(difA(e.a, a)) * K.R < 2.6) coste -= (e.big ? 9 : 3) * K.aiRebusca;
+      /* las VETAS tiran más: la IA también se arriesga por la recompensa */
+      if(Math.abs(difA(e.a, a)) * K.R < 2.6) coste -= [3, 8, 11][e.tipo || 0] * K.aiRebusca;
+    }
+    /* ►FLECHAS: la cian se busca, la roja se esquiva (es lo que las hace decisión) */
+    const fs = enCubo(P._fb, s);
+    if(fs) for(const F of fs){
+      if(F.s < r.s || F.s > r.s + look) continue;
+      const k = ((i - F.i0) % K.NSEC + K.NSEC) % K.NSEC;
+      if(k < F.n) coste += (F.boost ? -14 : 20) * (1 - (F.s - r.s) / look);
+    }
+  }
+  /* ►CARRUSEL: se mira dónde ESTARÁ la bola cuando lleguemos, no dónde está.
+     Con lo primero la IA esquivaba fantasmas y se metía debajo de la que venía. */
+  if(P._cb) for(let s = r.s; s < r.s + look; s += K.segZ * 2){
+    const cs = P._cb.get(jCel(s));
+    if(!cs) continue;
+    for(const B of cs){
+      if(B.s < r.s + 4 || B.s > r.s + look) continue;
+      const tLl = (B.s - r.s) / Math.max(1, r.vel);
+      for(let k = 0; k < B.n; k++){
+        const aF = norm(B.fase + B.giro * (TUBO.t + tLl) + k * TAU / B.n);
+        if(Math.abs(difA(aF, a)) * K.R < K.bolaR + 2.2) coste += 30 * (1 - (B.s - r.s) / look);
+      }
     }
   }
   return coste;
@@ -1097,12 +1597,29 @@ function aiInput(r, dt){
       if(TUBO.pista.agujeros.has(jCel(s) * NS + iMe)){ dist = Math.min(dist, s - r.s); break; }
     }
     for(let s = r.s; s < r.s + 100; s += K.segZ){
-      const vs = enCubo(TUBO.pista._vb, s);
-      if(!vs) continue;
-      for(const F of vs){
-        if(F.s < r.s || F.s - r.s > dist) continue;
-        const k = ((iMe - F.i0) % NS + NS) % NS;
-        if(k < F.n) dist = F.s - r.s;
+      for(const mapa of [TUBO.pista._vb, TUBO.pista._hb]){
+        const vs = enCubo(mapa, s);
+        if(!vs) continue;
+        for(const F of vs){
+          if(F.s < r.s || F.s - r.s > dist) continue;
+          const k = ((iMe - F.i0) % NS + NS) % NS;
+          if(k < F.n) dist = F.s - r.s;
+        }
+      }
+    }
+    /* ►las BOLAS también se saltan (barren a 1,5 y el apex son 3,4). Sin esto
+       la IA solo intentaba esquivarlas de lado y se comía 8 golpes por carrera:
+       medido, 96 en 12 corredores. */
+    if(TUBO.pista._cb) for(let s = r.s; s < r.s + 100; s += K.segZ){
+      const cs = TUBO.pista._cb.get(jCel(s));
+      if(!cs) continue;
+      for(const B of cs){
+        if(B.s < r.s || B.s - r.s > dist) continue;
+        const tLl = (B.s - r.s) / Math.max(1, r.vel);
+        for(let k2 = 0; k2 < B.n; k2++){
+          const aF = norm(B.fase + B.giro * (TUBO.t + tLl) + k2 * TAU / B.n);
+          if(Math.abs(difA(aF, r.a)) * K.R < K.bolaR + 1.4){ dist = B.s - r.s; break; }
+        }
       }
     }
     if(dist < 1e8){
@@ -1179,8 +1696,8 @@ function reaparece(r){
     for(let k = 0; k < 5; k++) if(agujeroEn(a, r.s + k * K.segZ)) c += 50;
     if(c < mc){ mc = c; mejor = a; }
   }
-  r.a = mejor; r.h = 0; r.vh = 0; r.vlat = 0;
-  r.air = false; r.saltoUsado = false;
+  r.a = mejor; r.h = pisoH(mejor, r.s); r.vh = 0; r.vlat = 0;
+  r.air = false; r.saltoUsado = false; r.mulV = 1; r.mulT = 0;
   r.parp = K.parpT; r.inv = K.parpT;
   if(r.montado) animA(r, r.correr);
 }
@@ -1190,13 +1707,26 @@ function reaparece(r){
    corren a la misma velocidad, "quien llega antes se lo lleva todo" convierte
    la carrera en una lotería de la parrilla. Máscara de bits por corredor; lo
    que se DIBUJA es lo que le queda al jugador de la cámara (bit 0). */
+const PTS_TIPO = () => [K.ptsEstrella, K.ptsVeta, K.ptsGrande];
 function cogeEstrella(r, e){
   e.cog |= (1 << r.i);
-  const p = e.big ? K.ptsGrande : K.ptsEstrella;
+  const tipo = e.tipo || 0;
+  const p = PTS_TIPO()[tipo];
   r.pts += p; r.estrellas++;
-  reventon(e.a, e.s, 1.4, e.big ? 14 : 6, e.big ? 7 : 4, e.big ? 0xffffff : 0xffe14d);
-  if(r.human) sndDing(e.big ? 5 : Math.min(5, (r._chain = (r._chain || 0) + 1) >> 2));
-  if(r.human && e.big) flash('+' + p, '#ffe14d');
+  if(tipo) r.vetas = (r.vetas || 0) + 1;
+  const col = tipo === 2 ? 0xffffff : tipo === 1 ? 0xffd23f : 0xffe14d;
+  reventon(e.a, e.s, e.alto || CRIS[tipo].alto, tipo ? 14 : 6, tipo ? 7 : 4, col);
+  if(r.human) sndDing(tipo ? 5 : Math.min(5, (r._chain = (r._chain || 0) + 1) >> 2));
+  if(r.human && tipo) flash('+' + p, tipo === 2 ? '#ffffff' : '#ffd23f');
+}
+/* ►FLECHAS: un multiplicador temporal de velocidad. No toca `vel` directamente
+   porque `vel` se recalcula cada paso desde la del tubo; se guarda el factor y
+   su reloj, y se aplica en stepRacer. */
+function pisaFlecha(r, boost){
+  if(boost){ r.mulV = K.boostMul; r.mulT = K.boostT;
+             if(r.human){ flash('¡TURBO!', '#2affe0'); sndSwoosh(); } }
+  else     { r.mulV = K.frenoMul; r.mulT = K.frenoT;
+             if(r.human){ flash('FRENADO', '#ff5a5a'); sndRafaga(300, 0.4, 0.4); } }
 }
 
 /* =====================================================================
@@ -1234,6 +1764,8 @@ function stepRacer(r, dt){
     if(gap > 4) v *= 1 + K.rebufo * clamp(gap / K.rebufoGap, 0, 1);
   }
   if(r.crash > 0) v *= K.crashVel;
+  /* ►FLECHAS: el multiplicador temporal (cian acelera, roja frena) */
+  if(r.mulT > 0){ r.mulT -= dt; v *= r.mulV; if(r.mulT <= 0) r.mulV = 1; }
   if(r.done) v *= Math.max(0, 1 - (TUBO.t - r.time) * 0.55);   // tras la meta, frena hasta parar
   r.vel = v;
   r.s += v * dt;
@@ -1274,21 +1806,27 @@ function stepRacer(r, dt){
     if(r.montado && r.acts.jump){ r.acts.jump.timeScale = 1.25; animA(r, 'jump'); }
     if(r.human) sndSwoosh();
   }
+  /* ►EL SUELO NO SIEMPRE ES LA PARED: en la parrilla de salida es la plataforma
+     plana. `pisoH` lo dice, y es la MISMA función con la que se dibuja. */
+  const piso = pisoH(r.a, r.s);
   if(r.air){
     r.vh -= K.grav * dt;
     r.h += r.vh * dt;
-    if(r.h <= 0){
-      r.h = 0; r.vh = 0; r.air = false; r.saltoUsado = false;
+    if(r.h <= piso){
+      r.h = piso; r.vh = 0; r.air = false; r.saltoUsado = false;
       if(r.human) sndThump(0.35);
     }
+  } else if(r.h !== piso){
+    /* andando por la rampa de salida al tubo: se sigue el suelo sin "caer" */
+    r.h += clamp(piso - r.h, -40 * dt, 40 * dt);
   }
 
   /* --- 6 · ¿hay suelo debajo? (agujeros) --- */
   const hayAgujero = agujeroEn(r.a, r.s);
-  if(!r.air && r.h <= 0){
+  if(!r.air && r.h <= piso + 0.01){
     if(hayAgujero && r.s < K.largo){ caeAlVacio(r); return; }
     r._coy = K.coyote;
-  } else if(r.air && r.h <= 0.01 && hayAgujero){
+  } else if(r.air && r.h <= piso + 0.01 && hayAgujero){
     /* aterrizando sobre un agujero: te lo comes igual */
     caeAlVacio(r); return;
   }
@@ -1315,14 +1853,51 @@ function stepRacer(r, dt){
     }
   }
 
-  /* --- 9 · estrellas --- */
+  /* --- 8b · VALLAS PEQUEÑAS de la Forja (slalom): bajas, se saltan o se rodean --- */
+  if(r.crash <= 0 && r.inv <= 0){
+    const hs = enCubo(P._hb, r.s);
+    if(hs) for(const H of hs){
+      if(r.s < H.s - K.hurdleZ || r.s > H.s + K.hurdleZ) continue;
+      if(r.h >= K.hurdleAlto) continue;
+      const k = ((iSec(r.a) - H.i0) % K.NSEC + K.NSEC) % K.NSEC;
+      if(k < H.n){ choca(r, 'valla'); break; }
+    }
+  }
+
+  /* --- 8c · CARRUSEL DE BOLAS DE PINCHOS: el ángulo se pregunta a la MISMA
+     función que las coloca (`anguloBola`), no a una copia del cálculo --- */
+  if(r.inv <= 0 && P._cb){
+    const cs = P._cb.get(jCel(r.s));
+    if(cs) for(const B of cs){
+      if(Math.abs(B.s - r.s) > K.bolaR + 1.2) continue;
+      if(Math.abs(r.h - K.bolaH) > K.bolaR + 1.0) continue;
+      for(let k = 0; k < B.n; k++){
+        if(Math.abs(difA(anguloBola(B, k), r.a)) * K.R < K.bolaR + 1.0){ choca(r, 'bola'); break; }
+      }
+      if(r.crash > 0) break;
+    }
+  }
+
+  /* --- 8d · FLECHAS: acelera (cian) o frena (roja, si la coges por error) --- */
+  if(r.h <= piso + 0.6){
+    const fs = enCubo(P._fb, r.s);
+    if(fs) for(const F of fs){
+      if(r.s < F.s || r.s > F.s + K.flechaLargo) continue;
+      const k = ((iSec(r.a) - F.i0) % K.NSEC + K.NSEC) % K.NSEC;
+      if(k >= F.n) continue;
+      if(r._flecha !== F){ r._flecha = F; pisaFlecha(r, F.boost); }
+      break;
+    }
+  }
+
+  /* --- 9 · cristales --- */
   {
     const es = enCubo(P._eb, r.s), bit = 1 << r.i;
     if(es) for(const e of es){
       if(e.cog & bit) continue;
-      if(Math.abs(e.s - r.s) > 2.4) continue;
-      if(Math.abs(difA(e.a, r.a)) * K.R > 2.4) continue;
-      if(Math.abs((e.big ? 2.6 : 1.4) - r.h) > 2.6) continue;
+      if(Math.abs(e.s - r.s) > 2.6) continue;
+      if(Math.abs(difA(e.a, r.a)) * K.R > 2.6) continue;
+      if(Math.abs((e.alto || CRIS[e.tipo || 0].alto) - r.h) > 2.8) continue;
       cogeEstrella(r, e);
     }
     if(!es || !es.length) r._chain = 0;
@@ -1382,23 +1957,32 @@ function updatePop(dt){
   P.im.instanceMatrix.needsUpdate = true;
 }
 
+const _mCris = new THREE.Matrix4(), _qCris = new THREE.Quaternion(),
+      _sCris = new THREE.Vector3(), _pCris = new THREE.Vector3();
 function updateEstrellas(dt){
-  const im = TUBO.estrellas; if(!im) return;
+  const im = TUBO.estrellas, ha = TUBO.halos; if(!im) return;
   const L = TUBO.pista.estrellas;
-  const cam = TUBO.cam;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-  const zMin = -cam.position.z - 40, zMax = -cam.position.z + 480;   // solo las que se pueden ver
+  const zMin = -TUBO.cam.position.z - 40, zMax = -TUBO.cam.position.z + 520;
   for(let i = 0; i < L.length; i++){
     const e = L[i];
-    if((e.cog & 1) || e.s < zMin || e.s > zMax){ m.makeScale(0, 0, 0); im.setMatrixAt(i, m); continue; }
-    punto(e.a, e.s, e.big ? 2.6 : 1.4, p);
-    q.setFromAxisAngle(_FWD, TUBO.t * 2.2 + i);
-    const k = e.big ? 1.9 : 1;
-    s.set(k, k * (1 + 0.12 * Math.sin(TUBO.t * 6 + i)), k);
-    m.compose(p, q, s);
-    im.setMatrixAt(i, m);
+    if((e.cog & 1) || e.s < zMin || e.s > zMax){
+      _mCris.makeScale(0, 0, 0); im.setMatrixAt(i, _mCris); if(ha) ha.setMatrixAt(i, _mCris);
+      continue;
+    }
+    const d = CRIS[e.tipo || 0];
+    /* flota y late; gira sobre el eje del tubo, que es lo que hace destellar las
+       caras de la gema al pasar por delante de la luz del eje */
+    const bob = Math.sin(TUBO.t * 2.4 + i * 1.7) * 0.22;
+    punto(e.a, e.s, (e.alto || d.alto) + bob, _pCris);
+    _qCris.setFromAxisAngle(_FWD, TUBO.t * 2.0 + i);
+    const k = d.esc, pulso = 1 + 0.10 * Math.sin(TUBO.t * 6 + i);
+    _sCris.set(k, k * pulso, k);
+    _mCris.compose(_pCris, _qCris, _sCris);
+    im.setMatrixAt(i, _mCris);
+    if(ha){ _sCris.multiplyScalar(2.2); _mCris.compose(_pCris, _qCris, _sCris); ha.setMatrixAt(i, _mCris); }
   }
   im.instanceMatrix.needsUpdate = true;
+  if(ha) ha.instanceMatrix.needsUpdate = true;
 }
 
 function updateBombas(dt){
@@ -1477,8 +2061,12 @@ function stepCamera(dt){
   if(r.fuera <= 0) TUBO.camA = norm(TUBO.camA + difA(r.a, TUBO.camA) * Math.min(1, K.camSigue * dt));
 
   const k = clamp((velTubo(TUBO.t) - K.vel0) / Math.max(1, K.vel1 - K.vel0), 0, 1);
-  punto(TUBO.camA, TUBO.camS - K.camDist, K.camAlto, _cPos);
-  punto(TUBO.camA, TUBO.camS + K.camMira, K.camAlto * 0.35, _cLook);
+  /* la altura se mide SOBRE EL SUELO de ese punto (en la parrilla, la plataforma;
+     luego, la pared). Es la misma lección de cámara del descenso: alturas sobre
+     el terreno, nunca absolutas. */
+  const pC = pisoH(TUBO.camA, TUBO.camS - K.camDist);
+  punto(TUBO.camA, TUBO.camS - K.camDist, K.camAlto + pC, _cPos);
+  punto(TUBO.camA, TUBO.camS + K.camMira, K.camAlto * 0.35 + pisoH(TUBO.camA, TUBO.camS + K.camMira), _cLook);
 
   const kick = TUBO._kick || 0;
   if(kick > 0) TUBO._kick = Math.max(0, kick - dt * 2.6);
@@ -1609,11 +2197,12 @@ function introCam(dt){
 /* =====================================================================
    FINAL — mismos tres tiempos que el descenso (cruzas → ruedas → tabla)
    ===================================================================== */
-/* Umbrales de ESTE minijuego, MEDIDOS (32 corredores en 8 pistas, todos con la
-   IA al mando): 1.792 el peor, 2.232 la mediana, 2.648 el mejor. O sea que una
-   carrera competente cae en A+, y la S+ hay que ganársela. */
-const NOTAS = [[2600,'S+'],[2350,'S'],[2150,'A+'],[1950,'A'],[1750,'A-'],
-               [1550,'B+'],[1350,'B'],[1150,'B-'],[950,'C+'],[750,'C'],[550,'C-'],[350,'D+'],[180,'D']];
+/* Umbrales de ESTE minijuego, MEDIDOS con la IA al mando de los cuatro. Con la
+   pista v2 (más larga y con vetas de recompensa): 1.752 el peor, 2.632 la
+   mediana, 3.210 el mejor. Una carrera competente cae en A/A+ y la S+ pide
+   cobrar vetas sin caerse. */
+const NOTAS = [[3100,'S+'],[2800,'S'],[2550,'A+'],[2300,'A'],[2050,'A-'],
+               [1800,'B+'],[1550,'B'],[1300,'B-'],[1050,'C+'],[800,'C'],[600,'C-'],[380,'D+'],[200,'D']];
 function notaDe(pts){
   for(const t of NOTAS) if(pts >= t[0]) return { label:t[1], color:notaColor(t[1]) };
   return { label:'D-', color:'#ff8d8d' };
@@ -1679,7 +2268,7 @@ function tuboFin(){
   const porPts = TUBO.racers.slice().sort((a, b) => (b.pts - a.pts) || (a.place || 9) - (b.place || 9));
   let tab = '<table class="lb"><tr><th class="nm">#</th><th class="nm">Corredor</th>' +
             '<th class="pts">Puntos</th><th>Nota</th><th>Llegada</th><th>Tiempo</th>' +
-            '<th>Estrellas</th><th>Caídas</th><th>Golpes</th></tr>';
+            '<th>Cristales</th><th>Vetas</th><th>Caídas</th><th>Golpes</th></tr>';
   porPts.forEach((r, i) => {
     const g = notaDe(r.pts);
     tab += '<tr class="' + (r.human && r.i === 0 ? 'me ' : '') + (i === 0 ? 'top' : '') + '">' +
@@ -1689,7 +2278,8 @@ function tuboFin(){
       '<td class="gr" style="color:' + g.color + '">' + g.label + '</td>' +
       '<td>' + (r.place || '—') + 'º</td>' +
       '<td>' + (r.time ? r.time.toFixed(1) : '—') + 's</td>' +
-      '<td>' + r.estrellas + '</td><td>' + r.caidas + '</td><td>' + r.golpes + '</td></tr>';
+      '<td>' + r.estrellas + '</td><td>' + (r.vetas || 0) + '</td>' +
+      '<td>' + r.caidas + '</td><td>' + r.golpes + '</td></tr>';
   });
   tab += '</table>';
 
@@ -1846,7 +2436,8 @@ function updateHud(dt){
     (me.fuera > 0 ? '<div style="color:#8ad8ff;font-weight:800">volviendo…</div>' : '');
   h.right.innerHTML =
     '<div style="font-size:20px;font-weight:800">' + me.pts + ' pts</div>' +
-    '<div style="opacity:.8">' + me.estrellas + ' ★ · ' + me.caidas + ' caídas</div>' +
+    '<div style="opacity:.8">' + me.estrellas + ' ◆' + ((me.vetas || 0) ? ' <b style="color:#ffd23f">+' + me.vetas + '</b>' : '') +
+      ' · ' + me.caidas + ' caídas</div>' +
     '<div style="opacity:.8">' + TUBO.t.toFixed(1) + ' s</div>';
   h.top.innerHTML = orden.map(r => '<span style="color:#' + r.col.toString(16).padStart(6,'0') +
     ';margin:0 7px' + (r.fuera > 0 ? ';opacity:.35' : '') + '">' + r.name + '</span>').join('');
@@ -1984,7 +2575,11 @@ function start(seed){
       if(o.userData && o.userData._compartido) return;
       if(o.geometry) o.geometry.dispose();
       if(o.material){ const mm = Array.isArray(o.material) ? o.material : [o.material];
-        mm.forEach(x => { if(x.map) x.map.dispose(); x.dispose(); }); }
+        /* ►SOLO SE DISPONEN LAS TEXTURAS PROPIAS. Los props de la Forja llegan de
+           `getModel` y su material (clonado) apunta a la textura DEL JUEGO: un
+           dispose() aquí la deja rota para toda la partida. Las nuestras van
+           marcadas con `_mio` al crearlas. */
+        mm.forEach(x => { if(x.map && x.map.userData && x.map.userData._mio) x.map.dispose(); x.dispose(); }); }
     });
   }
   TUBO.seed = seed;
@@ -1993,6 +2588,14 @@ function start(seed){
   buildScene();
   TUBO.racers = [];
   for(let i = 0; i < 4; i++) TUBO.racers.push(makeRacer(i, i < HUMANS));
+  /* las marcas de la parrilla, cada una bajo su corredor y de su color */
+  if(TUBO.marcas) TUBO.racers.forEach((r, i) => {
+    const m = TUBO.marcas[i]; if(!m) return;
+    m.material.color.copy(sRGB(r.col));
+    punto(r.a, r.s + 1.2, pisoH(r.a, r.s) - 0.04, _vTmp);
+    m.position.copy(_vTmp);
+    orienta(m, r.a); m.rotateX(-Math.PI / 2);
+  });
   TUBO.t = 0; TUBO.phase = 'intro';
   TUBO.introT = 0; TUBO._introGo = false; TUBO._introN = -1; TUBO._vozVista = false;
   TUBO._espera = 0; TUBO._acc = 0; TUBO._kick = 0; TUBO._finT = 0;
@@ -2084,6 +2687,8 @@ TUBO.tick = function(dt){
   if(TUBO.phase === 'intro') introCam(dt);
   updateEstrellas(dt);
   updateBombas(dt);
+  updateBolas(dt);
+  updatePropsEstaticos();
   updateStreaks(dt);
   updatePop(dt);
   updateAudio(dt);
@@ -2127,8 +2732,12 @@ function boot(){
       cal = String(q || '').toLowerCase();
     } catch(e){}
   }
-  if(/pelad|min|none/.test(cal)){ K.streakN = 0; K.densDeco = 0; }
-  else if(/baj|low/.test(cal)){ K.streakN = 70; K.densDeco = 0.5; }
+  /* el relieve de sillares es lo que más pesa del tubo (×5 la pared): se cae en
+     Baja/Pelada. Con `pelada` además el headless de validación sobrevive — con
+     260k triángulos SwiftShader se muere y la sesión se cuelga SIN error. */
+  if(/pelad|min|none/.test(cal)){ K.streakN = 0; K.densDeco = 0; K.tochos = false; }
+  else if(/baj|low/.test(cal)){ K.streakN = 70; K.densDeco = 0.5; K.tochos = false; }
+  if(cal) console.log('[tubo] calidad=' + cal + ' · tochos=' + K.tochos);
   if(typeof THREE === 'undefined' || !GAME_RENDERER()) return;
   TUBO._built = true;
   buildHud();
