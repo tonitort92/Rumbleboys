@@ -21236,6 +21236,13 @@ function applyStageTheme(stage){
   _restoreS1Theme();   // SIEMPRE parte del prado limpio → los ajustes RELATIVOS del S2 (multiplyScalar de madera) no se acumulan al ciclar 1→2→3→2
   if(typeof gobClearAll==='function') gobClearAll();   // ►F5-FIX: los minions ya VESTIDOS conservaban el tinte del stage ANTERIOR al cambiar (F9/campaña) — al pool y re-attach con el tinte nuevo en el siguiente tick
   if(stage!==12 && typeof _pirClearShip==='function') _pirClearShip();   // ►PIRATA: el barco y el mar son de la RAÍZ (no de la cinta) → si no se retiran aquí, viajan al stage siguiente
+  /* ►ARENA / CUADRIMANÍA: EXACTAMENTE el mismo caso que el barco de arriba. El
+     disco japonés y la torre de losetas son plataformas SUELTAS colgadas de la
+     RAÍZ, no de la cinta, así que `rebuildBelt` no se las lleva: sin esto viajan
+     al stage siguiente y se MEZCLAN los mapas (que es lo que veía Toni al
+     transicionar). Cada uno sabe desmontarse; solo hacía falta llamarlos. */
+  if(stage!==14 && window.ARENA && ARENA.clear) ARENA.clear();
+  if(stage!==13 && window.CUAD  && CUAD.clear)  CUAD.clear();
   if(stage===2){
     M.grass.map = makeFieldTexture(S2_GREENS);  M.grass.map.encoding = THREE.sRGBEncoding;  M.grass.color.setRGB(1,1,1); M.grass.needsUpdate = true;   // sRGB → verde de bosque WYSIWYG (no lima)
     M.grassD.map = makeFieldTexture(S2_GREENSD, 1/16);  M.grassD.map.encoding = THREE.sRGBEncoding; M.grassD.color.setRGB(1,1,1); M.grassD.needsUpdate = true;
@@ -23608,7 +23615,11 @@ function rebuildBelt(){
   if(typeof _s7Mats!=='undefined'){ _s7Mats.length=0; _s7Hurdles.length=0; _s7Portals.length=0; _s7Props.length=0; _s7Springs.length=0; }   // ►SPACEPORT: felpudos/vallas/teleports/hélices/muelles
   if(typeof _s7Cannons!=='undefined') _s7Cannons.length=0;   // ►S7POLISH: cañones que disparan al cielo
   if(typeof _s8Nodes!=='undefined') _s8Nodes.length=0;   // ►P10a: cristales resonantes
-  if(typeof _s9Rings!=='undefined') _s9Rings.length=0;   // ►P10a: boost rings
+  /* ►LOS AROS SE AÑADEN CON `scene.add`, NO A UN SEGMENTO: vaciar la lista no los
+     quita de la escena. Medido: cada visita a la Vía Arcoíris dejaba 31 aros
+     magenta flotando en el mapa siguiente — "se mezclan los stages". Se retiran
+     igual que los helados de tres líneas más arriba, que sí lo hacían bien. */
+  if(typeof _s9Rings!=='undefined'){ for(const r of _s9Rings){ if(r.m && r.m.parent) r.m.parent.remove(r.m); } _s9Rings.length=0; }   // ►P10a: boost rings
   occluders.length = 0; occRoots.length = 0; _occFaded.clear();
   for(let i=0;i<BELT.count;i++){
     const seg = buildSegment(i);
