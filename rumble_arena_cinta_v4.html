@@ -17689,7 +17689,10 @@ const RUTA = [
   { st:7  },                              // HIELO
   { mini:'descenso', piel:'nieve', tag:'SNOWBOARD' },
   { st:8  },                              // FORJA
-  { mini:'tubo', tag:'TUBO DE LAS ESTRELLAS' },
+  /* rótulos CORTOS: el selector de la home los pinta en una línea y un nombre
+     largo empuja las flechas (es el mismo motivo por el que usa STAGE_TAG y no
+     los nombres largos de _STAGE_NAMES) */
+  { mini:'tubo', tag:'TUBO' },
   { st:10 },                              // VÍA ARCOÍRIS → coronación
 ];
 /* dónde estamos en la RUTA. Se pone a 0 en launchMatch y avanza en cada salto:
@@ -35084,9 +35087,41 @@ let MENU_STAGE = 1;    // stage en el que EMPIEZA la próxima partida (la campa�
    La partida sigue desde el mapa elegido por el orden normal de campaña — no es un "modo suelto":
    `stageAdvance` ya recorre CAMPAIGN_STAGES desde donde estés.
    ===================================================================== */
+/* =====================================================================
+   ►MAPSEL · EL SELECTOR DE LA HOME RECORRE LA RUTA ENTERA
+
+   Recorría `CAMPAIGN_STAGES`, o sea solo los 10 mundos con jefe: los cuatro
+   minijuegos no se podían ni ver ni elegir desde la portada (Toni, 12/08).
+   Ahora recorre `RUTA`, que son los 16 eslabones en el orden en que se juegan.
+
+   Los dos tipos se eligen igual pero ARRANCAN distinto, y no hay más remedio:
+     · mundo (incluidos ARENA 13/14, que son stages del motor) → `MENU_STAGE` y
+       la partida empieza ahí, siguiendo la ruta desde ese punto, como siempre.
+     · minijuego MÓDULO (descenso ×3 y tubo) → no hay `STAGE` que valga: se
+       lanza el módulo DESDE LA PORTADA y al acabar se vuelve a ella. Para
+       previsualizar el fondo se usa el mundo anterior de la ruta, que es de
+       donde se sale hacia ese minijuego.
+   ===================================================================== */
+let MENU_RUTA_I = 0;
+/* el mundo que hay ANTES de un eslabón (para el fondo de la portada) */
+function _rutaMundoPrevio(i){
+  for(let k = i; k >= 0; k--) if(RUTA[k].st) return RUTA[k].st;
+  return 1;
+}
+/* ►OJO CON EL ORDEN: esta resincronización SOLO puede correr cuando el índice y
+   `MENU_STAGE` ya son coherentes entre sí. Si se llama desde dentro de
+   `mapSelApply` —que es quien pone `MENU_STAGE`— se dispara en CADA paso y te
+   devuelve al primer eslabón: medido, el selector se quedaba clavado en PRADO
+   las 16 veces. Por eso `mapSelApply` y `mapSelLabel` leen `MENU_RUTA_I` a
+   pelo, y esto solo lo usa `mapSelGo` (y el arranque), que es donde de verdad
+   hace falta: para seguir a `MENU_STAGE` si lo movió F9 o la partida anterior. */
 function mapSelIdx(){
-  const i = CAMPAIGN_STAGES.indexOf(MENU_STAGE);
-  return i < 0 ? 0 : i;
+  const e = RUTA[MENU_RUTA_I];
+  if(!e || (e.st && e.st !== MENU_STAGE)){
+    const i = rutaIndiceDe(MENU_STAGE);
+    if(i >= 0) MENU_RUTA_I = i;
+  }
+  return MENU_RUTA_I;
 }
 /* Se usa el nombre CORTO (STAGE_TAG), no el largo de _STAGE_NAMES, por dos razones: cabe en una línea
    sin empujar los botones, y sobre todo **la capa ►I18N ya los traduce** (PRADO→MEADOW, JUNGLA→
@@ -35095,14 +35130,30 @@ function mapSelIdx(){
 function mapSelLabel(){
   const num = document.getElementById('mapNum'), tag = document.getElementById('mapTag');
   if(!num || !tag) return;
-  const i = mapSelIdx(), s = CAMPAIGN_STAGES[i];
+  const i = MENU_RUTA_I, e = RUTA[i] || RUTA[0];
   num.textContent = String(i+1);
-  tag.textContent = STAGE_TAG[s] || _STAGE_NAMES[s] || ('MAPA ' + s);   // nodo propio → ►I18N lo traduce
+  /* el rótulo se deja EXACTAMENTE con la palabra del diccionario (PRADO,
+     JUNGLA…) porque ►I18N traduce por texto del nodo; el "MINIJUEGO" va en un
+     nodo aparte para no romperlo. */
+  tag.textContent = e.st ? (STAGE_TAG[e.st] || _STAGE_NAMES[e.st] || ('MAPA ' + e.st))
+                         : (e.tag || String(e.mini).toUpperCase());
+  let mk = document.getElementById('mapMini');
+  if(!mk && tag.parentNode){
+    mk = document.createElement('span');
+    mk.id = 'mapMini';
+    mk.style.cssText = 'display:block;font-size:.62em;letter-spacing:2px;opacity:.75;font-style:italic';
+    tag.parentNode.appendChild(mk);
+  }
+  if(mk) mk.textContent = (e.mini ? 'MINIJUEGO' : '');
 }
 /* Monta el mapa elegido en el fondo de la portada. Mismo trabajo que _explGo (tema + cinta + clima
    + música); si algo falla, se avisa y se deja el mapa anterior en pie en vez de tumbar la home. */
 function mapSelApply(){
-  const s = MENU_STAGE;
+  /* el fondo de la portada: el mundo del eslabón, o el mundo del que se sale
+     hacia él si es un minijuego módulo (no tiene mapa que previsualizar) */
+  const e = RUTA[MENU_RUTA_I] || RUTA[0];
+  const s = e.st || _rutaMundoPrevio(MENU_RUTA_I);
+  if(e.st) MENU_STAGE = e.st;
   try{
     STAGE = s; _stagePreview = s;
     applyStageTheme(s);
@@ -35120,9 +35171,34 @@ function mapSelGo(dir){
   const ov = document.getElementById('startOverlay');
   if(!ov || getComputedStyle(ov).display === 'none') return;
   if(running) return;
-  const n = CAMPAIGN_STAGES.length;
-  MENU_STAGE = CAMPAIGN_STAGES[(mapSelIdx() + dir + n) % n];
+  const n = RUTA.length;
+  MENU_RUTA_I = (mapSelIdx() + dir + n) % n;
   mapSelApply();
+}
+/* ►¿lo elegido en la portada es un minijuego MÓDULO? Lo consulta el botón de
+   jugar: esos no arrancan una partida, se lanzan solos y devuelven a la home. */
+function menuMiniModulo(){
+  const e = RUTA[MENU_RUTA_I];
+  return (e && e.mini && typeof e.mini === 'string') ? e : null;
+}
+/* lanza el minijuego elegido DESDE LA PORTADA y vuelve a ella al acabar */
+function jugarMiniDesdeHome(e){
+  const mod = (RUTA_MINIS[e.mini] || (()=>null))();
+  if(!mod || typeof mod.lanzar !== 'function'){
+    console.warn('[mapsel] minijuego "' + e.mini + '" no disponible');
+    return false;
+  }
+  const ov = document.getElementById('startOverlay');
+  fadeOut(()=>{
+    if(ov) ov.style.display = 'none';
+    mod.lanzar({ piel:e.piel, campana:true, alAcabar:()=>{
+      /* de vuelta a la portada: no había partida detrás, así que no hay run
+         que continuar — solo se vuelve a enseñar el menú */
+      fadeOut(()=>{ if(ov) ov.style.display = ''; mapSelApply(); fadeIn(); });
+    }});
+    fadeIn();
+  });
+  return true;
 }
 (function wireMapSel(){
   const p = document.getElementById('mapPrev'), n = document.getElementById('mapNext');
@@ -36418,6 +36494,11 @@ function startMatch(){
   document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep(MATCH.mode==='training' ? 1 : 2); });   // en entrenamiento no hay paso de CPUs
   document.getElementById('startGameBtn').addEventListener('click', ()=>{
     closeModal();                                                  // saca el carrusel del popup primero
+    /* ►MAPSEL: si en la portada está elegido un minijuego MÓDULO (descenso o
+       tubo), no hay partida que lanzar — se juega él solo y se vuelve al menú.
+       Los minijuegos que SON stages (13/14) caen por el camino normal. */
+    const _mini = (typeof menuMiniModulo === 'function') ? menuMiniModulo() : null;
+    if(_mini && jugarMiniDesdeHome(_mini)) return;
     document.getElementById('startOverlay').style.display = 'none';
     launchMatch();                                                 // usa MATCH.mode / MATCH.cpus / MATCH.cls
   });
