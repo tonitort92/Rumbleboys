@@ -34961,6 +34961,10 @@ function frame(now){
      render directo sin composer. Se queda con el frame entero → aislamiento total:
      no puede romper nada del juego porque no comparte estado con él. */
   if(window.DESC && DESC.on){ DESC.tick(dt); DESC.render(); return; }
+  /* ►TUBO (?tubo): el tubo de las estrellas, detrás de la Forja. Mismo trato que
+     el descenso —escena, cámara y bucle propios— porque su gravedad es RADIAL
+     (se corre por dentro del tubo, techo incluido) y eso no cabe en el motor. */
+  if(window.TUBO && TUBO.on){ TUBO.tick(dt); TUBO.render(); return; }
   updateCharMixers(dt);   // PRUEBA: el/los humanoides GLB animan SIEMPRE (menú, demo y partida)
   if(_fly.on) _flyTick(dt);   // ►TOOLS ?fly: el vuelo vive AQUÍ (frame corre siempre → puedes inspeccionar en menú, demo, partida Y con la partida terminada)
   if(window._net && _net.role==='client'){ _net.clientFrame(dt); return; }   // ONLINE cliente: no simula, solo aplica snapshots y renderiza
@@ -37175,6 +37179,7 @@ window.__I18N_DYN=[{"es":"mundo {0} · sin ganar","t":["world {0} · not won","m
 <script src="snowboard_model.js?v=1"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
 <script src="descenso.js?v=1"></script>
 <script src="cuadrimania.js?v=1"></script>
+<script src="tubo.js?v=1"></script>   <!-- ►TUBO (?tubo): "el tubo de las estrellas", el minijuego que va después de la FORJA (stage 8). Escena/cámara propias como el descenso: la gravedad es RADIAL (corres por dentro del tubo) y el motor no puede con eso. Sin ?tubo el fichero sale en su primera línea. -->
 <script src="arena.js?v=1"></script>   <!-- ►ARENA · STAGE 14: disco japonés que se deshace por secciones; combate a puntos con reaparición -->  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
 </body>
 </html>
