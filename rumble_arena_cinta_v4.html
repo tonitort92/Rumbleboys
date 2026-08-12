@@ -10309,7 +10309,7 @@ function trainMinions(dt){
 function updateMinions(dt){
   if(TRAIN.on){
     trainMinions(dt);
-  } else if(!bossActive && STAGE!==6 && STAGE!==13 && STAGE!==14){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego) · ►ARENA: el 14 es un duelo (jugadores + bombas + cacharros); una horda cayéndose al vacío sin parar solo sería ruido
+  } else if(!bossActive && STAGE!==6 && STAGE!==13 && STAGE!==14){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego) · ►ARENA: el 14 (como el 13) tiene la cinta PARADA (vel 0: arrastraba los objetos por el disco) y el 14 es un duelo (jugadores + bombas + cacharros); una horda cayéndose al vacío sin parar solo sería ruido
     minionT-=dt;
     if(minionT<=0){
       const cap=maxMinions();
@@ -20828,7 +20828,7 @@ function _applySegX(seg){
 
 function updateBelt(dt){
   if(!BELT.on) return;
-  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===13 ? 0 : STAGE===12 ? pirBeltMul()*((typeof LEVI!=='undefined') ? LEVI.beltK : 1) : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical) · ►CUADRIMANIA: 13 = 0 (torre vertical)
+  BELT.vel = (BELT.baseVel + chaosLvl * BELT.velPerChaos) * (STAGE===14 ? 0 : STAGE===13 ? 0 :STAGE===12 ? pirBeltMul()*((typeof LEVI!=='undefined') ? LEVI.beltK : 1) : STAGE===11 ? SW_BELT_MUL : STAGE===10 ? S10_BELT_MUL : STAGE===9 ? S9_BELT_MUL : STAGE===8 ? S8_BELT_MUL : STAGE===7 ? S7_BELT_MUL : STAGE===6 ? S6_BELT_MUL : STAGE===5 ? S5_BELT_MUL : STAGE===4 ? S4_BELT_MUL : STAGE===3 ? S3_BELT_MUL : STAGE===2 ? S2_BELT_MUL : 1);   // ►RONDA2/►JAPAN: S2 +15% · S3 +22% · S4 +28% · S5 +34% · ►P5: S6 = 0 (cinta vertical) · ►CUADRIMANIA: 13 = 0 (torre vertical)
   const adv = BELT.vel * dt;
   /* OPTIMIZACIÓN HORIZONTE: ocultar segmentos cuyo borde más cercano ya cae tras la pared de
      niebla (fog.far). Esa zona es niebla 100% opaca → ocultarla es imperceptible, pero ahorra
@@ -35014,7 +35014,7 @@ function frame(now){
     if(stageIntroT<=0 && !(S10WAVE.phase==='fight')) chaosT += dt;   // ►INTERSTAGE VIVO: el caos no avanza durante la cuenta 3·2·1 · ►S10WAVE: ni durante una oleada de jefes
     /* ►CUADRIMANIA: en la torre no hay caos que suba ni jefe al final — la presión la da el suelo
        que se acaba (y, pasado un rato, la lava que sube). */
-    if(!TRAIN.on && STAGE!==13 && S10WAVE.phase!=='fight' && chaosT >= CHAOS_EVERY && chaosLvl < CHAOS_MAX){
+    if(!TRAIN.on && STAGE!==13 && STAGE!==14 && S10WAVE.phase!=='fight' && chaosT >= CHAOS_EVERY && chaosLvl < CHAOS_MAX){   // ►ARENA: en el disco no sube el caos — la presión la da el suelo que se acaba y los 2 minutos
       chaosT = 0; chaosLvl++;
       showBanner('¡CAOS NIVEL '+chaosLvl+'!', 1.5);
       const ch = document.getElementById('chaos');

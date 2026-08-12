@@ -91,12 +91,8 @@ const K = {
   ptsCaer:  -40,     // ...y lo que cuesta caerse
   respawn:  1.4,     // s de reaparicion
 
-  /* --- recinto y decorado --- */
+  /* --- recinto --- */
   muroR:    52,      // ►MURO INVISIBLE: el disco llega a 36, esto deja aire para el empujon
-  decorN:   16,      // plataformas de fondo (SOLO VISUALES)
-  decorRmin:78,      // muy por fuera del muro: imposible llegar
-  decorRmax:150,
-  decorSep: 5,
 };
 
 const T = {
@@ -114,12 +110,28 @@ const _v3 = new THREE.Vector3(), _q4 = new THREE.Quaternion(),
       _m4 = new THREE.Matrix4(),
       _e3 = new THREE.Euler(), _col = new THREE.Color();
 
-/* tonos de la piedra del jardin japones: gris con matices, nada de arcoiris */
-const TINTES = [[0.62,0.64,0.68], [0.58,0.60,0.65], [0.66,0.67,0.70], [0.54,0.57,0.62]];
-/* el ANILLO EXTERIOR vivo se tine de rojo torii: es el aviso de "esto es lo siguiente" */
-const TINTE_BORDE = [0.72, 0.30, 0.26];
-/* ►KOTH: el podio va en piedra CLARA (cima) y arena (escalon) para que se lea la altura */
-const TINTE_CIMA = [0.86, 0.83, 0.74], TINTE_MEDIO = [0.74, 0.70, 0.62];
+/* ►SJLOOK · los tintes son AHORA MULTIPLICADORES sobre la textura magenta del
+   jardin (instanceColor multiplica al material), no colores absolutos: por eso
+   rondan el 1. Con los valores viejos (0,5-0,7 grises) el disco salia sucio. */
+const TINTES = [[1.00,1.00,1.00], [0.94,0.95,0.97], [1.06,1.04,1.05], [0.90,0.93,0.96]];
+/* el ANILLO EXTERIOR vivo se enciende en ROJO: es el aviso de "esto es lo siguiente" */
+const TINTE_BORDE = [1.55, 0.62, 0.52];
+/* ►KOTH: el podio, mas claro segun sube — la altura se lee sin salirse de la paleta */
+const TINTE_CIMA = [1.75, 1.62, 1.70], TINTE_MEDIO = [1.34, 1.25, 1.31];
+
+/* ►SJLOOK · materiales del disco: los MISMOS del jardin japones (tapa magenta
+   sakura multitono + cuerpo de piedra gris), en el orden de grupos que trae una
+   BoxGeometry: [+X, -X, +Y(tapa), -Y, +Z, -Z]. */
+let _MATS = null;
+function _matsDisco(){
+  if(_MATS) return _MATS;
+  if(typeof _buildSJMats === 'function') _buildSJMats();
+  const M = (typeof SJMATS !== 'undefined' && SJMATS) ? SJMATS : null;
+  const tapa   = M ? M.sakura.top : new THREE.MeshStandardMaterial({ color:0xe86bad, roughness:0.93, metalness:0 });
+  const cuerpo = M ? M.body       : new THREE.MeshStandardMaterial({ color:0x8e9298, roughness:0.93, metalness:0 });
+  _MATS = [cuerpo, cuerpo, tapa, cuerpo, cuerpo, cuerpo];
+  return _MATS;
+}
 
 /* el motor cachea las plataformas sueltas en un índice; tocar `platforms` sin
    avisar deja losetas fantasma que se pueden pisar. `indiceSucio` NO es del
@@ -136,6 +148,7 @@ function clear(){
   T.bombas.length = 0; T.aro = null; T.rey = null;
   if(T.reloj && T.reloj.parentNode) T.reloj.parentNode.removeChild(T.reloj);
   T.reloj = null;
+  const ch = document.getElementById('chaos'); if(ch) ch.style.display = '';   // se lo devolvemos al resto del juego
   if(T.group && typeof scene !== 'undefined'){ scene.remove(T.group); }
   if(typeof platforms !== 'undefined' && T.plats.length){
     for(const p of T.plats){ const i = platforms.indexOf(p); if(i >= 0) platforms.splice(i, 1); }
@@ -198,11 +211,19 @@ function build(){
      `vertexColors:true` el shader espera un atributo `color` en la geometría, y
      una BoxGeometry no lo trae: entrega (0,0,0) y por mucho `setColorAt` que se
      haga, negro por negro sigue siendo negro. El color por loseta lo pone el
-     instanceColor, que multiplica al `color` del material — así que el material
-     va blanco y a secas. (cuadrimania sí usa vertexColors porque su geometría se
-     construye a mano CON su atributo de color.) */
-  const mat = new THREE.MeshStandardMaterial({ color:0xffffff,
-                                               roughness:0.93, metalness:0, flatShading:true });
+     instanceColor, que multiplica al `color` del material. (cuadrimania sí usa
+     vertexColors porque su geometría se construye a mano CON su atributo.)
+
+     ►SJLOOK (pedido de Toni: "la arena magenta del mismo estilo que las
+     plataformas del stage Japón"). Las plataformas del jardín NO son un color
+     plano: son `_s2mat(paleta)`, un material con una TEXTURA DE CAMPO que mezcla
+     media docena de tonos DENTRO de cada losa. Aquí se usan sus mismas paletas y
+     su mismo constructor — nada de inventar un magenta a ojo.
+     Y como una BoxGeometry viene con SUS SEIS GRUPOS, se le pasa un ARRAY de
+     materiales: la tapa en magenta sakura y los laterales/fondo en la piedra
+     gris que el stage usa para el cuerpo de sus plataformas (es lo que le da
+     lectura de volumen; con la tapa por los seis lados el disco se aplana). */
+  const mat = _matsDisco();
   const inst = new THREE.InstancedMesh(geo, mat, celdas.length);
   inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   inst.userData.noOcc = true;
@@ -227,7 +248,7 @@ function build(){
     /* ►la rejilla va ALINEADA A LOS EJES: el AABB ES la loseta (ver cabecera) */
     const plat = { minX:cx-half, maxX:cx+half, minZ:cz-half, maxZ:cz+half,
                    topY:K.y + alt, baseY:K.y - K.h - 0.1, solid:true };
-    const jt = 0.93 + Math.random() * 0.14;
+    const jt = 0.96 + Math.random() * 0.08;   // ►SJLOOK: jitter CORTO — la variedad la pone ya la textura de campo
     let tinte = TINTES[(Math.abs(Math.round(cx/K.cell) * 3 + Math.round(cz/K.cell) * 7)) % TINTES.length];
     if(alt > 0) tinte = (alt === K.altoCima) ? TINTE_CIMA : TINTE_MEDIO;   // el podio se lee de un vistazo
     const tile = { i, cx, cz, y0, alt, sy, plat, anillo:c.anillo, sector:c.sector,
@@ -296,75 +317,20 @@ function pintaBorde(){
 }
 
 /* ---------------------------------------------------------------------
-   DECORADO — el del jardin japones, tal cual, y plataformas al fondo
+   DECORADO — el del jardin japones y NADA MAS
 
    Mismo criterio que en cuadrimania: antes de inventar un fondo, mirar si
    el stage ya lo tiene. `enableSJScenery(true)` monta el mar de nubes, el
-   Fuji y los toriis del jardin; encima van plataformas flotando MUY por
-   fuera del muro invisible, hechas con el `s3Slab` del propio juego y
-   vestidas con sus props. Son SOLO VISUALES.
-   --------------------------------------------------------------------- */
-function soloDecor(fn){
-  const p0 = platforms.length, c0 = scene.children.length;
-  const capPrev = (typeof _CAP !== 'undefined') ? _CAP : false;
-  if(typeof _CAP !== 'undefined') _CAP = true;      // s2Floor/getModel salen de vacio si no
-  try { fn(); } catch(e){ console.warn('[ARENA] decorado:', e); }
-  if(typeof _CAP !== 'undefined') _CAP = capPrev;
-  if(platforms.length > p0){ platforms.splice(p0, platforms.length - p0); indiceSucio(); }
-  const nuevos = scene.children.slice(c0);
-  for(const o of nuevos){ scene.remove(o); T.group.add(o); }
-  return nuevos;
-}
+   Fuji y los toriis del jardin.
 
+   ►(12/08, Toni) FUERA las plataformas flotantes del fondo. Llevaban props
+   del jardin y quedaban vistosas, pero en un minijuego donde lo que se lee
+   es "que suelo me queda" son ruido: islas a las que no se puede llegar,
+   a la altura de la mirada y con la misma silueta que el disco. El fondo
+   lejano (nubes, montanas, Fuji) ya da profundidad de sobra.
+   --------------------------------------------------------------------- */
 function buildDecor(){
   if(typeof enableSJScenery === 'function') enableSJScenery(true);
-
-  const props = ['sj_torii','sj_lantern','sj_lamp','sj_maple1','sj_maple2','sj_maple3',
-                 'sj_maple4','sj_maple5','sj_bamboo','sj_bamboo2','sj_statue','sj_door',
-                 'sj_flowers','sj_grass','sj_path'];
-  const puestas = [];
-  for(let i = 0; i < K.decorN; i++){
-    const sx = 9 + Math.random()*13, sz = 9 + Math.random()*13;
-    let x = 0, z = 0, y = 0, sitio = false;
-    for(let intento = 0; intento < 40 && !sitio; intento++){
-      const a  = (i / K.decorN) * Math.PI * 2 + (Math.random()-0.5) * 0.9;
-      const rr = K.decorRmin + Math.random() * (K.decorRmax - K.decorRmin);
-      x = Math.cos(a) * rr; z = Math.sin(a) * rr;
-      y = K.y - 26 + Math.random() * 52;
-      sitio = true;
-      for(const q of puestas){
-        const dxz = Math.hypot(x - q.x, z - q.z), dy = Math.abs(y - q.y);
-        if(dxz < (sx + q.sx) * 0.5 + K.decorSep && dy < 10){ sitio = false; break; }
-      }
-    }
-    if(!sitio) continue;
-    puestas.push({ x, z, y, sx, sz });
-    soloDecor(()=>{
-      if(typeof s3Slab === 'function') s3Slab(x, z, sx, sz, y, 'rose');
-      if(typeof getModel === 'function' && typeof DECOR_DEFSJ !== 'undefined'){
-        const nP = 2 + ((Math.random()*3)|0), colocados = [];
-        for(let k = 0; k < nP; k++){
-          const key = props[(Math.random()*props.length)|0];
-          const m = getModel(key, DECOR_DEFSJ); if(!m) continue;
-          const sc = 0.9 + Math.random()*0.7;
-          const rad = ((DECOR_DEFSJ[key] && DECOR_DEFSJ[key].size) || 2) * sc * 0.5;
-          let px = 0, pz = 0, ok = false;
-          for(let it = 0; it < 20 && !ok; it++){
-            px = x + (Math.random()-0.5) * Math.max(1, sx - rad*2 - 1);
-            pz = z + (Math.random()-0.5) * Math.max(1, sz - rad*2 - 1);
-            ok = true;
-            for(const c of colocados) if(Math.hypot(px-c.x, pz-c.z) < rad + c.r + 0.6){ ok = false; break; }
-          }
-          if(!ok) continue;
-          colocados.push({ x:px, z:pz, r:rad });
-          m.scale.multiplyScalar(sc);
-          m.position.set(px, y, pz);
-          m.rotation.y = Math.random() * Math.PI * 2;
-          scene.add(m);
-        }
-      }
-    });
-  }
 }
 
 /* ---------------------------------------------------------------------
@@ -781,6 +747,8 @@ function koth(dt){
    ►RELOJ — lo unico que se anade al HUD (Toni: nada de marcadores)
    ===================================================================== */
 function creaReloj(){
+  /* el caos no sube en el disco (guarda en el HTML) → su contador sobra en el HUD */
+  const ch = document.getElementById('chaos'); if(ch) ch.style.display = 'none';
   let d = document.getElementById('arenaReloj');
   if(!d){
     d = document.createElement('div');
@@ -895,6 +863,10 @@ function applyTheme(){
   if(typeof VISUAL !== 'undefined'){
     VISUAL.fog.far = 240;              // el disco flota: se tiene que ver el fondo lejano
     VISUAL.exposure = 0.72;
+    /* ►los COSTADOS del disco y del podio son caras verticales grandes mirando en
+       contra del sol: sin relleno salen casi negras y el podio se lee como una
+       mancha. No es sombra, es falta de ambiente (ver luz-caras-verticales-fill). */
+    if(VISUAL.fill){ VISUAL.fill.color = 0xd8c6e0; VISUAL.fill.intensity = 0.40; }
   }
 }
 
