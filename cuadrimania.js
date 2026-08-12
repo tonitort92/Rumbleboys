@@ -708,7 +708,13 @@ function tick(dt){
       T.over = true;
       if(vivos.length === 1 && typeof showBanner==='function') showBanner('¡' + (vivos[0].label||'') + ' AGUANTA EN PIE!', 2.4);
       if(typeof crowdCheer==='function') crowdCheer(.7);
-      setTimeout(()=>{ if(typeof endGame==='function' && !gameOver) endGame(); }, 1400);
+      /* ►RUTA: en campana es un eslabon del line-up, no el fin de la partida.
+         Suelto (?cuadrimania) acaba como siempre. */
+      setTimeout(()=>{
+        if(gameOver) return;
+        if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(); return; }
+        if(typeof endGame==='function') endGame();
+      }, 1400);
     }
   }
 }

@@ -796,7 +796,14 @@ function tick(dt){
     if(typeof showBanner === 'function')
       showBanner(mejor ? ('¡' + (mejor.label || '') + ' CAMPEÓN!  ' + Math.round(max) + ' pts') : '¡SE ACABÓ EL TIEMPO!', 2.6);
     if(typeof crowdCheer === 'function') crowdCheer(.8);
-    setTimeout(()=>{ if(typeof endGame === 'function' && !gameOver) endGame(); }, 1600);
+    /* ►RUTA: dentro de la campaña esto NO es el fin de la partida, es un
+       eslabon mas del line-up (Toni, 12/08: "todo unificado"). Suelto
+       (?arena) se comporta como siempre. */
+    setTimeout(()=>{
+      if(gameOver) return;
+      if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(); return; }
+      if(typeof endGame === 'function') endGame();
+    }, 1600);
   }
 }
 

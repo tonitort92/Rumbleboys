@@ -131,8 +131,12 @@
 (function(){
 'use strict';
 
+/* ►SE DEFINE SIEMPRE, PERO NO ARRANCA SOLO. Antes salia en su primera linea
+   sin `?descenso` en la URL, asi que desde el juego no habia nada que llamar.
+   Dos puertas: `?descenso` (desarrollo) y `DESC.lanzar({piel, alAcabar})`, que
+   es por donde entra la RUTA de la campana. */
 const Q = location.search;
-if(!/[?&]descenso(=|&|$)/.test(Q)) return;
+const SUELTO = /[?&]descenso(=|&|$)/.test(Q);
 
 const _qs    = new URLSearchParams(Q);
 const HUMANS = Math.max(1, Math.min(4, parseInt(_qs.get('humanos')||'1', 10) || 1));
@@ -140,16 +144,16 @@ const HUMANS = Math.max(1, Math.min(4, parseInt(_qs.get('humanos')||'1', 10) || 
    valor de `descenso=` ya viaja en la URL de entrada, así que aprovecharlo
    ahorra un parámetro y es lo primero que se teclea para probar una piel. */
 const _pielQS = (_qs.get('piel') || _qs.get('descenso') || '').toLowerCase();
-const SKIN   = /^(arena|nieve|mar)$/.test(_pielQS) ? _pielQS : 'arena';
+let SKIN     = /^(arena|nieve|mar)$/.test(_pielQS) ? _pielQS : 'arena';
 /* ►KITE: la piel de mar no es surf a secas, es KITESURF — el rider va colgado de
    una barra y tira de una vela. Vive aquí arriba (y no junto a su bloque) porque
    `montaPersonaje` lo consulta: un `const` más abajo también valdría, pero este
    fichero ya se ha comido una TDZ y no merece la pena arriesgar otra.
    `?kite=0` lo apaga y el mar vuelve a ser el surf de antes. */
-const KITE_ON = (SKIN === 'mar') && _qs.get('kite') !== '0';
+let KITE_ON = (SKIN === 'mar') && _qs.get('kite') !== '0';
 /* MAR vive aquí arriba porque lo consultan cosas que se evalúan al cargar el
    módulo (el PLAN de la travesía, las zonas): más abajo sería una TDZ. */
-const MAR = (SKIN === 'mar');
+let MAR = (SKIN === 'mar');
 const TAU    = Math.PI * 2;
 const RAD    = Math.PI / 180;
 const clamp  = (v, a, b) => v < a ? a : (v > b ? b : v);
@@ -638,7 +642,7 @@ function planMar(){
   out.push({ z:'calma', len:260, hw:340 });
   return out;
 }
-const PLAN = MAR ? planMar() : [
+const PLAN_TIERRA = [
   /* HUECOS Y TÚNELES RETIRADOS a peticion de Toni ("quita los precipicios y
      los túneles de momento"). El código de ambos sigue vivo y probado: basta
      volver a poner `hueco:N` o `tunel:true` en un tramo para recuperarlos. */
@@ -665,8 +669,16 @@ const PLAN = MAR ? planMar() : [
   { z:'verde', len:220, hw:210 },
 ];
 
+let PLAN = MAR ? planMar() : PLAN_TIERRA;
 const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [], PIPES = [];
-{
+/* ►EL TRAZADO SE REGENERA AL CAMBIAR DE PIEL. Antes esto era un bloque suelto
+   que corria UNA vez al cargar el fichero, porque la piel venia de la URL y no
+   cambiaba nunca. En la campana el descenso aparece TRES veces (sandboard,
+   surf y snowboard), asi que hay que poder rehacerlo. Los arrays son los MISMOS
+   objetos (medio fichero los tiene capturados por referencia): se vacian y se
+   rellenan, nunca se sustituyen. */
+function construyePlan(){
+  BANDS.length = HUECOS.length = PARTES.length = TUNELES.length = RAILES.length = PIPES.length = 0;
   let z = 0;
   for(const t of PLAN){
     const b = { tipo:t.z, z0:z, z1:z - t.len, hw:t.hw };
@@ -695,6 +707,7 @@ const BANDS = [], HUECOS = [], PARTES = [], TUNELES = [], RAILES = [], PIPES = [
   }
   K.len = -z;
 }
+construyePlan();
 
 function bandIdx(z){
   if(z >= 0) return 0;
@@ -704,7 +717,7 @@ function bandIdx(z){
 }
 /* Propiedad de zona en z, con las transiciones suavizadas en K.zoneBlend.
    En el borde exacto sale la media de las dos bandas: continuo pero corto. */
-const ZN = MAR ? ZONA_MAR : ZONA;   // ►MAR: las bandas del mar son estados de la mar, no pendientes
+let ZN = MAR ? ZONA_MAR : ZONA;   // ►MAR: las bandas del mar son estados de la mar, no pendientes
 function zoneProp(z, key){
   const i = bandIdx(z), b = BANDS[i], B = K.zoneBlend;
   let v = ZN[b.tipo][key];
@@ -872,8 +885,7 @@ const SKINS = {
            rail:0xd8dee8, railPoste:0x8a94a4,
            picos:null, rocasLejos:null, tinteRoca:null, tintePico:null, relieve:1.0 },
 };
-const PAL = SKINS[SKIN] || SKINS.arena;
-if(SKIN === 'mar') K.tilt = 7;
+let PAL = SKINS[SKIN] || SKINS.arena;
 
 /* =====================================================================
    ►OLA — EL MAR ES MAR, no una ladera pintada de azul
@@ -1089,7 +1101,7 @@ function aplicaOlaShader(mat, ancla){
      · grip un poco menor: el canto en agua agarra menos que en nieve prensada.
    Todo esto se MIDE después (velocidad de equilibrio y tiempo de bajada), que
    es como se calibró la piel original. */
-if(SKIN === 'mar'){
+function _tweaksMar(){
   /* CALIBRADO CONTRA LA PIEL DE ARENA, no a ojo: con dragC 0,0056 y muBase 2,2
      la media se quedaba en 24 u/s contra 57 (menos de la mitad) y el mar era
      un barrizal. Estos valores buscan un mar ~15% más lento que la arena. */
@@ -1138,7 +1150,7 @@ const VIENTO = {
   subidaT: 0.80,   // ...durante este tiempo
 };
 
-if(SKIN === 'nieve'){
+function _tweaksNieve(){
   K.polvoN     = 420;    // más motas: es nevada, no bruma
   K.polvoOp    = 0.55;   // y un copo SE VE (una mota de polvo, no)
   K.polvoCae   = 7.0;    // u/s de caída — lo que separa un copo de una mota
@@ -1147,6 +1159,43 @@ if(SKIN === 'nieve'){
   K.rafagasN   = 34;
   K.rafagasOp  = 0.055;
 }
+
+/* =====================================================================
+   ►APLICAR UNA PIEL EN CALIENTE
+
+   Nacio con la piel FIJA: venia de la URL y se horneaba en consts al cargar el
+   fichero. En la campana el descenso aparece TRES veces (sandboard, surf y
+   snowboard), asi que hay que poder cambiarla sin recargar la pagina.
+
+   Lo unico delicado son los retoques de K: son MUTACIONES, no una tabla, y no
+   se deshacen solas — pasar de nieve a arena dejaria la nevada puesta. Por eso
+   se guarda una foto de K ANTES de cualquier retoque y cada cambio de piel
+   RESTAURA y vuelve a aplicar. Es exactamente lo que hace `applyStageTheme` del
+   juego con `_restoreS1Theme()`, y por el mismo motivo.
+   ===================================================================== */
+const _K_PIEL = ['airMin','airThr','chatSube','dragC','dragHard','dragSoft','grip','muBase',
+                 'skidDrag','tilt','polvoCae','polvoN','polvoOp','polvoTam','polvoViento',
+                 'rafagasN','rafagasOp'];
+const _KBASE = {};
+for(const k of _K_PIEL) _KBASE[k] = Array.isArray(K[k]) ? K[k].slice() : K[k];
+
+function aplicaPiel(p){
+  if(!/^(arena|nieve|mar)$/.test(p)) p = 'arena';
+  SKIN = p;
+  MAR  = (p === 'mar');
+  KITE_ON = MAR && _qs.get('kite') !== '0';
+  PAL  = SKINS[p] || SKINS.arena;
+  ZN   = MAR ? ZONA_MAR : ZONA;
+  PLAN = MAR ? planMar() : PLAN_TIERRA;
+  construyePlan();      // BANDS/HUECOS/RAILES/PIPES… y K.len
+  buildHeights();       // la tabla de alturas cuelga de las bandas nuevas
+  for(const k in _KBASE) K[k] = Array.isArray(_KBASE[k]) ? _KBASE[k].slice() : _KBASE[k];
+  if(MAR){ _tweaksMar(); K.tilt = 7; }
+  else if(p === 'nieve') _tweaksNieve();
+}
+/* la piel inicial (la de la URL) se aplica ya: hasta ahora estos retoques
+   corrian sueltos al cargar el fichero */
+aplicaPiel(SKIN);
 
 /* Color de respaldo por hueco. El color BUENO de un corredor es el de su CLASE
    (ver `colorDe` más abajo): es el mismo identificativo que usa el juego para el
@@ -5353,13 +5402,77 @@ function descFin(){
     '<div style="font-size:15px;opacity:.85;margin-bottom:10px">' + me.pts + ' puntos · nota ' +
       '<b style="color:' + mio.color + ';font-style:italic">' + mio.label + '</b></div>' +
     '<div class="endPanel" style="opacity:1">' + tab + '</div>' +
-    '<button class="btn" id="dFinR">OTRA VEZ <span style="opacity:.55;font-size:13px;font-weight:700">(R)</span></button>' +
-    '<button class="btn" id="dFinT2" style="margin-top:8px">OTRA PISTA <span style="opacity:.55;font-size:13px;font-weight:700">(T)</span></button>';
+    /* ►EN CAMPANA no hay "otra vez": hay CONTINUAR, y la run sigue donde iba */
+    (DESC._campana
+      ? '<button class="btn" id="dFinGo">CONTINUAR <span style="opacity:.55;font-size:13px;font-weight:700">(ESPACIO)</span></button>'
+      : '<button class="btn" id="dFinR">OTRA VEZ <span style="opacity:.55;font-size:13px;font-weight:700">(R)</span></button>' +
+        '<button class="btn" id="dFinT2" style="margin-top:8px">OTRA PISTA <span style="opacity:.55;font-size:13px;font-weight:700">(T)</span></button>');
   _finEl.style.display = 'flex';
-  const bR = _finEl.querySelector('#dFinR'), bT = _finEl.querySelector('#dFinT2');
+  const bR = _finEl.querySelector('#dFinR'), bT = _finEl.querySelector('#dFinT2'), bG = _finEl.querySelector('#dFinGo');
   if(bR) bR.onclick = () => start(DESC.seed);
   if(bT) bT.onclick = () => start((Math.random() * 1e9) | 0);
+  if(bG) bG.onclick = () => salirDesc();
 }
+
+/* =====================================================================
+   ►SALIR — devolverle el frame al juego, y devolverselo ENTERO
+
+   Todo lo que este modulo toco FUERA de su escena hay que deshacerlo:
+     · #banner / #count321 / #stageCaution los MOVIO a su HUD (buildHud lo hace
+       porque boot() del juego esconde #hud). Sin devolverlos, el juego presenta
+       el stage siguiente dentro de un HUD oculto y el rotulo NO SE VE.
+     · el shadowMap del renderer.
+     · su HUD y su tabla, que si no se quedan tapando la partida.
+   ===================================================================== */
+function salirDesc(){
+  const cb = DESC._alAcabar;
+  const me = DESC.racers[0];
+  const res = { puntos: (me && me.pts) || 0, puesto: (me && me.place) || 0, piel: SKIN };
+  DESC.on = false;
+  DESC._alAcabar = null;
+  descFinOff();
+  try { descPopupOff(); } catch(e){}
+  if(DESC.hud && DESC.hud.root) DESC.hud.root.style.display = 'none';
+  const hud = document.getElementById('hud');
+  if(hud) for(const id of ['count321', 'banner', 'stageCaution']){
+    const el = document.getElementById(id);
+    if(el && el.parentNode !== hud) hud.appendChild(el);
+  }
+  const rr = GAME_RENDERER();
+  if(rr && DESC._rrPrev){ rr.shadowMap.enabled = DESC._rrPrev.sh; rr.shadowMap.needsUpdate = true; DESC._shadowOn = null; }
+  if(hud) hud.style.display = '';
+  try { if(SND.wind) SND.wind.g.gain.value = 0; if(SND.silb) SND.silb.g.gain.value = 0;
+        if(SND.carve) SND.carve.g.gain.value = 0; if(SND.grind) SND.grind.g.gain.value = 0; } catch(e){}
+  if(typeof cb === 'function'){ try { cb(res); } catch(e){ console.warn('[descenso] alAcabar', e); } }
+}
+
+/* ►LA PUERTA DE ENTRADA DESDE LA CAMPANA (la usa `lanzarMini` de la RUTA).
+   `piel` cambia sandboard / surf / snowboard en caliente: ver aplicaPiel. */
+/* piel actual, o cambiarla: `DESC.piel('nieve')`. Tambien es el knob para
+   probar las tres desde consola sin recargar. */
+DESC.piel  = p => { if(p) aplicaPiel(p); return SKIN; };
+DESC.esMar = () => MAR;
+DESC.salir = () => salirDesc();
+
+DESC.lanzar = function(opt){
+  opt = opt || {};
+  DESC._campana = opt.campana !== false;
+  DESC._alAcabar = opt.alAcabar || null;
+  if(opt.piel && opt.piel !== SKIN) aplicaPiel(opt.piel);
+  const rr = GAME_RENDERER();
+  if(rr) DESC._rrPrev = { sh: rr.shadowMap.enabled };
+  if(!DESC._built){ DESC._built = true; buildHud(); }
+  if(DESC.hud && DESC.hud.root) DESC.hud.root.style.display = '';
+  if(DESC.hud && DESC.hud.root) for(const id of ['count321', 'banner', 'stageCaution']){
+    const el = document.getElementById(id);
+    if(el && el.parentNode !== DESC.hud.root) DESC.hud.root.appendChild(el);
+  }
+  const hud = document.getElementById('hud');
+  if(hud) hud.style.display = 'none';
+  start(opt.semilla || ((Math.random() * 1e9) | 0));
+  DESC.on = true;
+  return true;
+};
 function descFinOff(){
   DESC._finShown = false; DESC._finT = 0;
   if(_finEl) _finEl.style.display = 'none';
@@ -6097,6 +6210,10 @@ DESC.render = function(){
 addEventListener('keydown', e => {
   if(!DESC.on) return;
   sndInit(); if(SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume();
+  if(DESC._campana){   // en campana: ESPACIO cierra la tabla y sigue la run
+    if(DESC._finShown && (e.code === 'Space' || e.code === 'Enter')){ salirDesc(); e.preventDefault(); }
+    return;
+  }
   if(e.code === 'KeyR'){ start(DESC.seed); e.preventDefault(); }
   if(e.code === 'KeyT'){ start((Math.random()*1e9)|0); e.preventDefault(); }
 });
@@ -6121,7 +6238,7 @@ addEventListener('wheel', e => {
 }, { passive:false });
 
 function boot(){
-  if(DESC._built) return;
+  if(DESC._built || !SUELTO) return;
   /* CALIDAD: manda `?calidad=baja|media|alta` de la URL y, si no viene, el
      selector del juego. La Baja apaga sombras y aligera decorado: no se degrada
      a todo el mundo, solo a quien lo pide (o a quien no puede con más). */
@@ -6155,7 +6272,11 @@ function boot(){
     if(++n > 120) clearInterval(t);
   }, 250);
 }
-const _bootT = setInterval(() => { boot(); if(DESC._built) clearInterval(_bootT); }, 60);
-boot();
+/* el sondeo de arranque solo existe en modo suelto: en campana el modulo
+   duerme hasta que la RUTA lo llame */
+if(SUELTO){
+  const _bootT = setInterval(() => { boot(); if(DESC._built) clearInterval(_bootT); }, 60);
+  boot();
+}
 
 })();

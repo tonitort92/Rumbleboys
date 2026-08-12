@@ -109,8 +109,15 @@
 (function(){
 'use strict';
 
+/* ►SE DEFINE SIEMPRE, PERO NO ARRANCA SOLO.
+   Antes el fichero salía en su primera línea sin `?tubo` en la URL, así que
+   dentro del juego no existía nada que llamar. Ahora hay dos puertas:
+     · `?tubo` en la URL → arranca solo, como toda la vida (desarrollo).
+     · `TUBO.lanzar({alAcabar})` → lo llama la RUTA de la campaña.
+   Sin ninguna de las dos, este módulo no toca NADA: `TUBO.on` sigue en false y
+   el enganche del `frame()` del juego ni lo mira. */
 const Q = location.search;
-if(!/[?&]tubo(=|&|$)/.test(Q)) return;
+const SUELTO = /[?&]tubo(=|&|$)/.test(Q);
 
 const _qs    = new URLSearchParams(Q);
 const HUMANS = Math.max(1, Math.min(4, parseInt(_qs.get('humanos')||'1', 10) || 1));
@@ -2291,13 +2298,81 @@ function tuboFin(){
     '<div style="font-size:15px;opacity:.85;margin-bottom:10px">' + me.pts + ' puntos · nota ' +
       '<b style="color:' + mio.color + ';font-style:italic">' + mio.label + '</b></div>' +
     '<div class="endPanel" style="opacity:1">' + tab + '</div>' +
-    '<button class="btn" id="tbR">OTRA VEZ <span style="opacity:.55;font-size:13px;font-weight:700">(R)</span></button>' +
-    '<button class="btn" id="tbT" style="margin-top:8px">OTRO TUBO <span style="opacity:.55;font-size:13px;font-weight:700">(T)</span></button>';
+    /* ►EN CAMPAÑA no hay "otra vez": hay CONTINUAR, y la run sigue donde iba */
+    (TUBO._campana
+      ? '<button class="btn" id="tbGo">CONTINUAR <span style="opacity:.55;font-size:13px;font-weight:700">(ESPACIO)</span></button>'
+      : '<button class="btn" id="tbR">OTRA VEZ <span style="opacity:.55;font-size:13px;font-weight:700">(R)</span></button>' +
+        '<button class="btn" id="tbT" style="margin-top:8px">OTRO TUBO <span style="opacity:.55;font-size:13px;font-weight:700">(T)</span></button>');
   _finEl.style.display = 'flex';
-  const bR = _finEl.querySelector('#tbR'), bT = _finEl.querySelector('#tbT');
+  const bR = _finEl.querySelector('#tbR'), bT = _finEl.querySelector('#tbT'), bG = _finEl.querySelector('#tbGo');
   if(bR) bR.onclick = () => start(TUBO.seed);
   if(bT) bT.onclick = () => start((Math.random() * 1e9) | 0);
+  if(bG) bG.onclick = () => salir();
 }
+
+/* =====================================================================
+   ►SALIR — devolverle el frame al juego, y devolvérselo ENTERO
+
+   Un módulo que se queda el frame tiene que deshacer TODO lo que tocó fuera de
+   su escena, o el juego sigue roto después:
+     · los nodos #banner / #count321 / #stageCaution los MOVIÓ a su HUD
+       (buildHud lo hace porque `boot()` del juego esconde #hud). Si no se
+       devuelven, el juego presenta el stage siguiente dentro de un HUD oculto y
+       el rótulo NO SE VE. Es la misma trampa que cazó el descenso, del revés.
+     · `toneMappingExposure` y `shadowMap.enabled` se los cambió al renderer.
+     · su propio HUD y su tabla se quedan en el DOM tapando la partida.
+   ===================================================================== */
+function salir(){
+  const cb = TUBO._alAcabar;
+  const res = { puntos: (TUBO.racers[0] && TUBO.racers[0].pts) || 0,
+                puesto: (TUBO.racers[0] && TUBO.racers[0].place) || 0 };
+  TUBO.on = false;
+  TUBO._alAcabar = null;
+  tuboFinOff();
+  descPopupOffSeguro();
+  if(TUBO.hud && TUBO.hud.root) TUBO.hud.root.style.display = 'none';
+  /* los tres nodos de presentación, de vuelta a #hud */
+  const hud = document.getElementById('hud');
+  if(hud) for(const id of ['count321', 'banner', 'stageCaution']){
+    const el = document.getElementById(id);
+    if(el && el.parentNode !== hud) hud.appendChild(el);
+  }
+  const rr = GAME_RENDERER();
+  if(rr && TUBO._rrPrev){
+    rr.toneMappingExposure = TUBO._rrPrev.exp;
+    rr.shadowMap.enabled = TUBO._rrPrev.sh;
+    rr.shadowMap.needsUpdate = true;
+    TUBO._shadowOn = null;
+  }
+  /* el bucle del juego vuelve a mandar; su HUD se re-muestra solo */
+  if(hud) hud.style.display = '';
+  try { if(SND.wind) SND.wind.g.gain.value = 0; if(SND.silb) SND.silb.g.gain.value = 0; } catch(e){}
+  if(typeof cb === 'function') { try { cb(res); } catch(e){ console.warn('[tubo] alAcabar', e); } }
+}
+function descPopupOffSeguro(){ try { tuboPopupOff(); } catch(e){} }
+
+TUBO.salir = () => salir();
+
+/* ►LA PUERTA DE ENTRADA DESDE LA CAMPAÑA (la usa `lanzarMini` de la RUTA) */
+TUBO.lanzar = function(opt){
+  opt = opt || {};
+  TUBO._campana = opt.campana !== false;
+  TUBO._alAcabar = opt.alAcabar || null;
+  const rr = GAME_RENDERER();
+  if(rr) TUBO._rrPrev = { exp: rr.toneMappingExposure, sh: rr.shadowMap.enabled };
+  if(!TUBO._built){ TUBO._built = true; buildHud(); }
+  if(TUBO.hud && TUBO.hud.root) TUBO.hud.root.style.display = '';
+  /* los nodos de presentación vuelven a hacer falta AQUÍ (ver salir) */
+  if(TUBO.hud && TUBO.hud.root) for(const id of ['count321', 'banner', 'stageCaution']){
+    const el = document.getElementById(id);
+    if(el && el.parentNode !== TUBO.hud.root) TUBO.hud.root.appendChild(el);
+  }
+  const hud = document.getElementById('hud');
+  if(hud) hud.style.display = 'none';
+  start(opt.semilla || ((Math.random() * 1e9) | 0));
+  TUBO.on = true;
+  return true;
+};
 function tuboFinOff(){
   TUBO._finShown = false; TUBO._finT = 0;
   if(_finEl) _finEl.style.display = 'none';
@@ -2714,6 +2789,12 @@ TUBO.render = function(){
 addEventListener('keydown', e => {
   if(!TUBO.on) return;
   sndInit(); if(SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume();
+  /* en campaña ESPACIO cierra la tabla y sigue la run; R/T (reiniciar pista)
+     solo tienen sentido jugando suelto */
+  if(TUBO._campana){
+    if(TUBO._finShown && (e.code === 'Space' || e.code === 'Enter')){ salir(); e.preventDefault(); }
+    return;
+  }
   if(e.code === 'KeyR'){ start(TUBO.seed); e.preventDefault(); }
   if(e.code === 'KeyT'){ start((Math.random() * 1e9) | 0); e.preventDefault(); }
 });
@@ -2722,8 +2803,10 @@ addEventListener('resize', () => {
   if(TUBO.cam){ TUBO.cam.aspect = innerWidth / innerHeight; TUBO.cam.updateProjectionMatrix(); }
 });
 
+/* ►ARRANQUE SUELTO (?tubo). En campaña no se llama a esto: se llama a
+   `TUBO.lanzar()`, que no toca la calidad ni esconde los overlays del juego. */
 function boot(){
-  if(TUBO._built) return;
+  if(TUBO._built || !SUELTO) return;
   let cal = (_qs.get('calidad') || '').toLowerCase();
   if(!cal){
     try {
@@ -2753,7 +2836,11 @@ function boot(){
     if(++n > 120) clearInterval(t);
   }, 250);
 }
-const _bootT = setInterval(() => { boot(); if(TUBO._built) clearInterval(_bootT); }, 60);
-boot();
+/* el sondeo de arranque solo existe en el modo suelto: en campaña el módulo se
+   queda dormido hasta que la RUTA lo llame */
+if(SUELTO){
+  const _bootT = setInterval(() => { boot(); if(TUBO._built) clearInterval(_bootT); }, 60);
+  boot();
+}
 
 })();

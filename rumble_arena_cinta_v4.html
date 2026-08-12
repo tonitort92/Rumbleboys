@@ -17463,22 +17463,33 @@ function closeStageScores(){
   }catch(e){ console.warn('[marcas]', e); }
 }
 
-/* dispatch de stage extraído de la fase 'won' del jefe (mismo orden de campaña) */
+/* ►El avance de stage lo manda la RUTA (mundos + minijuegos en una sola lista;
+   ver el bloque ►RUTA). Antes era una escalera de `if(STAGE===n)` que solo sabía
+   de mundos, así que no había dónde meter un minijuego.
+   Único caller de verdad: la fase 'won' del jefe, vía openInterstage. */
 function stageAdvance(){
   saveNoteBoss(STAGE);   // ►SAVE: sólo se llega aquí tras VENCER al jefe del stage → contador de jefes derrotados
   saveNoteTrophy(STAGE); // ►TROFEOS: y el trofeo de ese mundo, si se lo llevó P1
-  if(STAGE===1) goToStage2();
-  else if(STAGE===2) goToStage3();
-  else if(STAGE===3) goToStage11();      // ►WEST: japón → western (mesetas del cañón)
-  else if(STAGE===11) goToStage4();      // ►WEST: western → desierto
-  else if(STAGE===4) goToStage5();
-  else if(STAGE===5) goToStage12();      // ►PIRATA: pirámide → mar pirata
-  else if(STAGE===12) goToStage7();      // ►PIRATA: mar pirata → cumbres (pozo dormido)
-  else if(STAGE===6) goToStage7();
-  else if(STAGE===7) goToStage8();
-  else if(STAGE===8) goToStage10();      // ►FÁBRICA: cañón → Vía Arcoíris
-  else endGame();
+  /* resincronizar por si se entró a este stage por fuera de la ruta (F9, el
+     selector del menú, o una `?stage=`): manda dónde ESTÁS, no dónde creía */
+  const i = rutaIndiceDe(STAGE);
+  if(i >= 0) RUTA_I = i;
+  rutaSiguiente();
 }
+/* ►FIN DE UN MINIJUEGO DE MOTOR (stages 13 y 14). Sus ficheros llamaban a
+   `endGame()` porque nacieron sueltos; dentro de la campaña lo que toca es
+   seguir la ruta. Lo llaman arena.js y cuadrimania.js. */
+function rutaFinMini(){
+  const i = rutaIndiceDe(STAGE);
+  if(i < 0){ endGame(); return; }        // se entró suelto (?arena / ?cuadrimania): fin de partida como siempre
+  RUTA_I = i;
+  closeStageScores();                    // sus puntos también cuentan para la run
+  fadeOut(()=>{ rutaSiguiente(); fadeIn(); });
+}
+window.rutaFinMini = rutaFinMini;
+/* ¿este stage forma parte de una run de campaña encadenada? Lo consultan los
+   minijuegos para decidir entre seguir la ruta o terminar la partida. */
+window.rutaEnCampana = function(){ return CAMPAIGN && rutaIndiceDe(STAGE) >= 0 && !gameOver; };
 
 function _perkOwned(perk, who){ const lvl=perk.lvl(who); return (perk.once && lvl>=1) || (!perk.once && perk.k!=='lives' && lvl>=perk.max); }
 
@@ -17638,7 +17649,105 @@ function updateShopTimer(dt){ updateInterstage(dt); }   // alias: lo llama _veri
    da este array y buildRoadmap ya pinta el número por POSICIÓN (i+1), así que el jugador ve
    1..9 correlativos con el western en 4ª posición. */
 const CAMPAIGN_STAGES = [1,2,3,11,4,5,12,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance) · ►PIRATA: el 12 entra entre la pirámide y el hielo
-const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS', 13:'CUADRIMANÍA' };   // ►CUADRIMANIA: el 13 es un MINIJUEGO suelto (?cuadrimania), NO va en CAMPAIGN_STAGES
+const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS', 13:'CUADRIMANÍA', 14:'ARENA' };
+
+/* =====================================================================
+   ►RUTA · EL LINE-UP COMPLETO, MUNDOS Y MINIJUEGOS EN UNA SOLA LISTA
+   (petición de Toni, 12/08/2026: "así lo tenemos todo unificado por fin")
+
+   Hasta ahora había DOS cosas sueltas: los 10 mundos encadenados a mano en
+   `stageAdvance` con un if por stage, y cuatro minijuegos a los que solo se
+   entraba por la URL. Esto los une.
+
+   Son de dos NATURALEZAS distintas y por eso la tabla lleva `tipo`:
+     · `st`   — un mundo, o un minijuego que ES un stage del motor (13 y 14).
+                Se entra con su `goToStageNN()` de siempre, que ya presenta el
+                stage con `narrateStageStart()`.
+     · `mini` — un minijuego MÓDULO (descenso ×3 pieles y tubo): se queda el
+                frame entero, con su escena, su cámara y su propia
+                presentación. Se entra con `lanzarMini` y devuelve el control
+                por callback.
+
+   `CAMPAIGN_STAGES` se queda como estaba A PROPÓSITO: es la lista de MUNDOS
+   con jefe, y de ella cuelgan los trofeos, la vitrina, el roadmap, las marcas
+   y el selector de mapa del menú. Meter aquí los minijuegos (que no tienen ni
+   jefe ni trofeo) rompería el "6/10 mundos ganados" y el contador de nodos.
+   El ORDEN de juego lo manda RUTA; el PROGRESO sigue contándose por mundos.
+   ===================================================================== */
+const RUTA = [
+  { st:1  },                              // PRADO
+  { st:2  },                              // JUNGLA
+  { st:3  },                              // JAPÓN
+  { st:14, mini:true },                   // ►ARENA (disco japonés · arena.js)
+  { st:11 },                              // WESTERN
+  { mini:'descenso', piel:'arena', tag:'SANDBOARD' },
+  { st:4  },                              // DESIERTO
+  { st:5  },                              // PIRÁMIDE
+  { st:13, mini:true },                   // ►CUADRIMANÍA (torre · cuadrimania.js)
+  { st:12 },                              // PIRATAS
+  { mini:'descenso', piel:'mar',   tag:'SURF' },
+  { st:7  },                              // HIELO
+  { mini:'descenso', piel:'nieve', tag:'SNOWBOARD' },
+  { st:8  },                              // FORJA
+  { mini:'tubo', tag:'TUBO DE LAS ESTRELLAS' },
+  { st:10 },                              // VÍA ARCOÍRIS → coronación
+];
+/* dónde estamos en la RUTA. Se pone a 0 en launchMatch y avanza en cada salto:
+   NO se puede deducir de `STAGE` porque el descenso aparece TRES veces con
+   pieles distintas y todas comparten módulo. */
+let RUTA_I = 0;
+const RUTA_MINIS = { 'descenso':()=>window.DESC, 'tubo':()=>window.TUBO };
+
+/* la entrada de RUTA que corresponde a un stage concreto (para recolocar el
+   índice si se entra por F9 o por el selector del menú) */
+function rutaIndiceDe(st){
+  for(let i = 0; i < RUTA.length; i++) if(RUTA[i].st === st) return i;
+  return -1;
+}
+/* ►EL ÚNICO SITIO POR EL QUE SE AVANZA. Llama al siguiente eslabón sea del
+   tipo que sea; al final de la lista, coronación. */
+function rutaSiguiente(){
+  if(gameOver) return;
+  RUTA_I++;
+  if(RUTA_I >= RUTA.length){ endGame(); return; }
+  const e = RUTA[RUTA_I];
+  if(e.mini && typeof e.mini === 'string'){ lanzarMini(e); return; }
+  const f = window['goToStage' + e.st];
+  if(typeof f === 'function') f();
+  else { console.warn('[ruta] sin goToStage' + e.st); endGame(); }
+}
+/* ►LANZAR UN MINIJUEGO MÓDULO. Se le pasa el callback de vuelta: cuando el
+   jugador cierra su tabla final, la campaña sigue por donde iba. Si el módulo
+   no está cargado (fichero ausente), se salta el eslabón en vez de bloquear la
+   run — un minijuego que falta no puede costarte la partida. */
+function lanzarMini(e){
+  const mod = (RUTA_MINIS[e.mini] || (()=>null))();
+  if(!mod || typeof mod.lanzar !== 'function'){
+    console.warn('[ruta] minijuego "' + e.mini + '" no disponible: se salta');
+    rutaSiguiente();
+    return;
+  }
+  fadeOut(()=>{
+    try {
+      mod.lanzar({ piel:e.piel, campana:true, alAcabar:(res)=>{
+        /* ►LOS PUNTOS DEL MINIJUEGO VAN A LA CARTERA. Decisión ya tomada con
+           Toni en el descenso ("puntúa para la run, pero poco"): lo que ganas
+           aquí se gasta en la tienda del siguiente entre-stage. */
+        try {
+          if(res && res.puntos && typeof P1 !== 'undefined' && P1){
+            P1.runXP = (P1.runXP || 0) + Math.round(res.puntos * MINI_XP);
+          }
+        } catch(err){}
+        fadeOut(()=>{ rutaSiguiente(); fadeIn(); });
+      }});
+      fadeIn();
+    } catch(err){
+      console.warn('[ruta] fallo lanzando "' + e.mini + '"', err);
+      rutaSiguiente(); fadeIn();
+    }
+  });
+}
+const MINI_XP = 0.5;   // los puntos del minijuego valen la mitad en EXP: "sin grandes beneficios ni grandes pérdidas" (Toni)
 /* ►WEST · el número que VE el jugador es la POSICIÓN en la ruta, no el ID interno. Con el western
    metido en medio, el desierto (ID 4) es el 5º stage de la campaña. buildRoadmap ya pintaba por
    posición; esta función es para todo lo demás que imprime "STAGE N" en pantalla. Los stages
@@ -34882,6 +34991,79 @@ function goToStage10(){
   narrateStageStart();                                         // ►INTERSTAGE: el speaker presenta el stage (+ congela input hasta el "¡LUCHA!")
 }
 
+/* =====================================================================
+   ►RUTA · LOS DOS MINIJUEGOS QUE SON STAGES DEL MOTOR (13 y 14)
+
+   Nacieron sueltos: se entraba por `?arena` / `?cuadrimania` y su arranque era
+   `MENU_STAGE = N; launchMatch()`, o sea una PARTIDA NUEVA. Dentro de la
+   campaña eso no vale (perderías puntuación, mejoras y vidas), así que hacen
+   falta sus `goToStageNN` como los de cualquier mundo: mismo barrido de
+   actores, mismo `applyStageTheme` (que ya despacha a ARENA/CUAD.applyTheme),
+   mismo `rebuildBelt` (que ya llama a su `build()`) y —esto es lo que pidió
+   Toni— la MISMA cinemática de presentación, `narrateStageStart()`.
+
+   Los tres detalles propios de un minijuego, y por qué:
+     · `resetBossFight()` + caos: aquí no hay jefe ni escalada; el caos lo fija
+       cada minijuego (la ARENA lo clava en 7 desde su build para tener horda).
+     · `_limpiaActores()` es el mismo bloque que repiten los diez goToStage:
+       se extrae para no tener una copia número once.
+     · las vidas se recalculan en `stageResetPlayers` (el 13 da 2 en vez de 4).
+   ===================================================================== */
+function _limpiaActores(){
+  for(let i=capsules.length-1;i>=0;i--) killCapsule(i);
+  for(let i=items.length-1;i>=0;i--) killItem(i);
+  for(let i=shardsFly.length-1;i>=0;i--) killShard(i, null);
+  for(let i=wprojs.length-1;i>=0;i--) killWproj(i, null);
+  for(let i=mines.length-1;i>=0;i--) killMine(i);
+  for(let i=orbs.length-1;i>=0;i--) killOrb(i);
+  for(let i=fireLines.length-1;i>=0;i--) killFireLine(i);
+  for(const mn of minions) killMinion(mn);
+  gobClearAll(); bruteClearAll(); carcherClearAll(); droneClearAll(); minions.length = 0;
+  if(minstMeshes) minstMeshes.forEach(im=> im.count = 0);
+  for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
+  for(const q of allPlayers) clearFX(q);
+}
+
+function goToStage14(){                                        // ►ARENA · disco japonés (arena.js)
+  if(STAGE===14 || gameOver) return;
+  if(!window.ARENA){ console.warn('[ruta] arena.js no cargado: se salta'); rutaSiguiente(); return; }
+  _limpiaActores();
+  STAGE = 14; _stagePreview = 14;
+  resetBossFight();
+  applyStageTheme(14);
+  rebuildBelt();                                               // → ARENA.build()
+  enableWeather(true);
+  chaosT = 0;
+  const ch = document.getElementById('chaos');
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
+  stageResetPlayers();
+  shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
+  showBanner('¡MINIJUEGO: LA ARENA!', 2.6); sfx.chaos();
+  applyStageMusic(3);                                          // el disco es japonés: su música
+  crowdCheer(.6, true);
+  narrateStageStart();
+}
+
+function goToStage13(){                                        // ►CUADRIMANÍA · torre (cuadrimania.js)
+  if(STAGE===13 || gameOver) return;
+  if(!window.CUAD){ console.warn('[ruta] cuadrimania.js no cargado: se salta'); rutaSiguiente(); return; }
+  _limpiaActores();
+  STAGE = 13; _stagePreview = 13;
+  resetBossFight();
+  applyStageTheme(13);
+  rebuildBelt();                                               // → CUAD.build()
+  enableWeather(true);
+  chaosT = 0;
+  const ch = document.getElementById('chaos');
+  if(ch){ ch.textContent = 'CAOS '+chaosLvl; ch.style.fontSize = (25 + chaosLvl*2.0)+'px'; }
+  stageResetPlayers();
+  shake = Math.max(shake, .6); fovKick = Math.max(fovKick, .9);
+  showBanner('¡MINIJUEGO: CUADRIMANÍA!', 2.6); sfx.chaos();
+  applyStageMusic(5);                                          // la torre es el interior de la pirámide
+  crowdCheer(.6, true);
+  narrateStageStart();
+}
+
 /* Nombres largos de cada mapa por ID interno (incluye los dormidos 6 y 9, que se siguen
    construyendo aunque no estén en la ruta de campaña). Lo usa el rótulo de ►EXPLORAR. */
 const _STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 12:'MAR PIRATA', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
@@ -35358,6 +35540,9 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   { const _po=document.getElementById('perkOverlay'); if(_po) _po.style.display='none'; }
   { const _lo=document.getElementById('lbOverlay'); if(_lo) _lo.style.display='none'; }   // ►LBREDO: la clasificación tampoco sobrevive a un (re)inicio (winCelebrate se auto-apaga al verla oculta)
   if(STAGE!==MENU_STAGE){ STAGE = MENU_STAGE; _stagePreview = MENU_STAGE; applyStageTheme(MENU_STAGE); rebuildBelt(); enableWeather(MENU_STAGE>=2); }   // ►RONDA2: la partida empieza en el stage ELEGIDO en el menú (F9); la campaña anterior pudo dejar STAGE=2/3
+  /* ►RUTA: y el índice del line-up se coloca donde de verdad empieza la partida
+     (no siempre en 0: el selector del menú y F9 arrancan a media campaña) */
+  { const _ri = rutaIndiceDe(STAGE); RUTA_I = _ri >= 0 ? _ri : 0; }
   if(typeof applyStageMusic==='function') applyStageMusic(STAGE);   // ►cada partida arranca con la playlist del stage (o vuelve a la principal tras una campaña que acabó en S2/3/4)
   beltReset();
   /* ►CUADRIMANIA: la torre se levanta AQUÍ y no antes — rebuildBelt() hace `platforms.length = 0`,
