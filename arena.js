@@ -89,6 +89,7 @@ const K = {
   bombaV:17, bombaVy:7,
 
   /* --- reglas --- */
+  caos:     7,       // nivel de CAOS clavado (solo se usa para el tamaño de la horda)
   dur:      120,     // 2 minutos (Toni) = 4 turnos de colina
   respawn:  1.4,
   y:        0,       // cota base (el suelo de las plataformas arranca aqui)
@@ -163,6 +164,7 @@ function conEstiloJapon(fn){
    --------------------------------------------------------------------- */
 function pagoda(cx, cz){
   const n = K.pisos;
+  const p0 = T.plats.length;
   conEstiloJapon(()=>{
     for(let i = 0; i < n; i++){
       const lado = K.picoLado + K.ancho * i;          // i=0 es el PICO
@@ -172,6 +174,16 @@ function pagoda(cx, cz){
       s2Floor(cx, cz, lado, lado, topY, i === 0 ? 'sakura' : 'moss');
     }
   });
+  /* ►MACIZA HASTA ABAJO. `s2Floor` le da a cada losa un cuerpo de 4,5 de alto
+     (`baseY = topY − 4.5`), que es lo que necesita una plataforma suelta de la
+     cinta. Apiladas en pagoda deja HUECOS: por debajo de esa banda el AABB deja
+     de existir, y quien entra ahi —cayendo pegado al costado, o de un empujon
+     fuerte— se cuela DENTRO de la piramide y sale por el otro lado. Medido: un
+     lanzamiento a 45 u/s contra el costado acababa dentro y 5 u por debajo.
+     Bajando el `baseY` de todas sus losas a la peana, la pagoda es un bloque
+     solido a cualquier altura y `collideWalls` la trata como muro siempre. */
+  for(let i = p0; i < T.plats.length; i++) T.plats[i].baseY = K.y - 3;
+
   const t = { cx, cz, picoY:K.y + K.paso * n, picoLado:K.picoLado,
               baseY:K.y + K.paso, baseLado:K.picoLado + K.ancho * (n - 1) };
   T.torres.push(t);
@@ -192,7 +204,7 @@ function pagoda(cx, cz){
    dejarian muescas por las que se cuela un pie. El carril lateral (abajo)
    se encarga de que ese sobre-ancho no se note.
    --------------------------------------------------------------------- */
-function puente(ax, az, bx, bz, y){
+function puente(ax, az, bx, bz, y, pa, pb){
   const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
   if(len < 4) return null;
   const ux = dx / len, uz = dz / len;                 // a lo largo
@@ -241,7 +253,7 @@ function puente(ax, az, bx, bz, y){
     post.castShadow = true; g.add(post);
   }
   T.group.add(g);
-  T.puentes.push({ ax, az, bx, bz, y, ux, uz, px, pz, len });
+  T.puentes.push({ ax, az, bx, bz, y, ux, uz, px, pz, len, pa, pb });   // pa/pb: que pagodas une (ruta de la CPU)
   indiceSucio();
   return g;
 }
@@ -311,20 +323,27 @@ function build(){
      redondeadas (radio ~1,9), asi que la esquina geometrica del AABB no existe
      en el dibujo. Metiendolos, los ultimos tablones se apoyan sobre la piedra. */
   const h = centro.baseLado * 0.5 * K.anclaje;
-  for(const q of T.torres){
-    if(q === centro) continue;
-    const sx = Math.sign(q.cx), sz = Math.sign(q.cz);
-    puente(sx * h, sz * h, q.cx - sx * h, q.cz - sz * h, yB);          // diagonal centro → esquina
+  const idxDe = (x, z) => T.torres.findIndex(t => Math.abs(t.cx - x) < 0.01 && Math.abs(t.cz - z) < 0.01);
+  for(let i = 1; i < T.torres.length; i++){
+    const q = T.torres[i], sx = Math.sign(q.cx), sz = Math.sign(q.cz);
+    puente(sx * h, sz * h, q.cx - sx * h, q.cz - sz * h, yB, 0, i);     // diagonal centro → esquina
   }
   for(const par of [[[-S,-S],[S,-S]], [[-S,S],[S,S]], [[-S,-S],[-S,S]], [[S,-S],[S,S]]]){
     const a = par[0], b = par[1];
     const ux = Math.sign(b[0] - a[0]), uz = Math.sign(b[1] - a[1]);
-    puente(a[0] + ux * h, a[1] + uz * h, b[0] - ux * h, b[1] - uz * h, yB);   // perimetro
+    puente(a[0] + ux * h, a[1] + uz * h, b[0] - ux * h, b[1] - uz * h, yB, idxDe(a[0], a[1]), idxDe(b[0], b[1]));   // perimetro
   }
+  tejeRutas();
 
   creaAro();
   creaReloj();
   if(typeof enableWeather === 'function') enableWeather(false);
+
+  /* ►HORDA A CAOS 7 (pedido de Toni): el caos no sube solo en este stage, asi que
+     se clava aqui. `maxMinions()` lo lee → ~22 minions molestando en los puentes
+     y en el pico. El contador del HUD sigue oculto: el numero no significa nada
+     para el jugador, es solo el dial de la horda. */
+  if(typeof chaosLvl !== 'undefined') chaosLvl = K.caos;
 
   T.built = true; T.t = 0; T.over = false;
   T.proxBomba = K.bombaCada * 0.5;
@@ -415,6 +434,132 @@ function koth(dt){
     T.aro.scale.setScalar(k);
     T.haz.material.opacity = (rey ? 0.12 : 0.075) + (T.avisado ? 0.05 * Math.abs(Math.sin(T.t * 6)) : 0);
   }
+}
+
+/* ►HORDA: un sitio donde soltar un minion. Sesgado a la pagoda de la COLINA —
+   que es donde esta la gente— pero repartido: molestar es el trabajo, y en un
+   pico de 6 de lado tres goblins son un problema de verdad. Siempre sobre losa
+   solida (nada de nacer en el aire y caerse). */
+function spotMinion(){
+  if(!T.torres.length) return null;
+  for(let i = 0; i < 12; i++){
+    const t = (Math.random() < 0.45) ? torreColina() : T.torres[(Math.random() * T.torres.length) | 0];
+    const r = t.baseLado * 0.5 * (0.25 + Math.random() * 0.7);
+    const a = Math.random() * Math.PI * 2;
+    const x = t.cx + Math.cos(a) * r, z = t.cz + Math.sin(a) * r;
+    const top = (typeof platformTopAt === 'function') ? platformTopAt(x, z, 0.4) : null;
+    if(top !== null) return { x, z, y0:top };
+  }
+  return null;
+}
+
+/* =====================================================================
+   ►IACOLINA — la CPU juega el minijuego
+
+   La IA del juego persigue rivales, que en un rey de la colina es perder el
+   tiempo: aqui lo que da puntos es ESTAR ARRIBA. Esta capa decide SOLO el
+   rumbo — a donde ir y cuando saltar — y devuelve `null` en cuanto toca
+   pelear, para que siga mandando la IA de combate de siempre (que es la que
+   sabe encadenar golpes, escudarse y usar la clase).
+
+   Navegar hace falta de verdad: con las pagodas a 46 y solo puentes entre
+   ellas, "andar hacia el objetivo" es andar hacia el vacio. Se enruta por el
+   grafo de puentes (5 nodos, 8 aristas, como mucho 2 saltos).
+   ===================================================================== */
+/* ►RUTAS: para cada par de pagodas, por que puente se sale. 5 nodos y 8
+   aristas — con dos saltos se llega a todo, asi que basta con mirar los
+   vecinos y luego los vecinos de los vecinos (nada de Dijkstra para esto). */
+function tejeRutas(){
+  const n = T.torres.length;
+  T.pasos = [];
+  for(let i = 0; i < n; i++){ T.pasos[i] = []; }
+  const tramo = (b, desde) => (b.pa === desde)
+    ? { near:{ x:b.ax, z:b.az }, far:{ x:b.bx, z:b.bz }, otro:b.pb }
+    : { near:{ x:b.bx, z:b.bz }, far:{ x:b.ax, z:b.az }, otro:b.pa };
+  for(const b of T.puentes){
+    if(b.pa === undefined || b.pb === undefined || b.pa < 0 || b.pb < 0) continue;
+    T.pasos[b.pa][b.pb] = tramo(b, b.pa);
+    T.pasos[b.pb][b.pa] = tramo(b, b.pb);
+  }
+  for(let i = 0; i < n; i++) for(let j = 0; j < n; j++){
+    if(i === j || T.pasos[i][j]) continue;
+    for(let k = 0; k < n; k++) if(T.pasos[i][k] && T.pasos[k][j]){ T.pasos[i][j] = T.pasos[i][k]; break; }
+  }
+}
+
+function plataformaDe(x, z){
+  for(let i = 0; i < T.torres.length; i++){
+    const t = T.torres[i], h = t.baseLado * 0.5 + 1.5;
+    if(Math.abs(x - t.cx) <= h && Math.abs(z - t.cz) <= h) return i;
+  }
+  return -1;
+}
+
+/* siguiente sitio al que ir para acabar en el pico de la colina */
+function rumboColina(me){
+  const meta = T.colina, t = T.torres[meta];
+  const mia = plataformaDe(me.pos.x, me.pos.z);
+  if(mia === meta) return { x:t.cx, z:t.cz };                 // ya estoy en su pagoda: al pico
+  if(mia >= 0){
+    const paso = T.pasos[mia] && T.pasos[mia][meta];
+    /* primero la BOCA del puente (en mi losa) y, ya encarado, el otro extremo:
+       apuntar de una al extremo lejano hace que se cruce en diagonal por fuera
+       del tablero — o sea, andar al vacio */
+    if(paso){
+      const d = Math.hypot(me.pos.x - paso.near.x, me.pos.z - paso.near.z);
+      return d > 3.5 ? paso.near : paso.far;
+    }
+  }
+  /* en un puente (o en el aire): sigo hasta su extremo mas util */
+  let mejor = null, dm = 1e9;
+  for(const b of T.puentes){
+    for(const e of [[b.ax, b.az, b.pa], [b.bx, b.bz, b.pb]]){
+      const d = Math.hypot(me.pos.x - e[0], me.pos.z - e[1]) + (e[2] === meta ? -26 : 0);
+      if(d < dm){ dm = d; mejor = { x:e[0], z:e[1] }; }
+    }
+  }
+  return mejor || { x:t.cx, z:t.cz };
+}
+
+function iaColina(me, ai, dt){
+  if(!T.built || T.over) return null;
+  const t = torreColina();
+  const lim = K.picoLado * 0.5 + 0.6;
+  const enPico = Math.abs(me.pos.x - t.cx) <= lim && Math.abs(me.pos.z - t.cz) <= lim
+                 && Math.abs(me.pos.y - t.picoY) <= 2.4;
+  let cerca = null, dc = 1e9;
+  for(const q of players){
+    if(q === me || q.dead || q.out) continue;
+    const d = Math.hypot(q.pos.x - me.pos.x, q.pos.z - me.pos.z, (q.pos.y - me.pos.y) * 0.6);
+    if(d < dc){ dc = d; cerca = q; }
+  }
+  if(enPico){
+    /* ►DEFENDER: si hay alguien al alcance, que pelee la IA de combate — es lo
+       que echa al que sube. Si no hay nadie, QUIETO: moverse solo puede sacarte
+       de la casilla que esta puntuando. */
+    if(cerca && dc < 8) return null;
+    return ai.dir.set(0, 0, 0);
+  }
+  /* subiendo por su pagoda y con un rival pegado: pelear (le estoy disputando el pico) */
+  if(cerca && dc < 4.5 && plataformaDe(me.pos.x, me.pos.z) === T.colina) return null;
+
+  const w = rumboColina(me);
+  ai.dir.set(w.x - me.pos.x, 0, w.z - me.pos.z);
+  if(ai.dir.lengthSq() > 1e-6) ai.dir.normalize(); else return ai.dir.set(0, 0, 0);
+
+  /* saltar por dos motivos: no hay suelo delante (hueco/puente) o hay ESCALON.
+     El test de hueco va con `overAnyPlatform`, que SI ve los tablones flotantes
+     de los puentes; el del escalon con `_s2AnyFloorAt`, por lo mismo. */
+  if(me.onGround){
+    const nx = me.pos.x + ai.dir.x * 2.4, nz = me.pos.z + ai.dir.z * 2.4;
+    if(typeof overAnyPlatform === 'function' && !overAnyPlatform(nx, nz)){
+      if(typeof aiJump === 'function') aiJump(me);
+    } else if(typeof _s2AnyFloorAt === 'function'
+              && _s2AnyFloorAt(nx, nz, me.pos.y + 0.6, me.pos.y + K.paso + 1.2) !== null){
+      if(typeof aiJump === 'function') aiJump(me);          // el escalon de la pagoda
+    }
+  }
+  return ai.dir;
 }
 
 /* =====================================================================
@@ -687,6 +832,9 @@ const ARENA = {
   segBuilders: [ ()=>{}, ()=>{}, ()=>{}, ()=>{}, ()=>{}, ()=>{} ],   // la cinta no construye: la estructura es suelta
   applyTheme, tick, spawnPoint, build, clear,
   lanza,                       // ►BOMBA: lo llama el enganche del boton de ataque
+  iaColina,                    // ►IA: lo llama aiThink (rumbo; null = que pelee la de siempre)
+  spotMinion,                  // ►HORDA: dónde cae cada minion (lo llama minionDropSpot)
+  pts(p){ return Math.round(T.pts.get(p) || 0); },   // ►el marcador del juego lo lee de aqui (scoreTotal)
   get suelo(){ return K.y; },
   rebuild(){ build(); },
   bomba(){ sueltaBomba(); },

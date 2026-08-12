@@ -5748,7 +5748,13 @@ function credit(p, d){ if(p && p.sc){ p.sc.dmg += d; p._xpBuf = (p._xpBuf||0) + 
 function nearestPlayer(p){ let best=null, bd=Infinity;
   for(const o of players){ if(o===p||o.dead) continue; const d=p.pos.distanceToSquared(o.pos); if(d<bd){ bd=d; best=o; } }
   return best; }
-function scoreTotal(p){ const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*15 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
+function scoreTotal(p){
+  /* ►ARENA (stage 14): allí lo ÚNICO que puntúa es AGUANTAR EN LA COLINA. Con la fórmula normal
+     (daño, bajas, minions…) el ranking premiaba pegarse, que es justo lo contrario de lo que pide
+     ese minijuego: pelear es el MEDIO para quedarte el pico, no la forma de sumar. Se sustituye
+     entero — HUD de la izquierda, orden del ranking y resultado final salen de aquí. */
+  if(STAGE===14 && window.ARENA && ARENA.pts) return ARENA.pts(p);
+  const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*15 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.rainT>0 || p._rainbowT>0); }
 function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; } }   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
@@ -9923,6 +9929,10 @@ function updateDrone(mn, dt){
 const SPAWN_NEAR_CHANCE = 0.5;   // 50% cerca de un luchador, 50% repartido por el mapa
 const NEAR_R_MIN = 11, NEAR_R_MAX = 22;   // anillo: mín. 11u de distancia (no ultra cerca) — sube NEAR_R_MIN si aún agobia en solo
 function minionDropSpot(){
+  /* ►ARENA (stage 14): el reparto "por todo el mapa" de abajo usa la caja de la CINTA
+     (x ∈ [-28,28], z ∈ [-26,20]) y el mapa del minijuego mide 120 y es casi todo vacío:
+     la mitad de las tiradas caerían fuera de cualquier pagoda. Sus sitios los pone él. */
+  if(STAGE===14 && window.ARENA && ARENA.spotMinion){ const s = ARENA.spotMinion(); if(s) return s; }
   /* ►PIRHORDA (11/08): el mar pirata usaba un reparto PROPIO —del cielo solo caían sobre tu barco, y la
      orilla la poblaban puestos fijos—. Fuera: pedido de Toni, "que aparezcan los mismos dentro que
      fuera y que se vayan poblando allí donde hay jugadores", o sea el reparto de cualquier otro stage.
@@ -10309,7 +10319,7 @@ function trainMinions(dt){
 function updateMinions(dt){
   if(TRAIN.on){
     trainMinions(dt);
-  } else if(!bossActive && STAGE!==6 && STAGE!==13 && STAGE!==14){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego) · ►ARENA: el 14 (como el 13) tiene la cinta PARADA (vel 0: arrastraba los objetos por el disco) y el 14 es un duelo (jugadores + bombas + cacharros); una horda cayéndose al vacío sin parar solo sería ruido
+  } else if(!bossActive && STAGE!==6 && STAGE!==13){           // durante el JEFE FINAL no entran más minions (arena 1vJefe) · ►RECOLOR38: horda restaurada en 3/4/6/7/9 (recoloreada); SOLO el stage 6 (EL POZO) sigue vacío · ►CUADRIMANIA: el 13 tiene su propio repoblador (siempre 20 en juego) · ►ARENA: el 14 SÍ tiene horda (pedida por Toni), y con el caos clavado a 7 desde ARENA.build() — molestan mientras cruzas los puentes y peleas el pico. Nacen en `dropSpot`, que elige una plataforma REAL, así que caen sobre las pagodas y no al vacío
     minionT-=dt;
     if(minionT<=0){
       const cap=maxMinions();
@@ -18076,6 +18086,14 @@ function aiThink(p, dt){
     if(me.vel.y < -2 && (me.jumps>0 || me._wallHit) && me.pos.y < 3) aiJump(me);   // recupera con salto/doble salto o salto de pared
     if(me.dashCD<=0 && me.pos.y<1 && me.pos.distanceTo(target)>9) aiDash(me, ai.dir);
     return ai.dir;
+  }
+
+  /* ►ARENA (stage 14): la CPU juega el MINIJUEGO, no la partida. Su prioridad es el pico que puntúa:
+     ir, subir y quedarse — y echar al que suba. Devuelve null cuando toca pelear de verdad, y
+     entonces sigue la cadena normal de abajo (que es la que sabe pegar). */
+  if(STAGE===14 && window.ARENA && ARENA.iaColina && !me.hang){
+    const d = ARENA.iaColina(me, ai, dt);
+    if(d) return d;
   }
 
   if(me.hang){ me.hangT += dt; if(me.hangT>.35) aiJump(me); return ai.dir.set(0,0,0); }
