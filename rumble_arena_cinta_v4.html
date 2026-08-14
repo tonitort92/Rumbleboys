@@ -4650,7 +4650,15 @@ const CLIMB_T = 1.1;
 /* SAMURÁI: set de clips RICO (GLB Mixamo, una animación por acción). Nombres = exactos del GLB.
    Cuando p._richAnim está activo, _acts se llena por nombre de clip y charToken usa samuraiToken(). */
 const SAMURAI_LOOP = { idle:1, run:1, fastrun:1, walk:1, grab:1, ult2:1 };   // ult2 = fase sostenida de la Tormenta (loop); el resto = one-shot (shield se reproduce 1 vez al activar)
-function isCharOneShot(p, tok){ return p._richAnim ? !(p._loopMap||SAMURAI_LOOP)[tok] : !!_CHAR_ONESHOT[tok]; }
+/* ►CARRY2 · clips NUEVOS del agarre en volandas (aún por animar, ver _CLIPS/README del export):
+     · 'carry'   → el que CARGA, andando con los brazos en alto (LOOP)
+     · 'carried' → el que va EN VOLANDAS, pataleando boca arriba (LOOP)
+     · 'toss'    → el que LANZA, gesto de soltar hacia delante (ONE-SHOT, ventana THROW_POSE_T)
+   Se declaran aquí (y no en los 6 mapas *_LOOP) para que valgan para TODOS los personajes de una
+   vez. Mientras el GLB no traiga el clip, `charToken` ni siquiera devuelve el token: se queda la
+   locomoción de siempre + la pose procedural de ►CARRY2, así que no hay regresión visual. */
+const _CARRY_LOOPS = { carry:1, carried:1 };
+function isCharOneShot(p, tok){ if(_CARRY_LOOPS[tok]) return false; return p._richAnim ? !(p._loopMap||SAMURAI_LOOP)[tok] : !!_CHAR_ONESHOT[tok]; }
 /* ventana de juego (s) de cada one-shot del samurái → el clip se acelera (timeScale) para reproducirse
    ENTERO dentro de su acción (los clips Mixamo duran 1.4-6.7s; las acciones del juego 0.4-0.9s). atk1-4
    usan el total VIVO de la espada. ull2 es loop (no aquí). */
@@ -5339,8 +5347,23 @@ function archerToken(p){
   if(sp > 0.25) return 'walk';
   return 'idle';
 }
+/* ►CARRY2 · token del AGARRE EN VOLANDAS. Va por ENCIMA de todo (rich y fallback) porque cargar a
+   alguien / ir cargado manda sobre cualquier locomoción. Devuelve el clip nuevo SOLO si el GLB del
+   personaje lo trae; si no, cae a un préstamo razonable y deja que la pose procedural haga el resto:
+     · sin 'carry'   → null = sigue la locomoción normal (correr/andar) + brazos en alto procedurales
+     · sin 'carried' → 'kicked' (cuerpo por el aire, existe en los 6) + pataleo procedural
+     · sin 'toss'    → null = el gesto lo dan el FX y el camKick del lanzamiento
+   Cuando exportes los clips nuevos con esos nombres, entran solos sin tocar una línea más. */
+function _carryToken(p){
+  const a = p._acts;
+  if((p._tossT||0) > 0 && a && a.toss) return 'toss';
+  if(p.holding) return (a && a.carry) ? 'carry' : null;
+  if(p.heldBy)  return (a && a.carried) ? 'carried' : ((a && a.kicked) ? 'kicked' : null);
+  return null;
+}
 /* token de animación según el estado de juego (prioridad de arriba a abajo) */
 function charToken(p){
+  const _ct = _carryToken(p); if(_ct) return _ct;   // ►CARRY2: cargar / ir cargado / lanzar mandan sobre todo
   if(p._richAnim){ const rc = RICH_CFG[p._charKey]; return rc ? rc.token(p) : samuraiToken(p); }
   if(p.dead && !p.respDrop) return 'death';
   if(p.stun>0) return 'walkback';        // parry recibido → camina hacia atrás (con >< por el stun)
@@ -5516,27 +5539,34 @@ function updateCharMixers(dt){
          · AGARRADOR: los DOS brazos apuntan al pecho del rival → manos "imantadas" a él.
          · AGARRADO: brazos y piernas pataleando hacia puntos que oscilan (forcejeo), más rápido
            cuanto más lleva el forcejeo cargado.                                          ===== */
+    /* ►CARRY2 · el que CARGA lleva los DOS brazos ESTIRADOS HACIA ARRIBA, apuntando a la espalda del
+       que sostiene sobre su cabeza (antes apuntaban al pecho, con el rival por delante). Mientras no
+       haya clip 'carry' propio, esto ES la animación de cargar. */
     if(p.holding && p._gArms && p._gArms.length){
       const v = p.holding;
-      _aGrip.set(v.pos.x, v.pos.y + HOLD_CHEST_Y, v.pos.z);
-      for(const c of p._gArms){
+      const wob = Math.sin(t*7)*0.05;                                   // el peso baila un poco en las manos
+      p._gArms.forEach((c, i) => {
+        const s = i ? -1 : 1;
+        _aGrip.set(v.pos.x + s*0.28*Math.cos(p.yaw), v.pos.y - 0.18 + wob, v.pos.z - s*0.28*Math.sin(p.yaw));
         c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
         if(c.l){ c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.l, _aCh, _aGrip); }
-      }
+      });
     }
+    /* ►CARRY2 · el CARGADO patalea EN EL AIRE por encima de la cabeza del otro: brazos manoteando
+       hacia arriba/afuera y piernas pedaleando. Cuanto más forcejea, más rápido. */
     if(p.heldBy && p._gArms){
       const rush = 1 + 1.4*Math.min(1, (p._escape||0)/ESC_NEED);        // cuanto más forcejea, más rápido patalea
-      const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                 // "delante" del agarrado = hacia quien lo tiene
+      const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                 // "delante" del cargado = hacia quien lo tiene
       p._gArms.forEach((c, i) => {
         const s = i ? -1 : 1, w = Math.sin(t*13*rush + i*2.1);
-        _aGrip.set(p.pos.x + fx*0.5 + s*0.75*Math.cos(p.yaw),           // manoteo lateral, alto y variable
-                   p.pos.y + 1.55 + 0.45*w,
-                   p.pos.z + fz*0.5 - s*0.75*Math.sin(p.yaw));
+        _aGrip.set(p.pos.x + fx*0.35 + s*0.85*Math.cos(p.yaw),          // manoteo alto y abierto (nada a lo que agarrarse)
+                   p.pos.y + 1.35 + 0.55*w,
+                   p.pos.z + fz*0.35 - s*0.85*Math.sin(p.yaw));
         c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
       });
       if(p._gLegs) p._gLegs.forEach((c, i) => {
-        const w = Math.sin(t*15*rush + i*Math.PI);                      // patadas alternas
-        _aGrip.set(p.pos.x + fx*(0.55 + 0.45*w), p.pos.y - 0.15 + 0.3*Math.max(0,w), p.pos.z + fz*(0.55 + 0.45*w));
+        const w = Math.sin(t*15*rush + i*Math.PI);                      // pedaleo alterno en el vacío
+        _aGrip.set(p.pos.x + fx*(0.45 + 0.55*w), p.pos.y - 0.55 + 0.45*w, p.pos.z + fz*(0.45 + 0.55*w));
         c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_aCh); aimBoneAt(c.u, _aCh, _aGrip);
       });
     }
@@ -15086,9 +15116,33 @@ const ESC_DECAY     = 1.1;    // /s: si dejas de forcejear se te escapa el progr
       (todo additivo sobre el clip, en updateCharMixers) — antes no había pose de agarre ninguna.
    3) NUNCA se zafa al instante: por mucho que forcejee, no se suelta antes de HOLD_MIN_T.
    ►►► AJUSTA ◄◄◄ */
-const HOLD_MIN_T    = 0.75;   // s mínimos agarrado: aunque llene el forcejeo, hasta aquí no se suelta
+const HOLD_MIN_T    = 2.0;    // ►CARRY2: s mínimos EN VOLANDAS — por mucho que forcejee no se suelta antes (petición de Toni: "se come sí o sí 2 segundos")
 const HOLD_RESIST   = 0.6;    // cuánto llega a amortiguar el forcejeo del empujón final (0.6 = hasta un 60%)
 const HOLD_MAG_T    = 0.18;   // s del imantado (de donde estaba a tus manos)
+
+/* ===== ►CARRY2 (14/08, petición de Toni) · LEVANTAR EN VOLANDAS Y LANZAR =========================
+   El agarre deja de ser "pasearlo por delante" y pasa a ser LEVANTARLO CON LOS BRAZOS EN ALTO:
+   · Lo cargas SOBRE LA CABEZA. Ahí arriba no hace NADA (ni básicos): solo forcejear.
+   · Se come HOLD_MIN_T s SÍ O SÍ. Pasado ese mínimo se zafa MACHACANDO teclas (mover + saltar).
+   · Forcejear GASTA AGUANTE: con la barra bloqueada (stamLock) NO te zafas — igual que sin barra
+     tampoco puedes agarrar a nadie. La barra es la MISMA del borde: una sola economía.
+   · La MISMA tecla (LT / L / clic dcho.) pulsada OTRA VEZ → LO LANZAS. La distancia sube con SU
+     % de daño pero con TOPE DURO (THROW_MAX): nunca es un "fuera del mapa" instantáneo; solo con
+     mucho daño lo mandas de verdad lejos.
+   · Si se te acaba el aguante cargando, se te CAE de las manos (sin lanzamiento: no te lo ganaste).
+   ►►► AJUSTA ◄◄◄ */
+const HOLD_OVER_Y    = 1.95;  // altura (sobre los pies del que carga) a la que va el cargado
+const HOLD_OVER_FWD  = 0.10;  // pizca hacia delante: el peso no va justo sobre el eje
+const HOLD_STAM_RATE = 0.70;  // ×: ritmo al que CARGAR come aguante (0.7 → barra de 3s ≈ 4,3s de carga)
+const ESC_STAM_RATE  = 0.85;  // ×: ritmo al que FORCEJEAR come aguante del que está cargado
+const THROW_BASE     = 11;    // empuje horizontal del lanzamiento con 0% de daño
+const THROW_PER_DMG  = 0.085; // + empuje por cada punto de % de daño del lanzado
+const THROW_MAX      = 26;    // TOPE DURO: por mucho daño que lleve, nunca sale más fuerte que esto
+const THROW_UP       = 8.5;   // componente vertical (lo mandas arriba y lejos, no rasante)
+const THROW_UP_MAX   = 12;    // tope del componente vertical
+const THROW_DMG      = 6;     // daño del impacto de lanzarlo (poco: el valor está en DÓNDE lo dejas)
+const THROW_POSE_T   = 0.45;  // s de la pose/clip de lanzar del que tira ('toss', si existe)
+const HELD_CAN_ATTACK = false;// en volandas NO puede pegar (antes, cargado por delante, sí podía)
 const HOLD_LAG      = 14;     // /s del seguimiento elástico: ↑ más rígido, ↓ más "peso muerto"
 const HOLD_CHEST_Y  = 1.05;   // altura del punto donde se clavan las manos (pecho del rival)
 /* ►FLINCH · sacudida al recibir daño: corta y sutil (cabeza + torso), y dura lo mismo que el
@@ -15955,31 +16009,46 @@ function _grabImmune(v){
             v.zone || v.fireShield || v.healDisc || v.counter || v.parryT>0 || v.charge || v.throwT>0);
 }
 
-/* ►LTGRAB · SOLTAR al que cargas. pushK = 0..1 (fracción del aguante gastada) → empuje ∝ al rato
-   que lo tuviste. pushK<=0 = te lo quitaron de encima o se zafó él → SIN empuje (no te lo has ganado). */
-function releaseGrab(p, pushK){
+/* ►CARRY2 · SOLTAR al que llevas en volandas.
+     · throwIt = false → se te CAE (te pegaron, se zafó él, se te acabó el aguante, os murió alguien).
+       Cae a plomo donde esté, sin empuje: no te lo has ganado.
+     · throwIt = true  → LO LANZAS (2ª pulsación de la MISMA tecla). Fuerza = base + SU % de daño,
+       SIEMPRE con tope THROW_MAX. Lo que haya forcejeado (sin zafarse) amortigua algo el viaje. */
+function releaseGrab(p, throwIt){
   const v = p.holding; if(!v) return;
   const _esc = v._escape || 0;              // ►FGGRAB: cuánto forcejeó (se lee ANTES de limpiarlo)
   p.holding = null; p.holdT = 0;
-  v.heldBy = null; v._escape = 0;
-  if(pushK > 0){
-    /* ►FGGRAB · el empujón va con el RATO que lo tuviste, pero el otro puede RESISTIRLO: lo que haya
-       forcejeado (sin llegar a zafarse) amortigua hasta HOLD_RESIST del empujón y del aturdimiento.
-       Así forcejear nunca es tirar el rato aunque no consigas soltarte. */
+  v.heldBy = null; v._escape = 0; v._magT = 0;
+  p._throwArm = false;
+  /* ►CARRY2 · margen anti-reagarre por los DOS lados: el botón sigue SOSTENIDO cuando lanzas, y sin
+     esto `tryGrabPlayer` volvería a engancharlo en el mismo frame (agarre eterno de una sola tecla). */
+  v._noGrabT = Math.max(v._noGrabT||0, throwIt ? 0.5 : 0.35);
+  p._noGrabT = Math.max(p._noGrabT||0, throwIt ? 0.35 : 0.25);
+  if(throwIt){
+    /* ►CARRY2 · el viaje lo marca SU daño, no el rato que lo tuviste: a 0% es un lanzamiento corto y
+       a mucho % lo mandas al otro lado — pero la curva SATURA en THROW_MAX, así que nunca sale
+       disparado "ultra fuerte" por acumulación. Forcejear amortigua hasta HOLD_RESIST del viaje:
+       aunque no llegues a zafarte, pelearlo nunca es tirar el rato. */
     const resist = Math.min(1, (_esc/ESC_NEED)) * HOLD_RESIST;
-    const k = Math.max(0, Math.min(1, pushK)) * (1 - resist);
-    const f = (HOLD_PUSH_MIN + (HOLD_PUSH_MAX-HOLD_PUSH_MIN)*k) * kbMul(p);
-    const dir = _fxV2.set(Math.sin(p.yaw), 0, Math.cos(p.yaw));   // hacia donde MIRAS: lo apartas de ti
-    v.vel.set(dir.x*f, HOLD_PUSH_UP*(1-resist*.5), dir.z*f);
-    v.onGround = false; v.hitstun = Math.max(v.hitstun, .18 + .22*k); v.hitFlash = .12;
+    const dmgF = Math.min(THROW_MAX, THROW_BASE + THROW_PER_DMG*(v.damage||0));
+    const f    = dmgF * (1 - resist) * kbMul(p);
+    const up   = Math.min(THROW_UP_MAX, THROW_UP + 0.02*(v.damage||0)) * (1 - resist*.5);
+    const k    = Math.max(0, Math.min(1, (dmgF - THROW_BASE) / Math.max(0.001, THROW_MAX - THROW_BASE)));   // 0 = lanzamiento flojo · 1 = tope
+    const dir = _fxV2.set(Math.sin(p.yaw), 0, Math.cos(p.yaw));   // hacia donde MIRAS
+    v.vel.set(dir.x*f, up, dir.z*f);
+    v.onGround = false; v.hang = null; v.hitstun = Math.max(v.hitstun, .30 + .30*k); v.hitFlash = .16;
     v.comboWindow = 0; v.comboStage = 0;
-    addPower(p, 6);                                  // molestar da algo de barra, pero poco (no es pegar)
-    jiggle(v, 8 + 10*k);
-    burst(v.pos.clone().add(new THREE.Vector3(0,.8,0)), v.color, 6+Math.round(8*k), 4+3*k, 3, .6);
-    ring(v.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 9+6*k, .3);
-    sfx.swing(); camKick(dir.x, dir.z, .35 + .45*k);
-    if(k > .8) showCombo(p, '¡FUERA DE AQUÍ!');
+    v.damage += THROW_DMG * dmgMul(p) * defMul(v);   // el impacto en sí es flojo: el valor está en DÓNDE lo dejas
+    credit(p, THROW_DMG); v.lastHitBy = p;
+    addPower(p, 10);
+    p._tossT = THROW_POSE_T;                         // pose/clip de lanzar (si el personaje lo tiene)
+    jiggle(v, 12 + 12*k);
+    burst(v.pos.clone().add(new THREE.Vector3(0,.8,0)), v.color, 8+Math.round(10*k), 5+4*k, 3.5, .65);
+    ring(v.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 11+8*k, .32);
+    sfx.swing(); camKick(dir.x, dir.z, .40 + .45*k); shake = Math.max(shake, .18 + .22*k);
+    showCombo(p, k > .7 ? '¡FUERA DE AQUÍ!' : '¡ALEHOP!');
   } else {
+    v.vel.set(0, -1, 0); v.onGround = false;         // se te cae de las manos: a plomo desde donde esté
     v.hitstun = Math.max(v.hitstun, .1);             // respiro mínimo: que no contraataque en el mismo frame
   }
 }
@@ -16012,6 +16081,10 @@ function tryGrabPlayer(p){
   }
   if(!best) return false;
   p.holding = best; p.holdT = 0;
+  /* ►CARRY2 · la MISMA tecla lanza, así que hay que SOLTARLA antes de que la siguiente pulsación
+     cuente: si no, el mismo botón que engancha (va por SOSTENIDO) lanzaría en el frame siguiente. */
+  p._throwArm = false;
+  p._aiTossAt = HOLD_MIN_T + 0.3 + Math.random()*0.9;   // la CPU lanza sola pasado el mínimo (no se queda cargando)
   best.heldBy = p; best._escape = 0;
   best.hang = null; best.charge = null; best.comboWindow = 0; best.comboStage = 0;
   best.atk.phase = 'none';                                        // le cortas el básico que estuviera soltando
@@ -16078,6 +16151,97 @@ function staminaShove(p){
   sfx.swing(); showCombo(p, '¡EMPUJÓN!'); camKick(fx, fz, .5); shake = Math.max(shake, .25);
   burst(p.pos.clone().add(new THREE.Vector3(fx*1.2, .8, fz*1.2)), p.color, 8, 5, 3, .6);
   return true;
+}
+
+/* ===== ►FGBUMP (14/08, petición de Toni) · LOS CUERPOS ESTORBAN ==================================
+   Hasta ahora luchadores y minions se ATRAVESABAN: seis personajes cabían en el mismo punto y una
+   horda de 20 minions te pasaba por dentro. Esto mete el "estorbo" de Fall Guys:
+     · SEPARACIÓN (muelle): si dos cuerpos se solapan, se empujan hacia fuera con una fuerza ∝ al
+       solape. Repartida por MASA → un minion grande te aparta a ti, tú apartas a los pequeños. En
+       un montón, las fuerzas se SUMAN: el amontonamiento te escupe fuera solo, sin código especial.
+     · REBOTE (topetazo): si además llegáis con VELOCIDAD DE ACERCAMIENTO, salta un impulso seco
+       (con pizca vertical, sacudida y chispas) → correr contra alguien rebota, rozarlo no.
+   Todo va por VELOCIDAD, nunca moviendo `pos` a mano: así el empujón pasa por la integración normal
+   (sub-pasos + collideWalls) y NUNCA puede colar a nadie dentro de un muro. Y como el movimiento es
+   por ACELERACIÓN (`vel += clamp(move*ctl - vel, ±a)`), el empujón se nota y luego se recupera solo.
+   NO hace daño: es estorbo, no un ataque.  ►►► AJUSTA ◄◄◄ */
+const BUMP_ON        = true;   // interruptor general (false = como antes, cuerpos fantasma)
+const BUMP_R_P       = 0.52;   // radio del cuerpo de un LUCHADOR (el de muros es .32: aquí interesa más ancho)
+const BUMP_R_M       = 0.30;   // radio base de un MINION …
+const BUMP_R_M_K     = 0.32;   // … + esto × su escala (small .5 → .46 · medio 1 → .62 · grande 2 → .94)
+const BUMP_Y         = 1.5;    // diferencia de ALTURA máxima para tocarse (por encima, estáis en pisos distintos)
+const BUMP_SPRING    = 55;     // u/s² por unidad de solape: rigidez de la separación
+const BUMP_SPRING_MAX= 22;     // u/s²: tope de la separación (en un montón no catapulta)
+const BUMP_KICK      = 0.85;   // × de la velocidad de acercamiento que se devuelve como REBOTE
+const BUMP_KICK_MIN  = 2.6;    // u/s de acercamiento por debajo de la cual es un ROCE (sin rebote ni FX)
+const BUMP_KICK_MAX  = 6.5;    // u/s: tope del rebote (nadie sale volando por un topetazo)
+const BUMP_UP        = 0.9;    // u/s verticales del topetazo (el saltito de Fall Guys)
+const BUMP_FX_CD     = 0.30;   // s entre topetazos "con FX" del mismo cuerpo (ni ruido ni chispas en bucle)
+const BUMP_MASS_M    = { small:0.55, shooter:0.70, large:2.40 };   // masa del minion por tipo (un luchador = 1)
+const BUMP_MASS_DFT  = 1.0;    // masa de un tipo de minion no listado
+const BUMP_BOSS      = false;  // los JEFES no entran (su coreografía es scriptada; ponlo a true para que aparten)
+
+const _bumpB = [];             // buffer reutilizado (0 basura por frame)
+function _bumpAdd(e, r, m, isP){ _bumpB.push(e, r, m, isP?1:0); }
+function updateBodyBumps(dt){
+  if(!BUMP_ON || dt<=0) return;
+  const B = _bumpB; B.length = 0;
+  /* --- quién tiene cuerpo este frame --- */
+  for(const p of players){
+    /* fuera: muertos/eliminados, el que va EN VOLANDAS (lo lleva otro), colgado de un borde o
+       trepando (posición comprometida por glide), y el que acaba de reaparecer sobre su pad. */
+    if(p.dead || p.out || p.heldBy || p.hang || p.climbT>0 || p.spawnPad || p.respDrop) continue;
+    _bumpAdd(p, BUMP_R_P, 1, true);
+  }
+  for(const mn of minions){
+    if(mn.dead) continue;
+    if(mn.type==='boss' && !BUMP_BOSS) continue;
+    _bumpAdd(mn, BUMP_R_M + BUMP_R_M_K*(mn.scale||1), BUMP_MASS_M[mn.type] || BUMP_MASS_DFT, false);
+  }
+  const n = B.length/4;
+  if(n < 2) return;
+  /* --- pares (n≤~40 en la práctica: MINION_CAP es 160 y maxMinions() ronda 22) --- */
+  for(let i=0;i<n;i++){
+    const A = B[i*4], rA = B[i*4+1], mA = B[i*4+2], pA = B[i*4+3];
+    for(let j=i+1;j<n;j++){
+      const C = B[j*4], rC = B[j*4+1], mC = B[j*4+2], pC = B[j*4+3];
+      if(Math.abs(A.pos.y - C.pos.y) > BUMP_Y) continue;          // pisos distintos: ni se ven
+      let dx = C.pos.x - A.pos.x, dz = C.pos.z - A.pos.z;
+      const rr = rA + rC;
+      let d2 = dx*dx + dz*dz;
+      if(d2 >= rr*rr) continue;                                   // no se tocan
+      let d = Math.sqrt(d2);
+      if(d < 1e-4){                                               // clavados en el mismo punto: desempate estable
+        dx = (i%2 ? 1 : -1) * 0.01; dz = (j%2 ? 1 : -1) * 0.01; d = Math.hypot(dx, dz);
+      }
+      const nx = dx/d, nz = dz/d, overlap = rr - d;
+      /* reparto por masa: el ligero se lleva la mayor parte del empujón */
+      const wA = mC/(mA+mC), wC = mA/(mA+mC);
+      /* 1) SEPARACIÓN: muelle ∝ solape (acumulativo entre varios cuerpos = el montón te escupe) */
+      const sp = Math.min(BUMP_SPRING*overlap, BUMP_SPRING_MAX) * dt;
+      A.vel.x -= nx*sp*wA; A.vel.z -= nz*sp*wA;
+      C.vel.x += nx*sp*wC; C.vel.z += nz*sp*wC;
+      /* 2) REBOTE: solo si de verdad OS ESTÁIS ACERCANDO (correr contra alguien ≠ rozarlo) */
+      const closing = (A.vel.x - C.vel.x)*nx + (A.vel.z - C.vel.z)*nz;
+      if(closing <= BUMP_KICK_MIN) continue;
+      const k = Math.min(closing*BUMP_KICK, BUMP_KICK_MAX);
+      A.vel.x -= nx*k*wA; A.vel.z -= nz*k*wA;
+      C.vel.x += nx*k*wC; C.vel.z += nz*k*wC;
+      if(A.onGround){ A.vel.y = Math.max(A.vel.y, BUMP_UP*wA); A.onGround = false; }
+      if(C.onGround){ C.vel.y = Math.max(C.vel.y, BUMP_UP*wC); C.onGround = false; }
+      /* FX del topetazo: con enfriamiento propio por cuerpo (nada de chispas en bucle en un montón) */
+      const now = t;
+      if((A._bumpFxT||0) <= now && (C._bumpFxT||0) <= now){
+        A._bumpFxT = C._bumpFxT = now + BUMP_FX_CD;
+        const kk = k/BUMP_KICK_MAX;
+        if(pA) jiggle(A, 4 + 7*kk);
+        if(pC) jiggle(C, 4 + 7*kk);
+        burst(_fxV.set((A.pos.x+C.pos.x)*.5, (A.pos.y+C.pos.y)*.5 + .75, (A.pos.z+C.pos.z)*.5),
+              0xffffff, 2 + Math.round(3*kk), 2.5 + 2*kk, 2, .35);
+        if((pA || pC) && kk > .55 && sfx.land) sfx.land(0.35);      // topetazo fuerte: un golpe seco, nada más
+      }
+    }
+  }
 }
 
 /* ►LTSTAM · TREPAR: salto estando colgado = te subes al borde (NO saltas). Te deja de pie sobre la
@@ -18579,7 +18743,7 @@ const MS_COMMON = [   // utilidad compartida por todas las clases (botón mando 
   { pad:'A',  key:'Esp', name:'Saltar', desc:'Salta; en el aire, dos saltos más (3 en total).', dmg:0 },
   { pad:'RT', key:'May', name:'Dash',   desc:'Impulso rápido para esquivar o entrar.',           dmg:0 },
   { pad:'LB', key:'T',   name:'Escudo', desc:'Burbuja de 5 s que te protege y aparta a los de alrededor.', dmg:0 },
-  { pad:'LT', key:'L / clic dcho.', name:'Agarrar', desc:'Suelo: MANTÉN y agarras al rival que tengas cerca; lo arrastras mientras te dure el aguante y al soltar sale despedido (cuanto más lo tuviste, más fuerte). Él se zafa forcejeando: mover y saltar. Aire: te agarras a un borde.', dmg:0 },   // ►FGGRAB: LT vuelve a ser agarrar-y-arrastrar; el empujón sale AL SOLTAR
+  { pad:'LT', key:'L / clic dcho.', name:'Agarrar', desc:'Suelo: MANTÉN y LEVANTAS EN VOLANDAS al rival que tengas cerca. Vuelve a PULSARLO y lo LANZAS: cuanto más daño lleve, más lejos (con tope). Él aguanta 2 s sí o sí y luego se zafa forcejeando (mover, saltar, golpear) — pero forcejear gasta AGUANTE, y sin barra ni te zafas ni agarras. Aire: te agarras a un borde.', dmg:0 },   // ►CARRY2: LT levanta en volandas; el LANZAMIENTO sale con la MISMA tecla y escala con el % de daño
   { pad:'↑',  key:'H',   name:'Cura',   desc:'Recuperas vida (con enfriamiento).',               dmg:0 },
 ];
 const MS_ROLE = { voxelhero:'Bruto cuerpo a cuerpo', samurai:'Espadachín ágil', archer:'Tiradora veloz',
@@ -18982,60 +19146,83 @@ function updateFighter(p, dt){
   if(!p.isAI){
     p._grabTapT = Math.max(0, (p._grabTapT||0) - dt);
     if(wantGrab){
-      if(p.weapon && p._grabTapT>0){ dropWeapon(p); p._grabTapT=0; wantGrab=false; }
+      /* ►CARRY2: con alguien EN VOLANDAS la tecla es LANZAR, así que aquí no se toca (si no, el
+         2º toque tiraría el arma en vez de lanzarlo — el mismo botón hace las dos cosas). */
+      if(p.weapon && p._grabTapT>0 && !p.holding){ dropWeapon(p); p._grabTapT=0; wantGrab=false; }
       else p._grabTapT = 0.32;                        // ventana del doble toque
     }
   }
 
-  /* --- ►LTSTAM · AGUANTE: MISMA barra para colgarse de un borde y para cargar a un rival --- */
-  const _stamUse = !!p.hang || !!p.holding;
+  /* --- ►LTSTAM · AGUANTE: MISMA barra para colgarse de un borde, cargar a un rival y (►CARRY2)
+         FORCEJEAR cuando te cargan a ti. Una sola economía: si la gastas zafándote, no te queda
+         para el borde ni para agarrar tú — y al revés. --- */
+  const _stamUse = !!p.hang || !!p.holding || (!!p.heldBy && (p._escActive||0) > 0);
   if(_stamUse){
     /* ►S8QUAKE: durante la sacudida los dedos NO aguantan — colgado de un borde el aguante se va
        S8Q.GRIP× más rápido (cargar a un rival no se toca: el temblor es del SUELO/borde). */
     const _qGrip = (p.hang && typeof S8Q!=='undefined' && S8Q.k > 0.3) ? S8Q.GRIP : 1;
-    p.stam = Math.max(0, p.stam - dt*_qGrip);
+    /* ►CARRY2: cada uso tiene SU ritmo — colgarse es el de siempre (1×), cargar en volandas cansa
+       algo menos (HOLD_STAM_RATE) y forcejear cuesta ESC_STAM_RATE mientras de verdad forcejeas. */
+    const _rate = p.hang ? _qGrip : (p.holding ? HOLD_STAM_RATE : ESC_STAM_RATE);
+    p.stam = Math.max(0, p.stam - dt*_rate);
     if(p.stam<=0 && !p.stamLock){                              // AGOTADO: te suelta y bloquea la barra
       p.stamLock = true;
       if(p.hang){ p.hang=null; p.hangCD=.45; p.vel.y=-2; sfx.hangOut(); }   // caes SIN poder reengancharte
-      if(p.holding) releaseGrab(p, 1);                         // ►LTGRAB: aguantaste los 3 s → empujón MÁXIMO
+      if(p.holding){ releaseGrab(p, false); sfx.hangOut(); showCombo(p, '¡PESA!'); }   // ►CARRY2: sin fuerzas → se te CAE de las manos (no lo lanzas: no te lo has ganado)
     }
   } else if(p.stam < STAM_MAX){
     p.stam = Math.min(STAM_MAX, p.stam + dt*(STAM_MAX/STAM_CD));   // recarga: 0 → lleno en STAM_CD s
     if(p.stam >= STAM_MAX) p.stamLock = false;                     // solo al LLENARSE vuelves a poder agarrar
   }
 
-  /* --- ►LTGRAB · CARGAS A UN RIVAL: lo llevas delante y lo sueltas con empuje ∝ al rato --- */
+  /* --- ►CARRY2 · LO LLEVAS EN VOLANDAS: sobre la cabeza, y la MISMA tecla otra vez lo LANZA --- */
+  p._tossT = Math.max(0, (p._tossT||0) - dt);          // ventana de la pose de lanzar
   if(p.holding){
     const v = p.holding;
     /* te lo quitan de encima: si te PEGAN (el básico del rival deja hitstun), si el especial
-       te pilla, o si alguno de los dos se muere/sale. Sin empuje: no te lo has ganado. */
+       te pilla, o si alguno de los dos se muere/sale. Se te CAE: no te lo has ganado. */
     if(p.dead || p.out || p.hitstun>0 || p.stun>0 || _grabImmune(p) ||
-       v.dead || v.out || v.hitstun>0 || v.heldBy!==p) releaseGrab(p, 0);
-    else if(!p.isAI && !grabHeld) releaseGrab(p, Math.min(1, p.holdT/STAM_MAX));   // sueltas TÚ → empuje ∝ rato
+       v.dead || v.out || v.hitstun>0 || v.heldBy!==p) releaseGrab(p, false);
     else {
       p.holdT += dt;
-      /* ►FGGRAB · va DELANTE de ti y ENCARÁNDOTE (así puede pelearte con su básico), pero ya no
-         clavado al punto: primero el IMANTADO (entra volando desde donde estaba) y luego un
-         seguimiento ELÁSTICO — al girar o correr se queda un pelín atrás y se lee que lo ARRASTRAS. */
-      const tx = p.pos.x + Math.sin(p.yaw)*HOLD_DIST, tz = p.pos.z + Math.cos(p.yaw)*HOLD_DIST;
+      /* ►CARRY2 · ARMAR EL LANZAMIENTO: como enganchar va por SOSTENIDO, la tecla tiene que SOLTARSE
+         una vez antes de que la siguiente pulsación cuente como lanzar (si no, agarras y lanzas en
+         el mismo gesto). Desde ahí, PULSAR = LANZAR. */
+      if(!p.isAI){
+        if(!grabHeld) p._throwArm = true;
+        if(p._throwArm && wantGrab){ releaseGrab(p, true); wantGrab = false; }
+      } else if(p.holdT >= (p._aiTossAt || HOLD_MIN_T + 0.6)){
+        releaseGrab(p, true);                                    // la CPU lanza sola pasado el mínimo
+      }
+    }
+  }
+  if(p.holding){
+    const v = p.holding;
+    {
+      /* ►CARRY2 · va SOBRE TU CABEZA, con los brazos en alto: primero el IMANTADO (sube volando
+         desde donde estaba) y luego un seguimiento ELÁSTICO — al girar o correr se queda un pelín
+         atrás y se lee el PESO. Encarándote (yaw+π) para que la silueta se lea de espaldas al público. */
+      const tx = p.pos.x + Math.sin(p.yaw)*HOLD_OVER_FWD, tz = p.pos.z + Math.cos(p.yaw)*HOLD_OVER_FWD;
+      const ty = p.pos.y + HOLD_OVER_Y;
       if((v._magT||0) > 0){
         v._magT = Math.max(0, v._magT - dt);
         const k = 1 - v._magT/HOLD_MAG_T, e = k*k*(3-2*k);        // suavizado (arranca y frena)
         v.pos.set(THREE.MathUtils.lerp(v._magFrom.x, tx, e),
-                  THREE.MathUtils.lerp(v._magFrom.y, p.pos.y, e),
+                  THREE.MathUtils.lerp(v._magFrom.y, ty, e),
                   THREE.MathUtils.lerp(v._magFrom.z, tz, e));
         if(Math.random() < dt*30) burst(_fxV.set(v.pos.x, v.pos.y+HOLD_CHEST_Y, v.pos.z), p.color, 2, 3, 1.6, .4);   // chispas del tirón
       } else {
         const a = 1 - Math.exp(-HOLD_LAG*dt);                     // independiente de los fps
         v.pos.x += (tx - v.pos.x)*a; v.pos.z += (tz - v.pos.z)*a;
-        v.pos.y += (p.pos.y - v.pos.y)*Math.min(1, a*1.8);        // la altura sí lo sigue casi al momento
+        v.pos.y += (ty - v.pos.y)*Math.min(1, a*1.8);             // la altura lo sigue casi al momento
       }
-      v.vel.set(0,0,0); v.yaw = p.yaw + Math.PI; v.onGround = p.onGround; v.hang = null;
-      if(Math.random() < dt*7) burst(_fxV.set(v.pos.x, v.pos.y+.9, v.pos.z), v.color, 1, 1.6, 1.4, .35);   // forcejeo visible
+      v.vel.set(0,0,0); v.yaw = p.yaw + Math.PI; v.onGround = false; v.hang = null;
+      if(Math.random() < dt*7) burst(_fxV.set(v.pos.x, v.pos.y+.4, v.pos.z), v.color, 1, 1.6, 1.4, .35);   // pataleo visible
     }
   }
   /* --- ►LTGRAB · TE TIENEN AGARRADO: solo básicos, y a forcejear (a lo Fall Guys) --- */
   p._noGrabT = Math.max(0, (p._noGrabT||0) - dt);   // margen anti-reagarre justo después de zafarte
+  if(!p.heldBy) p._escActive = 0;                   // ►CARRY2: fuera del agarre no se paga aguante de forcejeo
   if(p.heldBy){
     const g = p.heldBy;
     /* red de seguridad: se rompe por los DOS lados. Si solo se limpiara `heldBy`, el agarrador
@@ -19045,23 +19232,37 @@ function updateFighter(p, dt){
       p.heldBy = null; p._escape = 0;
     }
     else {
+      /* ►CARRY2 · FORCEJEAR CUESTA AGUANTE. Con la barra bloqueada (stamLock, la gastaste colgado o
+         agarrando) NO puedes zafarte: te comes el viaje entero hasta que él te lance o te suelte.
+         `_escActive` marca que este frame estás peleándolo de verdad → es lo que cobra la barra
+         arriba (bloque ►LTSTAM), así que quedarte quieto no te la vacía. */
+      const _canEsc = !p.stamLock && p.stam > 0;
+      let _escGain = 0;
       /* ⚠️ el forcejeo se mide ANTES de anular `move`: `move` ES el mismo objeto que `inp.move`,
          así que ponerlo a cero primero borraría el stick que queremos leer. */
       if(!p.isAI){
         const lm = p._lastMove || (p._lastMove = new THREE.Vector3());
         p._escape = Math.max(0, (p._escape||0) - ESC_DECAY*dt);
-        p._escape += Math.hypot(move.x-lm.x, move.z-lm.z) * ESC_STICK;        // AGITAR el stick (mantenerlo fijo no vale)
-        if(wantJump) p._escape += ESC_JUMP;                                   // + machacar salto
+        _escGain += Math.hypot(move.x-lm.x, move.z-lm.z) * ESC_STICK;         // AGITAR el stick (mantenerlo fijo no vale)
+        if(wantJump) _escGain += ESC_JUMP;                                    // + machacar salto
+        if(wantAtk || p.atkBuf>0) _escGain += ESC_JUMP*0.8;                   // ►CARRY2: y machacar el botón de golpe (ahí arriba ya no pega: se gasta en zafarse)
         lm.copy(move);
-      } else p._escape += dt*(ESC_NEED/1.6);                                  // la CPU forcejea a ritmo constante (~1,6 s)
-      move.set(0,0,0); wantDash = false; wantGrab = grabHeld = false;         // no te mueves ni agarras: solo básicos
+      } else _escGain += dt*(ESC_NEED/1.6);                                   // la CPU forcejea a ritmo constante (~1,6 s)
+      p._escActive = (_escGain > 0.0001 && _canEsc) ? 1 : 0;                  // ¿está pagando aguante ESTE frame?
+      if(_canEsc) p._escape += _escGain;
+      else if(!p.isAI && _escGain > 0.0001 && (p._escDenyT||0) <= 0){         // sin barra: avisa (una vez cada 0,7s) de por qué no sale
+        p._escDenyT = 0.7; sfx.deny();
+      }
+      p._escDenyT = Math.max(0, (p._escDenyT||0) - dt);
+      move.set(0,0,0); wantDash = false; wantGrab = grabHeld = false;         // en volandas no te mueves ni agarras
       wantJump = false;                                                       // el salto se gasta en forcejear, no saltas
+      if(!HELD_CAN_ATTACK){ wantAtk = false; p.atkBuf = 0; p.charge = null; } // ►CARRY2: por encima de la cabeza no se pega a nadie
       p.superBuf = 0; p.throwBuf = 0; p.spinBuf = 0;
-      /* ►FGGRAB: aunque llene el forcejeo a machacar botones, NUNCA se suelta antes de HOLD_MIN_T
-         (petición de Toni: "puede zafarse pero nunca inmediatamente"). El progreso SÍ se acumula
-         durante ese rato — forcejear pronto no se desperdicia, solo no puede romper todavía. */
-      if(p._escape >= ESC_NEED && g.holdT >= HOLD_MIN_T){                     // ¡ZAFADO! (se soltó él → sin empuje)
-        releaseGrab(g, 0);
+      /* ►CARRY2: aunque llene el forcejeo a machacar botones, NUNCA se suelta antes de HOLD_MIN_T
+         (2 s de serie: "se come sí o sí 2 segundos cogido"). El progreso SÍ se acumula durante ese
+         rato — forcejear pronto no se desperdicia, solo no puede romper todavía. */
+      if(p._escape >= ESC_NEED && g.holdT >= HOLD_MIN_T){                     // ¡ZAFADO! (se soltó él → sin lanzamiento)
+        releaseGrab(g, false);
         p.vel.set(0, 5, 0); p.onGround = false;
         p._noGrabT = 0.7; g._noGrabT = 0.35;                                  // ni te re-agarra al instante ni le vale insistir
         sfx.djump(); jiggle(p, 16); showCombo(p, '¡SUELTA!');
@@ -35349,6 +35550,7 @@ function frame(now){
       updateFireLines(dt);
       updateMinions(dt);
       updateBouncers(dt);
+      updateBodyBumps(dt);   // ►FGBUMP: luchadores y minions se estorban (separación + topetazo). VA AL FINAL: necesita las posiciones YA integradas de todos, y solo toca velocidades (el muro lo resuelve la integración del frame siguiente)
       if(STAGE===14 && window.ARENA) ARENA.tick(dt);   // ►ARENA: secciones que caen, marcador y reloj de 2 min
       if(STAGE===13 && window.CUAD) CUAD.tick(dt);   // ►CUADRIMANIA: losetas que caen, lava y fin por último en pie
     }
