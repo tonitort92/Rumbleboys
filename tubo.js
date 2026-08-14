@@ -2770,6 +2770,227 @@ TUBO.tick = function(dt){
   updateHud(dt);
 };
 
+/* =====================================================================
+   ►TINK — el CONTORNO del juego normal, aquí
+
+   El tubo era el ÚNICO minijuego sin contorno: como el descenso, pinta DIRECTO
+   a pantalla (`rr.render(TUBO.scene, TUBO.cam)`) y no pasa por el composer del
+   juego, así que no heredaba ni el anillo de color de los personajes ni la
+   tinta del mundo. Los stages del motor (Cuadrimanía, Arena) sí los heredan
+   porque SON stages; el descenso se lo montó aparte en ►DESCINK. Esto es ese
+   mismo pase, portado, con la misma receta y los MISMOS números — que es el
+   punto: un solo estilo de contorno en todo el juego.
+
+   Diferencia con el descenso: aquí no hay ola. El descenso tiene que dibujar
+   la profundidad de lo que flota con SU material parcheado (si no, el borde se
+   despega del objeto que sube y baja); en el tubo ninguna malla lleva vertex
+   shader propio, así que el overrideMaterial general vale para toda la escena y
+   el pase se queda en la mitad de código.
+
+   Las dos entradas van en UN target auxiliar:
+     1) la PROFUNDIDAD de lo sólido. Transparentes y riders OCULTOS: los
+        primeros escribirían depth delante de todo (rayas de velocidad, imanes
+        aditivos, chispas) e inventarían bordes a media pantalla; los segundos
+        petan con un overrideMaterial con skinning en r128 sobre mallas sin
+        esqueleto. Sus píxeles los tapa la silueta de (2) igualmente.
+     2) encima, y SIN borrar la profundidad, los riders en SU COLOR — el mismo
+        `r.col` que ya pinta su fila del marcador y su nombre en el top.
+   ===================================================================== */
+const TINK = {
+  chars:  true,      // anillo de color por fuera del rider
+  mundo:  true,      // tinta oscura en los bordes del escenario
+  grosor: 0.0035,    // = thickness del contorno del juego y = DINK.grosor del descenso. Fracción de ALTURA de pantalla → mismo borde a cualquier resolución
+  fuerza: 1.0,
+  tinta:  0.45,      // = INK_DEF.strength del juego
+  umbral: 0.030,     // curvatura relativa que ya cuenta como borde (adimensional, ver el shader)
+  limGrow:0.0006,
+  color:  0x0a0c16,
+  escala: 1.0        // full-res: a media resolución la línea sale del doble de gruesa y ROTA (lección de ►DESCINK)
+};
+const TINK_LAYER = 5;
+TUBO.ink = TINK;   // knobs tocables en vivo desde consola
+let _tkRT = null, _tkSc = null, _tkCam = null, _tkU = null, _tkDepth = null;
+const _tkSil = {}, _tkHid = [], _tkSwap = [];
+let _tkTmpC = null, _tkTmpV = null;
+
+function tinkBuild(rr){
+  if(TINK._ko) return false;
+  if(!_tkTmpV) _tkTmpV = new THREE.Vector2();
+  if(!_tkTmpC) _tkTmpC = new THREE.Color();
+  const ds = rr.getDrawingBufferSize(_tkTmpV);
+  const w = Math.max(2, Math.round(ds.x * TINK.escala)), h = Math.max(2, Math.round(ds.y * TINK.escala));
+  if(_tkRT && _tkRT.width === w && _tkRT.height === h) return true;
+  try {
+    if(!(rr.capabilities.isWebGL2 || rr.extensions.get('WEBGL_depth_texture'))) throw new Error('sin depth texture');
+    if(_tkRT){ if(_tkRT.depthTexture) _tkRT.depthTexture.dispose(); _tkRT.dispose(); }
+    _tkRT = new THREE.WebGLRenderTarget(w, h, { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
+                                                format:THREE.RGBAFormat, depthBuffer:true, stencilBuffer:false });
+    /* 24 bits: con far=4000 un depth de 16 bits deja el umbral de borde POR
+       DEBAJO del ruido de cuantización y la tinta hierve. */
+    const dt = new THREE.DepthTexture(w, h);
+    dt.type = THREE.UnsignedIntType;
+    _tkRT.depthTexture = dt;
+  } catch(e){ console.warn('[tubo] contorno desactivado:', e.message); TINK._ko = true; return false; }
+
+  if(!_tkSc){
+    _tkU = {
+      tSil:{ value:null }, tDepth:{ value:null },
+      texel:{ value:new THREE.Vector2(1/w, 1/h) },
+      grosor:{ value:TINK.grosor }, fuerza:{ value:TINK.fuerza },
+      near:{ value:0.4 }, far:{ value:4000 },
+      tinta:{ value:TINK.tinta }, umbral:{ value:TINK.umbral }, limGrow:{ value:TINK.limGrow },
+      fogNear:{ value:60 }, fogFar:{ value:400 },
+      inkCol:{ value:new THREE.Color(TINK.color) }
+    };
+    const mat = new THREE.ShaderMaterial({ uniforms:_tkU, transparent:true, depthTest:false, depthWrite:false, fog:false,
+      vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader:[
+        '#include <packing>',
+        'uniform sampler2D tSil; uniform sampler2D tDepth;',
+        'uniform vec2 texel; uniform float grosor, fuerza, near, far, tinta, umbral, limGrow, fogNear, fogFar;',
+        'uniform vec3 inkCol; varying vec2 vUv;',
+        /* CURVATURA de 1/z, no pendiente. Para cualquier plano 1/z es AFÍN en
+           pantalla, así que su segunda diferencia vale 0 lo mires de frente o
+           de canto. Con la primera derivada, la pared del tubo vista casi de
+           perfil —que aquí es la mitad del encuadre SIEMPRE— dispararía el
+           umbral en todos sus píxeles y el tubo entero saldría manchado. */
+        'float wz(vec2 uv){ return 1.0 / max(1e-4, -perspectiveDepthToViewZ(texture2D(tDepth,uv).x, near, far)); }',
+        'void main(){',
+        '  vec4 cur = texture2D(tSil, vUv);',
+        '  if(cur.a > 0.4) discard;',                       // DENTRO del rider: la línea va por FUERA
+        '  vec2 o = vec2(texel.x/texel.y, 1.0) * grosor;',
+        '  vec3 oc = vec3(0.0); float found = 0.0;',
+        '  for(int i=0;i<16;i++){',                         // 16 direcciones: si hay un rider a <= grosor, borde con SU color
+        '    float a = float(i)*0.392699;',
+        '    vec2 d = vec2(cos(a), sin(a));',
+        '    vec4 s = texture2D(tSil, vUv + d*o);',
+        '    if(s.a > 0.85){ oc = s.rgb; found = 1.0; }',
+        '  }',
+        '  if(found > 0.0){ gl_FragColor = vec4(oc, found*fuerza); return; }',
+        '  if(tinta <= 0.0) discard;',
+        '  float wc = wz(vUv); float z = 1.0/wc;',
+        '  if(z > far*0.95) discard;',                      // fondo sin escribir
+        '  vec2 ex = vec2(texel.x, 0.0), ey = vec2(0.0, texel.y);',
+        '  float kx = abs(wz(vUv+ex) + wz(vUv-ex) - 2.0*wc);',
+        '  float ky = abs(wz(vUv+ey) + wz(vUv-ey) - 2.0*wc);',
+        /* las DIAGONALES son lo que impide que la línea salga a trazos: un
+           borde casi paralelo a un eje cae dentro o fuera del téxel según la
+           fila. Van a medio peso porque su paso es sqrt(2) téxeles y la segunda
+           diferencia crece con el cuadrado del paso. */
+        '  vec2 d1 = vec2(texel.x, texel.y), d2 = vec2(texel.x, -texel.y);',
+        '  float ka = abs(wz(vUv+d1) + wz(vUv-d1) - 2.0*wc) * 0.5;',
+        '  float kb = abs(wz(vUv+d2) + wz(vUv-d2) - 2.0*wc) * 0.5;',
+        '  float rel = max(kx + ky, ka + kb) * z;',         // ×z lo vuelve adimensional: una silueta da ~1 esté cerca o lejos
+        '  float fogT = smoothstep(fogNear, fogFar, z);',   // la tinta se disuelve con la niebla, como el objeto que contornea
+        '  float lim = umbral*(1.0 + z*limGrow);',
+        /* la rampa ancha ES el antialiasing: este quad va ENCIMA del render, el
+           MSAA no suaviza su borde. Coste cero, es el mismo smoothstep. */
+        '  float ink = smoothstep(lim*0.7, lim*2.2, rel) * tinta * (1.0 - fogT);',
+        '  if(ink <= 0.004) discard;',
+        '  gl_FragColor = vec4(inkCol, ink);',
+        '}'].join('\n')
+    });
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    q.frustumCulled = false;
+    _tkSc = new THREE.Scene(); _tkSc.add(q);
+    _tkCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+  _tkU.texel.value.set(1/w, 1/h);
+  return true;
+}
+
+function tinkDraw(rr){
+  if((!TINK.chars && !TINK.mundo) || !TUBO.scene || !TUBO.cam || !TUBO.racers) return;
+  if(!tinkBuild(rr)) return;
+  const sc = TUBO.scene, cam = TUBO.cam;
+
+  /* --- estado del renderer / de la escena que hay que devolver TAL CUAL --- */
+  const pMask = cam.layers.mask, pAuto = rr.autoClear, pBg = sc.background, pOv = sc.overrideMaterial;
+  const pSA = rr.shadowMap.autoUpdate, pSN = rr.shadowMap.needsUpdate;
+  const pcC = (rr.getClearColor(_tkTmpC) || _tkTmpC).getHex(), pcA = rr.getClearAlpha();
+  rr.shadowMap.autoUpdate = false; rr.shadowMap.needsUpdate = false;   // el pase extra NO re-renderiza sombras
+  sc.background = null;              // si no, el fondo rellena el target con alfa 1 y la silueta no se distingue del vacío
+  rr.setClearColor(0x000000, 0);
+  /* PLANO LEJANO RECORTADO a la niebla mientras dura el pase: la tinta ya se
+     disuelve en `fogFar`, así que todo lo de detrás se dibujaba para nada. En
+     un tubo recto la cámara ve el conducto ENTERO, así que aquí el recorte es
+     más rentable aún que en el descenso. El shader lee ESTE far, no el de la
+     cámara, o la linealización sale mal. */
+  const pFar = cam.far;
+  const fFar = sc.fog ? Math.min(cam.far, sc.fog.far * 1.06) : cam.far;
+  if(fFar < cam.far){ cam.far = fFar; cam.updateProjectionMatrix(); }
+  rr.setRenderTarget(_tkRT);
+  rr.clear(true, true, false);
+
+  /* 1) PROFUNDIDAD del mundo sólido. Se hace SIEMPRE, aunque la tinta esté
+     apagada: es también lo que OCULTA la silueta de (2) cuando el rider pasa
+     por detrás de un tocho o de la curva de la pared. Sin ella, el anillo
+     flotaría sobre lo que lo tapa. */
+  _tkHid.length = 0;
+  {
+    for(const r of TUBO.racers) if(r.body && r.body.visible){ r.body.visible = false; _tkHid.push(r.body); }
+    sc.traverse(o => {
+      if(!o.visible) return;
+      if(o.isSprite || o.isPoints || o.isLine){ o.visible = false; _tkHid.push(o); return; }
+      if(!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if(m && (m.transparent === true || m.depthWrite === false)){ o.visible = false; _tkHid.push(o); }
+    });
+    if(!_tkDepth) _tkDepth = new THREE.MeshBasicMaterial({ colorWrite:false });   // solo depth: sin skinning (ver cabecera)
+    sc.overrideMaterial = _tkDepth;
+    rr.render(sc, cam);
+    sc.overrideMaterial = pOv;
+    for(const o of _tkHid) o.visible = true;
+    _tkHid.length = 0;
+  }
+
+  /* 2) SILUETA de los riders en su color, encima y sin borrar la profundidad.
+     `r.col` es el MISMO color con el que el marcador pinta su fila y el top su
+     nombre, así que el anillo identifica al corredor sin leer nada. */
+  _tkSwap.length = 0;
+  if(TINK.chars){
+    for(const r of TUBO.racers){
+      const b = r.body; if(!b || !b.visible) continue;
+      if(r.gfx && !r.gfx.visible) continue;            // parpadeo de invulnerable / fuera de pista: sin anillo tampoco
+      const hex = r.col || 0xffffff;
+      b.traverse(o => {
+        if(!o.isMesh || !o.material) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if(m && m.depthWrite === false) return;        // ayudas translúcidas: no forman silueta
+        o.layers.enable(TINK_LAYER);                   // se re-marca cada frame: los GLB llegan async
+        const key = hex + (o.isSkinnedMesh ? 's' : 'r');
+        let sm = _tkSil[key];
+        if(!sm){ sm = new THREE.MeshBasicMaterial({ color:hex, fog:false, skinning:!!o.isSkinnedMesh }); _tkSil[key] = sm; }
+        _tkSwap.push(o, o.material); o.material = sm;
+      });
+    }
+    if(_tkSwap.length){
+      cam.layers.set(TINK_LAYER);
+      rr.autoClear = false;
+      rr.render(sc, cam);
+      for(let i = 0; i < _tkSwap.length; i += 2) _tkSwap[i].material = _tkSwap[i+1];
+      _tkSwap.length = 0;
+    }
+  }
+
+  /* --- devolver el estado y pintar el borde ENCIMA de lo ya renderizado --- */
+  cam.layers.mask = pMask; sc.background = pBg;
+  rr.shadowMap.autoUpdate = pSA; rr.shadowMap.needsUpdate = pSN;
+  rr.setClearColor(pcC, pcA);
+  _tkU.tSil.value   = _tkRT.texture;
+  _tkU.tDepth.value = _tkRT.depthTexture;
+  _tkU.near.value = cam.near; _tkU.far.value = fFar;   // los del PASE, no los de la cámara
+  if(cam.far !== pFar){ cam.far = pFar; cam.updateProjectionMatrix(); }
+  _tkU.grosor.value = TINK.grosor; _tkU.fuerza.value = TINK.fuerza;
+  _tkU.tinta.value = TINK.mundo ? TINK.tinta : 0;
+  _tkU.umbral.value = TINK.umbral; _tkU.limGrow.value = TINK.limGrow;
+  if(sc.fog){ _tkU.fogNear.value = sc.fog.near; _tkU.fogFar.value = sc.fog.far; }
+  rr.setRenderTarget(null);
+  rr.autoClear = false;
+  rr.render(_tkSc, _tkCam);
+  rr.autoClear = pAuto;
+}
+
 TUBO.render = function(){
   if(!TUBO.scene) return;
   const rr = GAME_RENDERER(); if(!rr) return;
@@ -2784,6 +3005,7 @@ TUBO.render = function(){
   if(rr.toneMappingExposure !== K.exposicion) rr.toneMappingExposure = K.exposicion;
   rr.setRenderTarget(null);
   rr.render(TUBO.scene, TUBO.cam);
+  tinkDraw(rr);   // ►TINK: anillo de color de los riders + tinta del mundo, encima
 };
 
 addEventListener('keydown', e => {
@@ -2818,9 +3040,14 @@ function boot(){
   /* el relieve de sillares es lo que más pesa del tubo (×5 la pared): se cae en
      Baja/Pelada. Con `pelada` además el headless de validación sobrevive — con
      260k triángulos SwiftShader se muere y la sesión se cuelga SIN error. */
-  if(/pelad|min|none/.test(cal)){ K.streakN = 0; K.densDeco = 0; K.tochos = false; }
-  else if(/baj|low/.test(cal)){ K.streakN = 70; K.densDeco = 0.5; K.tochos = false; }
-  if(cal) console.log('[tubo] calidad=' + cal + ' · tochos=' + K.tochos);
+  /* ►TINK y la calidad: el pase cuesta UN render extra de la geometría (la
+     profundidad del mundo); el anillo de los personajes no (son 4 riders). Así
+     que en Baja se cae sólo la tinta del mundo y en Pelada el efecto entero —
+     mismo escalonado que el descenso. En Alta se queda full-res: es donde se
+     juega, y ahí la nitidez de la línea es el punto. */
+  if(/pelad|min|none/.test(cal)){ K.streakN = 0; K.densDeco = 0; K.tochos = false; TINK.chars = false; TINK.mundo = false; }
+  else if(/baj|low/.test(cal)){ K.streakN = 70; K.densDeco = 0.5; K.tochos = false; TINK.mundo = false; }
+  if(cal) console.log('[tubo] calidad=' + cal + ' · tochos=' + K.tochos + ' · contorno=' + (TINK.chars ? (TINK.mundo ? 'completo' : 'solo chars') : 'off'));
   if(typeof THREE === 'undefined' || !GAME_RENDERER()) return;
   TUBO._built = true;
   buildHud();

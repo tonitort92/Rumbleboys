@@ -1542,7 +1542,7 @@ const VISUAL = {
   ao: { on:true, radius:1.1, min:0.0015, max:0.006 },   // ►AO-FIX3 (2/08): min/max van en profundidad NORMALIZADA 0..1 (¡no en unidades! el shader compara viewZToOrthographicDepth). Con far~300: 0.0015=0.45u, 0.006=1.8u → SOLO contacto. Mis dos 'fixes' anteriores usaban la unidad equivocada: el AO ocluía contra fondos a decenas de unidades = las manchas de los puentes de Toni
   ink: { on:true, strength:0.45, umbral:0.30, skipDecor:true },   // ►INK: tinta del MUNDO (subida el 1/08 a peticion de Toni) · skipDecor = ►NOINK: el decorado de FONDO (nubes/montañas/icebergs/mesetas/árboles de horizonte) sale de la tinta. false = como antes
   minOutline: { on:true },                          // ►MINSIL: outline sutil de minions con el color del mapa
-  halfMask: true,            // ►HALFMASK: silueta/máscara del contorno a MEDIA resolución (4× menos relleno). false = full-res de siempre (toggle en F2, re-crea los RTs)
+  halfMask: false,           // ►HALFMASK/►NITIDEZ: silueta/máscaras del contorno a FULL-RES (línea nítida, sin escalonado en el borde de noInkRT). true = media resolución, 4× menos relleno (era el defecto hasta ►NITIDEZ)
   exposure: 0.66,            // ►FIX S1: +claro (era 0.60)
   toneMapping: 'ACESFilmicToneMapping',   // 'ACESFilmicToneMapping' | 'ReinhardToneMapping' | 'LinearToneMapping' | 'NoToneMapping' (cambio en CARGA, no en vivo)
   // SOL (KEY, cálido, con sombra) — la luz que esculpe el mapa
@@ -2354,8 +2354,17 @@ function attachComposerDepth(){
      suave, 4× menos relleno en los 2 pases extra y 2 DepthTextures menos. El contorno es un borde
      grueso: a media resolución no se distingue (A/B de capturas). El detalle que hundiría esto es
      leer el DEPTH a media resolución (Nearest → borde dentado): por eso se lee el ALPHA.
-     VISUAL.halfMask=false (F2) = full-res, para bisecar. */
-  const mk = (typeof VISUAL !== 'undefined' && VISUAL.halfMask === false) ? 1.0 : 0.5;
+     VISUAL.halfMask=false (F2) = full-res, para bisecar.
+
+     ►NITIDEZ (Toni: "que se vea de buena calidad sin pixelados"). El A/B de arriba miró SÓLO el
+     contorno de personajes —borde grueso, leído por ALPHA con filtro linear— y ahí sigue siendo
+     cierto que media res no se nota. Lo que sí se notaba es `noInkRT`: esa máscara va con filtro
+     NEAREST a propósito (guarda una DISTANCIA, no una presencia), así que a media resolución su
+     borde escalona en pasos de 2 px y la tinta del mundo entra y sale a dientes justo donde un
+     prop se recorta contra el cielo. Como el juego es ►SOLOALTA (una única calidad), el ahorro de
+     relleno ya no se le cobra a nadie que lo necesite: full-res por defecto. El knob se queda
+     invertido —halfMask=true vuelve a media res— para poder bisecar si aparece un coste real. */
+  const mk = (typeof VISUAL !== 'undefined' && VISUAL.halfMask === true) ? 0.5 : 1.0;
   const w2 = Math.max(1, Math.floor(w*mk)), h2 = Math.max(1, Math.floor(h*mk));
   if(!charDepthRT) charDepthRT = new THREE.WebGLRenderTarget(w2, h2, { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter, depthBuffer:true });
   else charDepthRT.setSize(w2, h2);
@@ -21231,9 +21240,21 @@ function _deepAssign(dst, src){            // copia recursiva (números/strings/
     else dst[k] = v;
   }
 }
+/* ►INKDEF — el ESTILO DE TINTA POR DEFECTO, uno solo para todo el juego.
+   `VISUAL.ink` es un objeto ÚNICO y compartido, y dos stages lo escribían sin
+   devolverlo: el western (►SWFIX, strength 0.28) y el hielo (►S7FIX, 0.24).
+   Como nadie restauraba, el valor bajo VIAJABA por el resto de la RUTA — con el
+   line-up actual, jugar el western dejaba Desierto, Pirámide, Cuadrimanía y
+   Piratas con su tinta, y el hielo dejaba Forja y Arcoíris con la suya. Ese era
+   el "cada stage tiene un outline distinto" que se veía. Ahora cada stage parte
+   SIEMPRE de estos valores y sólo los baja quien lo necesita de verdad. */
+const INK_DEF = { strength:0.45, umbral:0.30, limGrow:0.06 };
+function _resetInk(){ if(!VISUAL.ink) return; VISUAL.ink.strength = INK_DEF.strength; VISUAL.ink.umbral = INK_DEF.umbral; VISUAL.ink.limGrow = INK_DEF.limGrow; VISUAL.ink.on = true; }
+
 function applyStageTheme(stage){
   _snapStage1Theme();
   _restoreS1Theme();   // SIEMPRE parte del prado limpio → los ajustes RELATIVOS del S2 (multiplyScalar de madera) no se acumulan al ciclar 1→2→3→2
+  _resetInk();         // ►INKDEF: y la TINTA también parte limpia (western/hielo la bajan y no la devolvían)
   if(typeof gobClearAll==='function') gobClearAll();   // ►F5-FIX: los minions ya VESTIDOS conservaban el tinte del stage ANTERIOR al cambiar (F9/campaña) — al pool y re-attach con el tinte nuevo en el siguiente tick
   if(stage!==12 && typeof _pirClearShip==='function') _pirClearShip();   // ►PIRATA: el barco y el mar son de la RAÍZ (no de la cinta) → si no se retiran aquí, viajan al stage siguiente
   /* ►ARENA / CUADRIMANÍA: EXACTAMENTE el mismo caso que el barco de arriba. El
