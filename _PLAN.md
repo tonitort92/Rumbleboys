@@ -1,0 +1,77 @@
+# RUMBLEBOYS · PLAN DE ACCIÓN
+
+> El *porqué* de cada cosa vive en `_MASTERMIND.md`; la conversación en
+> `_CHARLA_DISEÑO.md`. Esto es el *qué* y el *cuándo*. Orden pensado para:
+> validar barato antes de invertir caro, y no abrir dos frentes en el fichero
+> grande a la vez (hay otra sesión trabajando).
+
+---
+
+## FASE 0 · Modelo fijado ✅ (15/08/2026)
+La convocatoria (16 fijos, muerte termina run, trofeos persisten), dos pantallas,
+historia subordinada a la run. Hecho: `_MASTERMIND.md`.
+
+## FASE 1 · La puerta (home) — edición, no rediseño
+- [ ] Titular → LA FRASE. Fuera "puntúa/trofeo" del héroe de portada.
+- [ ] Un solo botón JUGAR (funde SOLO/MULTI: busca gente, rellena con CPU).
+- [ ] Selector de mapa fuera de la home (pasa a MUNDOS, fase 6).
+- [ ] Fuera: tira de 5 pasos, subtexto de reglas, tagline de géneros.
+- [ ] Dificultad/idioma → engranaje. Mando/roster → abajo del todo o a MUNDOS.
+- [ ] Corregir copy viejo: 0/10 vs "9 mundos", "hasta 6 jugadores".
+
+## FASE 2 · Game feel — el verbo que se repite mil veces
+- [ ] Hitstop 60–100 ms al conectar (más en el brutal).
+- [ ] **Pixelación como muerte** (KO → cubos; ya existe ►PARTINST). Historia + feel
+      en una sola pieza: la más rentable del plan.
+- [ ] KO estelar: cámara lenta corta + zoom al tirar a alguien de la cinta.
+- [ ] Flash por peso de golpe (blanco/naranja/rojo) + sonido por peso + whiff de aire.
+
+## FASE 3 · La run como convocatoria
+- [ ] Muerte termina la run · trofeos ganados persisten · reintento instantáneo
+      (morir → pixelarte → carta → eslabón 1, cero menús).
+- [ ] Caos 1 aislado → cintas confluyen (tutorial sin tutorial).
+- [ ] **El muro = pared de pixelación** (el mundo deshaciéndose en cubos detrás).
+      Demostración scriptada: un minion rezagado se lo come en los primeros 10 s.
+- [ ] Legibilidad 3 capas: marcador "TÚ" 20 s + presentación al spawn · jugadores
+      saturados con outline y nombre · minions desaturados, uniformes, sin outline.
+- [ ] Cero minions los primeros 30 s; entran por goteo.
+- [ ] Narrador primera run = las 3 frases del sofá ("Tú eres el bárbaro…").
+- [ ] Llegada al jefe por la cinta (desaceleración, la arena entra; portal fuera).
+- [ ] Escalada final: últimos eslabones más decisivos (suelo pixelándose, vueltas a
+      caos 1 más cortas).
+- [ ] Tienda: reloj 15 s, cinta de fondo, presenta verbos además de estadísticas.
+
+## ⛳ HITO · Validar con humanos (después de 1–3)
+- [ ] 3–4 personas por link, mirar sin hablar: ¿dónde se pierden? ¿piden otra run?
+- [ ] Si no hay "va, otra" → arreglar antes de seguir. El plan se detiene aquí.
+
+## FASE 4 · Historia por goteo (sin cinemáticas)
+- [ ] Carta de convocatoria como intro (~10 s, saltable, es UI).
+- [ ] Narrador entre stages con arco (heroico → grietas → sin disimulo).
+- [ ] 3–4 variantes de carta + pool de líneas para runs repetidas (modelo Hades:
+      el giro es para la primera vez; después es ritual).
+- [ ] Revelación final in-engine: la cinta se para sola por primera vez.
+
+## FASE 5 · Jefes
+- [ ] Rotura de guardia por jefe (puerta de ejecución que el cheto no salta).
+- [ ] Telegrafiar con color (tinte 0,5 s antes del imparable). 3 ataques y repetir.
+- [ ] Jefe sin pausar la competición: los 4 siguen peleando; trofeo al último golpe.
+- [ ] Fase 2 que se ve (cambio de aspecto, no solo números).
+
+## FASE 6 · Pantalla MUNDOS (mapa Super Mario World)
+- [ ] La ruta como camino, trofeos plantados encima, práctica offline de lo
+      conquistado, marcas personales. Aquí vive lo desalojado de la home.
+
+## FASE 7 · Delivery técnico (solo tras el hito ⛳)
+- [ ] Repack a .glb comprimidos + carga por stage. Objetivo: jugable en <8 s
+      (el prado primero, el resto en segundo plano durante el eslabón 1).
+
+## FASE 8 · Capa social
+- [ ] Clip de los últimos 5 s descargable (la moneda social).
+- [ ] Run diaria con semilla · corona al líder · desbloqueos solo cosméticos.
+
+---
+
+**Regla del plan:** ninguna fase nueva se abre con la anterior a medias en el
+fichero grande. Las mecánicas por mapa (lianas, arrojables) no entran hasta que
+todo lo anterior exista.
