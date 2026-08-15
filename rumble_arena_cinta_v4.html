@@ -6310,10 +6310,11 @@ function shatter(p, bp){
    a propósito (leen "píxel", no "escombro"), nacen repartidos por la silueta y caen con el
    movimiento de ►PARTINST de siempre (gravedad+encogido+giro ya incluidos, 1 draw call). */
 const _pixTmp = new THREE.Vector3();
-function pixelate(p, bp){
+const _PIXWALL = { color:0x8a76c9 };   // ►F3: "cuerpo" ficticio para pixelar minions (tono corrupción)
+function pixelate(p, bp, nMax){
   if(!VISUAL.partInst){ shatter(p, bp); return; }   // sin instancing queda el fantasmita clásico
   _piInit();
-  const n = Math.min(54, Math.max(0, PART_MAX - parts.length));   // respeta el tope global
+  const n = Math.min(nMax||54, Math.max(0, PART_MAX - parts.length));   // respeta el tope global
   for(let i=0;i<n;i++){
     const col = (i%5===0) ? 0xffffff : p.color;     // chispas blancas entre los cubos del color del caído
     _pixTmp.set(bp.x + (Math.random()-.5)*.85,
@@ -9237,7 +9238,17 @@ function updateFireLines(dt){
    ===================================================================== */
 const minions = [], mprojs = [];
 let minionT = 2;
-function maxMinions(){ const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
+function maxMinions(){
+  /* ►F3 · ARRANQUE LIMPIO (solo el PRIMER eslabón de la run): en caos 0 no hay horda — el
+     jugador aprende cinta+golpe sin nadie encima — y en caos 1 la horda entra por GOTEO.
+     La queja de la gente nueva no era la intensidad, era la ilegibilidad del segundo cero
+     ("estresante visualmente"). Los demás eslabones re-rampan como siempre (►CHAOSRESET)
+     y NO se tocan; la demo de la home tampoco (quiere su enjambre de fondo). */
+  if(!demo && typeof RUTA_I!=='undefined' && RUTA_I===0){
+    if(chaosLvl===0) return 0;
+    if(chaosLvl===1) return Math.min(4, 1 + Math.floor(chaosT/6));
+  }
+  const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
 function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S1 (sin elite morado del desierto)
   return type==='small' ? 14 : type==='shooter' ? 30 : type==='drone' ? DRONE_HP : type==='boss' ? 99999 : large; }   // ►S8DRON: el dron es frágil a propósito — el coste de matarlo es SUBIR a por él, no aguantarle golpes   // vida: pequeño débil · tirador medio · gordo duro/elite · JEFE: muere por su propia lógica
 /* ===== ENJAMBRE INSTANCIADO: 1 InstancedMesh por parte → ~8 draw calls para TODO el enjambre =====
@@ -9998,7 +10009,8 @@ function updateDrone(mn, dt){
     burst(c, DRONE_LILA, 18, 8, 6, 1.1); burst(c, DRONE_LILA2, 10, 6, 4, .9); ring(c, DRONE_LILA2, 18, .45);
     awardMinion(mn); killMinion(mn); return;
   }
-  if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+6 || mn.pos.z > 52 || mn.pos.z < -64){ awardMinion(mn); killMinion(mn); return; }
+  if(Math.abs(mn.pos.x) > WALL_X+6){ pixelate(_PIXWALL, mn.pos, 20); awardMinion(mn); killMinion(mn); return; }   // ►F3: el muro se lo come A LA VISTA (demostración continua)
+  if(mn.pos.y < blastDownY()-2 || mn.pos.z > 52 || mn.pos.z < -64){ awardMinion(mn); killMinion(mn); return; }
 }
 /* ►SPAWN-NEAR-PLAYERS: MEZCLA — parte de la horda cae alrededor de los luchadores vivos y parte
    sigue repartida por todo el mapa (como antes). Cierra el exploit de ponerte en primera línea (antes
@@ -10343,7 +10355,8 @@ function updateMinion(mn, dt){
      que se queda atrás desaparece DENTRO del agua, con su chapuzón. Es lo que vende que barre todo. */
   if(STAGE===12 && typeof PIROLA!=='undefined' && PIROLA.on && PIROLA.calm < 0.5 && Math.abs(mn.pos.x) > WALL_X - PIROLA.bite){
     if(typeof pirSplash==='function') pirSplash(mn.pos); awardMinion(mn); killMinion(mn); return; }
-  if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+4 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
+  if(Math.abs(mn.pos.x) > WALL_X+4){ pixelate(_PIXWALL, mn.pos, 20); awardMinion(mn); killMinion(mn); return; }   // ►F3: el muro se lo come A LA VISTA
+  if(mn.pos.y < blastDownY()-2 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
   // pos/yaw/scale + ángulos se aplican en renderMinionInstances(); aquí: marcha (brazos+piernas) mezclada con ataque
   const walking = mn.onGround && (Math.abs(mn.vel.x)+Math.abs(mn.vel.z))>.5;
   const ph = t*(9/Math.sqrt(mn.scale)) + mn.animPhase;     // ►AJUSTA frecuencia base 9; los grandes pisan más lento; fase propia → enjambre no-clónico
@@ -14225,7 +14238,8 @@ function updateBrute(mn, dt){
     }
   }
   // despawn si acaba en el vacío / fuera de límites (como los minions normales)
-  if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+4 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
+  if(Math.abs(mn.pos.x) > WALL_X+4){ pixelate(_PIXWALL, mn.pos, 20); awardMinion(mn); killMinion(mn); return; }   // ►F3: el muro se lo come A LA VISTA
+  if(mn.pos.y < blastDownY()-2 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
   mn._lastDmg = mn.damage;
   brutePlaceInst(mn);
   inst.mixer.update(dt);
@@ -14401,7 +14415,8 @@ function updateCorruptArcher(mn, dt){
     if(mn._fleeT>=10){ awardMinion(mn); killMinion(mn); return; }   // escapa (cuenta como baja menor)
   }
   // fuera de límites (cayó del mapa) → fuera como cualquier minion
-  if(mn.pos.y < blastDownY()-2 || Math.abs(mn.pos.x) > WALL_X+4 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
+  if(Math.abs(mn.pos.x) > WALL_X+4){ pixelate(_PIXWALL, mn.pos, 20); awardMinion(mn); killMinion(mn); return; }   // ►F3: el muro se lo come A LA VISTA
+  if(mn.pos.y < blastDownY()-2 || mn.pos.z > 50 || mn.pos.z < -62){ awardMinion(mn); killMinion(mn); return; }
   inst.root.position.set(mn.pos.x, mn.pos.y + inst.baseY, mn.pos.z);
   inst.root.rotation.y = mn.yaw;
   inst.mixer.update(dt);
@@ -15526,6 +15541,56 @@ function showBanner(txt, t=1.2){
   banner.textContent = txt;
   banner.classList.add('show');
   bannerT = t;
+}
+
+/* =====================================================================
+   ►F3 · IDENTIDAD DEL PRIMER MINUTO (_CHARLA_DISEÑO.md "legibilidad")
+   Dos piezas que responden "¿quién soy yo?" y "¿qué tengo que hacer?" sin tutorial:
+   · MARCADOR "TÚ": los primeros 20 s de partida real, una flecha del color del jugador bota
+     sobre la cabeza de cada HUMANO. Se crea perezosa y se retira sola.
+   · LAS 3 FRASES DEL SOFÁ: la explicación que Toni hace en persona, institucionalizada.
+     Solo TEXTO por ahora (cuando haya voz se le cuelga su mp3), solo el PRIMER eslabón
+     (RUTA_I===0) y solo la primera run de la vida del guardado (save.sofaDone).
+   ===================================================================== */
+let _youM = null;
+function updateYouMarker(){
+  const show = running && !demo && !TRAIN.on && matchT < 20;
+  if(!show){ if(_youM){ for(const m of _youM){ scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose(); } _youM = null; } return; }
+  if(!_youM){
+    _youM = [];
+    for(const p of players){
+      if(p.isAI) continue;
+      const mh = new THREE.Mesh(new THREE.ConeGeometry(.42, .8, 4),
+                                new THREE.MeshBasicMaterial({ color:p.color }));
+      mh.rotation.x = Math.PI;               // punta hacia ABAJO (señala al jugador)
+      scene.add(mh); _youM.push({ mesh:mh, p });
+    }
+  }
+  for(const m of _youM){
+    m.mesh.visible = !m.p.dead && !m.p.out;
+    m.mesh.position.set(m.p.pos.x, m.p.pos.y + 3.05 + Math.sin(t*4)*.18, m.p.pos.z);
+    m.mesh.rotation.y += .05;
+  }
+}
+const _SOFA_L = [
+  [2.5, ()=>{ const h = players.find(q=>!q.isAI); if(!h) return null;
+              const nm = (CLASS_PICK.find(cc=>cc[0]===h._charKey)||[])[1] || 'LUCHADOR';
+              return 'TÚ ERES ' + (/A$/.test(nm)?'LA ':'EL ') + nm; }],
+  [9.5, ()=>'ELLOS TAMBIÉN FUERON CONVOCADOS · RIVALES… O ALIADOS'],
+  [17,  ()=>'EL ÚLTIMO EN PIE SE QUEDA EL MUNDO'],
+];
+let _sofaI = -1;   // -1 = leer del save al primer uso · -2 = ya contadas (esta vida o esta sesión)
+function updateSofa(){
+  if(_sofaI===-2 || demo || TRAIN.on || !running || stageIntroT>0) return;
+  if(typeof RUTA_I!=='undefined' && RUTA_I!==0) return;
+  if(_sofaI===-1) _sofaI = saveGet().sofaDone ? -2 : 0;
+  if(_sofaI<0) return;
+  if(matchT >= _SOFA_L[_sofaI][0]){
+    const txt = _SOFA_L[_sofaI][1]();
+    if(txt) showBanner(txt, 2.4);
+    _sofaI++;
+    if(_sofaI >= _SOFA_L.length){ saveBump(s=>s.sofaDone=true); _sofaI = -2; }
+  }
 }
 /* ►INTERSTAGE: FUNDIDO A NEGRO reutilizable (antes no existía ninguno: los overlays eran un display
    none↔flex a pelo y el cambio de stage era un corte seco).
@@ -21314,9 +21379,12 @@ function beltBestGround(px, pz){
 
 /* feedback al chocar con una pared-limite */
 function wallHit(p, sign){
+  /* ►F3: el límite MUERDE EN PÍXELES — el borde del mundo se está deshaciendo (la trampa),
+     no es un cristal amable. Cubos oscuros + chispas: misma física de aviso, otra lectura. */
   const fx = new THREE.Vector3(sign*WALL_X, p.pos.y + 0.5, p.pos.z);
-  burst(fx, 0x9fe0ff, 16, 7, 5, 1.0);
-  ring(fx, 0xcdeeff, 16, .4);
+  burst(fx, 0x1a1030, 14, 5, 4, .95);   // el mundo deshaciéndose en cubos oscuros
+  burst(fx, 0xffffff, 5, 6, 5, .55);
+  ring(fx, 0xb49aff, 14, .38);
   shake = Math.max(shake, .35);
   if(typeof sfx !== 'undefined' && sfx.pad) sfx.pad();
 }
@@ -35612,6 +35680,7 @@ function frame(now){
     }
     /* el reloj del CAOS */
     if(stageIntroT<=0 && !demo && !TRAIN.on) matchT += dt;   // reloj de la partida real (alimenta la nota proporcional a la duración) · ►INTERSTAGE VIVO: parado durante la presentación
+    updateYouMarker(); updateSofa();   // ►F3: flecha "TÚ" (20 s) + las 3 frases del sofá (1er eslabón, 1ª run)
     if(stageIntroT<=0 && !(S10WAVE.phase==='fight')) chaosT += dt;   // ►INTERSTAGE VIVO: el caos no avanza durante la cuenta 3·2·1 · ►S10WAVE: ni durante una oleada de jefes
     /* ►CUADRIMANIA: en la torre no hay caos que suba ni jefe al final — la presión la da el suelo
        que se acaba (y, pasado un rato, la lava que sube). */
