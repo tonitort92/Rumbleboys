@@ -34,12 +34,13 @@ historia subordinada a la run. Hecho: `_MASTERMIND.md`.
 - [ ] Muerte termina la run · trofeos ganados persisten · reintento instantáneo
       (morir → pixelarte → carta → eslabón 1, cero menús).
 - [ ] Caos 1 aislado → cintas confluyen (tutorial sin tutorial).
-- [ ] **El muro = pared de pixelación** (el mundo deshaciéndose en cubos detrás).
-      Demostración scriptada: un minion rezagado se lo come en los primeros 10 s.
-- [ ] Legibilidad 3 capas: marcador "TÚ" 20 s + presentación al spawn · jugadores
-      saturados con outline y nombre · minions desaturados, uniformes, sin outline.
-- [ ] Cero minions los primeros 30 s; entran por goteo.
-- [ ] Narrador primera run = las 3 frases del sofá ("Tú eres el bárbaro…").
+- [x] **El muro come en píxeles** (F3a): wallHit con cubos oscuros + cada minion que la
+      cinta arrastra al límite se pixela a la vista (demostración continua, mejor que la
+      scriptada). El "mundo entero deshaciéndose" (shader) queda como mejora futura.
+- [x] Marcador "TÚ" 20 s (F3a). Pendiente de F3: minions desaturados/sin outline
+      (capa 3) — revisar jugando si el goteo ya alivia el estrés visual.
+- [x] Goteo (F3a): 1er eslabón, caos 0 sin horda, caos 1 entra 1+1 cada 6 s.
+- [x] Las 3 frases del sofá en texto (F3a); con voz cuando exista audio.
 - [ ] Llegada al jefe por la cinta (desaceleración, la arena entra; portal fuera).
 - [ ] Escalada final: últimos eslabones más decisivos (suelo pixelándose, vueltas a
       caos 1 más cortas).
