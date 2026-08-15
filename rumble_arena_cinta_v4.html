@@ -6304,6 +6304,26 @@ function shatter(p, bp){
     scene.add(m);
   }
 }
+/* ►F2 PIXELACIÓN (_MASTERMIND.md): la muerte ES la premisa — el luchador se DESHACE EN CUBOS
+   (píxeles) que el reino se traga. Sustituye a las volutas de fantasma en ko(): cada KO cuenta
+   la historia (~30 veces por partida) sin una línea de diálogo. Cubos de tamaño CASI UNIFORME
+   a propósito (leen "píxel", no "escombro"), nacen repartidos por la silueta y caen con el
+   movimiento de ►PARTINST de siempre (gravedad+encogido+giro ya incluidos, 1 draw call). */
+const _pixTmp = new THREE.Vector3();
+function pixelate(p, bp){
+  if(!VISUAL.partInst){ shatter(p, bp); return; }   // sin instancing queda el fantasmita clásico
+  _piInit();
+  const n = Math.min(54, Math.max(0, PART_MAX - parts.length));   // respeta el tope global
+  for(let i=0;i<n;i++){
+    const col = (i%5===0) ? 0xffffff : p.color;     // chispas blancas entre los cubos del color del caído
+    _pixTmp.set(bp.x + (Math.random()-.5)*.85,
+                bp.y + .1 + Math.random()*1.85,     // por toda la silueta del cuerpo
+                bp.z + (Math.random()-.5)*.85);
+    const a = Math.random()*Math.PI*2, sp = .8 + Math.random()*2.6;
+    _piSpawn(_pixTmp, col, .5 + Math.random()*.22, .7 + Math.random()*.7,
+             Math.cos(a)*sp, 2.5 + Math.random()*4, Math.sin(a)*sp);
+  }
+}
 
 function updateParts(dt){
   for(let i=parts.length-1;i>=0;i--){
@@ -16978,7 +16998,13 @@ function applyHit(att, vic, o){
     const hs = o.hitstun + vic.damage*(o.hitstunScale||0);
     vic.hitstun = o.hitstunMin ? Math.max(vic.hitstun||0, hs) : hs;
   }
-  if(o.flash != null) vic.hitFlash = o.flash;
+  if(o.flash != null){ vic.hitFlash = o.flash;
+    /* ►F2: el COLOR del flash dice el PESO del golpe sin leer nada — blanco ligero, ámbar
+       pesado, rojo brutal. Vocabulario que se aprende solo (los umbrales son daño REAL ya
+       multiplicado de ESTE golpe). Los setters directos de hitFlash fuera del embudo quedan
+       en blanco (el decremento limpia _hitFlashCol al expirar). */
+    vic._hitFlashCol = dmg >= 26 ? 0xff5040 : dmg >= 13 ? 0xffb347 : 0xffffff;
+  }
   if(o.ground !== false){ vic.onGround = false; vic.hang = null; }
   if(o.resetCombo !== false){ vic.comboWindow = 0; vic.comboStage = 0; }
   return dmg;
@@ -17288,11 +17314,19 @@ function ko(p){
   bp.y = p._bossArena ? Math.max(BOSS_ARENA_Y-8, Math.min(BOSS_ARENA_Y+20, bp.y)) : Math.max(-8, Math.min(20, bp.y));   // ►PORTAL-BOSS: las esquirlas del KO aparecen a la altura de la arena del cielo
   bp.x = Math.max(-BLAST_XZ, Math.min(BLAST_XZ, bp.x));
   bp.z = Math.max(-BLAST_XZ, Math.min(BLAST_XZ, bp.z));
-  shatter(p, bp);
+  pixelate(p, bp);   // ►F2: el caído se deshace en PÍXELES (antes: volutas de fantasma via shatter)
   burst(bp.clone().add(new THREE.Vector3(0,1,0)), 0xffffff, 14, 10, 8);
   ring(bp.clone().add(new THREE.Vector3(0,1,0)), p.color, 28, .6);
   fovKick = Math.max(fovKick, 1.2);
   shake = 1; sfx.ko(); sfx.fallout(); if(!demo) crowdCheer(.6);   // ¡el público ruge con cada KO!
+  /* ►F2 KO ESTELAR: el golpe que saca a alguien es el mejor momento del juego y pasaba igual que
+     un jab. Cámara lenta corta con la cámara sobre el VERDUGO (la víctima ya no está) — el
+     mecanismo del cine (dt×.35 + cámara al target) ya existía para el 4º golpe; esto solo lo
+     dispara también en el KO. Solo KOs LANZADOS (vel alta): caerse del borde no merece cine. */
+  if(!demo && !TRAIN.on && p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.dead && !p.lastHitBy.out
+     && Math.hypot(p.vel.x, p.vel.y, p.vel.z) > 16){
+    cineT = Math.max(cineT, .85); cineTarget = p.lastHitBy;
+  }
   fighterHide(p.gfx);   // ►LUZFIJA: NO root.visible=false — sacaría sus luces de la cuenta y todo recompilaría
   showBanner(p.isAI ? '¡FUERA!' : '¡TE HAN SACADO!', 1.1);
 
@@ -20199,6 +20233,7 @@ function updateFighter(p, dt){
 
   /* --- BRILLO por daño + flash blanco al recibir golpe --- */
   p.hitFlash = Math.max(0, p.hitFlash - dt);
+  if(p.hitFlash<=0) p._hitFlashCol = 0;   // ►F2: color de peso caducado (0 = blanco por defecto)
   const heat = Math.min(1.6, p.damage/110);
   const _R = READABILITY_MODE;                                       // brillo de daño DOMADO (el color de clase no se lava)
   const pulse = p.damage>80 ? 1 + Math.sin(t*7)*(_R?.15:.3) : 1;
@@ -20208,9 +20243,9 @@ function updateFighter(p, dt){
     g.bodyMat.emissive.copy(rc); g.bodyMat.emissiveIntensity = _R?1.0:1.5;
     g.glow.color.copy(rc); g.glow.intensity = _R?1.8:3.2;
   } else if(p.hitFlash>0){
-    g.bodyMat.emissive.setHex(0xffffff);
+    g.bodyMat.emissive.setHex(p._hitFlashCol || 0xffffff);   // ►F2: flash del color del PESO del golpe
     g.bodyMat.emissiveIntensity = 2.2*Math.min(1, p.hitFlash/.14);
-    g.glow.color.setHex(0xffffff);
+    g.glow.color.setHex(p._hitFlashCol || 0xffffff);
     g.glow.intensity = (_R?2.2:3.2)*Math.min(1, p.hitFlash/.14);
   } else {
     g.bodyMat.emissive.setHex(p.color);
