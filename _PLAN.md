@@ -11,13 +11,14 @@
 La convocatoria (16 fijos, muerte termina run, trofeos persisten), dos pantallas,
 historia subordinada a la run. Hecho: `_MASTERMIND.md`.
 
-## FASE 1 · La puerta (home) — edición, no rediseño
-- [ ] Titular → LA FRASE. Fuera "puntúa/trofeo" del héroe de portada.
-- [ ] Un solo botón JUGAR (funde SOLO/MULTI: busca gente, rellena con CPU).
-- [ ] Selector de mapa fuera de la home (pasa a MUNDOS, fase 6).
-- [ ] Fuera: tira de 5 pasos, subtexto de reglas, tagline de géneros.
-- [ ] Dificultad/idioma → engranaje. Mando/roster → abajo del todo o a MUNDOS.
-- [ ] Corregir copy viejo: 0/10 vs "9 mundos", "hasta 6 jugadores".
+## FASE 1 · La puerta (home) — edición, no rediseño ✅ (16/08, rama f1-home)
+- [x] Titular → LA FRASE (versión sin píxeles hasta que exista la muerte-pixelación en F2).
+- [x] JUGAR grande + ONLINE secundario pequeño. (La fusión real —buscar gente y
+      rellenar con CPU— es trabajo de matchmaking, pendiente para más adelante.)
+- [x] Selector de mapa oculto (lógica MAPSEL viva; renace en MUNDOS, F6).
+- [x] Fuera: tira de 5 pasos, subtexto de reglas, tagline de géneros (ocultos, no borrados).
+- [x] Dificultad/idioma tras engranaje ⚙. (Mando/roster siguen bajo el fold — revisar en F6.)
+- [x] Copy: chip 0/10, "9 mundos" y "6 jugadores" fuera con sus bloques. i18n: 4 claves nuevas.
 
 ## FASE 2 · Game feel — el verbo que se repite mil veces
 - [ ] Hitstop 60–100 ms al conectar (más en el brutal).
