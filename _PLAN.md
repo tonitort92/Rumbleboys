@@ -20,12 +20,15 @@ historia subordinada a la run. Hecho: `_MASTERMIND.md`.
 - [x] Dificultad/idioma tras engranaje ⚙. (Mando/roster siguen bajo el fold — revisar en F6.)
 - [x] Copy: chip 0/10, "9 mundos" y "6 jugadores" fuera con sus bloques. i18n: 4 claves nuevas.
 
-## FASE 2 · Game feel — el verbo que se repite mil veces
-- [ ] Hitstop 60–100 ms al conectar (más en el brutal).
-- [ ] **Pixelación como muerte** (KO → cubos; ya existe ►PARTINST). Historia + feel
-      en una sola pieza: la más rentable del plan.
-- [ ] KO estelar: cámara lenta corta + zoom al tirar a alguien de la cinta.
-- [ ] Flash por peso de golpe (blanco/naranja/rojo) + sonido por peso + whiff de aire.
+## FASE 2 · Game feel — el verbo que se repite mil veces ✅ (16/08, rama f1-home)
+- [x] Hitstop — **ya existía bien afinado** (localHitstop en todo el combo, 60–165 ms
+      escalando con stage/castigo/daño). No se tocó: primero jugarlo, luego retocar.
+- [x] **Pixelación como muerte**: pixelate() — cubos casi uniformes por la silueta vía
+      ►PARTINST. Sustituye a las volutas de fantasma en ko().
+- [x] KO estelar: cine (dt×.35 + cámara) sobre el verdugo en KOs lanzados (vel>16).
+- [x] Flash por peso: blanco <13 · ámbar 13–26 · rojo ≥26 de daño real, en applyHit.
+      Sonido por peso **ya existía** (sfx.hit escala con daño). Whiff pendiente de
+      comprobar jugando (sfx.swing suena al atacar; puede bastar).
 
 ## FASE 3 · La run como convocatoria
 - [ ] Muerte termina la run · trofeos ganados persisten · reintento instantáneo
