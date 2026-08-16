@@ -1591,6 +1591,7 @@ window.addEventListener('load', function(){
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260811a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
 <script src="carry_poses.js?v=1"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
+<script src="carry_clips.js?v=1"></script>  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
 <script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
 <script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
@@ -4851,6 +4852,37 @@ function buildCarryClips(anims, key, scene){
   return [ build(find('run'),  'carry'),
            build(find('idle'), 'carryidle') ].filter(Boolean);
 }
+
+/* ►CARRY2 · 'carried' y 'toss': estos SÍ son animaciones enteras de Mixamo (Writhing In Pain / Throw
+   In), no una pose, así que no hay nada que mezclar: se reconstruyen tal cual desde carry_clips.js
+   (pistas numéricas, no un FBX en base64 → ni FBXLoader ni 10 MB de más en el arranque).
+   La corrección de la CADERA ya viene aplicada en el fichero (ver su cabecera). */
+function buildFbxClips(key, scene){
+  const SRC = window.CARRY_CLIPS;
+  if(!SRC || !scene || !THREE.QuaternionKeyframeTrack) return [];
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const real = {};
+  scene.traverse(o=>{ if(o.isBone || o.type==='Bone') real[norm(o.name)] = o.name; });
+  const out = [];
+  for(const name in SRC){
+    const d = SRC[name] && SRC[name][key];
+    if(!d || !d.q || !d.t) continue;
+    const tracks = [];
+    for(const bn in d.q){
+      const rn = real[bn]; if(!rn) continue;
+      tracks.push(new THREE.QuaternionKeyframeTrack(rn+'.quaternion', (d.tq && d.tq[bn]) || d.t, d.q[bn]));
+    }
+    /* CADERA: se congelan X,Z (el clip de Mixamo se desplaza y aquí la posición la manda el juego)
+       y se CONSERVA la Y, que es justo la que tumba el cuerpo del que va en volandas. */
+    if(d.hp && real['mixamorighips'] && THREE.VectorKeyframeTrack){
+      const v = d.hp.slice();
+      for(let i=0;i<v.length;i+=3){ v[i]=v[0]; v[i+2]=v[2]; }
+      tracks.push(new THREE.VectorKeyframeTrack(real['mixamorighips']+'.position', (d.tq && d.tq.__hips_pos) || d.t, v));
+    }
+    if(tracks.length) out.push(new THREE.AnimationClip(name, d.d, tracks));
+  }
+  return out;
+}
 /* ventana de juego (s) de cada one-shot del samurái → el clip se acelera (timeScale) para reproducirse
    ENTERO dentro de su acción (los clips Mixamo duran 1.4-6.7s; las acciones del juego 0.4-0.9s). atk1-4
    usan el total VIVO de la espada. ull2 es loop (no aquí). */
@@ -5660,7 +5692,7 @@ function updateCharMixers(dt){
              (clips Mixamo 1.4-6.7s vs acciones 0.4-0.9s) → ni se corta ni va lento */
           let win = (tok==='atk1'||tok==='atk2'||tok==='atk3'||tok==='atk4'||tok==='melee')
             ? ((p.atk && (p.atk.wind+p.atk.hit+p.atk.rec)) || 0.4)   // total VIVO de la espada (►MELEEANIM: el mandoble de mago/bruja/arquera va igual, al ritmo de SU golpe)
-            : ((p._winMap||{})[tok] || (tok==='aim'?0.25:0));        // ►WPNANIM: 'aim' prestado (arco) sin ventana propia → 0.25s como la arquera
+            : ((p._winMap||{})[tok] || (tok==='toss'?THROW_POSE_T:(tok==='aim'?0.25:0)));   // ►WPNANIM: 'aim' prestado (arco) → 0.25s · ►CARRY2: 'toss' se monta aquí y no está en los 6 mapas *_WIN → su ventana es THROW_POSE_T
           a.timeScale = win>0 ? THREE.MathUtils.clamp((p._actDur[tok]||win)/win, 0.5, 6.0) : 1;
         } else if((tok==='punch'||tok==='dagger'||tok==='dagger2') && p.atk){
           const total = (p.atk.wind+p.atk.hit+p.atk.rec) || .5;     // sincroniza el swing con el golpe
@@ -5756,8 +5788,10 @@ function updateCharMixers(dt){
       });
     }
     /* ►CARRY2 · el CARGADO patalea EN EL AIRE por encima de la cabeza del otro: brazos manoteando
-       hacia arriba/afuera y piernas pedaleando. Cuanto más forcejea, más rápido. */
-    if(p.heldBy && p._gArms){
+       hacia arriba/afuera y piernas pedaleando. Cuanto más forcejea, más rápido.
+       CON clip 'carried' montado (los 6) esto se APAGA: el retorcerse ya lo da el clip y apuntar los
+       miembros a mano lo machacaría cada frame. Sigue vivo para el humanoide de fallback. */
+    if(p.heldBy && p._gArms && !(p._acts && p._acts.carried)){
       const rush = 1 + 1.4*Math.min(1, (p._escape||0)/ESC_NEED);        // cuanto más forcejea, más rápido patalea
       const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                 // "delante" del cargado = hacia quien lo tiene
       p._gArms.forEach((c, i) => {
@@ -5873,7 +5907,8 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       _mkLoader().parse(_b64ToBuf(window.CHAR_MODELS_B64[key]), '', gltf=>{
         /* ►CARRY2 · monta 'carry'/'carryidle' (pose de carry_poses.js + piernas de run/idle) ANTES de
            guardar la plantilla: applyCharModel crea una acción por clip, así que tienen que estar ya. */
-        try{ const cc = buildCarryClips(gltf.animations, key, gltf.scene);
+        try{ const cc = buildCarryClips(gltf.animations, key, gltf.scene)
+                        .concat(buildFbxClips(key, gltf.scene));   // 'carried' y 'toss' vienen enteros de Mixamo
           if(cc.length) gltf.animations.push.apply(gltf.animations, cc);
           console.log('[carry]', key, cc.length ? 'clips montados: '+cc.map(c=>c.name+' ('+c.duration.toFixed(2)+'s, '+c.tracks.length+' pistas)').join(' · ') : 'SIN pose/clip base → sigue la locomoción de siempre');
         }catch(e){ console.warn('[carry] fallo montando el clip de', key, e); }
@@ -15375,7 +15410,7 @@ const HOLD_MAG_T    = 0.18;   // s del imantado (de donde estaba a tus manos)
      mucho daño lo mandas de verdad lejos.
    · Si se te acaba el aguante cargando, se te CAE de las manos (sin lanzamiento: no te lo ganaste).
    ►►► AJUSTA ◄◄◄ */
-const HOLD_OVER_Y    = 1.95;  // altura (sobre los pies del que carga) a la que va el cargado
+const HOLD_OVER_Y    = 1.95;  // altura (sobre los pies del que carga) a la que va el cargado — FALLBACK: con los clips montados manda carryHoldY()
 const HOLD_OVER_FWD  = 0.10;  // pizca hacia delante: el peso no va justo sobre el eje
 const HOLD_STAM_RATE = 0.70;  // ×: ritmo al que CARGAR come aguante (0.7 → barra de 3s ≈ 4,3s de carga)
 const ESC_STAM_RATE  = 0.85;  // ×: ritmo al que FORCEJEAR come aguante del que está cargado
@@ -15386,6 +15421,36 @@ const THROW_UP       = 8.5;   // componente vertical (lo mandas arriba y lejos, 
 const THROW_UP_MAX   = 12;    // tope del componente vertical
 const THROW_DMG      = 6;     // daño del impacto de lanzarlo (poco: el valor está en DÓNDE lo dejas)
 const THROW_POSE_T   = 0.45;  // s de la pose/clip de lanzar del que tira ('toss', si existe)
+/* ►CARRY2 · ALTURA DEL QUE VA EN VOLANDAS, medida en vez de fijada.
+   Con los clips montados el cargado va SOBRE LAS PALMAS del que carga, no a una altura constante:
+   cada personaje es de una estatura y el clip 'carry' deja las manos donde las deja. Así que cada
+   frame se mide la MANO MÁS ALTA del cargador y cuánto asoma el cuerpo del cargado por debajo de su
+   propio origen (el clip 'carried' lo deja en horizontal), y se deja CARRY_FLOAT_MARGIN de aire:
+   flota un poco y no le atraviesa la cabeza a quien lo lleva.
+   Sin clips (humanoide de fallback) se usa la altura fija de siempre, HOLD_OVER_Y.
+   ►►► SI SE VE PEGADO A LAS MANOS sube el margen; si flota demasiado, bájalo ◄◄◄ */
+/* m que la CADERA del cargado va por encima de las palmas. Medido: con 0.22 la malla del cargado se
+   queda a 0.29-0.39 m del centro de la cabeza del que carga — despejado, pero JUSTO en los cabezones
+   (samurái con cuernos, bárbaro). A 0.30 flota con holgura cómoda. Es LA perilla de esto:
+   ►►► si lo ves despegado, baja a 0.22; si algún casco lo roza, sube ◄◄◄ */
+const CARRY_FLOAT_MARGIN = 0.30;
+const _cLiftV = new THREE.Vector3();
+function carryHoldY(p, v){
+  if(!(p._acts && p._acts.carry) || !p._gArms || !p._gArms.length) return p.pos.y + HOLD_OVER_Y;
+  let handY = -Infinity;
+  for(const c of p._gArms){ c.e.updateWorldMatrix(true,false); c.e.getWorldPosition(_cLiftV); if(_cLiftV.y > handY) handY = _cLiftV.y; }
+  if(!isFinite(handY)) return p.pos.y + HOLD_OVER_Y;
+  /* Se ancla por la CADERA del cargado, no por su punto más bajo. Anclando por el punto más bajo, un
+     brazo o una pierna colgando (el clip 'carried' se retuerce) empujaba TODO el cuerpo hacia abajo y
+     acababa a la altura de la cabeza del que carga. La cadera es lo que de verdad se apoya en las
+     manos: con ella arriba, el tronco queda sobre las palmas y los miembros cuelgan a los lados, que
+     es justo como se lleva a alguien en volandas.
+     Es una medida RELATIVA a v.pos.y, así que no se realimenta con la altura que estamos calculando. */
+  const hip = (v._gLegs && v._gLegs.length && v._gLegs[0].u && v._gLegs[0].u.parent) || v._gSpine || v._headBone;
+  if(!hip) return p.pos.y + HOLD_OVER_Y;
+  hip.updateWorldMatrix(true,false); hip.getWorldPosition(_cLiftV);
+  return handY + CARRY_FLOAT_MARGIN - (_cLiftV.y - v.pos.y);
+}
 const HELD_CAN_ATTACK = false;// en volandas NO puede pegar (antes, cargado por delante, sí podía)
 const HOLD_LAG      = 14;     // /s del seguimiento elástico: ↑ más rígido, ↓ más "peso muerto"
 const HOLD_CHEST_Y  = 1.05;   // altura del punto donde se clavan las manos (pecho del rival)
@@ -19507,7 +19572,7 @@ function updateFighter(p, dt){
          desde donde estaba) y luego un seguimiento ELÁSTICO — al girar o correr se queda un pelín
          atrás y se lee el PESO. Encarándote (yaw+π) para que la silueta se lea de espaldas al público. */
       const tx = p.pos.x + Math.sin(p.yaw)*HOLD_OVER_FWD, tz = p.pos.z + Math.cos(p.yaw)*HOLD_OVER_FWD;
-      const ty = p.pos.y + HOLD_OVER_Y;
+      const ty = carryHoldY(p, v);
       if((v._magT||0) > 0){
         v._magT = Math.max(0, v._magT - dt);
         const k = 1 - v._magT/HOLD_MAG_T, e = k*k*(3-2*k);        // suavizado (arranca y frena)
