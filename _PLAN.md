@@ -19,6 +19,13 @@ historia subordinada a la run. Hecho: `_MASTERMIND.md`.
 - [x] Fuera: tira de 5 pasos, subtexto de reglas, tagline de géneros (ocultos, no borrados).
 - [x] Dificultad/idioma tras engranaje ⚙. (Mando/roster siguen bajo el fold — revisar en F6.)
 - [x] Copy: chip 0/10, "9 mundos" y "6 jugadores" fuera con sus bloques. i18n: 4 claves nuevas.
+- [x] **La home son DOS pantallas** (16/08, rama f2-title). Pantalla 1 = portada-anuncio:
+      logo + claim ("ESCOGE A TU HÉROE Y SALVA EL MUNDO DE RUMBLEBOYS, ¿ESTARÁS A LA
+      ALTURA?") + la promesa (mundos/trofeos/colabora o traiciona) + "pulsa cualquier
+      botón". Cero decisiones. Pantalla 2 = la home de siempre, con JUGAR.
+- [ ] Revisar jugando si la pantalla 1 estorba: el mastermind pide UN botón entre el
+      jugador y el juego, y ahora son dos pulsaciones. La 1ª es "cualquier botón" (casi
+      no cuenta) y de paso desbloquea el audio del navegador, pero hay que mirarlo.
 
 ## FASE 2 · Game feel — el verbo que se repite mil veces ✅ (16/08, rama f1-home)
 - [x] Hitstop — **ya existía bien afinado** (localHitstop en todo el combo, 60–165 ms
