@@ -6841,20 +6841,28 @@ function noiseBurst(vol=.3, dur=.12, cut=2000, type='lowpass', q=0.7, slideTo=0)
   s.connect(f); f.connect(g); g.connect(master()); s.start();
 }
 /* Voces de personaje (gruñidos/quejidos) ELIMINADAS a propósito: el combate va sin voz. */
+/* ►SFX2 (17/08, Toni: "los sonidos de la IA suenan robóticos y gomosos"): lo robótico eran los
+   square/sawtooth a frecuencia FIJA (cada golpe idéntico) y lo gomoso los slides largos de seno.
+   Receta nueva para el combate: RUIDO filtrado como cuerpo (crack corto + knock medio), un
+   SUB-golpe de seno breve para el peso, y _sr() = tono aleatorio en cada golpe (no hay dos
+   iguales). Los squares quedan para UI/power-ups, donde lo chip está bien. */
+const _sr = (a,b)=> a + Math.random()*(b-a);
 const sfx = {
   jump : ()=>tone(280,.12,'sine',.14, 260),
   djump: ()=>tone(360,.14,'sine',.14, 320),
   dash : ()=>{ noiseBurst(.14,.2, 800,'bandpass',0.5, 4200); tone(180,.16,'sawtooth',.06, 120); },               // woosh aéreo
-  swing: ()=>noiseBurst(.1,.12, 1500,'bandpass',0.6, 3400),                                                      // silbido del golpe
-  hit  : (dmg)=>{ const d=Math.min(60,dmg*.4); noiseBurst(.36,.07, 3600-d*22,'bandpass',1.1);
-                  tone(440-d*2,.13,'square',.22,-300); tone(150,.16,'sine',.2,-70); },                           // POK con pegada grave
-  ko   : ()=>{ noiseBurst(.5,.5, 2200,'lowpass',0.6, 220); tone(150,.7,'sawtooth',.3,-120);
-               tone(440,.5,'square',.13,-360); tone(70,.6,'sine',.26,-26); },                                    // KO explosivo (boom + sub)
+  swing: ()=>noiseBurst(.12,.09, _sr(900,1300),'bandpass',1.4, _sr(2600,3400)),                                  // ►SFX2: aire puro, corto, distinto cada vez
+  hit  : (dmg)=>{ const d=Math.min(60,dmg*.4);                                                                   // ►SFX2: crack + knock carnoso + sub de peso (sin squares)
+                  noiseBurst(.4,.045, _sr(2600,3400)-d*18,'bandpass',1.2);
+                  noiseBurst(.22,.10+d*.0012, 700-d*6,'lowpass',0.7, 180);
+                  tone(_sr(95,115)-d*.5,.11+d*.001,'sine',.24+d*.004,-45); },
+  ko   : ()=>{ noiseBurst(.55,.5, 1800,'lowpass',0.55, 150); noiseBurst(.4,.06, 5200,'highpass',0.7);            // ►SFX2: BOOM sordo + chasquido, sin chirridos
+               tone(_sr(55,65),.6,'sine',.32,-22); tone(_sr(160,200),.3,'triangle',.14,-90); },
   pad  : ()=>tone(200,.2,'sine',.18, 500),
   grab : ()=>tone(160,.08,'triangle',.12, 60),
   hangOut: ()=>{ tone(210,.22,'triangle',.13, 90); noiseBurst(.18,.12, 900,'bandpass',0.7); },   // ►LTSTAM: se te acabó el aguante y te sueltas (aviso audible: no es que fallara el botón)
   parry: ()=>{ noiseBurst(.14,.04, 5000,'highpass',0.7); tone(880,.22,'sine',.18); tone(1318,.3,'sine',.1); },   // parry cristalino
-  chip : ()=>tone(210,.07,'triangle',.12, -40),
+  chip : ()=>{ noiseBurst(.12,.05, _sr(1600,2200),'bandpass',1.2); tone(_sr(180,220),.06,'triangle',.08,-60); },   // ►SFX2: toque seco variado
   crack: ()=>{ noiseBurst(.45,.2, 2600,'bandpass',0.7, 400); tone(70,.32,'sawtooth',.26,-30);
                noiseBurst(.42,.05, 5500,'highpass',0.7); },                                                      // crujido seco + chasquido
   clash: ()=>{ noiseBurst(.2,.05, 4200,'highpass',0.7); tone(2600,.12,'sawtooth',.16,-1900);
@@ -6873,10 +6881,10 @@ const sfx = {
   charge:()=>{ tone(150,.45,'sawtooth',.12, 430); tone(300,.45,'sine',.07, 600); },
   beamGo:()=>{ noiseBurst(.3,.5, 1200,'lowpass',0.6, 300); tone(64,1.9,'sawtooth',.22,-18); tone(130,1.9,'square',.08,-20); tone(900,.45,'sawtooth',.12,-700); },   // súper rayo (zumbido + zing)
   chgFull:()=>{ tone(880,.12,'square',.12, 120); tone(1320,.16,'sine',.08, 160); },
-  brute :()=>{ noiseBurst(.5,.05, 5200,'highpass',0.7); noiseBurst(.46,.34, 1600,'lowpass',0.6, 200);
-               tone(72,.42,'sawtooth',.3,-46); tone(150,.3,'square',.13,-50); },                                 // puñetazo brutal (chasquido + boom)
-  smash :()=>{ noiseBurst(.55,.05, 6000,'highpass',0.7); noiseBurst(.42,.14, 2400,'bandpass',0.8, 600);
-               tone(320,.18,'square',.32,-180); tone(640,.12,'square',.17,-300); tone(90,.3,'sine',.3,-32); },   // PUM metálico fuerte
+  brute :()=>{ noiseBurst(.5,.05, 5200,'highpass',0.7); noiseBurst(.5,.3, _sr(800,1000),'lowpass',0.6, 140);
+               tone(_sr(60,72),.4,'sine',.32,-24); },                                                            // ►SFX2: chasquido + boom sordo, sin motosierra
+  smash :()=>{ noiseBurst(.55,.04, 6000,'highpass',0.7); noiseBurst(.5,.16, _sr(1500,1900),'bandpass',0.9, 350);
+               noiseBurst(.35,.22, 500,'lowpass',0.6, 120); tone(_sr(70,85),.28,'sine',.34,-30); },              // ►SFX2: PUM de peso real (capas de ruido + sub), sin squares
   heal  :()=>{ tone(523,.14,'sine',.12, 180); tone(784,.22,'sine',.1, 160); },
   bow      :()=>{ tone(900,.1,'triangle',.16,-520); tone(1500,.06,'sine',.06,-300); noiseHit(.05,.04); },      // cuerda + flecha
   bazooka  :()=>{ noiseHit(.32,.3); tone(150,.4,'sawtooth',.2,-90); tone(70,.45,'square',.14,-26); },          // lanzamiento hueco
@@ -17492,6 +17500,37 @@ function localHitstop(a, b, dur){
    ⚠️ ORDEN CRÍTICO: el empuje se calcula DESPUÉS de sumar el daño, porque escala con el daño YA
    acumulado de la víctima. Invertirlo cambiaría la sensación de todo el juego. */
 const _hitDir = new THREE.Vector3();
+/* ►ONDA (17/08, pedido de Toni): los golpes GORDOS sueltan una ONDA DE CHOQUE en el COLOR del
+   atacante — visual (anillos expandiéndose) Y jugable: empuja y trastabilla a los enemigos de
+   alrededor según lo fuerte que pegues. El 4º golpe del combo (y el castigo post-parry) la
+   disparan REFORZADA (comboK 1.5): cerrar el combo limpia la zona — esa es la recompensa, junto
+   al plus de barra de definitiva. SIN daño: es control de espacio (el daño ya lo puso el golpe). */
+const SHOCK_MIN = 7;                    // daño REAL (tras defensas: los golpes del combo rondan 2-12) a partir del cual hay onda ►AJUSTA
+const SHOCK_R0 = 2.2, SHOCK_R1 = 5.5;  // radio de la onda: de golpe justito a golpe gordo
+function shockwaveHit(att, vic, dmg, comboK){
+  const k = Math.min(1.6, ((dmg - SHOCK_MIN) / 12 + 0.25) * (comboK || 1));
+  const R = SHOCK_R0 + (SHOCK_R1 - SHOCK_R0) * Math.min(1, k);
+  const col = att.color || 0xffffff;
+  const c = _fxV.set(vic.pos.x, vic.pos.y + 0.4, vic.pos.z);   // ring() copia pos → scratch vale
+  ring(c, col, 14 + 26*k, .32 + .14*k);
+  ring(c, 0xffffff, 8 + 14*k, .22);
+  for(const mn of minions){
+    if(mn.dead || mn.invuln>0) continue;
+    const dx = mn.pos.x - vic.pos.x, dz = mn.pos.z - vic.pos.z, d = Math.hypot(dx, dz);
+    if(d > R + 0.4*mn.scale || d < 0.01) continue;
+    const f = (6 + 8*k) * (1 - d/(R+1));
+    mn.vel.x += dx/d*f; mn.vel.z += dz/d*f; mn.vel.y = Math.max(mn.vel.y, 2.5 + 2*k);
+    mn.hitstun = Math.max(mn.hitstun, .14 + .12*k); mn.onGround = false;
+  }
+  for(const q of players){
+    if(q===att || q===vic || q.dead || q.out || q.invuln>0) continue;
+    const dx = q.pos.x - vic.pos.x, dz = q.pos.z - vic.pos.z, d = Math.hypot(dx, dz);
+    if(d > R || d < 0.01) continue;
+    const f = (3.5 + 4*k) * (1 - d/(R+1)) * (q.block ? .4 : 1);   // a jugadores empuja MENOS (y el escudo aguanta)
+    q.vel.x += dx/d*f; q.vel.z += dz/d*f;
+    q.hitFlash = Math.max(q.hitFlash||0, .1);
+  }
+}
 function applyHit(att, vic, o){
   o = o || {};
   let dmg = (o.base||0) * (o.spell ? spellMul(att) : dmgMul(att)) * (o.mul!=null?o.mul:1) * defMul(vic);
@@ -17526,6 +17565,7 @@ function applyHit(att, vic, o){
   }
   if(o.ground !== false){ vic.onGround = false; vic.hang = null; }
   if(o.resetCombo !== false){ vic.comboWindow = 0; vic.comboStage = 0; }
+  if(dmg >= SHOCK_MIN && att && players.indexOf(att) >= 0) shockwaveHit(att, vic, dmg, o.comboK || 1);   // ►ONDA
   return dmg;
 }
 
@@ -17766,7 +17806,9 @@ function resolveHit(att, vic){
     up: _alto ? 6 : 3, upScale: _alto ? 0.09 : 0.02, upMax: _alto ? 26 : null,
     hitstun: .2 + s*.06, hitstunScale: .002,
     flash: .14 + s*.03 + (punish?.12:0),
+    comboK: (s===3 || punish) ? 1.5 : 1,   // ►ONDA: el lanzador del combo y el castigo la refuerzan
   });
+  if(s===3 && dmg>0) addPower(att, 14);    // ►ONDA: cerrar el combo también paga en barra de definitiva
 
   localHitstop(att, vic, .06 + s*.035 + (punish?.08:0) + Math.min(.05, vic.damage*.0003));
   shake = Math.min(1.1, .22 + s*.16 + (punish?.35:0) + vic.damage*.003); camKick(dir.x, dir.z, .5 + s*.3 + (punish?.4:0));
