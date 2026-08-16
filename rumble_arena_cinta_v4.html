@@ -2032,7 +2032,18 @@ function tagOutlineLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layer
    (pools → una sola vez); el pase les swapea el material como a los jugadores. Efecto lateral
    deliberado: al ir en capa OUTLINE también entran en la máscara de no-desaturar (conservan color). */
 const _minSil = [];
-function registerMinionSil(root){ if(root) root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } }); }
+/* ►F3c · CAPA 3 (16/08, _CHARLA_DISEÑO "legibilidad"): la MASA ya NO entra en la capa OUTLINE.
+   Regla: "la saturación es de los jugadores" — en OUTLINE el minion recibía anillo + el boost
+   satChar (+10%, el shader lee alfa 0.62>0.5) + máscara de no-desaturar + exención de tinta:
+   la MISMA clase visual que un jugador, y la charla pide lo contrario (masa = terreno que se
+   mueve). Fuera de la capa pierde las cuatro cosas de golpe y hasta recibe la tinta del mundo,
+   como el decorado. keepRing=true conserva el trato antiguo — lo usa el ÉLITE/brute, que es un
+   EVENTO y debe cantar. MIN_SIL_RING=true restaura el ►MINSIL de antes para TODA la masa. */
+const MIN_SIL_RING = false;   // ►AJUSTA: true = masa con anillo + saturación de personaje (modo 1/08)
+function registerMinionSil(root, keepRing){
+  if(!root || !(keepRing || MIN_SIL_RING)) return;
+  root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } });
+}
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
 /* ►NOINK (9/08, pedido de Toni: "quita el outline de los assets de decoración de los fondos").
@@ -9261,7 +9272,7 @@ function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S
 const MINION_CAP = 160;            // capacidad del pool instanciado (tope DURO; maxMinions() debe quedar por debajo)
 const MIN_BODY_MAT = new THREE.MeshStandardMaterial({ color:0x26262b, roughness:.75, metalness:.05 });
 const MIN_DARK_MAT = new THREE.MeshStandardMaterial({ color:0x141417, roughness:.8,  metalness:.05 });
-const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0xff1a1a });
+const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0x7a1d18 });   // ►F3c: ojos APAGADOS (era 0xff1a1a puro — el color de máxima alarma ×20 entidades en lo MENOS importante de la pantalla; de cerca se siguen leyendo)
 const _MGEO = {
   body:new THREE.BoxGeometry(.7,.9,.5), head:new THREE.BoxGeometry(.62,.56,.56),
   eye:new THREE.BoxGeometry(.13,.13,.06), arm:new THREE.BoxGeometry(.17,.62,.17), leg:new THREE.BoxGeometry(.19,.5,.19),
@@ -14054,7 +14065,7 @@ function bruteAttach(mn){
       o.castShadow=true; o.frustumCulled=false;
     });
     const bs = _bossTpl.baseScale * BRUTE_SCALE_K;
-    if(typeof registerMinionSil === 'function') registerMinionSil(root);   // ►MINSIL: el élite también lleva outline de mapa
+    if(typeof registerMinionSil === 'function') registerMinionSil(root, true);   // ►MINSIL: el ÉLITE conserva el outline (es un evento, debe cantar — ►F3c la masa ya no lo lleva)
     inst = { root, mixer, acts, dur, cur:null, baseScale:bs, baseY:_bossTpl.baseY*BRUTE_SCALE_K };
   }
   bruteTint(inst);
