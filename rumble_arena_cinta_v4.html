@@ -15234,16 +15234,9 @@ const HOLD_CHEST_Y  = 1.05;   // altura del punto donde se clavan las manos (pec
 const FLINCH_MIN  = 0.12;     // s: suelo (un roce también se nota)
 const FLINCH_MAX  = 0.28;     // s: techo (no queremos un tambaleo largo)
 const FLINCH_AMP  = 1.0;      // multiplicador general de la sacudida (0 = apagada)
-/* ===== ►LTSHOVE · EMPUJÓN DE AGUANTE (LT en el SUELO) — SUSTITUYE al agarrar-y-pasear =============
-   Pedido de Toni: LT ya NO agarra al rival para pasearlo. Ahora, si tienes la barra de AGUANTE
-   LLENA, sueltas un EMPUJÓN FUERTE a quien tengas delante y a cambio te gastas la barra ENTERA:
-   queda VACÍA y PARPADEANDO ~3 s (STAM_CD) mientras se recarga, sin poder colgarte ni volver a
-   empujar hasta que se llene. En el aire LT sigue siendo el agarre de BORDE. ►►► AJUSTA ◄◄◄ */
-const SHOVE_RANGE = 3.4;      // alcance del empujón (cono delante)
-const SHOVE_ARC   = 0.45;     // cos del semiángulo del cono (~63°); solo empuja hacia donde MIRAS
-const SHOVE_PUSH  = 16;       // fuerza horizontal (fuerte: nivel "fuera de aquí", por encima del bate)
-const SHOVE_UP    = 5;        // pizca vertical (que despeguen, para que el empuje cuente para ring-out)
-const SHOVE_AREA  = 6.0;      // ►Toni: radio del ÁREA del empujón contra la HORDA (más ancho que el cono 1v1); aparta en recta a todos los minions de DELANTE
+/* ►LTSHOVE BORRADO (16/08, decisión de Toni): el empujón de aguante llevaba desenchufado desde el
+   11/08 (LT volvió a ser agarrar, ►FGGRAB) y se decidió NO recuperarlo — el carry ES el empujón.
+   La barra de aguante queda solo para lo suyo: borde + cargar + forcejear (►LTSTAM). */
 /* ===== ESCUDO (toque → burbuja de 5 s): vas lento, no atacas, empuja+daña a los de alrededor para
    apartarlos y pasar. No cancelable. Enfriamiento tras agotarse. ►►► AJUSTA ◄◄◄ */
 const SHIELD_DUR = 5;        // s que dura el escudo
@@ -16269,55 +16262,7 @@ function tryGrabPlayer(p){
   return true;
 }
 
-/* ⚠️ YA NO ESTÁ ENCHUFADO (11/08): LT en el suelo volvió a ser AGARRAR (►FGGRAB) y el empujón ahora
-   sale AL SOLTAR al rival, proporcional al rato que lo tuviste. Se conserva la función por si Toni
-   quiere recuperar el empujón suelto en otro botón; si se decide que no, se borra entera.
-   ►LTSHOVE · EMPUJÓN: gasta TODA la barra de aguante (queda vacía y parpadeando STAM_CD s) y a cambio
-   suelta un empujón FUERTE hacia donde MIRAS. Hace falta la barra LLENA. ►Toni: a un RIVAL (jugador) lo
-   empuja INDIVIDUAL (sin área); a la HORDA le hace efecto de ÁREA hacia delante (aparta a los minions
-   cercanos de delante en línea recta, sin destruirlos, nada detrás). */
-function staminaShove(p){
-  if(p.stamLock || p.stam < STAM_MAX){ sfx.deny(); return false; }   // sin la barra llena, no sale
-  if(p.dead || p.out || p.hang || p.hitstun>0 || p.stun>0 || p.dashT>0 || !p.onGround) return false;
-  if(_grabImmune(p)) return false;                                   // ni en mitad de TU propio especial
-  p.stam = 0; p.stamLock = true;                                     // gasta la barra ENTERA → recarga+parpadeo STAM_CD s
-  p.sc.specials++;
-  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                  // hacia donde MIRAS
-  let any = false;
-  for(const v of players){
-    if(v===p || v.dead || v.out || v.invuln>0) continue;
-    if(Math.abs(v.pos.y - p.pos.y) > 1.8) continue;                 // mismo nivel
-    const dx=v.pos.x-p.pos.x, dz=v.pos.z-p.pos.z, d=Math.hypot(dx,dz);
-    if(d>SHOVE_RANGE || d<0.01) continue;
-    if((dx*fx + dz*fz)/d < SHOVE_ARC) continue;                     // fuera del cono de delante
-    any = true;
-    const nx=dx/d, nz=dz/d, f = SHOVE_PUSH * kbMul(p);
-    v.vel.set(nx*f, SHOVE_UP, nz*f);
-    v.onGround = false; v.hitstun = Math.max(v.hitstun, .35); v.hitFlash = .12;
-    v.comboWindow = 0; v.comboStage = 0; v.hang = null;
-    jiggle(v, 15);
-    burst(v.pos.clone().add(new THREE.Vector3(0,.8,0)), v.color, 12, 6, 4, .7);
-    ring(v.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 12, .35);
-  }
-  /* ►Toni: EMPUJÓN a la HORDA = efecto de ÁREA hacia DELANTE. Aparta (NO destruye) a TODOS los minions
-     cercanos que tengas DELANTE, empujándolos en LÍNEA RECTA hacia donde MIRAS (no radial). El semiplano
-     frontal (dot>0) hace que NADA de detrás del jugador se vea afectado. A un JUGADOR no le hace área:
-     solo se empuja al rival del cono (bucle de arriba). */
-  for(const mn of minions){
-    if(mn.dead || mn.invuln>0) continue;
-    const dx=mn.pos.x-p.pos.x, dz=mn.pos.z-p.pos.z, d=Math.hypot(dx,dz);
-    if(d>SHOVE_AREA + 0.5*mn.scale || d<0.01) continue;             // dentro del ÁREA
-    if((dx*fx + dz*fz) <= 0) continue;                              // SOLO lo que tienes DELANTE (semiplano frontal); nada detrás
-    mn.vel.x += fx*SHOVE_PUSH*0.9; mn.vel.z += fz*SHOVE_PUSH*0.9;   // recta hacia donde miras (todos en la MISMA dirección)
-    mn.vel.y = Math.max(mn.vel.y, 5);
-    mn.hitstun = Math.max(mn.hitstun, .2); mn.onGround = false;
-    burst(mn.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 4, 3, 2, .4);
-  }
-  addPower(p, any ? 6 : 0);                                          // acertar da algo de barra (poco: no es pegar)
-  sfx.swing(); showCombo(p, '¡EMPUJÓN!'); camKick(fx, fz, .5); shake = Math.max(shake, .25);
-  burst(p.pos.clone().add(new THREE.Vector3(fx*1.2, .8, fz*1.2)), p.color, 8, 5, 3, .6);
-  return true;
-}
+/* ►LTSHOVE BORRADO (16/08): estaba huérfano desde el 11/08 y Toni decidió no recuperarlo. */
 
 /* ===== ►FGBUMP (14/08, petición de Toni) · LOS CUERPOS ESTORBAN ==================================
    Hasta ahora luchadores y minions se ATRAVESABAN: seis personajes cabían en el mismo punto y una
@@ -19261,7 +19206,7 @@ function updateFighter(p, dt){
     if(atkBtn) p._atkHoldT += dt;
     if(p.weapon){ if(atkPress) p.atkBuf = .25; }                          // con arma: al pulsar
     else if(!p.onGround){ if(atkPress) p.atkBuf = .25; }                  // EN EL AIRE: golpe directo al PULSAR (la carga es solo de suelo → antes el aire se "comía" el ataque)
-    else if(atkRel && !p.charge && p._atkHoldT < CHG_MIN) p.atkBuf = .25; // suelo: toque corto → martillazo (mantener = carga)
+    else if(atkRel) p.atkBuf = .25; // suelo: el golpe sale al SOLTAR (►QUITADO 16/08: ya no hay carga — mantener no hace nada, cualquier suelta pega)
     p._atkHeld = atkBtn;
     wantAtk = p.atkBuf > 0;
     wantGrab = inp.brk && !p._lHeld;
@@ -19504,20 +19449,10 @@ function updateFighter(p, dt){
     }
   }
 
-  /* --- PUÑETAZO BRUTAL: mantener el botón de ataque carga; soltar descarga --- */
-  if(!p.isAI){
-    const canCharge = p._atkHeld && p.onGround && p.dashT<=0 && !p.block && !p.beam && !p.hang && !p.spin
-      && !p.counter && p.parryT<=0
-      && p.hitstun<=0 && p.stun<=0 && p.atk.phase==='none' && !p.dead
-      && p.superBuf<=0 && p.throwBuf<=0 && p.throwT<=0 && !p.weapon;
-    if(!p.charge && canCharge && p._atkHoldT>=CHG_MIN) startCharge(p);
-    if(p.charge){
-      if(!p._atkHeld) releaseCharge(p);                                       // soltó → ¡puñetazo!
-      else if(p.superBuf>0 || p.throwBuf>0 || p.spinBuf>0) cancelCharge(p);   // cede el turno al súper / Q / F
-      else if(p.hitstun>0 || p.stun>0 || p.block || p.hang || p.beam || !p.onGround || p.dead) cancelCharge(p);
-      else updateCharge(p, dt);
-    }
-  }
+  /* ►QUITADO (16/08, decisión de Toni): el PUÑETAZO BRUTAL cargado (mantener-y-soltar) ya no
+     existe — este era su ÚNICO punto de entrada (startCharge/releaseCharge quedan muertas río
+     abajo junto a sus ramas de anim/FX/resolveHit kind 'charge'; excisión completa pendiente).
+     Mantener el botón ya no hace nada especial: el golpe sale al SOLTAR, siempre (ver atkRel). */
 
   /* --- ►ROLL · RODADA DE RECUPERACIÓN ---
      Va AQUÍ, ANTES del bloque de control, a propósito: ese bloque está cerrado mientras `hitstun>0`
