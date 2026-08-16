@@ -2306,7 +2306,18 @@ function tagOutlineLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layer
    (pools → una sola vez); el pase les swapea el material como a los jugadores. Efecto lateral
    deliberado: al ir en capa OUTLINE también entran en la máscara de no-desaturar (conservan color). */
 const _minSil = [];
-function registerMinionSil(root){ if(root) root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } }); }
+/* ►F3c · CAPA 3 (16/08, _CHARLA_DISEÑO "legibilidad"): la MASA ya NO entra en la capa OUTLINE.
+   Regla: "la saturación es de los jugadores" — en OUTLINE el minion recibía anillo + el boost
+   satChar (+10%, el shader lee alfa 0.62>0.5) + máscara de no-desaturar + exención de tinta:
+   la MISMA clase visual que un jugador, y la charla pide lo contrario (masa = terreno que se
+   mueve). Fuera de la capa pierde las cuatro cosas de golpe y hasta recibe la tinta del mundo,
+   como el decorado. keepRing=true conserva el trato antiguo — lo usa el ÉLITE/brute, que es un
+   EVENTO y debe cantar. MIN_SIL_RING=true restaura el ►MINSIL de antes para TODA la masa. */
+const MIN_SIL_RING = false;   // ►AJUSTA: true = masa con anillo + saturación de personaje (modo 1/08)
+function registerMinionSil(root, keepRing){
+  if(!root || !(keepRing || MIN_SIL_RING)) return;
+  root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } });
+}
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
 /* ►NOINK (9/08, pedido de Toni: "quita el outline de los assets de decoración de los fondos").
@@ -8506,14 +8517,14 @@ function updateShardsFly(dt){
       continue;
     }
     if(vic.block){                       // bloqueado: astilla en el escudo
-      vic.damage += SHARD_DMG*.3*dmgMul(s.owner)*defMul(vic);
+      vic.damage += SHARD_DMG*.3*dmgMul(s.owner)*defMul(vic)*pvpMul(s.owner,vic);   // ►F3b: tregua
       vic.vel.x += dir.x*2; vic.vel.z += dir.z*2;
       vic.shieldFlash = .18;
       sfx.chip();
       killShard(i, 0xffffff);
       continue;
     }
-    const dmg = (SHARD_DMG + Math.random()*1.5)*dmgMul(s.owner)*defMul(vic);
+    const dmg = (SHARD_DMG + Math.random()*1.5)*dmgMul(s.owner)*defMul(vic)*pvpMul(s.owner,vic);   // ►F3b: tregua
     vic.damage += dmg; credit(s.owner, dmg); vic.lastHitBy = s.owner;
     addPower(s.owner, dmg*1.1); addPower(vic, dmg*.5);
     const kbm = kbMul(s.owner);
@@ -9085,7 +9096,7 @@ function missileExplode(s){
     if(d>R) continue;
     const k=1-d/R, self=(p===s.owner);
     let dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(Math.random()-.5,0,Math.random()-.5); dir.normalize();
-    const dmg=(self?13:30)*k*dmgMul(s.owner)*defMul(p);
+    const dmg=(self?13:30)*k*dmgMul(s.owner)*defMul(p)*pvpMul(s.owner,p);   // ►F3b: tregua (el auto-daño del lanzador también se anula: s.owner===p)
     p.damage += dmg; if(!self){ credit(s.owner, dmg); p.lastHitBy = s.owner; }
     const kb=(9+p.damage*.14)*k*kbMul(s.owner)*(self?.6:1);
     p.vel.set(dir.x*kb, 7*k+3, dir.z*kb);
@@ -9113,8 +9124,8 @@ function arrowBlast(c, s){
     const dx=o.pos.x-c.x, dz=o.pos.z-c.z, dy=(o.pos.y+1)-c.y, d=Math.hypot(dx,dz,dy);
     if(d>ABLAST_R) continue; const k=1-d/ABLAST_R;
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
-    if(o.block){ o.damage+=ABLAST_DMG*.3*k*defMul(o); o.shieldFlash=.18; o.vel.x+=dir.x*3*k; o.vel.z+=dir.z*3*k; continue; }
-    const dmg=ABLAST_DMG*k*dmgMul(owner)*defMul(o); o.damage+=dmg; credit(owner,dmg); o.lastHitBy=owner;
+    if(o.block){ o.damage+=ABLAST_DMG*.3*k*defMul(o)*pvpMul(owner,o); o.shieldFlash=.18; o.vel.x+=dir.x*3*k; o.vel.z+=dir.z*3*k; continue; }   // ►F3b: tregua
+    const dmg=ABLAST_DMG*k*dmgMul(owner)*defMul(o)*pvpMul(owner,o); o.damage+=dmg; credit(owner,dmg); o.lastHitBy=owner;
     const kb=(8+o.damage*.10)*k*kbMul(owner); o.vel.set(dir.x*kb, 4.5*k+2, dir.z*kb);   // bastante empuje
     o.hitstun=Math.max(o.hitstun,.32); o.onGround=false; o.hitFlash=.16; jiggle(o,12); sfx.hit(o.damage);
   }
@@ -9192,10 +9203,10 @@ function updateWprojs(dt){
       ring(vc,0xaffaff,12,.3); sfx.parry(); continue;
     }
     if(s.explode){ arrowBlast(s.m.position.clone(), s); killWproj(i, s.col); continue; }   // flecha explosiva (ráfaga arquera): estalla sobre el rival
-    if(vic.block){ vic.damage+=4*(s.spell?spellMul(s.owner):dmgMul(s.owner))*defMul(vic); vic.vel.x+=dir.x*3; vic.vel.z+=dir.z*3; vic.shieldFlash=.18; sfx.chip(); killWproj(i,0xffffff); continue; }
-    const dmg=((s.dmg||14)+Math.random()*3)*(s.spell?spellMul(s.owner):dmgMul(s.owner))*defMul(vic)*arrowFalloff(s);   // flecha/proyectil: dmg base + falloff (arquera) + spell (mago/sacerdotisa)
+    if(vic.block){ vic.damage+=4*(s.spell?spellMul(s.owner):dmgMul(s.owner))*defMul(vic)*pvpMul(s.owner,vic); vic.vel.x+=dir.x*3; vic.vel.z+=dir.z*3; vic.shieldFlash=.18; sfx.chip(); killWproj(i,0xffffff); continue; }   // ►F3b: tregua
+    const dmg=((s.dmg||14)+Math.random()*3)*(s.spell?spellMul(s.owner):dmgMul(s.owner))*defMul(vic)*arrowFalloff(s)*pvpMul(s.owner,vic);   // flecha/proyectil: dmg base + falloff (arquera) + spell (mago/sacerdotisa) · ►F3b: tregua
     vic.damage+=dmg; credit(s.owner, dmg); vic.lastHitBy = s.owner; addPower(s.owner, dmg);
-    if(s.bleed){ vic.bleedT=BLEED_DUR; vic.bleedFrom=s.owner; }                 // corte de viento (samurái)
+    if(s.bleed && dmg>0){ vic.bleedT=BLEED_DUR; vic.bleedFrom=s.owner; }        // corte de viento (samurái) · ►F3b: sin sangrado en tregua
     if(s.heal&&s.owner) s.owner.damage=Math.max(0,s.owner.damage-s.heal);       // castigo (sacerdotisa)
     const kbm=kbMul(s.owner)*(s.kbK||1);
     vic.vel.set(dir.x*(6+vic.damage*.08)*kbm, 3.5, dir.z*(6+vic.damage*.08)*kbm);
@@ -9258,7 +9269,7 @@ function emitSpikes(p){
     const dx=o.pos.x-p.pos.x, dz=o.pos.z-p.pos.z, d=Math.hypot(dx,dz);
     if(d>3.2) continue;
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(1,0,0); dir.normalize();
-    const dmg=6*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
+    const dmg=6*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;   // ►F3b: tregua
     const kb=(4+o.damage*.06)*kbMul(p);
     o.vel.x+=dir.x*kb; o.vel.z+=dir.z*kb; o.vel.y=Math.max(o.vel.y,3);
     o.hitstun=Math.max(o.hitstun,.2); o.hitFlash=.12; jiggle(o,8); sfx.hit(o.damage);
@@ -9283,7 +9294,7 @@ function explodeMine(mn){
     const dx=p.pos.x-c.x, dz=p.pos.z-c.z, dy=(p.pos.y+.5)-c.y, d=Math.hypot(dx,dz,dy);
     if(d>3) continue;
     const k=1-d/3; const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(1,0,0); dir.normalize();
-    const dmg=8*k*dmgMul(mn.owner)*defMul(p); p.damage+=dmg; credit(mn.owner,dmg); p.lastHitBy=mn.owner;
+    const dmg=8*k*dmgMul(mn.owner)*defMul(p)*pvpMul(mn.owner,p); p.damage+=dmg; credit(mn.owner,dmg); p.lastHitBy=mn.owner;   // ►F3b: tregua
     const kb=(5+p.damage*.08)*k*kbMul(mn.owner);
     p.vel.set(dir.x*kb, 4*k+2, dir.z*kb);
     p.hitstun=Math.max(p.hitstun,.25); p.onGround=false; p.hitFlash=.14; jiggle(p,10); sfx.hit(p.damage);
@@ -9341,8 +9352,8 @@ function updateEnergyOrbs(dt){
         const dx=pl.pos.x-c.x, dz=pl.pos.z-c.z, dy=(pl.pos.y+1)-c.y, d=Math.hypot(dx,dz,dy);
         if(d>ORB_R+.4) continue; any=true;
         const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
-        if(pl.block){ pl.damage+=ORB_DMG*.3*defMul(pl); pl.shieldFlash=.12; pl.vel.x+=dir.x*3; pl.vel.z+=dir.z*3; continue; }
-        const dmg=ORB_DMG*dmgMul(o.owner)*defMul(pl); pl.damage+=dmg; credit(o.owner,dmg); pl.lastHitBy=o.owner;
+        if(pl.block){ pl.damage+=ORB_DMG*.3*defMul(pl)*pvpMul(o.owner,pl); pl.shieldFlash=.12; pl.vel.x+=dir.x*3; pl.vel.z+=dir.z*3; continue; }   // ►F3b: tregua
+        const dmg=ORB_DMG*dmgMul(o.owner)*defMul(pl)*pvpMul(o.owner,pl); pl.damage+=dmg; credit(o.owner,dmg); pl.lastHitBy=o.owner;
         pl.hitstun=Math.max(pl.hitstun,.12); pl.hitFlash=.12;
         const kb=2.6*kbMul(o.owner); pl.vel.x+=dir.x*kb; pl.vel.z+=dir.z*kb;   // empuje suave: molesta pero puedes salir
         burst(pl.pos.clone().add(new THREE.Vector3(0,1,0)),0xb45cff,4,5,3,.6);
@@ -9448,10 +9459,10 @@ function spawnGroundLine(p, st){
   /* === golpe inicial a lo largo de la línea === */
   _corridor(p, f, FLINE_LEN, FLINE_W+.4, (o,isMin)=>{
     if(isMin){ hurtEnemy(o,st.hitMin*dmgMul(p),false); o.lastHitBy=p; o.vel.x+=f.x*4; o.vel.z+=f.z*4; o.hitstun=Math.max(o.hitstun,.18); o.onGround=false; return; }
-    if(o.block){ o.damage+=st.hitDmg*.3*defMul(o); o.shieldFlash=.18; o.vel.x+=f.x*4; o.vel.z+=f.z*4; return; }
-    const dmg=st.hitDmg*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
+    if(o.block){ o.damage+=st.hitDmg*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.18; o.vel.x+=f.x*4; o.vel.z+=f.z*4; return; }   // ►F3b: tregua
+    const dmg=st.hitDmg*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
     const kb=(6+o.damage*.07)*kbMul(p); o.vel.set(f.x*kb,2.6,f.z*kb); o.hitstun=Math.max(o.hitstun,.28); o.onGround=false; o.hitFlash=.18;
-    o.bleedT=BLEED_DUR; o.bleedFrom=p;
+    if(dmg>0){ o.bleedT=BLEED_DUR; o.bleedFrom=p; }   // ►F3b: sin sangrado en tregua
     burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),st.col,9,6,4,.9);
   });
   ring(o0.clone().add(new THREE.Vector3(0,.3,0)), st.col, 22, .4);
@@ -9611,9 +9622,9 @@ function updateFireLines(dt){
         if(Math.abs(o.pos.y-s.gy)>FLINE_VBAND) continue;
         const rx=o.pos.x-s.o.x, rz=o.pos.z-s.o.z, al=rx*s.f.x+rz*s.f.z; if(al<-.5||al>s.reach) continue;   // ►FXQ: solo quema lo YA encendido
         const perp=Math.hypot(rx-s.f.x*al, rz-s.f.z*al); if(perp>FLINE_W+.4) continue; any=true;
-        if(o.block){ o.damage+=st.tickDmg*.3*defMul(o); o.shieldFlash=.1; continue; }
-        const dmg=st.tickDmg*dmgMul(s.owner)*defMul(o); o.damage+=dmg; credit(s.owner,dmg); o.lastHitBy=s.owner;
-        o.hitstun=Math.max(o.hitstun,.08); o.hitFlash=.1; o.bleedT=Math.max(o.bleedT||0,.6); o.bleedFrom=s.owner;
+        if(o.block){ o.damage+=st.tickDmg*.3*defMul(o)*pvpMul(s.owner,o); o.shieldFlash=.1; continue; }   // ►F3b: tregua
+        const dmg=st.tickDmg*dmgMul(s.owner)*defMul(o)*pvpMul(s.owner,o); o.damage+=dmg; credit(s.owner,dmg); o.lastHitBy=s.owner;
+        o.hitstun=Math.max(o.hitstun,.08); o.hitFlash=.1; if(dmg>0){ o.bleedT=Math.max(o.bleedT||0,.6); o.bleedFrom=s.owner; }   // ►F3b: sin sangrado en tregua
         burst(o.pos.clone().add(new THREE.Vector3(0,.8,0)),st.col,3,4,3,.5);
       }
       for(const mn of minions){ if(mn.dead) continue;
@@ -9635,14 +9646,18 @@ function updateFireLines(dt){
 const minions = [], mprojs = [];
 let minionT = 2;
 function maxMinions(){
-  /* ►F3 · ARRANQUE LIMPIO (solo el PRIMER eslabón de la run): en caos 0 no hay horda — el
-     jugador aprende cinta+golpe sin nadie encima — y en caos 1 la horda entra por GOTEO.
+  /* ►F3 · ARRANQUE LIMPIO (solo el PRIMER eslabón de la run): la horda entra por GOTEO.
      La queja de la gente nueva no era la intensidad, era la ilegibilidad del segundo cero
      ("estresante visualmente"). Los demás eslabones re-rampan como siempre (►CHAOSRESET)
-     y NO se tocan; la demo de la home tampoco (quiere su enjambre de fondo). */
+     y NO se tocan; la demo de la home tampoco (quiere su enjambre de fondo).
+     ►F3b: el caos 0 VACÍO se retira — dejó al PvP como única actividad del segundo cero y los
+     jugadores se liaban a tortas nada más caer (queja de Toni, 16/08). Ahora en caos 0 hay UN
+     minion por luchador (minionDropSpot lo ancla al que menos tiene: cada uno con su lección
+     delante, sin horda) y el caos 1 sigue goteando desde ahí. */
   if(!demo && typeof RUTA_I!=='undefined' && RUTA_I===0){
-    if(chaosLvl===0) return 0;
-    if(chaosLvl===1) return Math.min(4, 1 + Math.floor(chaosT/6));
+    const base = Math.min(4, players.filter(q=>!q.out).length);
+    if(chaosLvl===0) return base;
+    if(chaosLvl===1) return Math.min(7, base + Math.floor(chaosT/6));
   }
   const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
 function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S1 (sin elite morado del desierto)
@@ -9653,7 +9668,7 @@ function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S
 const MINION_CAP = 160;            // capacidad del pool instanciado (tope DURO; maxMinions() debe quedar por debajo)
 const MIN_BODY_MAT = new THREE.MeshStandardMaterial({ color:0x26262b, roughness:.75, metalness:.05 });
 const MIN_DARK_MAT = new THREE.MeshStandardMaterial({ color:0x141417, roughness:.8,  metalness:.05 });
-const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0xff1a1a });
+const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0x7a1d18 });   // ►F3c: ojos APAGADOS (era 0xff1a1a puro — el color de máxima alarma ×20 entidades en lo MENOS importante de la pantalla; de cerca se siguen leyendo)
 const _MGEO = {
   body:new THREE.BoxGeometry(.7,.9,.5), head:new THREE.BoxGeometry(.62,.56,.56),
   eye:new THREE.BoxGeometry(.13,.13,.06), arm:new THREE.BoxGeometry(.17,.62,.17), leg:new THREE.BoxGeometry(.19,.5,.19),
@@ -10427,11 +10442,23 @@ function minionDropSpot(){
      El que cae en la orilla se convierte solo en tirador de largo alcance (ver ►PIRHORDA en
      updateMinion), así que sigue habiendo presión desde fuera sin que nadie intente cruzar el hueco. */
   const live = players.filter(p => p && !p.out);
-  const near = live.length && Math.random() < SPAWN_NEAR_CHANCE;   // se decide UNA vez por spawn
+  /* ►F3b · GOTEO REPARTIDO (eslabón 1, caos 0-1): el spawn se ancla SIEMPRE, y al luchador que
+     menos minions tiene cerca — cada jugador recibe SU minion delante. Es la mitad "incentivo"
+     del arranque sin tortas: con algo que pegar delante, nadie busca al de al lado. */
+  let forced = null;
+  if(!demo && typeof RUTA_I!=='undefined' && RUTA_I===0 && chaosLvl<=1 && live.length){
+    let bc = Infinity;
+    for(const a of live){
+      let c = 0;
+      for(const q of minions){ if(!q.dead && Math.hypot(q.pos.x-a.pos.x, q.pos.z-a.pos.z) < 18) c++; }
+      if(c < bc){ bc = c; forced = a; }
+    }
+  }
+  const near = forced || (live.length && Math.random() < SPAWN_NEAR_CHANCE);   // se decide UNA vez por spawn
   for(let i=0;i<24;i++){
     let x, z;
     if(near && i<16){                                    // …anclado al jugador (con distancia)
-      const a = live[(Math.random()*live.length)|0];
+      const a = forced || live[(Math.random()*live.length)|0];
       const ang = Math.random()*Math.PI*2, r = NEAR_R_MIN + Math.random()*(NEAR_R_MAX-NEAR_R_MIN);
       x = a.pos.x + Math.cos(ang)*r;
       z = a.pos.z + Math.sin(ang)*r;
@@ -14434,7 +14461,7 @@ function bruteAttach(mn){
       o.castShadow=true; o.frustumCulled=false;
     });
     const bs = _bossTpl.baseScale * BRUTE_SCALE_K;
-    if(typeof registerMinionSil === 'function') registerMinionSil(root);   // ►MINSIL: el élite también lleva outline de mapa
+    if(typeof registerMinionSil === 'function') registerMinionSil(root, true);   // ►MINSIL: el ÉLITE conserva el outline (es un evento, debe cantar — ►F3c la masa ya no lo lleva)
     inst = { root, mixer, acts, dur, cur:null, baseScale:bs, baseY:_bossTpl.baseY*BRUTE_SCALE_K };
   }
   bruteTint(inst);
@@ -15511,7 +15538,7 @@ function updateUlt(p, dt){
     if(d>r) continue;
     u.hit.add(o);
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(1,0,0); dir.normalize();
-    const dmg = ULT_DMG*dmgMul(p)*defMul(o); o.damage += dmg; credit(p, dmg); o.lastHitBy = p;
+    const dmg = ULT_DMG*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage += dmg; credit(p, dmg); o.lastHitBy = p;   // ►F3b: tregua
     const kb = (22 + o.damage*.18) * Math.max(.8, kbMul(p));
     o.vel.set(dir.x*kb, 12, dir.z*kb);              // ¡los manda MUY lejos!
     o.hitstun = .6; o.onGround=false; o.hang=null; o.hitFlash=.3; o.comboWindow=0;
@@ -15633,16 +15660,9 @@ const HOLD_CHEST_Y  = 1.05;   // altura del punto donde se clavan las manos (pec
 const FLINCH_MIN  = 0.12;     // s: suelo (un roce también se nota)
 const FLINCH_MAX  = 0.28;     // s: techo (no queremos un tambaleo largo)
 const FLINCH_AMP  = 1.0;      // multiplicador general de la sacudida (0 = apagada)
-/* ===== ►LTSHOVE · EMPUJÓN DE AGUANTE (LT en el SUELO) — SUSTITUYE al agarrar-y-pasear =============
-   Pedido de Toni: LT ya NO agarra al rival para pasearlo. Ahora, si tienes la barra de AGUANTE
-   LLENA, sueltas un EMPUJÓN FUERTE a quien tengas delante y a cambio te gastas la barra ENTERA:
-   queda VACÍA y PARPADEANDO ~3 s (STAM_CD) mientras se recarga, sin poder colgarte ni volver a
-   empujar hasta que se llene. En el aire LT sigue siendo el agarre de BORDE. ►►► AJUSTA ◄◄◄ */
-const SHOVE_RANGE = 3.4;      // alcance del empujón (cono delante)
-const SHOVE_ARC   = 0.45;     // cos del semiángulo del cono (~63°); solo empuja hacia donde MIRAS
-const SHOVE_PUSH  = 16;       // fuerza horizontal (fuerte: nivel "fuera de aquí", por encima del bate)
-const SHOVE_UP    = 5;        // pizca vertical (que despeguen, para que el empuje cuente para ring-out)
-const SHOVE_AREA  = 6.0;      // ►Toni: radio del ÁREA del empujón contra la HORDA (más ancho que el cono 1v1); aparta en recta a todos los minions de DELANTE
+/* ►LTSHOVE BORRADO (16/08, decisión de Toni): el empujón de aguante llevaba desenchufado desde el
+   11/08 (LT volvió a ser agarrar, ►FGGRAB) y se decidió NO recuperarlo — el carry ES el empujón.
+   La barra de aguante queda solo para lo suyo: borde + cargar + forcejear (►LTSTAM). */
 /* ===== ESCUDO (toque → burbuja de 5 s): vas lento, no atacas, empuja+daña a los de alrededor para
    apartarlos y pasar. No cancelable. Enfriamiento tras agotarse. ►►► AJUSTA ◄◄◄ */
 const SHIELD_DUR = 5;        // s que dura el escudo
@@ -15717,8 +15737,8 @@ function updateSpin(p, dt){
       const dx=o2.pos.x-p.pos.x, dz=o2.pos.z-p.pos.z, d=Math.hypot(dx,dz);
       if(d>SPIN_R) continue;
       any = true;
-      if(o2.block){ o2.damage += dmgTick*.3*defMul(o2); o2.shieldFlash=.15; sfx.chip(); continue; }   // el bloqueo aguanta
-      const dmg = dmgTick*dmgMul(p)*defMul(o2);
+      if(o2.block){ o2.damage += dmgTick*.3*defMul(o2)*pvpMul(p,o2); o2.shieldFlash=.15; sfx.chip(); continue; }   // el bloqueo aguanta · ►F3b: tregua
+      const dmg = dmgTick*dmgMul(p)*defMul(o2)*pvpMul(p,o2);
       o2.damage += dmg; credit(p, dmg); o2.lastHitBy = p; addPower(p, dmg*.4);
       const dir = new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(1,0,0); dir.normalize();
       const kb = (2.4 + o2.damage*.045) * Math.max(.6, kbMul(p));   // EMPUJE SUAVE: no es herramienta de ring-out
@@ -15759,7 +15779,7 @@ function updateShield(p, dt){
     any = true;
     const dir = new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(Math.sin(p.yaw),0,Math.cos(p.yaw)); dir.normalize();
     if(o.block){ o.shieldFlash = .15; }                          // escudo contra escudo: solo se apartan, sin daño
-    else { const dmg = SHIELD_DMG*dmgMul(p)*defMul(o); o.damage += dmg; credit(p, dmg); o.lastHitBy = p;
+    else { const dmg = SHIELD_DMG*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage += dmg; credit(p, dmg); o.lastHitBy = p;   // ►F3b: tregua
       o.hitstun = Math.max(o.hitstun, .12); o.hitFlash = .12; addPower(p, dmg*.3);
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)), p.color, 4, 5, 3, .5); }
     o.vel.x += dir.x*SHIELD_PUSH; o.vel.z += dir.z*SHIELD_PUSH; o.vel.y = Math.max(o.vel.y, 2.2);
@@ -15808,7 +15828,7 @@ function updateCounter(p, dt){
     const last = c.hits>=COUNTER_HITS;
     const dir = new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(Math.sin(p.yaw),0,Math.cos(p.yaw)); dir.normalize();
     const vc = tg.pos.clone().add(new THREE.Vector3(0,1,0));
-    const dmg = (COUNTER_DMG/COUNTER_HITS)*dmgMul(p)*defMul(tg);
+    const dmg = (COUNTER_DMG/COUNTER_HITS)*dmgMul(p)*defMul(tg)*pvpMul(p,tg);   // ►F3b: tregua
     tg.damage += dmg; credit(p, dmg); tg.lastHitBy = p; addPower(p, dmg);
     if(last){                                            // último golpe: LANZADOR
       const kb = (12 + tg.damage*0.2)*kbMul(p);
@@ -15836,13 +15856,13 @@ function beamHit(p){
   const perp = rel.addScaledVector(f, -along).length();
   if(perp > BEAM_R + .45) return;
   if(vic.block){                          // se puede aguantar bloqueando
-    vic.damage += .8*spellMul(p)*defMul(vic);
+    vic.damage += .8*spellMul(p)*defMul(vic)*pvpMul(p,vic);   // ►F3b: tregua
     vic.vel.x += f.x*4; vic.vel.z += f.z*4;
     vic.shieldFlash = .2;
     sfx.chip();
     return;
   }
-  vic.damage += 2.4*spellMul(p)*defMul(vic); credit(p, 2.4*spellMul(p)); vic.lastHitBy = p;   // RAYO: hechizo → spellMul (mago pega fuerte)
+  vic.damage += 2.4*spellMul(p)*defMul(vic)*pvpMul(p,vic); credit(p, 2.4*spellMul(p)*pvpMul(p,vic)); vic.lastHitBy = p;   // RAYO: hechizo → spellMul (mago pega fuerte) · ►F3b: tregua
   addPower(vic, 1.4);
   const kbm = Math.max(.78, kbMul(p));
   vic.vel.set(f.x*(11+vic.damage*.07)*kbm, 2.6, f.z*(11+vic.damage*.07)*kbm); // lo arrastra
@@ -16019,6 +16039,37 @@ function updateSofa(){
     _sofaI++;
     if(_sofaI >= _SOFA_L.length){ saveBump(s=>s.sofaDone=true); _sofaI = -2; }
   }
+}
+/* ►F3b · ESCUDO PVP DEL ARRANQUE (queja de Toni 16/08: "empiezan a repartirse tortas demasiado
+   rápido, todos juntos"). Los primeros PVP_SHIELD_T s del eslabón 1 los golpes ENTRE jugadores
+   responden (empujón, flash, hitstun, sonido) pero hacen DAÑO 0 — applyHit lo anula en el embudo.
+   Simétrico → sirve igual online (lo simula el host); contra minions, daño normal desde el
+   segundo cero. A los 17 s cae con un POP en cada luchador, sincronizado con la 3ª frase del
+   sofá ("EL ÚLTIMO EN PIE…"): la frase es el pistoletazo. En runs posteriores, banner corto. */
+const PVP_SHIELD_T = 17;
+function pvpShield(){
+  return running && !demo && !TRAIN.on && !bossActive
+         && typeof RUTA_I!=='undefined' && RUTA_I===0 && matchT < PVP_SHIELD_T;
+}
+/* multiplicador de daño jugador→jugador: 0 durante la tregua, 1 el resto de la vida. applyHit lo
+   aplica en el embudo, pero MEDIO combate va por fuera (esquirlas, wprojs, orbes, Q, súpers, extras
+   del combo cargado, lanzamiento del agarre…): cada una de esas vías multiplica su dmg por esto.
+   Minions y jefes no están en `players` → siempre 1. */
+function pvpMul(att, vic){
+  return (pvpShield() && att && vic && players.indexOf(att) >= 0 && players.indexOf(vic) >= 0) ? 0 : 1;
+}
+let _pvpPopDone = true;   // se arma al entrar en escudo; el pop dispara UNA vez al caer
+function updatePvpShieldFX(){
+  if(pvpShield()){ _pvpPopDone = false; return; }
+  if(_pvpPopDone) return;
+  _pvpPopDone = true;
+  if(demo || TRAIN.on || !running) return;   // se salió al menú a media tregua: sin fuegos
+  for(const p of players){
+    if(p.out || p.dead) continue;
+    const c = p.pos.clone().add(new THREE.Vector3(0, 1.2, 0));
+    ring(c, p.color, 16, .5); burst(c, p.color, 10, 6, 5, .8);
+  }
+  if(saveGet().sofaDone) showBanner('¡A PELEAR!', 1.6);   // la 1ª run ya tiene su frase justo aquí
 }
 /* ►INTERSTAGE: FUNDIDO A NEGRO reutilizable (antes no existía ninguno: los overlays eran un display
    none↔flex a pelo y el cambio de stage era un corte seco).
@@ -16572,8 +16623,8 @@ function releaseGrab(p, throwIt){
     v.vel.set(dir.x*f, up, dir.z*f);
     v.onGround = false; v.hang = null; v.hitstun = Math.max(v.hitstun, .30 + .30*k); v.hitFlash = .16;
     v.comboWindow = 0; v.comboStage = 0;
-    v.damage += THROW_DMG * dmgMul(p) * defMul(v);   // el impacto en sí es flojo: el valor está en DÓNDE lo dejas
-    credit(p, THROW_DMG); v.lastHitBy = p;
+    v.damage += THROW_DMG * dmgMul(p) * defMul(v) * pvpMul(p,v);   // el impacto en sí es flojo: el valor está en DÓNDE lo dejas · ►F3b: tregua
+    credit(p, THROW_DMG*pvpMul(p,v)); v.lastHitBy = p;
     addPower(p, 10);
     p._tossT = THROW_POSE_T;                         // pose/clip de lanzar (si el personaje lo tiene)
     jiggle(v, 12 + 12*k);
@@ -16637,55 +16688,7 @@ function tryGrabPlayer(p){
   return true;
 }
 
-/* ⚠️ YA NO ESTÁ ENCHUFADO (11/08): LT en el suelo volvió a ser AGARRAR (►FGGRAB) y el empujón ahora
-   sale AL SOLTAR al rival, proporcional al rato que lo tuviste. Se conserva la función por si Toni
-   quiere recuperar el empujón suelto en otro botón; si se decide que no, se borra entera.
-   ►LTSHOVE · EMPUJÓN: gasta TODA la barra de aguante (queda vacía y parpadeando STAM_CD s) y a cambio
-   suelta un empujón FUERTE hacia donde MIRAS. Hace falta la barra LLENA. ►Toni: a un RIVAL (jugador) lo
-   empuja INDIVIDUAL (sin área); a la HORDA le hace efecto de ÁREA hacia delante (aparta a los minions
-   cercanos de delante en línea recta, sin destruirlos, nada detrás). */
-function staminaShove(p){
-  if(p.stamLock || p.stam < STAM_MAX){ sfx.deny(); return false; }   // sin la barra llena, no sale
-  if(p.dead || p.out || p.hang || p.hitstun>0 || p.stun>0 || p.dashT>0 || !p.onGround) return false;
-  if(_grabImmune(p)) return false;                                   // ni en mitad de TU propio especial
-  p.stam = 0; p.stamLock = true;                                     // gasta la barra ENTERA → recarga+parpadeo STAM_CD s
-  p.sc.specials++;
-  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);                  // hacia donde MIRAS
-  let any = false;
-  for(const v of players){
-    if(v===p || v.dead || v.out || v.invuln>0) continue;
-    if(Math.abs(v.pos.y - p.pos.y) > 1.8) continue;                 // mismo nivel
-    const dx=v.pos.x-p.pos.x, dz=v.pos.z-p.pos.z, d=Math.hypot(dx,dz);
-    if(d>SHOVE_RANGE || d<0.01) continue;
-    if((dx*fx + dz*fz)/d < SHOVE_ARC) continue;                     // fuera del cono de delante
-    any = true;
-    const nx=dx/d, nz=dz/d, f = SHOVE_PUSH * kbMul(p);
-    v.vel.set(nx*f, SHOVE_UP, nz*f);
-    v.onGround = false; v.hitstun = Math.max(v.hitstun, .35); v.hitFlash = .12;
-    v.comboWindow = 0; v.comboStage = 0; v.hang = null;
-    jiggle(v, 15);
-    burst(v.pos.clone().add(new THREE.Vector3(0,.8,0)), v.color, 12, 6, 4, .7);
-    ring(v.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 12, .35);
-  }
-  /* ►Toni: EMPUJÓN a la HORDA = efecto de ÁREA hacia DELANTE. Aparta (NO destruye) a TODOS los minions
-     cercanos que tengas DELANTE, empujándolos en LÍNEA RECTA hacia donde MIRAS (no radial). El semiplano
-     frontal (dot>0) hace que NADA de detrás del jugador se vea afectado. A un JUGADOR no le hace área:
-     solo se empuja al rival del cono (bucle de arriba). */
-  for(const mn of minions){
-    if(mn.dead || mn.invuln>0) continue;
-    const dx=mn.pos.x-p.pos.x, dz=mn.pos.z-p.pos.z, d=Math.hypot(dx,dz);
-    if(d>SHOVE_AREA + 0.5*mn.scale || d<0.01) continue;             // dentro del ÁREA
-    if((dx*fx + dz*fz) <= 0) continue;                              // SOLO lo que tienes DELANTE (semiplano frontal); nada detrás
-    mn.vel.x += fx*SHOVE_PUSH*0.9; mn.vel.z += fz*SHOVE_PUSH*0.9;   // recta hacia donde miras (todos en la MISMA dirección)
-    mn.vel.y = Math.max(mn.vel.y, 5);
-    mn.hitstun = Math.max(mn.hitstun, .2); mn.onGround = false;
-    burst(mn.pos.clone().add(new THREE.Vector3(0,.5,0)), 0xffffff, 4, 3, 2, .4);
-  }
-  addPower(p, any ? 6 : 0);                                          // acertar da algo de barra (poco: no es pegar)
-  sfx.swing(); showCombo(p, '¡EMPUJÓN!'); camKick(fx, fz, .5); shake = Math.max(shake, .25);
-  burst(p.pos.clone().add(new THREE.Vector3(fx*1.2, .8, fz*1.2)), p.color, 8, 5, 3, .6);
-  return true;
-}
+/* ►LTSHOVE BORRADO (16/08): estaba huérfano desde el 11/08 y Toni decidió no recuperarlo. */
 
 /* ===== ►FGBUMP (14/08, petición de Toni) · LOS CUERPOS ESTORBAN ==================================
    Hasta ahora luchadores y minions se ATRAVESABAN: seis personajes cabían en el mismo punto y una
@@ -16930,7 +16933,7 @@ function barbSlamHit(p){
     if(Math.abs(p.pos.y - o.pos.y) > VHIT_BAND) continue;   // ►#4: el pisotón es a ras de su nivel (no alcanza otros pisos)
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(1,0,0); dir.normalize();
     if(o.block){ o.shieldFlash=.2; continue; }
-    const dmg=(p._pkQuake?20:14)*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
+    const dmg=(p._pkQuake?20:14)*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;   // ►F3b: tregua
     const kb=(8+o.damage*.12)*kbMul(p); o.vel.set(dir.x*kb, 6, dir.z*kb);
     o.hitstun=.4; o.onGround=false; o.hitFlash=.2;
     bigHitFX(o.pos.clone().add(new THREE.Vector3(0,1,0)), o, dmg, p.color);
@@ -16991,8 +16994,8 @@ function updateStorm(p,dt){
     for(let k=0;k<3;k++){ const a=p.yaw + k*2.1 + Math.random()*.5;
       burst(oc.clone().add(new THREE.Vector3(Math.sin(a)*R, .2+Math.random()*1.3, Math.cos(a)*R)), new THREE.Color().setHSL(Math.random(),1,.6).getHex(), 2, 7, 2, .55); }
     for(const o of players){ if(o===p||o.dead||o.invuln>0)continue; const dx=o.pos.x-p.pos.x,dz=o.pos.z-p.pos.z,d=Math.hypot(dx,dz); if(d>R)continue; any=true;
-      if(o.block){ o.damage+=STORM_DMG*.3*defMul(o); o.shieldFlash=.12; continue; }
-      const dmg=STORM_DMG*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.bleedT=BLEED_DUR; o.bleedFrom=p;
+      if(o.block){ o.damage+=STORM_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.12; continue; }   // ►F3b: tregua
+      const dmg=STORM_DMG*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; if(dmg>0){ o.bleedT=BLEED_DUR; o.bleedFrom=p; }
       const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize(); o.vel.x+=dir.x*3.5; o.vel.z+=dir.z*3.5; o.vel.y=Math.max(o.vel.y,2); o.hitstun=Math.max(o.hitstun,.12); o.hitFlash=.12;
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),0xeaf0ff,4,5,3,.5);
     }
@@ -17076,8 +17079,8 @@ function updateBastion(p,dt){
       if(Math.abs(o.pos.y-p.pos.y)>BAST_VBAND) continue;   // a ras de suelo: ignora a quien está en plataformas/zonas superiores (o saltando alto)
       any=true;
       const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
-      if(o.block){ o.damage+=BAST_DMG*.3*defMul(o); o.shieldFlash=.12; o.vel.x+=dir.x*3; o.vel.z+=dir.z*3; continue; }
-      const dmg=BAST_DMG*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
+      if(o.block){ o.damage+=BAST_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.12; o.vel.x+=dir.x*3; o.vel.z+=dir.z*3; continue; }   // ►F3b: tregua
+      const dmg=BAST_DMG*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
       const kb=(5+o.damage*.08)*kbMul(p); o.vel.x+=dir.x*kb; o.vel.z+=dir.z*kb; o.vel.y=Math.max(o.vel.y,2.2); o.hitstun=Math.max(o.hitstun,.16); o.hitFlash=.12;
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),0x5ec8ff,4,5,3,.5); }
     for(const mn of minions){ if(mn.dead)continue; const dx=mn.pos.x-p.pos.x,dz=mn.pos.z-p.pos.z,d=Math.hypot(dx,dz); if(d>R)continue; if(Math.abs(mn.pos.y-p.pos.y)>BAST_VBAND) continue; hurtEnemy(mn,24*dmgMul(p),false); mn.lastHitBy=p; const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize(); mn.vel.x+=dir.x*6; mn.vel.z+=dir.z*6; mn.hitstun=Math.max(mn.hitstun,.2); mn.onGround=false; }
@@ -17114,8 +17117,8 @@ function updateZone(p,dt){
   z.tick-=dt;
   if(z.tick<=0){ z.tick=ZONE_TICK; let any=false;
     for(const o of players){ if(o===p||o.dead||o.invuln>0) continue; const dx=o.pos.x-z.x,dz=o.pos.z-z.z; if(Math.hypot(dx,dz)>ZONE_R)continue; any=true;
-      if(o.block){ o.damage+=ZONE_DMG*.3*defMul(o); o.shieldFlash=.12; continue; }
-      const dmg=ZONE_DMG*spellMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.16); o.hitFlash=.12; o.vel.y=Math.max(o.vel.y,2.2);
+      if(o.block){ o.damage+=ZONE_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.12; continue; }   // ►F3b: tregua
+      const dmg=ZONE_DMG*spellMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.16); o.hitFlash=.12; o.vel.y=Math.max(o.vel.y,2.2);
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),0x60ff90,5,5,3,.6);
     }
     for(const mn of minions){ if(mn.dead)continue; const dx=mn.pos.x-z.x,dz=mn.pos.z-z.z; if(Math.hypot(dx,dz)>ZONE_R)continue; hurtEnemy(mn,ZONE_DMG*1.6*spellMul(p),true); mn.lastHitBy=p; mn.hitstun=Math.max(mn.hitstun,.18); }
@@ -17146,8 +17149,8 @@ function updateFireShield(p,dt){
   if(s.tick<=0){ s.tick=FSHIELD_TICK; let any=false;
     for(const o of players){ if(o===p||o.dead||o.invuln>0) continue; const dx=o.pos.x-p.pos.x,dz=o.pos.z-p.pos.z,d=Math.hypot(dx,dz); if(d>FSHIELD_R+.5)continue; any=true;
       const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
-      if(o.block){ o.damage+=FSHIELD_DMG*.3*defMul(o); o.shieldFlash=.12; o.vel.x+=dir.x*4; o.vel.z+=dir.z*4; continue; }
-      const dmg=FSHIELD_DMG*dmgMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.10); o.hitFlash=.12;
+      if(o.block){ o.damage+=FSHIELD_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.12; o.vel.x+=dir.x*4; o.vel.z+=dir.z*4; continue; }   // ►F3b: tregua
+      const dmg=FSHIELD_DMG*dmgMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.10); o.hitFlash=.12;
       const kb=(2.4+o.damage*.03)*kbMul(p); o.vel.x+=dir.x*kb; o.vel.z+=dir.z*kb;   // empuje suave (antes (5+dmg*.07)+pop vertical → era imposible acercarse)
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),0xff7a1a,4,5,3,.6);
     }
@@ -17193,8 +17196,8 @@ function updateHealDisc(p,dt){
   if(z.tick<=0){ z.tick=HDISC_TICK; let any=false;
     for(const o of players){ if(o===p||o.dead||o.invuln>0)continue; const dx=o.pos.x-p.pos.x,dz=o.pos.z-p.pos.z,d=Math.hypot(dx,dz); if(d>_R)continue; any=true;
       const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
-      if(o.block){ o.damage+=HDISC_DMG*.3*defMul(o); o.shieldFlash=.12; continue; }
-      const dmg=HDISC_DMG*spellMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.14); o.hitFlash=.12; o.vel.x+=dir.x*3; o.vel.z+=dir.z*3; o.vel.y=Math.max(o.vel.y,1.8);
+      if(o.block){ o.damage+=HDISC_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.12; continue; }   // ►F3b: tregua
+      const dmg=HDISC_DMG*spellMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; o.hitstun=Math.max(o.hitstun,.14); o.hitFlash=.12; o.vel.x+=dir.x*3; o.vel.z+=dir.z*3; o.vel.y=Math.max(o.vel.y,1.8);
       burst(o.pos.clone().add(new THREE.Vector3(0,1,0)),0x4aa8ff,4,5,3,.6);
     }
     for(const mn of minions){ if(mn.dead)continue; const dx=mn.pos.x-p.pos.x,dz=mn.pos.z-p.pos.z; if(Math.hypot(dx,dz)>_R)continue; hurtEnemy(mn,HDISC_DMG*1.6*spellMul(p),true); mn.lastHitBy=p; mn.hitstun=Math.max(mn.hitstun,.15); }
@@ -17248,8 +17251,8 @@ function _chainHit(att, t, dmg){
   const tc = t.pos.clone().add(new THREE.Vector3(0,1,0));
   burst(tc, 0xeafcff, 8, 5, 4, .7); ring(tc, CHAIN_COL, 12, .25);   // chispazo en el objetivo
   if(players.includes(t)){
-    if(t.block){ t.shieldFlash=.2; t.damage += dmg*.3*defMul(t); return; }
-    const d = dmg*spellMul(att)*defMul(t); t.damage += d; credit(att, d); t.lastHitBy = att;
+    if(t.block){ t.shieldFlash=.2; t.damage += dmg*.3*defMul(t)*pvpMul(att,t); return; }   // ►F3b: tregua
+    const d = dmg*spellMul(att)*defMul(t)*pvpMul(att,t); t.damage += d; credit(att, d); t.lastHitBy = att;
     t.hitstun = Math.max(t.hitstun, .22); t.stun = Math.max(t.stun, .12); t.hitFlash = .15; t.vel.y = Math.max(t.vel.y, 2.4);
   } else {
     hurtEnemy(t, dmg*spellMul(att), true); t.lastHitBy = att; t.hitstun = Math.max(t.hitstun, .2); t.onGround = false;
@@ -17262,8 +17265,8 @@ function _skyStrike(p, sx, sz, f){   // ►SKYBOLT: un rayo verde cae en (sx,sz)
   skyBoltFX(sx, sz, STRIKE_COL, p ? p.pos.y : undefined);   // ►PIRFXY: el rayo cae sobre el suelo del LANZADOR (cubierta), no sobre y=0
   for(const o of players){ if(o===p||o.dead||o.invuln>0) continue; const dx=o.pos.x-sx, dz=o.pos.z-sz; if(Math.hypot(dx,dz)>STRIKE_R) continue;
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(f.x,0,f.z); dir.normalize();
-    if(o.block){ o.damage+=STRIKE_DMG*.3*defMul(o); o.shieldFlash=.2; continue; }
-    const dmg=STRIKE_DMG*spellMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
+    if(o.block){ o.damage+=STRIKE_DMG*.3*defMul(o)*pvpMul(p,o); o.shieldFlash=.2; continue; }   // ►F3b: tregua
+    const dmg=STRIKE_DMG*spellMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p;
     o.hitstun=Math.max(o.hitstun,.3); o.stun=Math.max(o.stun,.14); o.hitFlash=.16;
     const kb=(6+o.damage*.06)*kbMul(p); o.vel.set(dir.x*kb, 5.2, dir.z*kb); o.onGround=false;
     bigHitFX(o.pos.clone().add(new THREE.Vector3(0,1,0)), o, dmg, STRIKE_COL);
@@ -17301,7 +17304,7 @@ function priestNovaF(p){   // Sacerdotisa: DESTELLO SAGRADO — nova radial + au
   const oc=p.pos.clone().add(new THREE.Vector3(0,.6,0)); ring(oc,0xffe9a8,p._pkBigNova?32:22,.5); burst(oc,0xffe9a8,18,6,4,1.0);
   _radial(p,_nr,(o,mn,dx,dz)=>{ const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01)dir.set(1,0,0); dir.normalize();
     if(mn){ hurtEnemy(o,26*spellMul(p),true); o.lastHitBy=p; o.vel.set(dir.x*6,4,dir.z*6); o.hitstun=.25; o.onGround=false; return; }
-    if(o.block){o.shieldFlash=.2;return;} const dmg=10*spellMul(p)*defMul(o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; const kb=(7+o.damage*.1)*kbMul(p); o.vel.set(dir.x*kb,5,dir.z*kb); o.hitstun=.3; o.onGround=false; bigHitFX(o.pos.clone().add(new THREE.Vector3(0,1,0)),o,dmg,0xffe9a8); });
+    if(o.block){o.shieldFlash=.2;return;} const dmg=10*spellMul(p)*defMul(o)*pvpMul(p,o); o.damage+=dmg; credit(p,dmg); o.lastHitBy=p; const kb=(7+o.damage*.1)*kbMul(p); o.vel.set(dir.x*kb,5,dir.z*kb); o.hitstun=.3; o.onGround=false; bigHitFX(o.pos.clone().add(new THREE.Vector3(0,1,0)),o,dmg,0xffe9a8); });
   p.damage=Math.max(0,p.damage-(p._pkBigNova?36:20)); sfx.parry(); p._novaPoseT=.5; showCombo(p,'¡DESTELLO SAGRADO!'); return true;   // _novaPoseT = pose de la Nova (anim witch; = NUN_WIN.fnova)
 }
 /* ---- Q (tecla Q): CARGADOR de 10 disparos seguidos + recarga (todas las clases de proyectil) ---- */
@@ -17472,7 +17475,11 @@ function localHitstop(a, b, dur){
 const _hitDir = new THREE.Vector3();
 function applyHit(att, vic, o){
   o = o || {};
-  const dmg = (o.base||0) * (o.spell ? spellMul(att) : dmgMul(att)) * (o.mul!=null?o.mul:1) * defMul(vic);
+  let dmg = (o.base||0) * (o.spell ? spellMul(att) : dmgMul(att)) * (o.mul!=null?o.mul:1) * defMul(vic);
+  /* ►F3b · ESCUDO PVP: en la tregua del eslabón 1 el golpe jugador→jugador RESPONDE (todo lo de
+     abajo sigue: empujón con vic.damage≈0, flash blanco, hitstun) pero no hiere ni da crédito/poder
+     (dmg 0 en la fuente). Minions y jefe no son `players` → intactos. */
+  dmg *= pvpMul(att, vic);
   vic.damage += dmg;
   if(o.credit !== false){ credit(att, dmg); vic.lastHitBy = att; }
   if(o.powAtt) addPower(att, o.powAtt * dmg);
@@ -17614,7 +17621,7 @@ function resolveHit(att, vic){
     if(vic.block){
       if(e > .8){                                   // fuerza bruta total: revienta la guardia
         vic.block = false; vic.blockT = 9; vic.shieldT = 0; vic.shieldCD = SHIELD_CD;
-        vic.damage += (16+30*e)*dmgMul(att)*defMul(vic);
+        vic.damage += (16+30*e)*dmgMul(att)*defMul(vic)*pvpMul(att,vic);   // ►F3b: tregua
         addPower(att, 26);
         const kb = (8 + vic.damage*0.16) * (1.4+1.8*e) * kbMul(att);
         vic.vel.set(dir.x*kb, 9, dir.z*kb);
@@ -17623,7 +17630,7 @@ function resolveHit(att, vic){
         ring(vc, 0xffd84f, 22, .5); burst(vc, 0xffd84f, 26, 10, 8, 1.2); jiggle(vic, 26);
         sfx.crack(); sfx.brute(); showCombo(att, '¡GUARDIA HECHA AÑICOS!');
       } else {                                      // carga parcial contra bloqueo: chip + empujón
-        vic.damage += (10+50*e)*0.3*dmgMul(att)*defMul(vic);
+        vic.damage += (10+50*e)*0.3*dmgMul(att)*defMul(vic)*pvpMul(att,vic);   // ►F3b: tregua
         const kb = (5 + vic.damage*0.1) * (1+1.5*e) * kbMul(att);
         vic.vel.x += dir.x*kb; vic.vel.z += dir.z*kb;
         att.vel.x -= dir.x*2;  att.vel.z -= dir.z*2;
@@ -17654,7 +17661,7 @@ function resolveHit(att, vic){
   /* --- ESPADA: daño como el martillo + SANGRADO (5s subiéndote el daño) --- */
   if(att.atk.kind==='sword'){
     if(vic.block){
-      vic.damage += 3*dmgMul(att)*defMul(vic);
+      vic.damage += 3*dmgMul(att)*defMul(vic)*pvpMul(att,vic);   // ►F3b: tregua
       vic.vel.x += dir.x*3.5; vic.vel.z += dir.z*3.5; att.vel.x -= dir.x*2; att.vel.z -= dir.z*2;
       vic.shieldFlash = .22; jiggle(vic, 8); localHitstop(att, vic, .03); sfx.chip(); return;
     }
@@ -17673,7 +17680,7 @@ function resolveHit(att, vic){
   /* --- BATE: un poco más de daño que el martillo y KNOCKBACK enorme (más que la bazooka) --- */
   if(att.atk.kind==='bat'){
     if(vic.block){
-      vic.damage += 4*dmgMul(att)*defMul(vic);
+      vic.damage += 4*dmgMul(att)*defMul(vic)*pvpMul(att,vic);   // ►F3b: tregua
       vic.vel.x += dir.x*5; vic.vel.z += dir.z*5; vic.shieldFlash = .24; jiggle(vic, 10); localHitstop(att, vic, .04); sfx.chip(); return;
     }
     const dmg = applyHit(att, vic, {                 // ►HIT · ¡fuera del ring!
@@ -17708,7 +17715,7 @@ function resolveHit(att, vic){
 
   /* --- BLOQUEO mantenido: reduce mucho el daño y el empuje --- */
   if(vic.block){
-    vic.damage += C_DMG[att.comboStage]*0.3*dmgMul(att)*defMul(vic);
+    vic.damage += C_DMG[att.comboStage]*0.3*dmgMul(att)*defMul(vic)*pvpMul(att,vic);   // ►F3b: tregua
     vic.vel.x += dir.x*3.5; vic.vel.z += dir.z*3.5;
     att.vel.x -= dir.x*2;   att.vel.z -= dir.z*2;   // rebote del atacante
     vic.shieldFlash = .22;
@@ -17870,7 +17877,13 @@ function safeSpawn(p){            // reaparece CAYENDO sobre la franja central s
     }
   }
   const idx = Math.max(0, players.indexOf(p));
-  let px = THREE.MathUtils.clamp((idx - (players.length-1)/2) * 5, -14, 14);   // SIEMPRE dentro de la franja central sólida
+  /* ►F3b · ARRANQUE ESPARCIDO: en el spawn INICIAL del eslabón 1 (matchT aún a 0) los luchadores
+     caen repartidos — paso 9 en X (antes 5) y zigzag en Z — para que cada uno tenga su burbuja
+     de aprendizaje y el encuentro llegue andando, no de serie. Respawns y demás stages, como antes. */
+  const _spread1 = !demo && matchT<=0 && typeof RUTA_I!=='undefined' && RUTA_I===0
+                   && !(typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none');
+  let px = THREE.MathUtils.clamp((idx - (players.length-1)/2) * (_spread1 ? 9 : 5), -14, 14);   // SIEMPRE dentro de la franja central sólida
+  const pz0 = _spread1 ? (idx % 2 ? 6 : -6) : 0;
   /* ►RONDA6c fix "al respawnear me deslizo y caigo" + ►FIX respawn-al-vacío (S1/S2/S4):
      1) Validación de COLUMNA DE CAÍDA: la plataforma MÁS ALTA que cubre (x,z) — la que te recibe
         de verdad (groundAt coge la más alta) — debe ser ANCHA (≥3×3), BAJA (topY<6) y sólida.
@@ -17933,8 +17946,8 @@ function safeSpawn(p){            // reaparece CAYENDO sobre la franja central s
       return;
     }
   }
-  if(!found && ok(px, 0)){ sx = px; sz = 0; found = true; }
-  if(!found){ outer: for(const dz of [0, 4, -4, 7, -7]){
+  if(!found && ok(px, pz0)){ sx = px; sz = pz0; found = true; }
+  if(!found){ outer: for(const dz of [pz0, 0, 4, -4, 7, -7]){
     for(const dx of [0, 3, -3, 6, -6, 9, -9, 12, -12, 16, -16, 20, -20, 24, -24]){
       if(ok(px+dx, dz)){ sx = px+dx; sz = dz; found = true; break outer; } } } }
   if(!found){                                     // último recurso REAL: plataforma válida más cercana al centro
@@ -19106,6 +19119,12 @@ function aiThink(p, dt){
        limpia la amenaza que te mata y suma PUNTOS (mk). Los jugadores siguen valiendo (bajas = muchos
        puntos), pero elegimos según cercanía para sobrevivir y puntuar en vez de perseguir sin más. */
     let tgt = (e && !e.dead) ? e : null, tgtMin = false;
+    /* ►F3b · TREGUA DE IA: durante el escudo PvP del eslabón 1 la CPU no marca jugadores — va a
+       por SU minion del goteo (radio ampliado: le sirve cualquiera del reparto). Con el escudo
+       puesto, un bot machacándote a daño 0 se vería roto; y verla pegar a minions es la demo en
+       vivo de "esto va de pegar a esos". */
+    const _tregua = pvpShield();
+    if(_tregua) tgt = null;
     let mn = null, mnD = 1e9;
     for(const q of minions){
       if(q.dead || q.type==='boss' || q._add || q.invuln>0) continue;
@@ -19113,7 +19132,7 @@ function aiThink(p, dt){
       const d = Math.hypot(me.pos.x-q.pos.x, me.pos.z-q.pos.z);
       if(d<mnD){ mnD = d; mn = q; }
     }
-    if(mn && mnD < 15 && (!tgt || mnD < eDist - 1.5)){ tgt = mn; tgtMin = true; }
+    if(mn && mnD < (_tregua ? 45 : 15) && (!tgt || mnD < eDist - 1.5)){ tgt = mn; tgtMin = true; }
     if(!tgt){ ai.dir.set(0,0,0); return ai.dir; }                    // no queda nadie a quien pegar → quieta (sobrevive)
 
     const to = tgt.pos.clone().sub(me.pos); to.y = 0;
@@ -19576,7 +19595,7 @@ function updateFighter(p, dt){
     if(Math.random()<.8){ const _rc=[0xff3b30,0xff9500,0xffd23a,0x34c759,0x0a84ff,0x5e5ce6][Math.floor(Math.random()*6)];
       burst(_fxV.set(p.pos.x+(Math.random()-.5)*.6, p.pos.y+.6+Math.random()*1.2, p.pos.z+(Math.random()-.5)*.6),
         _rc, 1, 1.4, 2.2, .5); } }   // ►PERF2: scratch (efecto POR FRAME)
-  if(p.bleedT>0){ p.bleedT -= dt; p.damage += BLEED_DPS*dt;        // SANGRADO de la espada
+  if(p.bleedT>0){ p.bleedT -= dt; p.damage += BLEED_DPS*dt*pvpMul(p.bleedFrom||null, p);        // SANGRADO de la espada · ►F3b: tregua
     if(Math.random()<.35) burst(_fxV.set(p.pos.x, p.pos.y+1, p.pos.z), 0xff2244, 1, 1.5, 1, .4); }
   if(hasPas(p,'spikes')){ p.spikeT -= dt; if(p.spikeT<=0){ p.spikeT = 3; emitSpikes(p); } }   // PINCHOS cada 3s
   if(hasPas(p,'elec') && Math.random()<.55) burst(_fxV.set(p.pos.x+(Math.random()-.5)*.7, p.pos.y+.4+Math.random()*1.4, p.pos.z+(Math.random()-.5)*.7), Math.random()<.5?0xffe23a:0xaffaff, 1, 1.2, 1.4, .4);   // ELEC: chispas visibles
@@ -19613,7 +19632,7 @@ function updateFighter(p, dt){
     if(atkBtn) p._atkHoldT += dt;
     if(p.weapon){ if(atkPress) p.atkBuf = .25; }                          // con arma: al pulsar
     else if(!p.onGround){ if(atkPress) p.atkBuf = .25; }                  // EN EL AIRE: golpe directo al PULSAR (la carga es solo de suelo → antes el aire se "comía" el ataque)
-    else if(atkRel && !p.charge && p._atkHoldT < CHG_MIN) p.atkBuf = .25; // suelo: toque corto → martillazo (mantener = carga)
+    else if(atkRel) p.atkBuf = .25; // suelo: el golpe sale al SOLTAR (►QUITADO 16/08: ya no hay carga — mantener no hace nada, cualquier suelta pega)
     p._atkHeld = atkBtn;
     wantAtk = p.atkBuf > 0;
     wantGrab = inp.brk && !p._lHeld;
@@ -19856,20 +19875,10 @@ function updateFighter(p, dt){
     }
   }
 
-  /* --- PUÑETAZO BRUTAL: mantener el botón de ataque carga; soltar descarga --- */
-  if(!p.isAI){
-    const canCharge = p._atkHeld && p.onGround && p.dashT<=0 && !p.block && !p.beam && !p.hang && !p.spin
-      && !p.counter && p.parryT<=0
-      && p.hitstun<=0 && p.stun<=0 && p.atk.phase==='none' && !p.dead
-      && p.superBuf<=0 && p.throwBuf<=0 && p.throwT<=0 && !p.weapon;
-    if(!p.charge && canCharge && p._atkHoldT>=CHG_MIN) startCharge(p);
-    if(p.charge){
-      if(!p._atkHeld) releaseCharge(p);                                       // soltó → ¡puñetazo!
-      else if(p.superBuf>0 || p.throwBuf>0 || p.spinBuf>0) cancelCharge(p);   // cede el turno al súper / Q / F
-      else if(p.hitstun>0 || p.stun>0 || p.block || p.hang || p.beam || !p.onGround || p.dead) cancelCharge(p);
-      else updateCharge(p, dt);
-    }
-  }
+  /* ►QUITADO (16/08, decisión de Toni): el PUÑETAZO BRUTAL cargado (mantener-y-soltar) ya no
+     existe — este era su ÚNICO punto de entrada (startCharge/releaseCharge quedan muertas río
+     abajo junto a sus ramas de anim/FX/resolveHit kind 'charge'; excisión completa pendiente).
+     Mantener el botón ya no hace nada especial: el golpe sale al SOLTAR, siempre (ver atkRel). */
 
   /* --- ►ROLL · RODADA DE RECUPERACIÓN ---
      Va AQUÍ, ANTES del bloque de control, a propósito: ese bloque está cerrado mientras `hitstun>0`
@@ -21814,39 +21823,46 @@ function wallHit(p, sign){
 /* pared-limite translucida (campo de fuerza) fija en el mundo */
 const _boundaryWalls = [];   // ►S4ATMO: para ocultar el campo de fuerza cuando el chamber de piedra lo sustituye
 function addBoundaryWall(sign){
-  const x = sign*WALL_X, zMin = -56, zMax = 48, yMin = -8, yMax = 40;
-  const depth = zMax - zMin, height = yMax - yMin, cz = (zMin+zMax)/2, cy = (yMin+yMax)/2;
+  /* ►MUROVIS (16/08, pedido de Toni): fuera el panel-fantasma (0.05) + barras — el límite ahora es
+     CRISTAL GLASEADO: tiles cuadrados de 2×2 con tono variado (dos fríos mezclados + brillo
+     aleatorio), junta fina entre ellos, en UNA sola malla (vertex colors, 1 draw call por muro).
+     MeshBasic a propósito = CERO respuesta a la luz ("no le metas reflexión, molesta"); el
+     glaseado lo ponen los tonos, no un specular. Se conserva el desvanecido por ALTURA de
+     ►LIMITE: nítido en la zona de juego, nada donde solo hay cielo. */
+  const x = sign*WALL_X, zMin = -56, zMax = 48, yMin = -7, yMax = 15;
+  const TILE = 2, GAP = 0.14;
   const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false });   // panel MUY tenue (antes 0.12): límite visible sin look de cristal
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(depth, height), mat);
-  panel.rotation.y = Math.PI/2; panel.position.set(x, cy, cz); g.add(panel);
-  const lineMat = new THREE.MeshBasicMaterial({ color:0xaee7ff, transparent:true, opacity:0.38, depthWrite:false });
-  /* ►LIMITE · las 11 barras van de y=-8 a y=40, pero el panel al que pertenecen es casi invisible
-     (opacity 0.05): a media distancia se leían como LÍNEAS SUELTAS colgando del cielo y cruzando el
-     horizonte — el "no sé qué son estas rayas" del prado. Se desvanecen por ALTURA DE MUNDO:
-     nítidas en la zona de juego (donde el límite hay que verlo) y ya nada donde solo hay cielo o
-     mar. Se toca el material, no la geometría, así que la pared sigue siendo la misma. */
-  lineMat.onBeforeCompile = (sh)=>{
+  const pos = [], col = [], idx = [];
+  const cA = new THREE.Color(0xd7ecff), cB = new THREE.Color(0x8fc8e8), tmp = new THREE.Color();
+  let vi = 0;
+  for(let z = zMin; z < zMax; z += TILE) for(let y = yMin; y < yMax; y += TILE){
+    tmp.copy(cA).lerp(cB, Math.random()).multiplyScalar(0.72 + Math.random()*0.4);   // tono por tile
+    const z0 = z+GAP/2, z1 = Math.min(z+TILE, zMax)-GAP/2, y0 = y+GAP/2, y1 = Math.min(y+TILE, yMax)-GAP/2;
+    pos.push(0,y0,z0, 0,y0,z1, 0,y1,z1, 0,y1,z0);
+    for(let k=0;k<4;k++) col.push(tmp.r, tmp.g, tmp.b);
+    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi += 4;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, opacity:0.20,
+    side:THREE.DoubleSide, depthWrite:false });   // ►►► AJUSTA: opacity = cuánto canta el cristal
+  mat.onBeforeCompile = (sh)=>{
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vWallY;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWallY = (modelMatrix * vec4(transformed, 1.0)).y;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vWallY;')
       .replace('#include <dithering_fragment>',
-               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(3.0, 10.0, vWallY)) * smoothstep(-7.0, -2.5, vWallY);');
+               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(7.0, 14.0, vWallY)) * smoothstep(-6.5, -2.0, vWallY);');
   };
   /* three cachea el programa por una clave que NO mira el texto del shader: sin esto, cualquier
      otro MeshBasicMaterial equivalente reusaría este programa (o al revés). Ver la ficha ►DEPTH. */
-  lineMat.customProgramCacheKey = ()=> 'boundaryBarsFade';
-  for(let i=0;i<=10;i++){
-    const zz = zMin + depth*(i/10);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, height, 0.12), lineMat);
-    bar.position.set(x, cy, zz); g.add(bar);
-  }
-  const hbar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, depth), lineMat);
-  hbar.position.set(x, yMax, cz); g.add(hbar);
-  const hbar2 = hbar.clone(); hbar2.position.set(x, yMin+0.1, cz); g.add(hbar2);
-  /* glow ADITIVO eliminado: era el aspecto "cristal" reflejante + el grueso del overdraw (PERF) */
+  mat.customProgramCacheKey = ()=> 'boundaryTilesFade';
+  const wall = new THREE.Mesh(geo, mat);
+  wall.position.x = x; wall.frustumCulled = false;   // caja local degenerada en X (todo a x=0) → culling a mano no fiable
+  g.add(wall);
   scene.add(g);
   _boundaryWalls.push(g);
   return g;
@@ -36102,7 +36118,7 @@ function frame(now){
     }
     /* el reloj del CAOS */
     if(stageIntroT<=0 && !demo && !TRAIN.on) matchT += dt;   // reloj de la partida real (alimenta la nota proporcional a la duración) · ►INTERSTAGE VIVO: parado durante la presentación
-    updateYouMarker(); updateSofa();   // ►F3: flecha "TÚ" (20 s) + las 3 frases del sofá (1er eslabón, 1ª run)
+    updateYouMarker(); updatePvpShieldFX(); updateSofa();   // ►F3: flecha "TÚ" (20 s) + pop del escudo PvP (►F3b, ANTES del sofá: lee sofaDone sin pisarse con la 3ª frase) + las 3 frases (1er eslabón, 1ª run)
     if(stageIntroT<=0 && !(S10WAVE.phase==='fight')) chaosT += dt;   // ►INTERSTAGE VIVO: el caos no avanza durante la cuenta 3·2·1 · ►S10WAVE: ni durante una oleada de jefes
     /* ►CUADRIMANIA: en la torre no hay caos que suba ni jefe al final — la presión la da el suelo
        que se acaba (y, pasado un rato, la lava que sube). */
@@ -36543,10 +36559,13 @@ const MATCH = { mode:'solo', humans:1, cpus:3, cls:'voxelhero', plan:'campaign' 
 const CLASS_PICK = [['voxelhero','BÁRBARO'],['samurai','SAMURÁI'],['archer','ARQUERA'],['link','MAGO'],['knight','CABALLERO'],['nun','BRUJA']];
 function padCount(){ let n=0; if(navigator.getGamepads){ for(const g of navigator.getGamepads()){ if(g) n++; } } return n; }
 function clampMatch(){
-  MATCH.cpus   = Math.max(0, Math.min(6, MATCH.cpus));
+  /* ►F3b · PARTIDA A 4 (decisión de Toni 16/08): toda la charla de diseño es a 4 ("Cuatro entran.
+     Uno gana.") y a 6 ningún rival tiene identidad — saturación pura en ~84u de arena. El tope 6
+     sigue existiendo en setRoster para el ATTRACT de la home (quiere su enjambre de fondo). */
+  MATCH.cpus   = Math.max(0, Math.min(3, MATCH.cpus));
   MATCH.humans = Math.max(2, Math.min(4, MATCH.humans));
   const h = MATCH.mode==='solo' ? 1 : MATCH.humans;
-  if(h + MATCH.cpus > 6) MATCH.cpus = 6 - h;          // tope total: 6 jugadores (1 modelo por jugador)
+  if(h + MATCH.cpus > 4) MATCH.cpus = 4 - h;          // tope total: 4 jugadores en partida real
 }
 function refreshSetup(){
   clampMatch();
@@ -36555,7 +36574,7 @@ function refreshSetup(){
 }
 (function buildSetup(){
   const cpu = document.getElementById('modalCpus');
-  if(cpu){ for(let i=1;i<=5;i++){ const b=document.createElement('button'); b.className='opt'; b.dataset.cpu=i; b.textContent=i;   // solo: 1..5 rivales CPU
+  if(cpu){ for(let i=1;i<=3;i++){ const b=document.createElement('button'); b.className='opt'; b.dataset.cpu=i; b.textContent=i;   // solo: 1..3 rivales CPU (►F3b: partida a 4)
     b.addEventListener('click', ()=>{ MATCH.cpus=i; refreshSetup(); }); cpu.appendChild(b); } }
   refreshSetup();
 })();
