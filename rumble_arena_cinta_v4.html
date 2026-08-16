@@ -15553,24 +15553,26 @@ function showBanner(txt, t=1.2){
      (RUTA_I===0) y solo la primera run de la vida del guardado (save.sofaDone).
    ===================================================================== */
 let _youM = null;
+function _youMDrop(){ if(_youM){ scene.remove(_youM.mesh); _youM.mesh.geometry.dispose(); _youM.mesh.material.dispose(); _youM = null; } }
 function updateYouMarker(){
-  const show = running && !demo && !TRAIN.on && matchT < 20;
-  if(!show){ if(_youM){ for(const m of _youM){ scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose(); } _youM = null; } return; }
-  if(!_youM){
-    _youM = [];
-    for(const p of players){
-      if(p.isAI) continue;
-      const mh = new THREE.Mesh(new THREE.ConeGeometry(.42, .8, 4),
-                                new THREE.MeshBasicMaterial({ color:p.color }));
-      mh.rotation.x = Math.PI;               // punta hacia ABAJO (señala al jugador)
-      scene.add(mh); _youM.push({ mesh:mh, p });
-    }
+  /* UNA sola flecha y solo sobre P1, el jugador CONTROLADO (16/08, aviso de Toni: salía doble
+     y sobre varios personajes — el flag isAI puede llegar tarde y ya hay flecha-guía ►PORTALFIX
+     sobre el local durante el jefe). Solo el PRIMER eslabón: matchT se reinicia por stage y la
+     flecha volvía en cada mundo. */
+  const pl = (typeof P1 !== 'undefined') ? P1 : null;
+  const show = running && !demo && !TRAIN.on && matchT < 20 && pl && !pl.isAI
+               && (typeof RUTA_I === 'undefined' || RUTA_I === 0);
+  if(!show){ _youMDrop(); return; }
+  if(!_youM || _youM.p !== pl){
+    _youMDrop();
+    const mh = new THREE.Mesh(new THREE.ConeGeometry(.42, .8, 4),
+                              new THREE.MeshBasicMaterial({ color:pl.color }));
+    mh.rotation.x = Math.PI;               // punta hacia ABAJO (señala al jugador)
+    scene.add(mh); _youM = { mesh:mh, p:pl };
   }
-  for(const m of _youM){
-    m.mesh.visible = !m.p.dead && !m.p.out;
-    m.mesh.position.set(m.p.pos.x, m.p.pos.y + 3.05 + Math.sin(t*4)*.18, m.p.pos.z);
-    m.mesh.rotation.y += .05;
-  }
+  _youM.mesh.visible = !pl.dead && !pl.out;
+  _youM.mesh.position.set(pl.pos.x, pl.pos.y + 3.05 + Math.sin(t*4)*.18, pl.pos.z);
+  _youM.mesh.rotation.y += .05;
 }
 const _SOFA_L = [
   [2.5, ()=>{ const h = players.find(q=>!q.isAI); if(!h) return null;
