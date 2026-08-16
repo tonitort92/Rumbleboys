@@ -1590,6 +1590,7 @@ window.addEventListener('load', function(){
 
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260811a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
+<script src="carry_poses.js?v=1"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
 <script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
 <script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
@@ -4777,8 +4778,79 @@ const SAMURAI_LOOP = { idle:1, run:1, fastrun:1, walk:1, grab:1, ult2:1 };   // 
    Se declaran aquí (y no en los 6 mapas *_LOOP) para que valgan para TODOS los personajes de una
    vez. Mientras el GLB no traiga el clip, `charToken` ni siquiera devuelve el token: se queda la
    locomoción de siempre + la pose procedural de ►CARRY2, así que no hay regresión visual. */
-const _CARRY_LOOPS = { carry:1, carried:1 };
+const _CARRY_LOOPS = { carry:1, carryidle:1, carried:1 };
 function isCharOneShot(p, tok){ if(_CARRY_LOOPS[tok]) return false; return p._richAnim ? !(p._loopMap||SAMURAI_LOOP)[tok] : !!_CHAR_ONESHOT[tok]; }
+
+/* ===== ►CARRY2 · EL CLIP 'carry' SE MONTA AQUÍ, NO VIENE DEL EXPORT ==============================
+   De Mixamo solo hay una POSE de 1 frame ("Overhead Squat": brazos estirados en alto, como quien
+   sostiene a alguien sobre la cabeza) → carry_poses.js, una por personaje. Una pose sola no vale:
+   el que carga tiene que ANDAR. Así que el clip se fabrica mezclando DOS fuentes hueso a hueso:
+
+     · de la POSE     → de cintura para arriba (tronco, cuello, cabeza, brazos, manos, dedos)
+     · del clip 'run' → cadera y piernas enteras, con su bote y su zancada
+
+   Se puede porque un AnimationClip de three no es "una animación del personaje", es una LISTA DE
+   PISTAS con nombre de hueso: nada obliga a que un clip cubra el esqueleto entero, y el rig del FBX
+   de la pose es EL MISMO que el del GLB (verificado: traslaciones locales idénticas al 0.0000), así
+   que las rotaciones se transfieren sin retargeting.
+
+   Sale UN solo clip por personaje → un solo clipAction, coste cero por frame (nada de mezclar dos
+   acciones ni de posar huesos a mano cada frame), y las piernas son las de SU ciclo de carrera. */
+
+/* Cuánto manda la POSE en cada hueso: 0 = manda 'run' · 1 = manda la pose. El escalón por la columna
+   es lo que hace que el tronco SIGA RESPIRANDO con la zancada en vez de ir de una pieza.
+   ►►► SI SE VE RÍGIDO baja spine1/spine2; si los brazos bailan de más, súbelos ◄◄◄ */
+const CARRY_POSE_W = [
+  [/hips$/,               0.00],   // cadera: 100% run (el bote y el avance de la zancada)
+  [/leg$|foot$|toe/,      0.00],   // piernas enteras (upleg/leg/foot/toebase/toe_end): 100% run
+  [/spine$/,              0.50],   // lumbar: a medias → el torso acompaña
+  [/spine1$/,             0.80],
+  [/spine2$/,             0.90],
+];                                 // el resto (cuello, cabeza, hombros, brazos, manos, dedos) = 1.00
+const CARRY_ANIM_SPEED = 0.72;     // el ciclo de piernas, más lento que correr: con alguien en volandas se TROTA. ►►► AJUSTA ◄◄◄
+const CARRY_MOVE_V     = 0.6;      // m/s a partir de los cuales el que carga pasa de 'carryidle' (quieto) a 'carry' (trotando)
+
+/* Monta 'carry' (piernas de 'run') y 'carryidle' (piernas de 'idle') para un GLB ya parseado.
+   Devuelve los clips nuevos; [] si el personaje no tiene pose o le falta el clip base. */
+function buildCarryClips(anims, key, scene){
+  const P = window.CARRY_POSES && window.CARRY_POSES[key];
+  if(!P || !anims || !THREE.QuaternionKeyframeTrack) return [];
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const wOf = n => { for(let i=0;i<CARRY_POSE_W.length;i++) if(CARRY_POSE_W[i][0].test(n)) return CARRY_POSE_W[i][1]; return 1; };
+  /* nombre REAL del hueso (el GLB los llama 'mixamorig:LeftArm') a partir de la clave normalizada:
+     hace falta para las pistas de huesos que la pose mueve pero el clip base ni toca (dedos, puntas). */
+  const realName = {};
+  if(scene) scene.traverse(o=>{ if(o.isBone || o.type==='Bone') realName[norm(o.name)] = o.name; });
+
+  const qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
+  const build = (base, name) => {
+    if(!base) return null;
+    const dur = base.duration, tracks = [], seen = {};
+    for(const tr of base.tracks){
+      const dot = tr.name.lastIndexOf('.'); if(dot<0){ tracks.push(tr.clone()); continue; }
+      const n = norm(tr.name.slice(0,dot)), prop = tr.name.slice(dot+1);
+      if(prop!=='quaternion'){ tracks.push(tr.clone()); continue; }   // .position (bote de cadera) intacta
+      seen[n] = 1;
+      const pq = P[n], w = wOf(n);
+      if(!pq || w<=0){ tracks.push(tr.clone()); continue; }           // pierna, o hueso sin pose → clip base puro
+      if(w>=1){ tracks.push(new THREE.QuaternionKeyframeTrack(tr.name, [0,dur], pq.concat(pq))); continue; }
+      const c = tr.clone(), v = c.values;                             // zona de transición: slerp(base → pose, w)
+      qb.set(pq[0],pq[1],pq[2],pq[3]);
+      for(let i=0;i+3<v.length;i+=4){ qa.set(v[i],v[i+1],v[i+2],v[i+3]); qa.slerp(qb, w); v[i]=qa.x; v[i+1]=qa.y; v[i+2]=qa.z; v[i+3]=qa.w; }
+      tracks.push(c);
+    }
+    /* huesos que la pose SÍ mueve y el clip base no (dedos cerrados sobre el cuerpo del rival, puntas):
+       pista constante, si no se quedarían en reposo y la mano saldría abierta. */
+    for(const n in P){
+      if(seen[n] || wOf(n)<=0 || !realName[n]) continue;
+      tracks.push(new THREE.QuaternionKeyframeTrack(realName[n]+'.quaternion', [0,dur], P[n].concat(P[n])));
+    }
+    return new THREE.AnimationClip(name, dur, tracks);
+  };
+  const find = nm => anims.find(a=>a.name===nm);
+  return [ build(find('run'),  'carry'),
+           build(find('idle'), 'carryidle') ].filter(Boolean);
+}
 /* ventana de juego (s) de cada one-shot del samurái → el clip se acelera (timeScale) para reproducirse
    ENTERO dentro de su acción (los clips Mixamo duran 1.4-6.7s; las acciones del juego 0.4-0.9s). atk1-4
    usan el total VIVO de la espada. ull2 es loop (no aquí). */
@@ -5173,7 +5245,10 @@ function applyCharModel(p){
       const loopMap = p._loopMap || {};
       for(const c of anims){
         const a = p._mixer.clipAction(c);
-        if(loopMap[c.name]) a.setLoop(THREE.LoopRepeat); else { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; }
+        /* ►CARRY2: 'carry'/'carryidle' son LOOP para todos, sin tocar los 6 mapas *_LOOP (que vienen del
+           export y no conocen estos clips, que se montan aquí). Y el trote va más lento que la carrera. */
+        if(loopMap[c.name] || _CARRY_LOOPS[c.name]) a.setLoop(THREE.LoopRepeat); else { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; }
+        if(_CARRY_LOOPS[c.name]) a.timeScale = CARRY_ANIM_SPEED;
         a.enabled = true; a.setEffectiveWeight(c.name==='idle'?1:0); a.play();
         p._acts[c.name] = a; p._actDur[c.name] = c.duration;
       }
@@ -5477,7 +5552,13 @@ function archerToken(p){
 function _carryToken(p){
   const a = p._acts;
   if((p._tossT||0) > 0 && a && a.toss) return 'toss';
-  if(p.holding) return (a && a.carry) ? 'carry' : null;
+  /* ►CARRY2 · CARGANDO: 'carry' (trote) o 'carryidle' (plantado) según si de verdad se mueve — con un
+     solo clip, quieto se quedaría corriendo en el sitio. Los dos comparten la MISMA pose de cintura
+     arriba, así que el cruce solo cambia las piernas y no se nota el corte. */
+  if(p.holding){
+    if(!(a && a.carry)) return null;
+    return (Math.hypot(p.vel.x, p.vel.z) > CARRY_MOVE_V || !a.carryidle) ? 'carry' : 'carryidle';
+  }
   if(p.heldBy)  return (a && a.carried) ? 'carried' : ((a && a.kicked) ? 'kicked' : null);
   return null;
 }
@@ -5661,8 +5742,10 @@ function updateCharMixers(dt){
            cuanto más lleva el forcejeo cargado.                                          ===== */
     /* ►CARRY2 · el que CARGA lleva los DOS brazos ESTIRADOS HACIA ARRIBA, apuntando a la espalda del
        que sostiene sobre su cabeza (antes apuntaban al pecho, con el rival por delante). Mientras no
-       haya clip 'carry' propio, esto ES la animación de cargar. */
-    if(p.holding && p._gArms && p._gArms.length){
+       haya clip 'carry' propio, esto ES la animación de cargar.
+       CON clip 'carry' montado (los 6 personajes) esto se APAGA: la pose ya la da el clip, y apuntar
+       los brazos por encima la machacaría cada frame. Sigue vivo para el humanoide de fallback. */
+    if(p.holding && p._gArms && p._gArms.length && !(p._acts && p._acts.carry)){
       const v = p.holding;
       const wob = Math.sin(t*7)*0.05;                                   // el peso baila un poco en las manos
       p._gArms.forEach((c, i) => {
@@ -5788,6 +5871,12 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
     /* 2) 6 modelos Meshy (chars_models.js): cada jugador recibe el suyo en cuanto carga */
     for(const key of _modelKeys){
       _mkLoader().parse(_b64ToBuf(window.CHAR_MODELS_B64[key]), '', gltf=>{
+        /* ►CARRY2 · monta 'carry'/'carryidle' (pose de carry_poses.js + piernas de run/idle) ANTES de
+           guardar la plantilla: applyCharModel crea una acción por clip, así que tienen que estar ya. */
+        try{ const cc = buildCarryClips(gltf.animations, key, gltf.scene);
+          if(cc.length) gltf.animations.push.apply(gltf.animations, cc);
+          console.log('[carry]', key, cc.length ? 'clips montados: '+cc.map(c=>c.name+' ('+c.duration.toFixed(2)+'s, '+c.tracks.length+' pistas)').join(' · ') : 'SIN pose/clip base → sigue la locomoción de siempre');
+        }catch(e){ console.warn('[carry] fallo montando el clip de', key, e); }
         _charTpls[key] = { scene: gltf.scene, animations: gltf.animations };
         for(const q of allPlayers){ if(q._charKey===key && !q._charApplied) applyCharModel(q); }
         if(window._cpOnModelLoaded) window._cpOnModelLoaded(key);   // refresca el preview de selección si muestra esta clase
