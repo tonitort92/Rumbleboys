@@ -21462,39 +21462,46 @@ function wallHit(p, sign){
 /* pared-limite translucida (campo de fuerza) fija en el mundo */
 const _boundaryWalls = [];   // ►S4ATMO: para ocultar el campo de fuerza cuando el chamber de piedra lo sustituye
 function addBoundaryWall(sign){
-  const x = sign*WALL_X, zMin = -56, zMax = 48, yMin = -8, yMax = 40;
-  const depth = zMax - zMin, height = yMax - yMin, cz = (zMin+zMax)/2, cy = (yMin+yMax)/2;
+  /* ►MUROVIS (16/08, pedido de Toni): fuera el panel-fantasma (0.05) + barras — el límite ahora es
+     CRISTAL GLASEADO: tiles cuadrados de 2×2 con tono variado (dos fríos mezclados + brillo
+     aleatorio), junta fina entre ellos, en UNA sola malla (vertex colors, 1 draw call por muro).
+     MeshBasic a propósito = CERO respuesta a la luz ("no le metas reflexión, molesta"); el
+     glaseado lo ponen los tonos, no un specular. Se conserva el desvanecido por ALTURA de
+     ►LIMITE: nítido en la zona de juego, nada donde solo hay cielo. */
+  const x = sign*WALL_X, zMin = -56, zMax = 48, yMin = -7, yMax = 15;
+  const TILE = 2, GAP = 0.14;
   const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false });   // panel MUY tenue (antes 0.12): límite visible sin look de cristal
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(depth, height), mat);
-  panel.rotation.y = Math.PI/2; panel.position.set(x, cy, cz); g.add(panel);
-  const lineMat = new THREE.MeshBasicMaterial({ color:0xaee7ff, transparent:true, opacity:0.38, depthWrite:false });
-  /* ►LIMITE · las 11 barras van de y=-8 a y=40, pero el panel al que pertenecen es casi invisible
-     (opacity 0.05): a media distancia se leían como LÍNEAS SUELTAS colgando del cielo y cruzando el
-     horizonte — el "no sé qué son estas rayas" del prado. Se desvanecen por ALTURA DE MUNDO:
-     nítidas en la zona de juego (donde el límite hay que verlo) y ya nada donde solo hay cielo o
-     mar. Se toca el material, no la geometría, así que la pared sigue siendo la misma. */
-  lineMat.onBeforeCompile = (sh)=>{
+  const pos = [], col = [], idx = [];
+  const cA = new THREE.Color(0xd7ecff), cB = new THREE.Color(0x8fc8e8), tmp = new THREE.Color();
+  let vi = 0;
+  for(let z = zMin; z < zMax; z += TILE) for(let y = yMin; y < yMax; y += TILE){
+    tmp.copy(cA).lerp(cB, Math.random()).multiplyScalar(0.72 + Math.random()*0.4);   // tono por tile
+    const z0 = z+GAP/2, z1 = Math.min(z+TILE, zMax)-GAP/2, y0 = y+GAP/2, y1 = Math.min(y+TILE, yMax)-GAP/2;
+    pos.push(0,y0,z0, 0,y0,z1, 0,y1,z1, 0,y1,z0);
+    for(let k=0;k<4;k++) col.push(tmp.r, tmp.g, tmp.b);
+    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi += 4;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, opacity:0.20,
+    side:THREE.DoubleSide, depthWrite:false });   // ►►► AJUSTA: opacity = cuánto canta el cristal
+  mat.onBeforeCompile = (sh)=>{
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vWallY;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWallY = (modelMatrix * vec4(transformed, 1.0)).y;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vWallY;')
       .replace('#include <dithering_fragment>',
-               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(3.0, 10.0, vWallY)) * smoothstep(-7.0, -2.5, vWallY);');
+               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(7.0, 14.0, vWallY)) * smoothstep(-6.5, -2.0, vWallY);');
   };
   /* three cachea el programa por una clave que NO mira el texto del shader: sin esto, cualquier
      otro MeshBasicMaterial equivalente reusaría este programa (o al revés). Ver la ficha ►DEPTH. */
-  lineMat.customProgramCacheKey = ()=> 'boundaryBarsFade';
-  for(let i=0;i<=10;i++){
-    const zz = zMin + depth*(i/10);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, height, 0.12), lineMat);
-    bar.position.set(x, cy, zz); g.add(bar);
-  }
-  const hbar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, depth), lineMat);
-  hbar.position.set(x, yMax, cz); g.add(hbar);
-  const hbar2 = hbar.clone(); hbar2.position.set(x, yMin+0.1, cz); g.add(hbar2);
-  /* glow ADITIVO eliminado: era el aspecto "cristal" reflejante + el grueso del overdraw (PERF) */
+  mat.customProgramCacheKey = ()=> 'boundaryTilesFade';
+  const wall = new THREE.Mesh(geo, mat);
+  wall.position.x = x; wall.frustumCulled = false;   // caja local degenerada en X (todo a x=0) → culling a mano no fiable
+  g.add(wall);
   scene.add(g);
   _boundaryWalls.push(g);
   return g;
