@@ -17384,14 +17384,8 @@ function ko(p){
   ring(bp.clone().add(new THREE.Vector3(0,1,0)), p.color, 28, .6);
   fovKick = Math.max(fovKick, 1.2);
   shake = 1; sfx.ko(); sfx.fallout(); if(!demo) crowdCheer(.6);   // ¡el público ruge con cada KO!
-  /* ►F2 KO ESTELAR: el golpe que saca a alguien es el mejor momento del juego y pasaba igual que
-     un jab. Cámara lenta corta con la cámara sobre el VERDUGO (la víctima ya no está) — el
-     mecanismo del cine (dt×.35 + cámara al target) ya existía para el 4º golpe; esto solo lo
-     dispara también en el KO. Solo KOs LANZADOS (vel alta): caerse del borde no merece cine. */
-  if(!demo && !TRAIN.on && p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.dead && !p.lastHitBy.out
-     && Math.hypot(p.vel.x, p.vel.y, p.vel.z) > 16){
-    cineT = Math.max(cineT, .85); cineTarget = p.lastHitBy;
-  }
+  /* (KO estelar probado y RETIRADO a petición de Toni, 16/08: la cámara lenta al morir alguien
+     no gustó. La pixelación se queda; el cine del 4º golpe y del brutal, intactos como estaban.) */
   fighterHide(p.gfx);   // ►LUZFIJA: NO root.visible=false — sacaría sus luces de la cuenta y todo recompilaría
   showBanner(p.isAI ? '¡FUERA!' : '¡TE HAN SACADO!', 1.1);
 
