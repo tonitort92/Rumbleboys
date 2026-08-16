@@ -21403,39 +21403,36 @@ function addBoundaryWall(sign){
      MeshBasic a propósito = CERO respuesta a la luz ("no le metas reflexión, molesta"); el
      glaseado lo ponen los tonos, no un specular. Se conserva el desvanecido por ALTURA de
      ►LIMITE: nítido en la zona de juego, nada donde solo hay cielo. */
+  /* ►MUROVIS-PERF (16/08, Toni: "guapísimos pero ralentizan una barbaridad"): la v1 era una malla
+     de ~570 quads con vertex colors + shader parcheado (fade por altura) + frustumCulled=false.
+     Ahora TODO va horneado en una CanvasTexture generada UNA vez (tiles, tonos, juntas Y el fade
+     de altura en el canal alfa) sobre UN único PlaneGeometry por muro: material MeshBasic de
+     serie (sin onBeforeCompile, sin programa propio), culling normal. Mismo look, coste menor
+     incluso que el panel+barras de antes de MUROVIS. */
   const x = sign*WALL_X, zMin = -56, zMax = 48, yMin = -7, yMax = 15;
-  const TILE = 2, GAP = 0.14;
   const g = new THREE.Group();
-  const pos = [], col = [], idx = [];
-  const cA = new THREE.Color(0xd7ecff), cB = new THREE.Color(0x8fc8e8), tmp = new THREE.Color();
-  let vi = 0;
-  for(let z = zMin; z < zMax; z += TILE) for(let y = yMin; y < yMax; y += TILE){
-    tmp.copy(cA).lerp(cB, Math.random()).multiplyScalar(0.72 + Math.random()*0.4);   // tono por tile
-    const z0 = z+GAP/2, z1 = Math.min(z+TILE, zMax)-GAP/2, y0 = y+GAP/2, y1 = Math.min(y+TILE, yMax)-GAP/2;
-    pos.push(0,y0,z0, 0,y0,z1, 0,y1,z1, 0,y1,z0);
-    for(let k=0;k<4;k++) col.push(tmp.r, tmp.g, tmp.b);
-    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi += 4;
+  if(!window._muroTex){
+    const TILE_PX = 16, GAP_PX = 1, W = (zMax-zMin)/2*TILE_PX, H = (yMax-yMin)/2*TILE_PX;   // 2u por tile → 8 px/u
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const c2 = cv.getContext('2d');
+    const cA = new THREE.Color(0xd7ecff), cB = new THREE.Color(0x8fc8e8), tmp = new THREE.Color();
+    const fadeA = (wy)=>{   // el fade de altura de ►LIMITE, ahora en el alfa del canvas
+      const up = 1 - THREE.MathUtils.smoothstep(wy, 7, 14), dn = THREE.MathUtils.smoothstep(wy, -6.5, -2);
+      return up*dn;
+    };
+    for(let ty = 0; ty*TILE_PX < H; ty++) for(let tz = 0; tz*TILE_PX < W; tz++){
+      tmp.copy(cA).lerp(cB, Math.random()).multiplyScalar(0.72 + Math.random()*0.4);   // tono por tile
+      const wy = yMax - (ty + 0.5)*(TILE_PX/8);                                        // y de MUNDO del centro del tile (canvas crece hacia abajo)
+      c2.fillStyle = 'rgba(' + ((tmp.r*255)|0) + ',' + ((tmp.g*255)|0) + ',' + ((tmp.b*255)|0) + ',' + fadeA(wy).toFixed(3) + ')';
+      c2.fillRect(tz*TILE_PX + GAP_PX, ty*TILE_PX + GAP_PX, TILE_PX - 2*GAP_PX, TILE_PX - 2*GAP_PX);
+    }
+    window._muroTex = new THREE.CanvasTexture(cv);
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  geo.setIndex(idx);
-  const mat = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, opacity:0.20,
+  const mat = new THREE.MeshBasicMaterial({ map: window._muroTex, transparent:true, opacity:0.20,
     side:THREE.DoubleSide, depthWrite:false });   // ►►► AJUSTA: opacity = cuánto canta el cristal
-  mat.onBeforeCompile = (sh)=>{
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vWallY;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvWallY = (modelMatrix * vec4(transformed, 1.0)).y;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vWallY;')
-      .replace('#include <dithering_fragment>',
-               '#include <dithering_fragment>\ngl_FragColor.a *= (1.0 - smoothstep(7.0, 14.0, vWallY)) * smoothstep(-6.5, -2.0, vWallY);');
-  };
-  /* three cachea el programa por una clave que NO mira el texto del shader: sin esto, cualquier
-     otro MeshBasicMaterial equivalente reusaría este programa (o al revés). Ver la ficha ►DEPTH. */
-  mat.customProgramCacheKey = ()=> 'boundaryTilesFade';
-  const wall = new THREE.Mesh(geo, mat);
-  wall.position.x = x; wall.frustumCulled = false;   // caja local degenerada en X (todo a x=0) → culling a mano no fiable
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(zMax-zMin, yMax-yMin), mat);
+  wall.rotation.y = Math.PI/2;
+  wall.position.set(x, (yMin+yMax)/2, (zMin+zMax)/2);
   g.add(wall);
   scene.add(g);
   _boundaryWalls.push(g);
