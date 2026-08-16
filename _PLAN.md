@@ -25,7 +25,7 @@ historia subordinada a la run. Hecho: `_MASTERMIND.md`.
       escalando con stage/castigo/daño). No se tocó: primero jugarlo, luego retocar.
 - [x] **Pixelación como muerte**: pixelate() — cubos casi uniformes por la silueta vía
       ►PARTINST. Sustituye a las volutas de fantasma en ko().
-- [x] KO estelar: cine (dt×.35 + cámara) sobre el verdugo en KOs lanzados (vel>16).
+- [x] ~~KO estelar~~ — probado y RETIRADO (16/08, Toni): la cámara lenta al morir no gustó.
 - [x] Flash por peso: blanco <13 · ámbar 13–26 · rojo ≥26 de daño real, en applyHit.
       Sonido por peso **ya existía** (sfx.hit escala con daño). Whiff pendiente de
       comprobar jugando (sfx.swing suena al atacar; puede bastar).
