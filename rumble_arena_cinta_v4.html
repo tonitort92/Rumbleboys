@@ -15673,6 +15673,12 @@ const FLINCH_AMP  = 1.0;      // multiplicador general de la sacudida (0 = apaga
 const SHIELD_MAX_T = 3;      // s de uso CONTINUO hasta romperse (grietas a 1/3 y 2/3) ►AJUSTA
 const SHIELD_CD = 3;         // s de enfriamiento SOLO al romperse (antes 8, y con duración fija)
 const SHIELD_REGEN = 0.6;    // × del ritmo de gasto al que se RECUPERA el desgaste estando bajado
+/* ►ESCUDO2b (17/08, exploit de Toni: "puedes abusar haciendo click compulsivamente"): subir/bajar
+   era gratis y cada alzada re-armaba la ventana de parry → aporrear LB = bloqueo casi perpetuo +
+   parry pescado a spam. Ahora ALZAR CUESTA un mordisco de integridad (spamear ≈5 alzadas = rotura
+   y sus 3 s de CD; mantener sale mejor que aporrear) y hay un mini-retardo entre bajar y realzar. */
+const SHIELD_RAISE_COST = 0.5;   // s de desgaste que cuesta CADA alzada ►AJUSTA
+const SHIELD_RECD = 0.3;         // s mínimos entre bajar el escudo y poder alzarlo otra vez ►AJUSTA
 const SHIELD_R = 2.6;        // radio de empuje
 const SHIELD_PUSH = 10;      // fuerza de empuje hacia fuera
 const SHIELD_DMG = 6;        // daño por tick a quien empuja
@@ -15771,7 +15777,7 @@ function updateSpin(p, dt){
 }
 
 /* ===== ESCUDO: burbuja de empuje (los timers/p.block se llevan en updateFighter) ===== */
-function endShield(p){ p.shieldT = 0; }   // ►ESCUDO2: bajarlo NO castiga — el CD lo pone solo la ROTURA
+function endShield(p){ if(p.shieldT>0) p._shieldReCD = SHIELD_RECD; p.shieldT = 0; }   // ►ESCUDO2: bajarlo NO castiga (el CD lo pone la ROTURA) · ►ESCUDO2b: pero realzar espera un pelín
 function shieldBreak(p){
   p.shieldT = 0; p.shieldCD = SHIELD_CD; p.shieldWear = SHIELD_MAX_T;   // el desgaste se rellena entero durante el CD (ver updateFighter)
   const c = p.pos.clone().add(new THREE.Vector3(0,1.1,0));
@@ -19586,6 +19592,7 @@ function updateFighter(p, dt){
     }
   } else {
     p.shieldCD = Math.max(0, p.shieldCD-dt);
+    p._shieldReCD = Math.max(0, (p._shieldReCD||0)-dt);   // ►ESCUDO2b: retardo de realzado
     if((p.shieldWear||0) > 0) p.shieldWear = Math.max(0, p.shieldWear - dt*(p.shieldCD>0 ? SHIELD_MAX_T/SHIELD_CD : SHIELD_REGEN));
     p._crackLvl = 0;
   }
@@ -19702,9 +19709,10 @@ function updateFighter(p, dt){
     {
       const shieldOk = inp.block && !_held && p.shieldCD<=0 && !p.counter
         && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.beam && !p.spin && !p.hang
-        && (p.shieldWear||0) < SHIELD_MAX_T - 0.01;
-      if(!p.shieldT && shieldOk && p.onGround){
+        && (p.shieldWear||0) + SHIELD_RAISE_COST < SHIELD_MAX_T;   // ►ESCUDO2b: hace falta integridad para PAGAR la alzada
+      if(!p.shieldT && shieldOk && p.onGround && (p._shieldReCD||0)<=0){
         p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0;
+        p.shieldWear = (p.shieldWear||0) + SHIELD_RAISE_COST;   // ►ESCUDO2b: la alzada cuesta
         p.shieldFlash = .25; p._shieldPoseT = .45; sfx.parry();   // _shieldPoseT: anim de alzar el escudo 1 vez (x2)
       } else if(p.shieldT && !shieldOk) endShield(p);
       if(inp.block && !p._blockHeld && p.shieldCD>0 && !p.shieldT) sfx.deny();
@@ -19726,8 +19734,9 @@ function updateFighter(p, dt){
     /* la IA escuda si lo quiere y puede — ►ESCUDO2: lo MANTIENE mientras blockWant siga vivo */
     {
       const aiOk = p.ai.blockWant && p.shieldCD<=0 && !p.spin && p.atk.phase==='none'
-        && p.hitstun<=0 && p.stun<=0 && !p.beam && (p.shieldWear||0) < SHIELD_MAX_T - 0.01;
-      if(!p.shieldT && aiOk && p.onGround){ p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0; p._shieldPoseT = .45; }
+        && p.hitstun<=0 && p.stun<=0 && !p.beam && (p.shieldWear||0) + SHIELD_RAISE_COST < SHIELD_MAX_T;
+      if(!p.shieldT && aiOk && p.onGround && (p._shieldReCD||0)<=0){ p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0;
+        p.shieldWear = (p.shieldWear||0) + SHIELD_RAISE_COST; p._shieldPoseT = .45; }   // ►ESCUDO2b: la CPU paga igual
       else if(p.shieldT && !aiOk) endShield(p);
     }
   }
