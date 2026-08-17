@@ -16126,7 +16126,6 @@ function updatePvpShieldFX(){
     '  animation:isDrawer .5s cubic-bezier(.18,.85,.3,1); }',
     '#hsIslas > *{ pointer-events:auto; }',
     '@keyframes isDrawer{ from{ transform:translateX(105%) } to{ transform:none } }',
-    '@media (max-width:900px){ #hsIslas{ display:none } }',
     '@media (prefers-reduced-motion: reduce){ #hsIslas{ animation:none } }',
     '#isPill{ position:absolute; inset:0; pointer-events:none;',
     '  background:#151b2e url("data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2796%27 height=%2796%27><g fill=%27none%27 stroke=%27%23ffffff%27 stroke-opacity=%270.05%27 stroke-width=%272%27><path d=%27M24 12l8 8-8 8-8-8z%27/><circle cx=%2772%27 cy=%2724%27 r=%275%27/><path d=%27M68 68h12M74 62v12%27/><path d=%27M12 74l10-8 10 8%27/><rect x=%2744%27 y=%2744%27 width=%278%27 height=%278%27 transform=%27rotate(15 48 48)%27/></g></svg>") repeat;',
@@ -16181,7 +16180,7 @@ function updatePvpShieldFX(){
     '  -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }',
     '#isInfo{ position:absolute; top:calc(4% + 68px); left:0; right:0; z-index:2; display:flex; justify-content:center; gap:10px; }',
     '.isChip{ display:inline-block; padding:5px 14px; border-radius:999px; font-size:12px; font-weight:900;',
-    '  letter-spacing:1.5px; color:#8b96b5; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); }',
+    '  letter-spacing:1.5px; color:#8b96b5; background:rgba(13,17,34,.88); border:1px solid rgba(255,255,255,.12); }',
     '.isChip.on{ color:#ffd84f; border-color:rgba(255,216,79,.5); background:rgba(255,216,79,.10); }',
     '#isNav{ position:absolute; bottom:13%; left:0; right:0; z-index:2; display:flex; align-items:center; justify-content:center; gap:14px; }',
     '#isSelect{ position:absolute; bottom:4.5%; left:50%; transform:translateX(-50%); z-index:2; cursor:pointer;',
@@ -16195,6 +16194,20 @@ function updatePvpShieldFX(){
     '  border-radius:10px; color:#ffd84f; font-size:22px; font-weight:900; padding:2px 14px; font-family:inherit; }',
     '#isNav button:hover{ background:rgba(255,255,255,.14); }',
     '#isIdx{ font-size:12px; font-weight:900; letter-spacing:2px; color:#9fe8ff; }',
+    /* ►ISLAS v13 — ÚLTIMO de la hoja a propósito: en PEQUEÑO el drawer no desaparece, se vuelve
+       SECCIÓN a ancho completo bajo el menú, con islas y saltos reescalados. Antes que las reglas
+       base de .isStop/#isTrack el escritorio las pisaría (misma especificidad → gana la última). */
+    '@media (max-width:900px){',
+    '  #hsIslas{ position:relative; inset:auto; width:100%; min-height:640px; margin-top:14px; animation:none; }',
+    '  #hsLeft{ margin-left:0; }',
+    '  #isPill{ border-left:0; border-top:1px solid rgba(255,255,255,.14); box-shadow:0 -20px 50px rgba(0,0,0,.4); }',
+    '  #isTrack{ height:440px; }',
+    '  .isStop{ width:min(300px,64vw); }',
+    '  .isStop.prev{ transform:translate(-50%, calc(-50% - 185px)) scale(.42); }',
+    '  .isStop.next{ transform:translate(-50%, calc(-50% + 185px)) scale(.42); }',
+    '  @keyframes isSlideN{ from{ transform:translateY(185px); opacity:.55 } to{ transform:none; opacity:1 } }',
+    '  @keyframes isSlideP{ from{ transform:translateY(-185px); opacity:.55 } to{ transform:none; opacity:1 } }',
+    '}',
   ].join('\n');
   document.head.appendChild(css);
   let idx = 0;
