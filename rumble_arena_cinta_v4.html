@@ -16111,14 +16111,19 @@ function updatePvpShieldFX(){
 (function homeIslas(){
   const css = document.createElement('style');
   css.textContent = [
-    '#hsIslas{ position:relative; flex:0 0 auto; width:min(390px,40vw); min-height:min(64vh,560px);',
-    '  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; pointer-events:auto; }',
-    '#isPill{ position:absolute; right:14px; top:50%; width:158px; height:min(62vh,530px);',
-    '  transform:translateY(-50%) rotate(-13deg); border-radius:999px;',
-    '  background:linear-gradient(165deg,rgba(120,170,255,.20),rgba(16,22,44,.26) 70%);',
-    '  backdrop-filter:blur(7px); border:1px solid rgba(255,255,255,.22);',
+    /* ►ISLAS v2 (17/08, boceto de Toni): la píldora ocupa TODO el vertical derecho — es el FONDO
+       sobre el que flotan los mundos, no una tarjeta. Banda rotada más grande que su columna y
+       recortada por ella → borde izquierdo diagonal, de arriba a abajo. */
+    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(460px,37vw); overflow:hidden;',
+    '  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;',
+    '  pointer-events:auto; z-index:2; text-align:center; }',
+    '@media (max-width:900px){ #hsIslas{ display:none } }',
+    '#isPill{ position:absolute; top:-14%; bottom:-14%; right:-130px; width:150%;',
+    '  transform:rotate(-8deg); border-radius:999px;',
+    '  background:linear-gradient(165deg,rgba(120,170,255,.20),rgba(16,22,44,.30) 70%);',
+    '  backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.20);',
     '  box-shadow:0 20px 54px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.18); }',
-    '#isImg{ position:relative; width:min(375px,38vw); height:auto; z-index:1;',
+    '#isImg{ position:relative; width:min(410px,33vw); height:auto; z-index:1;',
     '  filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); animation:isFloat 5.4s ease-in-out infinite; }',
     '@keyframes isFloat{ 0%,100%{ transform:translateY(-7px) } 50%{ transform:translateY(7px) } }',
     '@media (prefers-reduced-motion: reduce){ #isImg{ animation:none } }',
@@ -16150,14 +16155,14 @@ function updatePvpShieldFX(){
     img.src = 'mundo' + st + '_iso.png';
   }
   function build(){
-    const shell = document.getElementById('homeShell');
-    if(!shell || document.getElementById('hsIslas')) return;
+    const home = document.getElementById('startOverlay');
+    if(!home || document.getElementById('hsIslas')) return;
     const right = document.getElementById('hsRight'); if(right) right.style.display = 'none';
     const w = document.createElement('div'); w.id = 'hsIslas';
     w.innerHTML = '<div id="isPill"></div><img id="isImg" alt=""><div id="isPh" style="display:none"><b>?</b></div>'
       + '<div id="isName"></div><div id="isInfo"></div>'
       + '<div id="isNav"><button id="isPrev" type="button">◂</button><span id="isIdx"></span><button id="isNext" type="button">▸</button></div>';
-    shell.appendChild(w);
+    home.appendChild(w);   // ►ISLAS v2: colgado del OVERLAY (fixed inset:0) → la banda va de arriba a abajo de la pantalla
     const n = CAMPAIGN_STAGES.length;
     document.getElementById('isPrev').addEventListener('click', ()=>{ idx = (idx+n-1)%n; render(); });
     document.getElementById('isNext').addEventListener('click', ()=>{ idx = (idx+1)%n; render(); });
