@@ -16097,6 +16097,75 @@ function updatePvpShieldFX(){
   }
   if(saveGet().sofaDone) showBanner('¡A PELEAR!', 1.6);   // la 1ª run ya tiene su frase justo aquí
 }
+/* =====================================================================
+   ►ISLAS (17/08, pedido de Toni) · PANTALLA 2: los MUNDOS como DIORAMAS
+   A la derecha, una PÍLDORA diagonal difuminada y encima, FLOTANDO, la isla
+   isométrica del mundo seleccionado — un PNG CON ALFA capturado del stage REAL
+   (receta en scratchpad/_captura_isla.js: congelar rAF, croma magenta, render
+   crudo sin niebla/postpro, solo el segmento central de la cinta, croma→alfa).
+   Convención de ficheros: mundo<STAGE>_iso.png junto al HTML — al capturar un
+   mundo nuevo, su foto aparece aquí SOLA (onerror → placeholder "sin foto").
+   Sustituye VISUALMENTE la lista #hsRight (oculta, NO borrada: sus datos de
+   nota/trofeo se leen aquí de las mismas fuentes). V1: navegación ◂ ▸.
+   ===================================================================== */
+(function homeIslas(){
+  const css = document.createElement('style');
+  css.textContent = [
+    '#hsIslas{ position:relative; flex:0 0 auto; width:min(390px,40vw); min-height:min(64vh,560px);',
+    '  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; pointer-events:auto; }',
+    '#isPill{ position:absolute; right:14px; top:50%; width:158px; height:min(62vh,530px);',
+    '  transform:translateY(-50%) rotate(-13deg); border-radius:999px;',
+    '  background:linear-gradient(165deg,rgba(120,170,255,.20),rgba(16,22,44,.26) 70%);',
+    '  backdrop-filter:blur(7px); border:1px solid rgba(255,255,255,.22);',
+    '  box-shadow:0 20px 54px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.18); }',
+    '#isImg{ position:relative; width:min(375px,38vw); height:auto; z-index:1;',
+    '  filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); animation:isFloat 5.4s ease-in-out infinite; }',
+    '@keyframes isFloat{ 0%,100%{ transform:translateY(-7px) } 50%{ transform:translateY(7px) } }',
+    '@media (prefers-reduced-motion: reduce){ #isImg{ animation:none } }',
+    '#isPh{ position:relative; z-index:1; width:130px; height:130px; border-radius:26px; transform:rotate(45deg);',
+    '  display:flex; align-items:center; justify-content:center; border:2px dashed rgba(255,255,255,.35);',
+    '  background:rgba(10,14,30,.4); }',
+    '#isPh b{ transform:rotate(-45deg); font-size:44px; color:rgba(255,255,255,.55); }',
+    '#isName{ position:relative; z-index:1; margin-top:10px; font-size:20px; font-weight:900; font-style:italic;',
+    '  letter-spacing:2px; color:#fff; text-shadow:0 3px 0 rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.85); }',
+    '#isInfo{ position:relative; z-index:1; font-size:13px; font-weight:900; color:#9fb0d6; }',
+    '#isNav{ position:relative; z-index:1; display:flex; align-items:center; gap:14px; margin-top:6px; }',
+    '#isNav button{ cursor:pointer; background:rgba(10,14,30,.55); border:1px solid rgba(255,255,255,.2);',
+    '  border-radius:10px; color:#ffd84f; font-size:22px; font-weight:900; padding:2px 14px; font-family:inherit; }',
+    '#isNav button:hover{ background:rgba(255,255,255,.14); }',
+    '#isIdx{ font-size:12px; font-weight:900; letter-spacing:2px; color:#9fe8ff; }',
+  ].join('\n');
+  document.head.appendChild(css);
+  let idx = 0;
+  function render(){
+    const st = CAMPAIGN_STAGES[idx];
+    const img = document.getElementById('isImg'), ph = document.getElementById('isPh');
+    const s = saveGet(), m = (s.marks||{})[st], tro = (s.trophies||{})[st];
+    document.getElementById('isName').textContent = (idx+1) + ' · ' + (STAGE_TAG[st] || ('MUNDO '+st));
+    document.getElementById('isInfo').textContent = (tro ? '🏆 ' : '') + (m ? ('nota ' + m.g) : 'sin jugar');
+    document.getElementById('isIdx').textContent = (idx+1) + '/' + CAMPAIGN_STAGES.length;
+    ph.style.display = 'none'; img.style.display = '';
+    img.onerror = ()=>{ img.style.display = 'none'; ph.style.display = 'flex';
+      ph.style.borderColor = '#' + (((PORTAL_PAL[st]||[])[1] || 0x5b647a)>>>0).toString(16).padStart(6,'0').slice(-6); };
+    img.src = 'mundo' + st + '_iso.png';
+  }
+  function build(){
+    const shell = document.getElementById('homeShell');
+    if(!shell || document.getElementById('hsIslas')) return;
+    const right = document.getElementById('hsRight'); if(right) right.style.display = 'none';
+    const w = document.createElement('div'); w.id = 'hsIslas';
+    w.innerHTML = '<div id="isPill"></div><img id="isImg" alt=""><div id="isPh" style="display:none"><b>?</b></div>'
+      + '<div id="isName"></div><div id="isInfo"></div>'
+      + '<div id="isNav"><button id="isPrev" type="button">◂</button><span id="isIdx"></span><button id="isNext" type="button">▸</button></div>';
+    shell.appendChild(w);
+    const n = CAMPAIGN_STAGES.length;
+    document.getElementById('isPrev').addEventListener('click', ()=>{ idx = (idx+n-1)%n; render(); });
+    document.getElementById('isNext').addEventListener('click', ()=>{ idx = (idx+1)%n; render(); });
+    render();
+  }
+  if(document.readyState !== 'loading') build();
+  else window.addEventListener('DOMContentLoaded', build);
+})();
 /* ►INTERSTAGE: FUNDIDO A NEGRO reutilizable (antes no existía ninguno: los overlays eran un display
    none↔flex a pelo y el cambio de stage era un corte seco).
    fadeOut(cb) llama a cb con la pantalla YA NEGRA → el cambio de mundo ocurre a oscuras.
