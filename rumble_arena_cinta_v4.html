@@ -16116,19 +16116,22 @@ function updatePvpShieldFX(){
        recortada por ella → borde izquierdo diagonal, de arriba a abajo. */
     /* ►ISLAS v3 (Toni): banda DIAGONAL de verdad — CUÑA: base abajo MUY ancha, arriba solo un
        ~15% más que antes. clip-path trapezoidal, sin rotación. */
-    /* ►ISLAS v4 (Toni, capturas 17/08): banda MÁS ANCHA, asset CENTRADO con márgenes a ambos
-       lados (el padding-left compensa la cuña: el centro visual de la banda no es el de la columna). */
-    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(920px,60vw); overflow:hidden;',
-    '  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;',
-    '  padding:4% 7% 4% 20%; box-sizing:border-box;',
-    '  pointer-events:none; z-index:2; text-align:center; }',
+    /* ►ISLAS v6 (Toni 17/08): DRAWER — panel SÓLIDO antracita (sin blur, sin transparencia,
+       nada de diagonal) que ENTRA deslizándose como una sección propia. De fondo, la "MOQUETA":
+       patrón tono-sobre-tono con motivos de la casa (rombo-isla, confeti, cruz, montañitas).
+       Selector VERTICAL con línea AMARILLA por detrás de los mundos. */
+    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(620px,43vw); overflow:hidden;',
+    '  display:flex; flex-direction:column; align-items:center; justify-content:center;',
+    '  padding:0 2%; box-sizing:border-box; pointer-events:none; z-index:2; text-align:center;',
+    '  animation:isDrawer .5s cubic-bezier(.18,.85,.3,1); }',
     '#hsIslas > *{ pointer-events:auto; }',
+    '@keyframes isDrawer{ from{ transform:translateX(105%) } to{ transform:none } }',
     '@media (max-width:900px){ #hsIslas{ display:none } }',
+    '@media (prefers-reduced-motion: reduce){ #hsIslas{ animation:none } }',
     '#isPill{ position:absolute; inset:0; pointer-events:none;',
-    '  clip-path:polygon(30% 0, 100% 0, 100% 100%, 0 100%);',   // arriba estrecha (70% del ancho) → base completa
-    '  background:linear-gradient(165deg,rgba(120,170,255,.20),rgba(16,22,44,.30) 70%);',
-    '  backdrop-filter:blur(8px);',
-    '  box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }',
+    '  background:#151b2e url("data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2796%27 height=%2796%27><g fill=%27none%27 stroke=%27%23ffffff%27 stroke-opacity=%270.05%27 stroke-width=%272%27><path d=%27M24 12l8 8-8 8-8-8z%27/><circle cx=%2772%27 cy=%2724%27 r=%275%27/><path d=%27M68 68h12M74 62v12%27/><path d=%27M12 74l10-8 10 8%27/><rect x=%2744%27 y=%2744%27 width=%278%27 height=%278%27 transform=%27rotate(15 48 48)%27/></g></svg>") repeat;',
+    '  border-left:1px solid rgba(255,255,255,.14);',
+    '  box-shadow:-26px 0 60px rgba(0,0,0,.45); }',
     /* ---- retoques de la COLUMNA IZQUIERDA (pedidos 17/08; overrides desde esta hoja, que va
        DESPUÉS de la base → gana sin tocar las líneas de la otra sesión) ---- */
     '#hsLogo{ width:min(440px,38vw) !important; }',                                  // logo más grande
@@ -16146,33 +16149,41 @@ function updatePvpShieldFX(){
     '#hsMenu .hsItem:nth-child(4):hover, #hsMenu .hsItem:nth-child(4):focus-visible, #hsMenu .hsItem:nth-child(4).uinav-focus{ color:#3fa9ff !important; }',
     '#hsMenu .hsItem:nth-child(5):hover, #hsMenu .hsItem:nth-child(5):focus-visible, #hsMenu .hsItem:nth-child(5).uinav-focus{ color:#3fd95a !important; }',
     '#hsMenu .hsItem:nth-child(6):hover, #hsMenu .hsItem:nth-child(6):focus-visible, #hsMenu .hsItem:nth-child(6).uinav-focus{ color:#ff4d38 !important; }',
-    /* ►ISLAS v5 (Toni): LÍNEA diagonal de navegación por detrás de los mundos + carril de 3
-       paradas SOBRE la línea (anterior arriba-dcha · actual centro · siguiente abajo-izda).
-       El paso entre paradas es el vector (100,-250) → la línea va rotada atan(100/250)≈21.8°
-       para que las tres islas queden clavadas encima. */
-    '#isLine{ position:absolute; left:56%; top:-20%; height:140%; width:3px; z-index:0;',
-    '  transform:rotate(21.8deg); transform-origin:50% 50%;',
-    '  background:linear-gradient(180deg, rgba(159,232,255,0), rgba(159,232,255,.55) 30%, rgba(159,232,255,.55) 70%, rgba(159,232,255,0));',
-    '  box-shadow:0 0 12px rgba(120,200,255,.45); pointer-events:none; }',
-    '#isTrack{ position:relative; z-index:1; width:100%; height:min(58vh,500px); pointer-events:none; }',
-    '#isTrack.anim-next{ animation:isSlideN .34s ease; } #isTrack.anim-prev{ animation:isSlideP .34s ease; }',
-    '@keyframes isSlideN{ from{ transform:translate(-100px,250px); opacity:.5 } to{ transform:none; opacity:1 } }',
-    '@keyframes isSlideP{ from{ transform:translate(100px,-250px); opacity:.5 } to{ transform:none; opacity:1 } }',
-    '.isStop{ position:absolute; left:50%; top:50%; width:min(400px,26vw); pointer-events:none; }',
+    /* LÍNEA de navegación VERTICAL y AMARILLA por detrás de los mundos; carril de 3 paradas
+       (anterior arriba · actual centro · siguiente abajo). El que entra CRECE y el que sale
+       ENCOGE deslizando por la línea (transition en las paradas + slide del carril). */
+    '#isLine{ position:absolute; left:50%; top:0; bottom:0; width:3px; z-index:0; transform:translateX(-50%);',
+    '  background:linear-gradient(180deg, rgba(255,216,79,0), rgba(255,216,79,.75) 20%, rgba(255,216,79,.75) 80%, rgba(255,216,79,0));',
+    '  box-shadow:0 0 14px rgba(255,216,79,.5); pointer-events:none; }',
+    '#isTrack{ position:relative; z-index:1; width:100%; height:min(60vh,540px); pointer-events:none; }',
+    '#isTrack.anim-next{ animation:isSlideN .42s cubic-bezier(.25,.9,.35,1); } #isTrack.anim-prev{ animation:isSlideP .42s cubic-bezier(.25,.9,.35,1); }',
+    '@keyframes isSlideN{ from{ transform:translateY(265px); opacity:.55 } to{ transform:none; opacity:1 } }',
+    '@keyframes isSlideP{ from{ transform:translateY(-265px); opacity:.55 } to{ transform:none; opacity:1 } }',
+    '.isStop{ position:absolute; left:50%; top:50%; width:min(430px,30vw); pointer-events:none;',
+    '  transition:transform .42s cubic-bezier(.25,.9,.35,1), opacity .42s ease; }',
     '.isStop img{ width:100%; height:auto; display:block; filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); }',
     '.isStop.cur{ transform:translate(-50%,-50%); z-index:2; animation:isFloat 5.4s ease-in-out infinite; }',
-    '.isStop.prev{ transform:translate(calc(-50% + 100px), calc(-50% - 250px)) scale(.46); opacity:.55; z-index:1; }',
-    '.isStop.next{ transform:translate(calc(-50% - 100px), calc(-50% + 250px)) scale(.46); opacity:.55; z-index:1; }',
+    '.isStop.prev{ transform:translate(-50%, calc(-50% - 265px)) scale(.42); opacity:.5; z-index:1; }',
+    '.isStop.next{ transform:translate(-50%, calc(-50% + 265px)) scale(.42); opacity:.5; z-index:1; }',
     '@keyframes isFloat{ 0%,100%{ margin-top:-7px } 50%{ margin-top:7px } }',
     '@media (prefers-reduced-motion: reduce){ .isStop.cur, #isTrack.anim-next, #isTrack.anim-prev{ animation:none } }',
     '#isPh{ position:relative; z-index:1; width:130px; height:130px; border-radius:26px; transform:rotate(45deg);',
     '  display:flex; align-items:center; justify-content:center; border:2px dashed rgba(255,255,255,.35);',
     '  background:rgba(10,14,30,.4); }',
     '#isPh b{ transform:rotate(-45deg); font-size:44px; color:rgba(255,255,255,.55); }',
-    '#isName{ position:relative; z-index:1; margin-top:10px; font-size:20px; font-weight:900; font-style:italic;',
-    '  letter-spacing:2px; color:#fff; text-shadow:0 3px 0 rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.85); }',
-    '#isInfo{ position:relative; z-index:1; font-size:13px; font-weight:900; color:#9fb0d6; }',
-    '#isNav{ position:relative; z-index:1; display:flex; align-items:center; gap:14px; margin-top:6px; }',
+    /* nombre GRANDE arriba (como el mock), controles y SELECCIONAR abajo */
+    '#isName{ position:absolute; top:5%; left:0; right:0; z-index:2; font-size:clamp(24px,2.3vw,36px);',
+    '  font-weight:900; font-style:italic; letter-spacing:2px; color:#fff;',
+    '  -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }',
+    '#isInfo{ position:absolute; top:calc(5% + 46px); left:0; right:0; z-index:2; font-size:13px; font-weight:900; color:#9fb0d6; }',
+    '#isNav{ position:absolute; bottom:13%; left:0; right:0; z-index:2; display:flex; align-items:center; justify-content:center; gap:14px; }',
+    '#isSelect{ position:absolute; bottom:4.5%; left:50%; transform:translateX(-50%); z-index:2; cursor:pointer;',
+    '  font-family:inherit; font-weight:900; font-style:italic; letter-spacing:2px; font-size:17px; color:#fff;',
+    '  background:#10162a; border:2px solid #ff4d38; border-radius:999px; padding:10px 26px 10px 14px;',
+    '  box-shadow:0 8px 24px rgba(0,0,0,.5); transition:box-shadow .15s ease, transform .15s ease; }',
+    '#isSelect:hover{ box-shadow:0 8px 30px rgba(255,77,56,.45); transform:translateX(-50%) scale(1.04); }',
+    '#isSelect b{ display:inline-block; width:24px; height:24px; line-height:24px; border-radius:50%;',
+    '  background:#ff4d38; color:#fff; margin-right:10px; font-style:normal; text-align:center; }',
     '#isNav button{ cursor:pointer; background:rgba(10,14,30,.55); border:1px solid rgba(255,255,255,.2);',
     '  border-radius:10px; color:#ffd84f; font-size:22px; font-weight:900; padding:2px 14px; font-family:inherit; }',
     '#isNav button:hover{ background:rgba(255,255,255,.14); }',
@@ -16218,7 +16229,8 @@ function updatePvpShieldFX(){
       +   '<div class="isStop next"><img id="isImgNext" alt=""></div>'
       + '</div><div id="isPh" style="display:none"><b>?</b></div>'
       + '<div id="isName"></div><div id="isInfo"></div>'
-      + '<div id="isNav"><button id="isPrev" type="button">◂</button><span id="isIdx"></span><button id="isNext" type="button">▸</button></div>';
+      + '<div id="isNav"><button id="isPrev" type="button">◂</button><span id="isIdx"></span><button id="isNext" type="button">▸</button></div>'
+      + '<button id="isSelect" type="button"><b>A</b>SELECCIONAR</button>';
     home.appendChild(w);   // ►ISLAS v2: colgado del OVERLAY (fixed inset:0) → la banda va de arriba a abajo de la pantalla
     const n = CAMPAIGN_STAGES.length;
     const slide = (dir)=>{   // el carril entero se desliza A LO LARGO de la línea
@@ -16228,6 +16240,17 @@ function updatePvpShieldFX(){
     };
     document.getElementById('isPrev').addEventListener('click', ()=>{ idx = (idx+n-1)%n; render(); slide(-1); });
     document.getElementById('isNext').addEventListener('click', ()=>{ idx = (idx+1)%n; render(); slide(1); });
+    /* SELECCIONAR (mock de Toni): elige el mundo con la maquinaria ►MAPSEL que ya existía —
+       MENU_STAGE + fondo de la home al mundo elegido; JUGAR arranca ahí. El cambio de fondo
+       ES el feedback. */
+    document.getElementById('isSelect').addEventListener('click', ()=>{
+      try{
+        if(typeof running !== 'undefined' && running) return;
+        const st = CAMPAIGN_STAGES[idx];
+        const i = (typeof rutaIndiceDe === 'function') ? rutaIndiceDe(st) : -1;
+        if(i >= 0){ MENU_RUTA_I = i; mapSelApply(); if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }
+      }catch(e){ console.warn('[islas] seleccionar', e); }
+    });
     render();
   }
   if(document.readyState !== 'loading') build();
