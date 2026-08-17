@@ -16141,10 +16141,25 @@ function updatePvpShieldFX(){
     '#hsMenu .hsItem:nth-child(3):hover, #hsMenu .hsItem:nth-child(3):focus-visible, #hsMenu .hsItem:nth-child(3).uinav-focus{ color:#ffd84f !important; }',
     '#hsMenu .hsItem:nth-child(4):hover, #hsMenu .hsItem:nth-child(4):focus-visible, #hsMenu .hsItem:nth-child(4).uinav-focus{ color:#3fd95a !important; }',
     '#hsMenu .hsItem:nth-child(5):hover, #hsMenu .hsItem:nth-child(5):focus-visible, #hsMenu .hsItem:nth-child(5).uinav-focus{ color:#3fa9ff !important; }',
-    '#isImg{ position:relative; width:min(400px,26vw); height:auto; z-index:1;',
-    '  filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); animation:isFloat 5.4s ease-in-out infinite; }',
-    '@keyframes isFloat{ 0%,100%{ transform:translateY(-7px) } 50%{ transform:translateY(7px) } }',
-    '@media (prefers-reduced-motion: reduce){ #isImg{ animation:none } }',
+    /* ►ISLAS v5 (Toni): LÍNEA diagonal de navegación por detrás de los mundos + carril de 3
+       paradas SOBRE la línea (anterior arriba-dcha · actual centro · siguiente abajo-izda).
+       El paso entre paradas es el vector (100,-250) → la línea va rotada atan(100/250)≈21.8°
+       para que las tres islas queden clavadas encima. */
+    '#isLine{ position:absolute; left:56%; top:-20%; height:140%; width:3px; z-index:0;',
+    '  transform:rotate(21.8deg); transform-origin:50% 50%;',
+    '  background:linear-gradient(180deg, rgba(159,232,255,0), rgba(159,232,255,.55) 30%, rgba(159,232,255,.55) 70%, rgba(159,232,255,0));',
+    '  box-shadow:0 0 12px rgba(120,200,255,.45); pointer-events:none; }',
+    '#isTrack{ position:relative; z-index:1; width:100%; height:min(58vh,500px); pointer-events:none; }',
+    '#isTrack.anim-next{ animation:isSlideN .34s ease; } #isTrack.anim-prev{ animation:isSlideP .34s ease; }',
+    '@keyframes isSlideN{ from{ transform:translate(-100px,250px); opacity:.5 } to{ transform:none; opacity:1 } }',
+    '@keyframes isSlideP{ from{ transform:translate(100px,-250px); opacity:.5 } to{ transform:none; opacity:1 } }',
+    '.isStop{ position:absolute; left:50%; top:50%; width:min(400px,26vw); pointer-events:none; }',
+    '.isStop img{ width:100%; height:auto; display:block; filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); }',
+    '.isStop.cur{ transform:translate(-50%,-50%); z-index:2; animation:isFloat 5.4s ease-in-out infinite; }',
+    '.isStop.prev{ transform:translate(calc(-50% + 100px), calc(-50% - 250px)) scale(.46); opacity:.55; z-index:1; }',
+    '.isStop.next{ transform:translate(calc(-50% - 100px), calc(-50% + 250px)) scale(.46); opacity:.55; z-index:1; }',
+    '@keyframes isFloat{ 0%,100%{ margin-top:-7px } 50%{ margin-top:7px } }',
+    '@media (prefers-reduced-motion: reduce){ .isStop.cur, #isTrack.anim-next, #isTrack.anim-prev{ animation:none } }',
     '#isPh{ position:relative; z-index:1; width:130px; height:130px; border-radius:26px; transform:rotate(45deg);',
     '  display:flex; align-items:center; justify-content:center; border:2px dashed rgba(255,255,255,.35);',
     '  background:rgba(10,14,30,.4); }',
@@ -16160,30 +16175,44 @@ function updatePvpShieldFX(){
   ].join('\n');
   document.head.appendChild(css);
   let idx = 0;
+  /* mientras no exista la foto de un mundo, se rellena con la del prado (pedido de Toni: ver el
+     efecto de navegación multiplicando el mismo asset) */
+  function setSrc(img, st){
+    img.onerror = ()=>{ if(!/mundo1_iso\.png$/.test(img.src)) img.src = 'mundo1_iso.png'; };
+    img.src = 'mundo' + st + '_iso.png';
+  }
   function render(){
-    const st = CAMPAIGN_STAGES[idx];
-    const img = document.getElementById('isImg'), ph = document.getElementById('isPh');
+    const n = CAMPAIGN_STAGES.length, st = CAMPAIGN_STAGES[idx];
     const s = saveGet(), m = (s.marks||{})[st], tro = (s.trophies||{})[st];
     document.getElementById('isName').textContent = (idx+1) + ' · ' + (STAGE_TAG[st] || ('MUNDO '+st));
     document.getElementById('isInfo').textContent = (tro ? '🏆 ' : '') + (m ? ('nota ' + m.g) : 'sin jugar');
-    document.getElementById('isIdx').textContent = (idx+1) + '/' + CAMPAIGN_STAGES.length;
-    ph.style.display = 'none'; img.style.display = '';
-    img.onerror = ()=>{ img.style.display = 'none'; ph.style.display = 'flex';
-      ph.style.borderColor = '#' + (((PORTAL_PAL[st]||[])[1] || 0x5b647a)>>>0).toString(16).padStart(6,'0').slice(-6); };
-    img.src = 'mundo' + st + '_iso.png';
+    document.getElementById('isIdx').textContent = (idx+1) + '/' + n;
+    setSrc(document.getElementById('isImg'), st);
+    setSrc(document.getElementById('isImgPrev'), CAMPAIGN_STAGES[(idx+n-1)%n]);
+    setSrc(document.getElementById('isImgNext'), CAMPAIGN_STAGES[(idx+1)%n]);
   }
   function build(){
     const home = document.getElementById('startOverlay');
     if(!home || document.getElementById('hsIslas')) return;
     const right = document.getElementById('hsRight'); if(right) right.style.display = 'none';
     const w = document.createElement('div'); w.id = 'hsIslas';
-    w.innerHTML = '<div id="isPill"></div><img id="isImg" alt=""><div id="isPh" style="display:none"><b>?</b></div>'
+    w.innerHTML = '<div id="isPill"></div><div id="isLine"></div>'
+      + '<div id="isTrack">'
+      +   '<div class="isStop prev"><img id="isImgPrev" alt=""></div>'
+      +   '<div class="isStop cur"><img id="isImg" alt=""></div>'
+      +   '<div class="isStop next"><img id="isImgNext" alt=""></div>'
+      + '</div><div id="isPh" style="display:none"><b>?</b></div>'
       + '<div id="isName"></div><div id="isInfo"></div>'
       + '<div id="isNav"><button id="isPrev" type="button">◂</button><span id="isIdx"></span><button id="isNext" type="button">▸</button></div>';
     home.appendChild(w);   // ►ISLAS v2: colgado del OVERLAY (fixed inset:0) → la banda va de arriba a abajo de la pantalla
     const n = CAMPAIGN_STAGES.length;
-    document.getElementById('isPrev').addEventListener('click', ()=>{ idx = (idx+n-1)%n; render(); });
-    document.getElementById('isNext').addEventListener('click', ()=>{ idx = (idx+1)%n; render(); });
+    const slide = (dir)=>{   // el carril entero se desliza A LO LARGO de la línea
+      const t = document.getElementById('isTrack');
+      t.classList.remove('anim-next','anim-prev'); void t.offsetWidth;
+      t.classList.add(dir>0 ? 'anim-next' : 'anim-prev');
+    };
+    document.getElementById('isPrev').addEventListener('click', ()=>{ idx = (idx+n-1)%n; render(); slide(-1); });
+    document.getElementById('isNext').addEventListener('click', ()=>{ idx = (idx+1)%n; render(); slide(1); });
     render();
   }
   if(document.readyState !== 'loading') build();
