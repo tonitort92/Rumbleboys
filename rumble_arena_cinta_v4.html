@@ -16120,7 +16120,7 @@ function updatePvpShieldFX(){
        nada de diagonal) que ENTRA deslizándose como una sección propia. De fondo, la "MOQUETA":
        patrón tono-sobre-tono con motivos de la casa (rombo-isla, confeti, cruz, montañitas).
        Selector VERTICAL con línea AMARILLA por detrás de los mundos. */
-    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(620px,43vw); overflow:hidden;',
+    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(760px,50vw); overflow:hidden;',
     '  display:flex; flex-direction:column; align-items:center; justify-content:center;',
     '  padding:0 2%; box-sizing:border-box; pointer-events:none; z-index:2; text-align:center;',
     '  animation:isDrawer .5s cubic-bezier(.18,.85,.3,1); }',
@@ -16137,7 +16137,7 @@ function updatePvpShieldFX(){
     '#hsLogo{ width:min(440px,38vw) !important; }',                                  // logo más grande
     '#hsLogoTxt{ font-size:clamp(44px,6.4vw,70px) !important; }',
     '.hsItem::before{ display:none !important; }',                                   // fuera la flecha ▸
-    '#hsLeft{ margin-left:clamp(18px,5vw,90px); }',                                  // margen al borde en pantallas pequeñas
+    '#hsLeft{ margin-left:clamp(40px,13vw,240px); }',   // empuja el menú hacia el CENTRO (menos hueco entre columnas) y margen en pantallas pequeñas
     /* ►17/08 · OUTLINE del juego en las letras del menú (mismo trazo que el logo #hsLogoTxt) —
        también en el estado seleccionado; paint-order deja el trazo POR DEBAJO del relleno */
     '.hsItem{ -webkit-text-stroke:2px #14102b; paint-order:stroke fill; }',
@@ -16153,7 +16153,7 @@ function updatePvpShieldFX(){
        (anterior arriba · actual centro · siguiente abajo). El que entra CRECE y el que sale
        ENCOGE deslizando por la línea (transition en las paradas + slide del carril). */
     '#isLine{ position:absolute; left:50%; top:0; bottom:0; width:3px; z-index:0; transform:translateX(-50%);',
-    '  background:linear-gradient(180deg, rgba(255,216,79,0), rgba(255,216,79,.75) 20%, rgba(255,216,79,.75) 80%, rgba(255,216,79,0));',
+    '  background:linear-gradient(180deg, rgba(255,216,79,0), rgba(255,216,79,.75) 4%, rgba(255,216,79,.75) 96%, rgba(255,216,79,0));',   // recorre TODO el alto: pasa por detrás también de los mapas no seleccionados
     '  box-shadow:0 0 14px rgba(255,216,79,.5); pointer-events:none; }',
     '#isTrack{ position:relative; z-index:1; width:100%; height:min(60vh,540px); pointer-events:none; }',
     '#isTrack.anim-next{ animation:isSlideN .42s cubic-bezier(.25,.9,.35,1); } #isTrack.anim-prev{ animation:isSlideP .42s cubic-bezier(.25,.9,.35,1); }',
@@ -16171,11 +16171,18 @@ function updatePvpShieldFX(){
     '  display:flex; align-items:center; justify-content:center; border:2px dashed rgba(255,255,255,.35);',
     '  background:rgba(10,14,30,.4); }',
     '#isPh b{ transform:rotate(-45deg); font-size:44px; color:rgba(255,255,255,.55); }',
-    /* nombre GRANDE arriba (como el mock), controles y SELECCIONAR abajo */
-    '#isName{ position:absolute; top:5%; left:0; right:0; z-index:2; font-size:clamp(24px,2.3vw,36px);',
-    '  font-weight:900; font-style:italic; letter-spacing:2px; color:#fff;',
+    /* TÍTULO tematizado: placa propia con el COLOR del mundo (borde + resplandor), y debajo,
+       con su hueco, los chips de TROFEO y MARCA */
+    '#isName{ position:absolute; top:4%; left:50%; transform:translateX(-50%) skewX(-4deg); z-index:2;',
+    '  display:inline-block; white-space:nowrap; padding:9px 30px; border-radius:14px;',
+    '  background:linear-gradient(180deg,#1a2140,#0e1328); border:2.5px solid #ffd84f;',
+    '  box-shadow:0 6px 22px rgba(0,0,0,.55), 0 0 18px rgba(255,216,79,.18), inset 0 1px 0 rgba(255,255,255,.14);',
+    '  font-size:clamp(22px,2.1vw,33px); font-weight:900; font-style:italic; letter-spacing:2px; color:#fff;',
     '  -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }',
-    '#isInfo{ position:absolute; top:calc(5% + 46px); left:0; right:0; z-index:2; font-size:13px; font-weight:900; color:#9fb0d6; }',
+    '#isInfo{ position:absolute; top:calc(4% + 68px); left:0; right:0; z-index:2; display:flex; justify-content:center; gap:10px; }',
+    '.isChip{ display:inline-block; padding:5px 14px; border-radius:999px; font-size:12px; font-weight:900;',
+    '  letter-spacing:1.5px; color:#8b96b5; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); }',
+    '.isChip.on{ color:#ffd84f; border-color:rgba(255,216,79,.5); background:rgba(255,216,79,.10); }',
     '#isNav{ position:absolute; bottom:13%; left:0; right:0; z-index:2; display:flex; align-items:center; justify-content:center; gap:14px; }',
     '#isSelect{ position:absolute; bottom:4.5%; left:50%; transform:translateX(-50%); z-index:2; cursor:pointer;',
     '  font-family:inherit; font-weight:900; font-style:italic; letter-spacing:2px; font-size:17px; color:#fff;',
@@ -16200,8 +16207,14 @@ function updatePvpShieldFX(){
   function render(){
     const n = CAMPAIGN_STAGES.length, st = CAMPAIGN_STAGES[idx];
     const s = saveGet(), m = (s.marks||{})[st], tro = (s.trophies||{})[st];
-    document.getElementById('isName').textContent = (idx+1) + ' · ' + (STAGE_TAG[st] || ('MUNDO '+st));
-    document.getElementById('isInfo').textContent = (tro ? '🏆 ' : '') + (m ? ('nota ' + m.g) : 'sin jugar');
+    const nameEl = document.getElementById('isName');
+    nameEl.textContent = (idx+1) + ' · ' + (STAGE_TAG[st] || ('MUNDO '+st));
+    const col = '#' + (((PORTAL_PAL[st]||[])[1] || 0xffd84f)>>>0).toString(16).padStart(6,'0').slice(-6);
+    nameEl.style.borderColor = col;   // la placa se TEMATIZA con el color del mundo
+    nameEl.style.boxShadow = '0 6px 22px rgba(0,0,0,.55), 0 0 20px ' + col + '44, inset 0 1px 0 rgba(255,255,255,.14)';
+    document.getElementById('isInfo').innerHTML =
+        '<span class="isChip' + (tro ? ' on' : '') + '">🏆 ' + (tro ? 'TROFEO' : 'SIN TROFEO') + '</span>'
+      + '<span class="isChip' + (m ? ' on' : '') + '">' + (m ? ('MARCA ' + m.g) : 'SIN MARCA') + '</span>';
     document.getElementById('isIdx').textContent = (idx+1) + '/' + n;
     setSrc(document.getElementById('isImg'), st);
     setSrc(document.getElementById('isImgPrev'), CAMPAIGN_STAGES[(idx+n-1)%n]);
