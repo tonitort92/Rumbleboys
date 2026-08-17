@@ -16114,15 +16114,19 @@ function updatePvpShieldFX(){
     /* ►ISLAS v2 (17/08, boceto de Toni): la píldora ocupa TODO el vertical derecho — es el FONDO
        sobre el que flotan los mundos, no una tarjeta. Banda rotada más grande que su columna y
        recortada por ella → borde izquierdo diagonal, de arriba a abajo. */
-    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(460px,37vw); overflow:hidden;',
+    /* ►ISLAS v3 (Toni): banda DIAGONAL de verdad — CUÑA: base abajo MUY ancha, arriba solo un
+       ~15% más que antes. clip-path trapezoidal, sin rotación. */
+    '#hsIslas{ position:absolute; top:0; bottom:0; right:0; width:min(800px,54vw); overflow:hidden;',
     '  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;',
-    '  pointer-events:auto; z-index:2; text-align:center; }',
+    '  padding-left:22%; box-sizing:border-box;',
+    '  pointer-events:none; z-index:2; text-align:center; }',
+    '#hsIslas > *{ pointer-events:auto; }',
     '@media (max-width:900px){ #hsIslas{ display:none } }',
-    '#isPill{ position:absolute; top:-14%; bottom:-14%; right:-130px; width:150%;',
-    '  transform:rotate(-8deg); border-radius:999px;',
+    '#isPill{ position:absolute; inset:0; pointer-events:none;',
+    '  clip-path:polygon(34% 0, 100% 0, 100% 100%, 0 100%);',   // arriba estrecha (66% del ancho) → base completa
     '  background:linear-gradient(165deg,rgba(120,170,255,.20),rgba(16,22,44,.30) 70%);',
-    '  backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.20);',
-    '  box-shadow:0 20px 54px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.18); }',
+    '  backdrop-filter:blur(8px);',
+    '  box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }',
     '#isImg{ position:relative; width:min(410px,33vw); height:auto; z-index:1;',
     '  filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); animation:isFloat 5.4s ease-in-out infinite; }',
     '@keyframes isFloat{ 0%,100%{ transform:translateY(-7px) } 50%{ transform:translateY(7px) } }',
