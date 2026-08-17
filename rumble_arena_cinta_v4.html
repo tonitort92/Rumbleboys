@@ -16135,12 +16135,17 @@ function updatePvpShieldFX(){
     '#hsLogoTxt{ font-size:clamp(44px,6.4vw,70px) !important; }',
     '.hsItem::before{ display:none !important; }',                                   // fuera la flecha ▸
     '#hsLeft{ margin-left:clamp(18px,5vw,90px); }',                                  // margen al borde en pantallas pequeñas
-    /* un color RUMBLEBOYS por ítem al recibir foco/hover (orden del arcoíris del logo) */
+    /* ►17/08 · OUTLINE del juego en las letras del menú (mismo trazo que el logo #hsLogoTxt) —
+       también en el estado seleccionado; paint-order deja el trazo POR DEBAJO del relleno */
+    '.hsItem{ -webkit-text-stroke:2px #14102b; paint-order:stroke fill; }',
+    '#tiSub{ -webkit-text-stroke:1.3px #14102b; paint-order:stroke fill; color:#eaf2ff !important; font-weight:800 !important; opacity:1 !important; }',
+    /* paleta de foco pedida: rojo, amarillo, lila, azul, verde (y cicla) — 6 ítems con TUTORIALES */
     '#hsMenu .hsItem:nth-child(1):hover, #hsMenu .hsItem:nth-child(1):focus-visible, #hsMenu .hsItem:nth-child(1).uinav-focus{ color:#ff4d38 !important; }',
-    '#hsMenu .hsItem:nth-child(2):hover, #hsMenu .hsItem:nth-child(2):focus-visible, #hsMenu .hsItem:nth-child(2).uinav-focus{ color:#ff9d1e !important; }',
-    '#hsMenu .hsItem:nth-child(3):hover, #hsMenu .hsItem:nth-child(3):focus-visible, #hsMenu .hsItem:nth-child(3).uinav-focus{ color:#ffd84f !important; }',
-    '#hsMenu .hsItem:nth-child(4):hover, #hsMenu .hsItem:nth-child(4):focus-visible, #hsMenu .hsItem:nth-child(4).uinav-focus{ color:#3fd95a !important; }',
-    '#hsMenu .hsItem:nth-child(5):hover, #hsMenu .hsItem:nth-child(5):focus-visible, #hsMenu .hsItem:nth-child(5).uinav-focus{ color:#3fa9ff !important; }',
+    '#hsMenu .hsItem:nth-child(2):hover, #hsMenu .hsItem:nth-child(2):focus-visible, #hsMenu .hsItem:nth-child(2).uinav-focus{ color:#ffd84f !important; }',
+    '#hsMenu .hsItem:nth-child(3):hover, #hsMenu .hsItem:nth-child(3):focus-visible, #hsMenu .hsItem:nth-child(3).uinav-focus{ color:#b45cff !important; }',
+    '#hsMenu .hsItem:nth-child(4):hover, #hsMenu .hsItem:nth-child(4):focus-visible, #hsMenu .hsItem:nth-child(4).uinav-focus{ color:#3fa9ff !important; }',
+    '#hsMenu .hsItem:nth-child(5):hover, #hsMenu .hsItem:nth-child(5):focus-visible, #hsMenu .hsItem:nth-child(5).uinav-focus{ color:#3fd95a !important; }',
+    '#hsMenu .hsItem:nth-child(6):hover, #hsMenu .hsItem:nth-child(6):focus-visible, #hsMenu .hsItem:nth-child(6).uinav-focus{ color:#ff4d38 !important; }',
     /* ►ISLAS v5 (Toni): LÍNEA diagonal de navegación por detrás de los mundos + carril de 3
        paradas SOBRE la línea (anterior arriba-dcha · actual centro · siguiente abajo-izda).
        El paso entre paradas es el vector (100,-250) → la línea va rotada atan(100/250)≈21.8°
@@ -16195,6 +16200,16 @@ function updatePvpShieldFX(){
     const home = document.getElementById('startOverlay');
     if(!home || document.getElementById('hsIslas')) return;
     const right = document.getElementById('hsRight'); if(right) right.style.display = 'none';
+    /* ►17/08 · TUTORIALES (pedido de Toni): entra tras ENTRENAR. Aún sin contenido detrás —
+       al pulsarlo avisa PRÓXIMAMENTE (cuando exista el modo, se le cuelga aquí). */
+    const tr = document.getElementById('hsTrain');
+    if(tr && !document.getElementById('hsTuto')){
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'hsItem'; b.id = 'hsTuto'; b.textContent = 'TUTORIALES';
+      b.addEventListener('click', ()=>{ if(b._t) return; b._t = true; const old = b.textContent;
+        b.textContent = 'PRÓXIMAMENTE…'; setTimeout(()=>{ b.textContent = old; b._t = false; }, 1100); });
+      tr.insertAdjacentElement('afterend', b);
+    }
     const w = document.createElement('div'); w.id = 'hsIslas';
     w.innerHTML = '<div id="isPill"></div><div id="isLine"></div>'
       + '<div id="isTrack">'
