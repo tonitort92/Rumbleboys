@@ -16282,6 +16282,194 @@ function updatePvpShieldFX(){
   if(document.readyState !== 'loading') build();
   else window.addEventListener('DOMContentLoaded', build);
 })();
+/* =====================================================================
+   ►ESFERAS (18/08, pedido de Toni) · PANTALLA 2: cada mundo del selector
+   FLOTA SOBRE UN PLANETA — detrás de la isla, una esfera 3D facetada que
+   rota despacio con el COLOR del mundo (PORTAL_PAL) y parches del asset de
+   HIERBA pegados a su superficie, teñidos con el MULTITONO de los suelos de
+   ESE stage (las mismas paletas que come makeFieldTexture en applyStageTheme).
+   Así la isla deja de leerse como "una plataforma" y se lee como un mundo.
+   UN SOLO contexto WebGL para las 3 paradas: se renderiza en un canvas oculto
+   y se VUELCA con drawImage al canvas 2D de cada parada → las esferas heredan
+   gratis los transform/animaciones CSS del carril (la escala .42 de prev/next,
+   la flotación de la actual, el slide al navegar) sin duplicar nada en JS.
+   ===================================================================== */
+(function homeIslasEsferas(){
+  /* ►►► AJUSTA (los números de la prueba) ◄◄◄ */
+  const DIAM  = 0.92;   // diámetro de la esfera, en fracción del ANCHO de la isla
+  const CY    = 0.62;   // centro vertical, en fracción del ALTO de la isla (>0.5 = más abajo → asoma por detrás)
+  const SPIN  = 0.28;   // rad/s de rotación (0.28 ≈ una vuelta cada 22 s)
+  const TILT  = 0.20;   // inclinación del eje (rad): sin ella el giro casi no se nota
+  const TUFTS = 22;     // nº de parches de hierba pegados a la esfera
+  const TUFT  = 0.17;   // escala de cada parche (el modelo viene normalizado a 2.4 u)
+  const FPS   = 30;     // el planeta no necesita 60: la home ya está renderizando el mundo detrás
+
+  const RS = 512;                                    // resolución del render compartido
+  const PAL_DEF = ['#6fcf6a','#55ab52','#7ed87a','#62bf5e','#86dd7f'];   // los verdes del prado (M.grass de serie)
+  let gl=null, sc=null, cam=null, raf=0, last=0;
+  const planets = {}, stops = [], _tufts = {};
+
+  /* MULTITONO DE SUELO de cada mundo: la MISMA paleta que applyStageTheme mete en M.grass.
+     Los mundos que no tienen paleta propia de suelo (hielo, forja, piratas, arcoíris) derivan
+     5 tonos de su color de mundo — mismo criterio que la placa del título. */
+  function surfPal(st){
+    try{
+      if(st===1) return PAL_DEF;
+      if(st===2  && typeof S2_GREENS  !== 'undefined') return S2_GREENS;
+      if(st===3  && typeof SJ_PINKS   !== 'undefined') return SJ_PINKS;
+      if(st===11 && typeof SW_SANDS   !== 'undefined') return SW_SANDS;
+      if(st===4  && typeof S4_SANDS   !== 'undefined') return S4_SANDS;
+      if(st===5  && typeof PIR_SANDS  !== 'undefined') return PIR_SANDS;
+    }catch(e){}
+    const hsl = {}; new THREE.Color(((PORTAL_PAL[st]||PORTAL_PAL[1])[2])>>>0).getHSL(hsl);
+    return [-.10,-.05,0,.05,.10].map(d =>
+      new THREE.Color().setHSL(hsl.h, hsl.s, THREE.MathUtils.clamp(hsl.l+d, .08, .92)).getStyle());
+  }
+  /* El multitono va SOLO a las BRIZNAS. El parche llega FUSIONADO en UNA malla con COLORES DE
+     VÉRTICE y material blanco (1 draw-call, ver getModel/_normalize) → el tinte va al atributo de
+     COLOR de la geometría, NO al material: ahí el material.color es #ffffff y teñirlo no hacía nada (medido).
+     UNA geometría teñida por mundo, compartida por todas sus matas; la plantilla de getModel NO se
+     toca (la comparten los parches del juego real, userData.shared). El tono se elige por CELDA de
+     POSICIÓN: los vértices vecinos caen en la misma celda → multitono POR BRIZNA, no ruido por
+     vértice. Las flores (todo lo que no es verde) se quedan con su color, que es el detalle del asset. */
+  function tuftTpl(st, pal){
+    if(_tufts[st] !== undefined) return _tufts[st];
+    const tpl = (typeof getModel === 'function' && typeof DECOR_DEFS !== 'undefined')
+      ? getModel('grasspatch', DECOR_DEFS) : null;
+    if(tpl){
+      /* sRGB → LINEAR: estas paletas son las de las TEXTURAS de suelo, y el shader las decodifica
+         al muestrearlas. Como COLOR DE VÉRTICE se toman ya lineales, así que metidas en crudo salen
+         claras y desaturadas: medido, las briznas llegaban a (207,219,199) — pelo blanco, no hierba. */
+      const cols = pal.map(h => new THREE.Color(h).convertSRGBToLinear()), q = v => Math.round(v/0.18);
+      tpl.traverse(o=>{
+        if(!o.isMesh || !o.geometry) return;
+        const g = o.geometry.clone(), col = g.attributes.color, pos = g.attributes.position;
+        if(col){
+          for(let i=0;i<col.count;i++){
+            const r = col.getX(i), gg = col.getY(i), b = col.getZ(i);
+            if(gg <= r*1.15 || gg <= b*1.15) continue;             // no es brizna (flor) → se respeta
+            const h = Math.abs((q(pos.getX(i))*73856093) ^ (q(pos.getY(i))*19349663) ^ (q(pos.getZ(i))*83492791));
+            const c = cols[h % cols.length];
+            col.setXYZ(i, c.r, c.g, c.b);
+          }
+          col.needsUpdate = true;
+        }
+        o.geometry = g;
+      });
+    }
+    _tufts[st] = tpl;
+    return tpl;
+  }
+  function buildPlanet(st){
+    const g = new THREE.Group(), R = 1.0;
+    /* Icosaedro NO INDEXADO (PolyhedronGeometry) → un color por CARA sale gratis: con
+       flatShading da el facetado low-poly de la casa en vez de una bola lisa de chicle. */
+    const geo = new THREE.IcosahedronGeometry(R, 3);
+    const n = geo.attributes.position.count, col = new Float32Array(n*3);
+    const c = new THREE.Color(), hsl = {};
+    new THREE.Color(((PORTAL_PAL[st]||PORTAL_PAL[1])[2])>>>0).getHSL(hsl);
+    for(let f=0; f<n; f+=3){
+      c.setHSL(hsl.h, hsl.s, THREE.MathUtils.clamp(hsl.l + (Math.random()-.5)*.09, .05, .95));
+      for(let v=0; v<3; v++){ col[(f+v)*3]=c.r; col[(f+v)*3+1]=c.g; col[(f+v)*3+2]=c.b; }
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      vertexColors:true, flatShading:true, roughness:.95, metalness:0 })));
+    /* TINTA: silueta oscura con backfaces infladas — el mismo contorno que el ►INK del juego */
+    g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(R*1.03, 2),
+      new THREE.MeshBasicMaterial({ color:0x14102b, side:THREE.BackSide })));
+    /* HIERBA pegada: reparto de FIBONACCI sobre la esfera (uniforme, sin apelotonar los polos) */
+    const tpl = tuftTpl(st, surfPal(st));
+    if(tpl){                                          // sin OBJLoader/asset: la esfera va sola
+      const halfH = tpl.userData.halfH || 0.38;       // el modelo normalizado tiene el ORIGEN en su centro
+      const up = new THREE.Vector3(0,1,0), nr = new THREE.Vector3(), GA = Math.PI*(3-Math.sqrt(5));
+      for(let i=0;i<TUFTS;i++){
+        const m = tpl.clone();                        // geometría y material COMPARTIDOS con la plantilla teñida
+        const y = 1 - (i+.5)*2/TUFTS, r = Math.sqrt(Math.max(0, 1-y*y));
+        nr.set(Math.cos(GA*i)*r, y, Math.sin(GA*i)*r).normalize();
+        const f = TUFT * (.75 + Math.random()*.5);
+        m.scale.setScalar(f);
+        m.quaternion.setFromUnitVectors(up, nr);      // de pie sobre la superficie
+        m.rotateY(Math.random()*Math.PI*2);           // y girado al azar sobre su propio eje
+        m.position.copy(nr).multiplyScalar(R + halfH*f - .06);   // ligeramente hundido, como en el suelo
+        m.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = false; } });
+        g.add(m);
+      }
+    }
+    g.rotation.z = TILT;
+    return g;
+  }
+  function ensure(){
+    if(gl) return true;
+    if(!window.THREE || !document.querySelector('.isStop.cur')) return false;
+    const css = document.createElement('style'); css.id = 'isSphCss';
+    css.textContent = [
+      '.isStop canvas.isSph{ position:absolute; left:50%; top:' + (CY*100).toFixed(1) + '%;',
+      '  width:' + (DIAM*100).toFixed(1) + '%; aspect-ratio:1/1; transform:translate(-50%,-50%);',
+      '  z-index:0; pointer-events:none; }',
+      '.isStop img{ position:relative; z-index:1; }',   // la isla, DELANTE del planeta
+    ].join('\n');
+    document.head.appendChild(css);
+    const off = document.createElement('canvas'); off.width = off.height = RS;
+    gl = new THREE.WebGLRenderer({ canvas:off, alpha:true, antialias:true });
+    gl.setPixelRatio(1); gl.setSize(RS, RS, false);
+    if(THREE.sRGBEncoding) gl.outputEncoding = THREE.sRGBEncoding;
+    /* MISMO GRADO Y MISMO RIG QUE EL JUEGO (VISUAL/LIGHT_RIG): ACES + exposición, sol cálido
+       dominante, relleno frío BAJO y contraluz. Con un rig propio más alto y sin tone mapping el
+       planeta salía lavado y las briznas se iban a BLANCO puro (medido en captura). */
+    gl.toneMapping = (typeof VISUAL !== 'undefined' && THREE[VISUAL.toneMapping] != null)
+      ? THREE[VISUAL.toneMapping] : THREE.ACESFilmicToneMapping;
+    gl.toneMappingExposure = (typeof VISUAL !== 'undefined' && VISUAL.exposure) || 0.66;
+    sc = new THREE.Scene();
+    cam = new THREE.PerspectiveCamera(30, 1, .1, 50);
+    cam.position.set(0, .75, 4.6); cam.lookAt(0,0,0);
+    const RIG = (typeof LIGHT_RIG !== 'undefined') ? LIGHT_RIG : null;
+    sc.add(new THREE.HemisphereLight(RIG ? RIG.hemi.sky : 0x8fc0ff, RIG ? RIG.hemi.ground : 0x4a4a5e,
+                                     RIG ? RIG.hemi.intensity : .30));
+    const k = new THREE.DirectionalLight(RIG ? RIG.key.color : 0xffe8c0, RIG ? RIG.key.intensity : 1.5);
+    k.position.set(3, 4.5, 4); sc.add(k);
+    const r = new THREE.DirectionalLight(RIG ? RIG.rim.color : 0xb8d8ff, RIG ? RIG.rim.intensity : .32);
+    r.position.set(-4, 2, -3); sc.add(r);
+    for(const cls of ['prev','cur','next']){
+      const host = document.querySelector('.isStop.' + cls); if(!host) continue;
+      const cv = document.createElement('canvas'); cv.className = 'isSph';
+      cv.width = cv.height = (cls === 'cur') ? RS : (RS>>1);   // las paradas laterales van al 42%: media resolución sobra
+      host.insertBefore(cv, host.firstChild);
+      stops.push({ cls, cv, ctx: cv.getContext('2d') });
+    }
+    return stops.length > 0;
+  }
+  function frame(t){
+    raf = requestAnimationFrame(frame);
+    const ov = document.getElementById('startOverlay');
+    if(document.hidden || !ov || ov.style.display === 'none') return;   // fuera de la portada no se dibuja nada
+    if(window.__ESFERAS_OFF) return;   // interruptor: apaga los planetas en vivo (A/B de coste y salida de emergencia)
+    if(t - last < 1000/FPS) return;
+    last = t;
+    if(!ensure()) return;
+    const n = CAMPAIGN_STAGES.length;
+    let idx = 0;
+    const lbl = document.getElementById('isIdx');                       // la parada actual, leída del propio contador 1/10
+    if(lbl){ const v = parseInt(lbl.textContent, 10); if(v > 0) idx = v-1; }
+    const spin = (t/1000)*SPIN;
+    for(const s of stops){
+      const off = (s.cls === 'prev') ? n-1 : (s.cls === 'next') ? 1 : 0;
+      const st = CAMPAIGN_STAGES[(idx + off) % n];
+      const p = planets[st] || (planets[st] = buildPlanet(st));
+      if(p.parent !== sc) sc.add(p);
+      for(const key in planets) planets[key].visible = (planets[key] === p);
+      p.rotation.y = spin;
+      gl.render(sc, cam);
+      /* volcado: el buffer de WebGL sigue vivo dentro de esta misma tarea (sin
+         preserveDrawingBuffer, que costaría una copia por frame) */
+      s.ctx.clearRect(0, 0, s.cv.width, s.cv.height);
+      s.ctx.drawImage(gl.domElement, 0, 0, RS, RS, 0, 0, s.cv.width, s.cv.height);
+    }
+  }
+  function start(){ if(!raf) raf = requestAnimationFrame(frame); }
+  if(document.readyState !== 'loading') start();
+  else window.addEventListener('DOMContentLoaded', start);   // registrado DESPUÉS del build de ►ISLAS → las paradas ya existen
+})();
 /* ►INTERSTAGE: FUNDIDO A NEGRO reutilizable (antes no existía ninguno: los overlays eran un display
    none↔flex a pelo y el cambio de stage era un corte seco).
    fadeOut(cb) llama a cb con la pantalla YA NEGRA → el cambio de mundo ocurre a oscuras.
