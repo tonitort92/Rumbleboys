@@ -682,7 +682,11 @@ window.addEventListener('load', function(){
   /* EL CORRO: canvas 3D propio (renderer aparte, patrón de winCelebrate) con los 6 sentados
      alrededor de la hoguera del stage 1. Va DEBAJO del "pulsa cualquier botón" — es la estampa, no
      la instrucción. Sin `height` fija en px: en pantallas bajas se come el texto. */
-  #tiScene { display:block; width:min(1320px,96vw); height:clamp(200px,41vh,430px);
+  /* ALTURA = LO QUE SOBRA, no un %% de la ventana. Con `height:41vh` el bloque de texto más el
+     canvas pasaban de 100vh en pantallas bajas y la portada se comía el bajo del canvas (y sacaba
+     barra de scroll en .overlay). Con flex, el canvas se queda exactamente con el hueco libre.
+     Necesita su propio flex-shrink porque `.overlay > *` lo pone a 0 para todos los hijos. */
+  #tiScene { display:block; width:min(1320px,96vw); flex:1 1 auto; min-height:160px; max-height:470px;
     margin:6px auto 0; pointer-events:none; }
     /* (aquí hubo una máscara que fundía los bordes del canvas: hacía falta cuando el suelo era una
        superficie que se salía del encuadre. Con el BLOQUE entero dentro no hay canto que esconder —
@@ -38282,7 +38286,10 @@ const titleCampfire = (function(){
     { key:'voxelhero', a: 140 },   // bárbaro                   (x +2,31)
     { key:'archer',    a: 112 },   // arquera, extremo derecho  (x +3,34)
   ];
-  const CAM = { fov:21, x:0, y:2.85, z:8.30, tx:0, ty: 0.02, tz:0 };   // ►AFINA el encuadre del corro
+  /* ty va al CENTRO VERTICAL de lo que hay que encuadrar (−1,75 … +1,35), no a la altura de los
+     ojos: mirando más arriba se desperdiciaba medio cuadro por abajo y el auto-ajuste, para que
+     cupiera el canto de la losa, encogía la escena mucho más de lo necesario. */
+  const CAM = { fov:21, x:0, y:2.85, z:8.30, tx:0, ty:-0.22, tz:0 };   // ►AFINA el encuadre del corro
   let pr=null, sc=null, cam=null, clk=null, raf=0, W=0, H=0, root=null;
   let fire=null, flame=null, light=null, sparks=null;
   const lightBase = 4.2;
@@ -38322,8 +38329,8 @@ const titleCampfire = (function(){
     g.position.z = ISL_CZ;
     /* la tierra va casi tan ancha como el labio (0,3 de retranqueo, no 0,6) y más alta: con el
        retranqueo original la veías solo por un canto y el bloque parecía todo de césped oscuro. */
-    const dirt = aoMesh(organicSlabGeo(ISL_X-0.3, ISL_Z-0.3, 1.55, 1.7, 0.34, 0.18), M.dirt);
-    dirt.position.y = -1.90; g.add(dirt);
+    const dirt = aoMesh(organicSlabGeo(ISL_X-0.3, ISL_Z-0.3, 1.20, 1.7, 0.34, 0.18), M.dirt);
+    dirt.position.y = -1.55; g.add(dirt);
     const lip = aoMesh(organicSlabGeo(ISL_X+0.2, ISL_Z+0.2, 0.26, 2.0, 0.34, 0.16), M.grassD);
     lip.position.y = -0.95; g.add(lip);
     const grass = aoMesh(organicSlabGeo(ISL_X, ISL_Z, 0.5, 1.9, 0.38, 0.2), M.grass);
@@ -38332,7 +38339,7 @@ const titleCampfire = (function(){
     for(let i=0;i<7;i++){
       const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24 + Math.random()*0.3, 0), M.rock);
       const a = Math.random()*Math.PI*2;
-      st.position.set(Math.cos(a)*ISL_X*0.36, -1.15 - Math.random()*0.5, Math.sin(a)*ISL_Z*0.36);
+      st.position.set(Math.cos(a)*ISL_X*0.36, -1.00 - Math.random()*0.4, Math.sin(a)*ISL_Z*0.36);
       st.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
       g.add(st);
     }
@@ -38368,12 +38375,31 @@ const titleCampfire = (function(){
     ['rocks1',     -4.4,  1.0, 0.7 ], ['rocks4',      4.4,  1.1, 0.6 ],
     ['rocks3',      2.6, -3.1, 0.65], ['rocks2',     -0.4, -3.2, 0.55],
   ];
+  /* ¿CABE la huella de radio r apoyada en (x,z)? La tapa NO es el rectángulo ISL_X×ISL_Z: es un
+     rectángulo REDONDEADO con bisel (lo mismo que TOP_INSET resuelve en el juego), así que un prop
+     colocado contra el rectángulo asoma por las esquinas y por los lados. Distancia con signo al
+     rectángulo redondeado; si no cabe, el prop se arrima al centro hasta que cabe. */
+  const TOP_R = 1.7;                                   // radio de esquina de la tapa (organicSlabGeo)
+  function fitsOnTop(x, z, r){
+    const hx = ISL_X/2 - 0.30, hz = ISL_Z/2 - 0.30;
+    const dx = Math.max(Math.abs(x) - (hx - TOP_R), 0);
+    const dz = Math.max(Math.abs(z - ISL_CZ) - (hz - TOP_R), 0);
+    return Math.hypot(dx, dz) - TOP_R + r <= 0;
+  }
   function dress(){
-    for(const [key, x, z, f] of DRESS){
+    const bb = new THREE.Box3(), sz = new THREE.Vector3();
+    for(const [key, x0, z0, f] of DRESS){
       let m = null;
       try{ m = (typeof getModel==='function') ? getModel(key, DECOR_DEFS) : null; }catch(e){}
       if(!m) continue;
       m.scale.setScalar(f);
+      m.position.set(0, 0, 0); m.updateMatrixWorld(true);
+      bb.setFromObject(m).getSize(sz);
+      const r = Math.max(sz.x, sz.z)/2;                // huella REAL del modelo ya escalado
+      let x = x0, z = z0;
+      for(let i=0; i<24 && !fitsOnTop(x, z, r); i++){  // se arrima al centro de la losa hasta que cabe
+        x *= 0.94; z = ISL_CZ + (z - ISL_CZ)*0.94;
+      }
       m.position.set(x, (m.userData.halfH||0.3)*f, z);
       m.rotation.y = Math.random()*Math.PI*2;
       m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
@@ -38494,6 +38520,31 @@ const titleCampfire = (function(){
       if(lo < Infinity) model.position.y += -lo + SOLE;
       s.mixer.setTime(Math.random()*clip.duration);  // desfase: samurái y sacerdotisa comparten clip
       model.updateMatrixWorld(true);
+      /* MIRAR AL FUEGO DE VERDAD. Orientar el modelo (+Z al centro) NO basta: cada clip de Mixamo
+         trae su propio giro dentro de la animación — los dos "Sitting Talking" se giran para hablar
+         con alguien — y el personaje acaba mirando a 20-40° del fuego. Así que se MIDE hacia dónde
+         mira ya posado y se corrige: la dirección de los MUSLOS (cadera → rodillas) es a dónde
+         apunta un cuerpo sentado, y sirve igual en los rigs con Left/Right espejado, que es donde
+         alinear por hombros se equivoca de signo. */
+      { const b = {};
+        model.traverse(o=>{ if(o.isBone || o.type==='Bone') b[o.name.toLowerCase().replace(/[^a-z0-9]/g,'')] = o; });
+        const hp = b['mixamorighips'], kl = b['mixamorigleftleg'], kr = b['mixamorigrightleg'];
+        if(hp && kl && kr){
+          const a = hp.getWorldPosition(new THREE.Vector3());
+          const l = kl.getWorldPosition(new THREE.Vector3());
+          const r2 = kr.getWorldPosition(new THREE.Vector3());
+          const fx = (l.x + r2.x)/2 - a.x, fz = (l.z + r2.z)/2 - a.z;
+          if(Math.hypot(fx, fz) > 0.05){
+            const cur  = Math.atan2(fx, fz);                       // a dónde mira ahora
+            const want = Math.atan2(-model.position.x, -model.position.z);   // a la hoguera
+            let d = want - cur;
+            while(d >  Math.PI) d -= Math.PI*2;                    // por el camino corto
+            while(d < -Math.PI) d += Math.PI*2;
+            model.rotation.y += d;
+            model.updateMatrixWorld(true);
+          }
+        }
+      }
       /* ASIENTO: los 6 clips de Mixamo se sientan en una SILLA — cadera a ~0,35 y pies en el suelo,
          no en cuclillas. Con los pies apoyados, el culo queda en el aire. En vez de retorcer la
          animación se pone debajo lo que habría en un campamento de verdad: una PIEDRA del stage 1
@@ -38566,20 +38617,46 @@ const titleCampfire = (function(){
        el tamaño del canvas se comprueba también aquí, que sale gratis. */
     step(acc); acc = 0;
   }
-  /* el corro mide 3,75 de medio ancho: en una pantalla estrecha (móvil de pie) la banda deja de ser
-     3,6:1 y los DOS de los extremos se salen de cuadro. La primera versión alejaba la cámara, y en
-     un móvil eso la mandaba a z=19 — o sea, DENTRO de la niebla: la escena desaparecía entera. Lo
-     que se encoge es la ESCENA (root), con la cámara quieta: cabe igual y la niebla sigue cayendo
-     donde tiene que caer. */
-  const FIT_W = 4.75;   // ahora manda el ANCHO DEL BLOQUE (8,8), no el del corro
+  /* QUE NO SE CORTE, en ningún formato. Las cuentas a mano (ancho contra ancho) fallaban por abajo:
+     el bloque es alto y está CERCA, así que quien se sale primero no es el de los extremos sino el
+     canto inferior de la losa. Se resuelve midiendo: se proyectan las 8 esquinas del volumen que
+     ocupa todo (losa + cabezas) y se busca por bisección la escala mayor que las deja dentro del
+     encuadre. La cámara no se mueve — alejarla mandaba la escena al infinito en móvil. */
+  /* PUNTOS A ENCUADRAR. Con las 8 esquinas de la caja envolvente sobraba medio cuadro por abajo: esas
+     esquinas NO existen — la losa tiene las esquinas redondeadas, y las cabezas no llegan al borde
+     delantero. Se muestrea lo que hay de verdad: el contorno del rectángulo REDONDEADO a la altura
+     del canto inferior, y solo la franja donde están los sentados a la altura de sus cabezas. */
+  const _fp = new THREE.Vector3();
+  function fitPts(){
+    const hx = ISL_X/2 + 0.15, hz = ISL_Z/2 + 0.15, cr = TOP_R, d = cr*0.7071;
+    const ex = hx - cr + d, ez = hz - cr + d;              // punto extremo de las esquinas redondeadas
+    const ring = [[hx,0],[-hx,0],[0,hz],[0,-hz],[ex,ez],[ex,-ez],[-ex,ez],[-ex,-ez]];
+    const pts = [];
+    for(const [x,z] of ring) pts.push([x, -1.80, ISL_CZ + z]);            // canto inferior de la losa
+    for(const x of [-3.55, 0, 3.55]) for(const z of [-2.05, -0.45])       // cabezas de los sentados
+      pts.push([x, 1.35, z]);
+    return pts;
+  }
+  let _fitPts = null;
+  function fitsAt(k){
+    if(!_fitPts) _fitPts = fitPts();
+    for(const p of _fitPts){
+      _fp.set(p[0]*k, p[1]*k, p[2]*k).project(cam);
+      if(Math.abs(_fp.x) > 0.985 || Math.abs(_fp.y) > 0.985) return false;
+    }
+    return true;
+  }
   function reframe(){          // (no confundir con el frame() del bucle del juego)
     if(!cam) return;
     cam.aspect = W/H;
     cam.position.set(CAM.x, CAM.y, CAM.z);
     cam.lookAt(CAM.tx, CAM.ty, CAM.tz);
     cam.updateProjectionMatrix();
-    const half = Math.tan(cam.fov*Math.PI/360) * cam.aspect;
-    const k = Math.min(1, (CAM.z * half) / FIT_W);
+    cam.updateMatrixWorld(true);
+    let k = 1;
+    if(!fitsAt(1)){ let lo = 0.15, hi = 1;
+      for(let i=0;i<14;i++){ const m=(lo+hi)/2; if(fitsAt(m)) lo=m; else hi=m; }
+      k = lo; }
     if(root) root.scale.setScalar(k);
     if(light) light.distance = 9.5 * k;   // el alcance de la luz NO lo escala el grupo (va en unidades de mundo)
   }
