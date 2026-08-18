@@ -682,17 +682,11 @@ window.addEventListener('load', function(){
   /* EL CORRO: canvas 3D propio (renderer aparte, patrón de winCelebrate) con los 6 sentados
      alrededor de la hoguera del stage 1. Va DEBAJO del "pulsa cualquier botón" — es la estampa, no
      la instrucción. Sin `height` fija en px: en pantallas bajas se come el texto. */
-  #tiScene { display:block; width:min(1320px,96vw); height:clamp(190px,38vh,400px);
-    margin:6px auto 0; pointer-events:none;
-    /* el suelo llega hasta el borde del canvas, y ese borde es un RECTÁNGULO que se ve. La niebla
-       de la escena disuelve el fondo, pero los lados y el bajo los tiene que fundir la máscara:
-       así la losa se apaga en el antracita por los cuatro costados y no queda ningún canto recto. */
-    -webkit-mask-image: radial-gradient(ellipse 58% 150% at 50% 34%, #000 46%, rgba(0,0,0,0) 100%),
-                        linear-gradient(to bottom, #000 60%, rgba(0,0,0,0) 100%);
-    -webkit-mask-composite: source-in;
-    mask-image: radial-gradient(ellipse 58% 150% at 50% 34%, #000 46%, rgba(0,0,0,0) 100%),
-                linear-gradient(to bottom, #000 60%, rgba(0,0,0,0) 100%);
-    mask-composite: intersect; }
+  #tiScene { display:block; width:min(1320px,96vw); height:clamp(200px,41vh,430px);
+    margin:6px auto 0; pointer-events:none; }
+    /* (aquí hubo una máscara que fundía los bordes del canvas: hacía falta cuando el suelo era una
+       superficie que se salía del encuadre. Con el BLOQUE entero dentro no hay canto que esconder —
+       lo que se ve es la silueta de la plataforma, que es justo lo que se quiere ver.) */
   @media (max-height:620px){ #tiScene { display:none; } }   /* pantalla apaisada baja: manda el texto */
   #tiLogoWrap { display:block; width:min(560px,80vw); margin:0 auto 18px; line-height:0; }
   #tiLogoWrap img { display:block; width:100%; height:auto; filter:drop-shadow(0 14px 36px rgba(0,0,0,.7)); }
@@ -38288,7 +38282,7 @@ const titleCampfire = (function(){
     { key:'voxelhero', a: 140 },   // bárbaro                   (x +2,31)
     { key:'archer',    a: 112 },   // arquera, extremo derecho  (x +3,34)
   ];
-  const CAM = { fov:20, x:0, y:2.85, z:6.90, tx:0, ty:0.55, tz:0 };   // ►AFINA el encuadre del corro
+  const CAM = { fov:21, x:0, y:2.85, z:8.30, tx:0, ty: 0.02, tz:0 };   // ►AFINA el encuadre del corro
   let pr=null, sc=null, cam=null, clk=null, raf=0, W=0, H=0, root=null;
   let fire=null, flame=null, light=null, sparks=null;
   const lightBase = 4.2;
@@ -38300,7 +38294,7 @@ const titleCampfire = (function(){
      decenas: con el material compartido, three recompila el shader en CADA frame, alternando entre
      las dos escenas — justo el problema que persigue ►LUZCONSTANTE. Por eso todo lo que se trae
      del juego (hoguera, piedras, decorado, losa) pasa por aquí. */
-  const NIGHT = 0.50;          // los verdes y arenas de S1 están pintados para el MEDIODÍA
+  const NIGHT = 0.64;          // los verdes y arenas de S1 están pintados para el MEDIODÍA
   function own(root, dim){
     const seen = new Map();
     root.traverse(o=>{ if(!o.material) return;
@@ -38311,17 +38305,25 @@ const titleCampfire = (function(){
     });
     return root;
   }
-  /* UN TROZO DE PLATAFORMA DEL STAGE 1 (pedido Toni 18/08), con la receta de addFloorBlock: tierra
-     multitono por debajo, labio verde oscuro y tapa de césped, con la cara pisable en y=0. Sustituye
-     al disco de luz pintado que había antes: aquel se cortaba en seco a mitad de encuadre y se leía
-     como un charco recortado. Una isla del juego, en cambio, TIENE borde — y su silueta contra el
-     antracita es el lenguaje de la home. */
-  const ISL_X = 15.0, ISL_Z = 8.4, ISL_CZ = -1.0;
+  /* UNA PLATAFORMA DEL STAGE 1, ENTERA Y DENTRO DEL ENCUADRE (Toni, 18/08: "un bloque literal, con
+     su superficie y tiles y multicolor"). Misma receta que addFloorBlock — tapa de césped, labio
+     verde oscuro, pared de tierra y pedruscos medio enterrados — con la cara pisable en y=0 y la
+     tierra recortada (1,6 en vez de 4,15) para que el bloque quepa de arriba abajo.
+     Las dos versiones anteriores fallaban por lo mismo: era una superficie que se salía del cuadro,
+     y una superficie cortada no es una plataforma, es un fondo plano con los lados cortados. */
+  const tile = (m, rep)=>{     // el multitono se ve o no según el teselado: sobre 9 u con repeat 1/24
+    if(!m || !m.map) return;   // sale UNA celda y parece liso. Se clona el mapa (el material ya es
+    m.map = m.map.clone();     // nuestro) y se aprieta hasta que las celdas se leen.
+    m.map.repeat.set(rep, rep); m.map.needsUpdate = true;
+  };
+  const ISL_X = 8.8, ISL_Z = 4.7, ISL_CZ = -1.35;
   function island(){
     const g = new THREE.Group();
     g.position.z = ISL_CZ;
-    const dirt = aoMesh(organicSlabGeo(ISL_X-0.6, ISL_Z-0.6, 4.15, 1.7, 0.34, 0.18), M.dirt);
-    dirt.position.y = -4.5; g.add(dirt);
+    /* la tierra va casi tan ancha como el labio (0,3 de retranqueo, no 0,6) y más alta: con el
+       retranqueo original la veías solo por un canto y el bloque parecía todo de césped oscuro. */
+    const dirt = aoMesh(organicSlabGeo(ISL_X-0.3, ISL_Z-0.3, 1.55, 1.7, 0.34, 0.18), M.dirt);
+    dirt.position.y = -1.90; g.add(dirt);
     const lip = aoMesh(organicSlabGeo(ISL_X+0.2, ISL_Z+0.2, 0.26, 2.0, 0.34, 0.16), M.grassD);
     lip.position.y = -0.95; g.add(lip);
     const grass = aoMesh(organicSlabGeo(ISL_X, ISL_Z, 0.5, 1.9, 0.38, 0.2), M.grass);
@@ -38330,24 +38332,41 @@ const titleCampfire = (function(){
     for(let i=0;i<7;i++){
       const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24 + Math.random()*0.3, 0), M.rock);
       const a = Math.random()*Math.PI*2;
-      st.position.set(Math.cos(a)*ISL_X*0.30, -1.1 - Math.random()*0.9, Math.sin(a)*ISL_Z*0.30);
+      st.position.set(Math.cos(a)*ISL_X*0.36, -1.15 - Math.random()*0.5, Math.sin(a)*ISL_Z*0.36);
       st.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
       g.add(st);
     }
-    return own(g);
+    own(g);
+    tile(grass.material, 1/9);   // césped: celdas de ~0,9 u — el "multicolor" del prado, legible
+    tile(lip.material,  1/11);
+    tile(dirt.material, 1/4);    // pared de tierra: celdas más grandes, como en las islas de la cinta
+    /* la pared es lo ÚNICO que no ve ni la hoguera (queda por debajo) ni el cielo. Encima, el AO
+       horneado de aoMesh oscurece la BASE de cada losa — pensado para una pared de 4,15 de la que
+       casi nada se ve, no para esta de 1,25 que se ve entera: salía negra y el bloque parecía
+       flotar sobre su propia sombra. Aquí la tierra renuncia al AO y se aclara a mano. */
+    dirt.material.vertexColors = false;
+    /* y el TINTE: M.dirt lleva mapa de marrones Y un color 0x8a5a3c multiplicando encima (a plena
+       luz del prado da el tono justo; de noche lo hunde). Se le pone tinte casi blanco para que
+       el marrón del mapa salga tal cual y la pared se lea como TIERRA, no como una sombra. */
+    dirt.material.color.setRGB(0.92, 0.86, 0.80);
+    dirt.material.needsUpdate = true;
+    return g;
   }
   /* EL DECORADO DE S1 sobre la losa: matas, flores y pedruscos de DECOR_DEFS (los mismos que
      esparce scatterModelDecor). Colocados a mano y SOLO por fuera del corro — esparcirlos al azar
      los metía entre las piernas de los sentados. */
+  /* x en [-4,3 .. 4,3] y z en [-3,2 .. 1,4]: TODO tiene que caer DENTRO de la tapa de la plataforma
+     (9,4 × 5,6 centrada en z=-0,9). Un prop fuera del bloque se queda flotando sobre el vacío, que
+     es el error clásico de este juego (ver los "objetos flotando" de las rondas de S1). */
   const DRESS = [
-    ['grasspatch', -5.1,  0.6, 0.5 ], ['grasspatch',  5.0,  0.7, 0.55],
-    ['grasspatch', -3.9, -2.4, 0.45], ['grasspatch',  4.0, -2.5, 0.5 ],
-    ['grasspatch', -1.9,  1.4, 0.5 ], ['grasspatch',  2.0,  1.5, 0.5 ],
-    ['flower1',    -4.4,  1.6, 0.5 ], ['flower2',     4.3,  1.7, 0.5 ],
-    ['flower3',    -6.0, -0.8, 0.55], ['flower1',     6.0, -0.6, 0.55],
-    ['flower2',     1.3,  2.3, 0.5 ], ['flower3',    -2.6, -3.0, 0.45],
-    ['rocks1',     -5.9,  0.9, 0.8 ], ['rocks4',      5.9,  1.0, 0.65],
-    ['rocks3',      2.9, -3.2, 0.7 ], ['rocks2',     -0.4, -3.3, 0.6 ],
+    ['grasspatch', -4.2,  0.3, 0.5 ], ['grasspatch',  4.1,  0.4, 0.55],
+    ['grasspatch', -3.3, -2.7, 0.45], ['grasspatch',  3.4, -2.8, 0.5 ],
+    ['grasspatch', -1.9,  1.0, 0.45], ['grasspatch',  2.0,  1.1, 0.45],
+    ['flower1',    -3.6,  1.2, 0.45], ['flower2',     3.5,  1.3, 0.45],
+    ['flower3',    -4.3, -1.4, 0.5 ], ['flower1',     4.3, -1.2, 0.5 ],
+    ['flower2',     1.1,  1.4, 0.45], ['flower3',    -1.0,  1.4, 0.45],
+    ['rocks1',     -4.4,  1.0, 0.7 ], ['rocks4',      4.4,  1.1, 0.6 ],
+    ['rocks3',      2.6, -3.1, 0.65], ['rocks2',     -0.4, -3.2, 0.55],
   ];
   function dress(){
     for(const [key, x, z, f] of DRESS){
@@ -38390,11 +38409,6 @@ const titleCampfire = (function(){
       ? THREE[VISUAL.toneMapping] : THREE.ACESFilmicToneMapping;
     pr.toneMappingExposure = (typeof VISUAL!=='undefined' && VISUAL.exposure) || 0.66;
     sc = new THREE.Scene();
-    /* la losa se acaba en algún sitio, y ese corte era lo que cantaba. Con niebla del color del
-       fondo, el suelo se DISUELVE en el antracita a partir de los sentados y ya no hay borde.
-       Ojo: la niebla cambia el shader de cada material — aquí no pasa nada porque todos son clones
-       nuestros (ver own()), pero con los del juego provocaría una recompilación por frame. */
-    sc.fog = new THREE.Fog(0x141826, 8.2, 13.5);
     root = new THREE.Group(); sc.add(root);   // todo lo que se ve cuelga de aquí (ver reframe)
     cam = new THREE.PerspectiveCamera(CAM.fov, W/H, 0.1, 60);
     reframe();
@@ -38403,7 +38417,7 @@ const titleCampfire = (function(){
     /* ES DE NOCHE y la única luz es el fuego: el relleno va al mínimo para que la hoguera se note
        de verdad y el césped se apague hacia los bordes de la losa. Con el relleno alto (0,62) la
        isla salía a pleno día, con luz plana hasta el borde — que es justo el "se corta en seco". */
-    sc.add(new THREE.HemisphereLight(0x2b3554, 0x0c0f18, 0.15));
+    sc.add(new THREE.HemisphereLight(0x2b3554, 0x6b5236, 0.42));   // suelo CÁLIDO: es el único rebote que recibe la pared de tierra, que si no sale negra
     const rim = new THREE.DirectionalLight(0x9fc4ff, 0.10); rim.position.set(-3, 6, -5); sc.add(rim);
     light = new THREE.PointLight(0xff8a2e, lightBase, 9.5, 1.9); light.position.set(0, 0.9, 0); root.add(light);
     root.add(island());
@@ -38557,7 +38571,7 @@ const titleCampfire = (function(){
      un móvil eso la mandaba a z=19 — o sea, DENTRO de la niebla: la escena desaparecía entera. Lo
      que se encoge es la ESCENA (root), con la cámara quieta: cabe igual y la niebla sigue cayendo
      donde tiene que caer. */
-  const FIT_W = 3.75;
+  const FIT_W = 4.75;   // ahora manda el ANCHO DEL BLOQUE (8,8), no el del corro
   function reframe(){          // (no confundir con el frame() del bucle del juego)
     if(!cam) return;
     cam.aspect = W/H;
@@ -38568,10 +38582,6 @@ const titleCampfire = (function(){
     const k = Math.min(1, (CAM.z * half) / FIT_W);
     if(root) root.scale.setScalar(k);
     if(light) light.distance = 9.5 * k;   // el alcance de la luz NO lo escala el grupo (va en unidades de mundo)
-    /* la NIEBLA tampoco: va en distancia a la cámara. Al encoger la escena, todo se junta alrededor
-       de CAM.z y el rango 8,2-13,5 dejaba de tocarla — en móvil reaparecía el canto duro de la losa
-       que la niebla está ahí para disolver. Se comprime igual que la escena. */
-    if(sc && sc.fog){ sc.fog.near = CAM.z + (8.2 - CAM.z)*k; sc.fog.far = CAM.z + (13.5 - CAM.z)*k; }
   }
   function resize(){
     const cv = document.getElementById('tiScene'); if(!cv || !pr) return;
