@@ -669,9 +669,22 @@ window.addEventListener('load', function(){
      entrar. Todas las decisiones viven en la pantalla 2 (#startOverlay). Se descubre al retirarse
      el #splash de carga y muere con la primera pulsación. z-index 35: por encima de .overlay(10)
      y de #setupModal(20), por debajo de #fadeVeil(60). */
+  /* ►HOGUERA (pedido Toni 18/08): la pantalla 1 deja de ser un velo sobre el mundo vivo y pasa a
+     fondo ANTRACITA OPACO con un degradado sutil de luz — el mismo antracita del #splash de carga,
+     para que la entrada al juego sea UNA pieza. Las dos capas: arriba la luz fría que despega el
+     logo, abajo el calor de la hoguera del corro (#tiScene), que así no aparece recortada sobre
+     un fondo plano sino sobre su propio resplandor. */
   #titleOverlay { z-index:35; transition:opacity .45s ease;
-    background:radial-gradient(ellipse at 50% 38%, rgba(8,11,26,.32), rgba(6,8,18,.84) 74%); }
+    background:
+      radial-gradient(ellipse 72% 46% at 50% 92%, rgba(255,138,46,.16), rgba(255,138,46,0) 72%),
+      radial-gradient(ellipse at 50% 30%, #1d2333 0%, #141826 46%, #0b0d16 100%); }
   #titleOverlay.out { opacity:0; pointer-events:none; }
+  /* EL CORRO: canvas 3D propio (renderer aparte, patrón de winCelebrate) con los 6 sentados
+     alrededor de la hoguera del stage 1. Va DEBAJO del "pulsa cualquier botón" — es la estampa, no
+     la instrucción. Sin `height` fija en px: en pantallas bajas se come el texto. */
+  #tiScene { display:block; width:min(1180px,94vw); height:clamp(190px,38vh,380px);
+    margin:14px auto 0; pointer-events:none; }
+  @media (max-height:620px){ #tiScene { display:none; } }   /* pantalla apaisada baja: manda el texto */
   #tiLogoWrap { display:block; width:min(560px,80vw); margin:0 auto 18px; line-height:0; }
   #tiLogoWrap img { display:block; width:100%; height:auto; filter:drop-shadow(0 14px 36px rgba(0,0,0,.7)); }
   /* fallback en texto si logo.png no carga (mismo dorado que #logo) */
@@ -1231,6 +1244,9 @@ window.addEventListener('load', function(){
   <h1 id="tiClaim">ESCOGE A TU HÉROE Y SALVA EL MUNDO DE RUMBLEBOYS, ¿ESTARÁS A LA ALTURA?</h1>
   <p id="tiSub">Sobrevive a todos los mundos. Consigue todos los trofeos para salvarlo. Colabora o traiciona, todo depende de ti.</p>
   <div id="tiPress">Pulsa cualquier botón para empezar tu aventura</div>
+  <!-- ►HOGUERA: los 6 sentados en corro alrededor del fuego. El canvas se queda vacío (transparente)
+       si el WebGL o los modelos no están: la portada nunca depende de él para poder entrar. -->
+  <canvas id="tiScene" aria-hidden="true"></canvas>
 </div>
 <script>
 /* ►TITLE — la pantalla 1 se retira con CUALQUIER pulsación y descubre la pantalla 2.
@@ -1259,7 +1275,9 @@ window.addEventListener('load', function(){
     if(raf) cancelAnimationFrame(raf);
     ti.classList.add('out');
     home.style.display = 'flex';                       // la pantalla 2, ya detrás del fundido
-    setTimeout(function(){ ti.style.display = 'none'; }, 500);
+    setTimeout(function(){ ti.style.display = 'none';
+      if(window.__tiFire) window.__tiFire.stop();      // ►HOGUERA: suelta el 2º contexto WebGL del corro
+    }, 500);
   }
 
   ['keydown','pointerdown','mousedown','touchstart','wheel'].forEach(function(ev){
@@ -1764,7 +1782,8 @@ window.addEventListener('load', function(){
 <script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
 <script src="chars_models.js?v=20260811a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
 <script src="carry_poses.js?v=1"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
-<script src="carry_clips.js?v=1"></script>  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
+<script src="carry_clips.js?v=1"></script>
+<script src="sit_clips.js?v=1"></script>     <!-- ►HOGUERA · clip 'sit' de Mixamo (uno por personaje) para el corro de la PANTALLA 1, en el mismo formato de pistas de carry_clips.js -->  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
 <script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
 <script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
 <script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
@@ -5042,8 +5061,10 @@ function buildCarryClips(anims, key, scene){
    (pistas numéricas, no un FBX en base64 → ni FBXLoader ni 10 MB de más en el arranque).
    La corrección de la CADERA ya viene aplicada en el fichero (ver su cabecera). */
 function buildFbxClips(key, scene){
-  const SRC = window.CARRY_CLIPS;
-  if(!SRC || !scene || !THREE.QuaternionKeyframeTrack) return [];
+  /* ►HOGUERA: el clip 'sit' viaja en sit_clips.js, pero con EXACTAMENTE el mismo formato de pistas,
+     así que entra por esta misma puerta en vez de duplicar el reconstructor. */
+  const SRC = Object.assign({}, window.CARRY_CLIPS, window.SIT_CLIPS);
+  if(!Object.keys(SRC).length || !scene || !THREE.QuaternionKeyframeTrack) return [];
   const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
   const real = {};
   scene.traverse(o=>{ if(o.isBone || o.type==='Bone') real[norm(o.name)] = o.name; });
@@ -38226,6 +38247,282 @@ updateHUD();
   fill(document.getElementById('endConfetti'), 34);
 })();
 startDemo();   // arranca el fondo "attract" del menú al cargar
+/* ===== ►HOGUERA · PANTALLA 1: los 6 sentados en corro alrededor del fuego (pedido Toni 18/08) =====
+   Escena 3D APARTE, con su propio renderer sobre #tiScene — el mismo patrón que winCelebrate. NO se
+   monta dentro de la escena del juego a propósito: la portada tiene su luz (una hoguera de noche) y
+   su cámara, mientras el mundo de detrás sigue siendo el attract de la pantalla 2. Se apaga sola al
+   salir de la portada (el loop está atado a la visibilidad de #titleOverlay) y suelta su contexto.
+
+   Los personajes NO se cargan aquí: se clonan de _charTpls (los GLB que el juego ya trae) en cuanto
+   cada uno está disponible — la portada aparece antes de que terminen de parsearse los 95 MB, así
+   que el corro se va POBLANDO, y si alguno no llegara, su sitio queda vacío sin romper nada.
+   El clip 'sit' lo monta buildFbxClips desde sit_clips.js. */
+const titleCampfire = (function(){
+  /* corro ELÍPTICO, no circular: el canvas es una banda apaisada y con un círculo perfecto los de
+     los lados se salen de cuadro (o hay que alejar tanto la cámara que las caras dejan de leerse). */
+  const R_X = 3.40, R_Z = 1.60;
+  const PUP_H = 1.78;          // alto DE PIE (bind pose) → escala común a los 6; sentados quedan ~1 m
+  const SOLE  = 0.05;          // los huesos de tobillo/cadera no son la SUELA: este margen los apoya
+  /* ÁNGULOS ELEGIDOS POR LA x QUE PROYECTAN, no repartidos a 60°. Dos motivos, los dos medidos:
+     · con el reparto regular, el del fondo cae en la MISMA x que el de delante (sinα = sin(180−α))
+       y se lo come: el caballero desaparecía entero detrás de la arquera;
+     · en una banda de 3,6:1 solo caben ~4,3 m a cada lado, así que las seis x tienen que repartirse
+       a mano: 0,95 · 2,05 · 3,05 por lado.
+     Los DOS de dentro van al fondo (se ven de cara, por encima del fuego, que queda en el hueco de
+     en medio) y los DOS de fuera, delante: nadie los tapa y cierran el encuadre por los lados. */
+  /* `yaw` = grados de más sobre "mirar al fuego". Los dos de delante, radiales del todo, salen de
+     espaldas puras y no se les reconoce; girados un cuarto se les ve el perfil sin dejar de estar
+     vueltos hacia la hoguera (nadie se sienta perfectamente radial en un corro de verdad). */
+  const SEATS = [
+    { key:'link',      a: -63.8, yaw:-26 },   // mago, delante-izquierda (x -3,05)
+    { key:'nun',       a:-142.9 },   // sacerdotisa, fondo-izquierda (x -2,05)
+    { key:'samurai',   a:-163.8 },   // samurái, al fondo y de cara (x -0,95)
+    { key:'knight',    a: 163.8 },   // caballero, al fondo y de cara (x +0,95)
+    { key:'voxelhero', a: 142.9 },   // bárbaro, fondo-derecha (x +2,05)
+    { key:'archer',    a:  63.8, yaw: 26 },   // arquera, delante-derecha (x +3,05)
+  ];
+  const CAM = { fov:20, x:0, y:3.05, z:7.60, tx:0, ty:0.45, tz:0 };   // ►AFINA el encuadre del corro
+  let pr=null, sc=null, cam=null, clk=null, raf=0, W=0, H=0;
+  let fire=null, flame=null, light=null, sparks=null;
+  const lightBase = 2.9;
+  const seats = [];            // {key, a, model, mixer} — model=null mientras su GLB no ha llegado
+  let missing = SEATS.length, scan = 0;
+
+  function ground(){
+    /* suelo: disco con un degradado pintado a mano (calor en el centro → antracita en el borde).
+       MeshBasic: no depende de las luces, así que el corro nunca se queda flotando sobre un vacío. */
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+    const g = cv.getContext('2d');
+    const rg = g.createRadialGradient(128,128,4, 128,128,128);
+    rg.addColorStop(0,   'rgba(74,53,36,.95)');
+    rg.addColorStop(0.22,'rgba(43,36,48,.85)');
+    rg.addColorStop(0.55,'rgba(26,28,42,.45)');
+    rg.addColorStop(1,   'rgba(13,15,23,0)');
+    g.fillStyle = rg; g.fillRect(0,0,256,256);
+    const tex = new THREE.CanvasTexture(cv);
+    if(THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+    const m = new THREE.Mesh(new THREE.CircleGeometry(4.6, 48),
+      new THREE.MeshBasicMaterial({ map:tex, transparent:true, depthWrite:false }));
+    m.rotation.x = -Math.PI/2; m.position.y = 0.001;
+    return m;
+  }
+  function makeSparks(){
+    const N = 26, pos = new Float32Array(N*3), ph = [];
+    for(let i=0;i<N;i++) ph.push({ t:Math.random(), sp:0.5+Math.random()*0.7,
+      r:0.12+Math.random()*0.3, a:Math.random()*6.283 });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffb45e, size:0.055,
+      transparent:true, opacity:0.9, depthWrite:false, blending:THREE.AdditiveBlending }));
+    p.userData.ph = ph; p.frustumCulled = false;
+    return p;
+  }
+  function ensure(){
+    if(pr) return true;
+    const cv = document.getElementById('tiScene');
+    if(!cv || !window.THREE) return false;
+    W = cv.clientWidth|0; H = cv.clientHeight|0;
+    if(!W || !H) return false;                       // aún sin layout (portada oculta): se reintenta
+    try{ pr = new THREE.WebGLRenderer({ canvas:cv, alpha:true, antialias:true }); }
+    catch(e){ console.warn('[hoguera] sin WebGL para el corro', e); return false; }
+    pr.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    pr.setSize(W, H, false);
+    if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
+    sc = new THREE.Scene();
+    cam = new THREE.PerspectiveCamera(CAM.fov, W/H, 0.1, 60);
+    reframe();
+    /* LUZ: manda la hoguera (point light cálida que parpadea). El relleno frío va muy bajo, solo
+       para que las espaldas de los de delante no sean siluetas negras. */
+    sc.add(new THREE.HemisphereLight(0x3b4260, 0x141826, 0.62));
+    const rim = new THREE.DirectionalLight(0x9fc4ff, 0.5); rim.position.set(-3, 6, -5); sc.add(rim);
+    light = new THREE.PointLight(0xff8a2e, lightBase, 14, 1.7); light.position.set(0, 0.85, 0); sc.add(light);
+    sc.add(ground());
+    /* la HOGUERA es el modelo campfire del stage 1 (DECOR_DEFS), el mismo que quema al tocarlo */
+    try{
+      fire = (typeof getModel==='function') ? getModel('campfire', DECOR_DEFS) : null;
+      if(fire){ const f = 0.9; fire.scale.setScalar(f);
+        fire.position.set(0, (fire.userData.halfH||0.35)*f, 0);
+        fire.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+        sc.add(fire); }
+    }catch(e){ console.warn('[hoguera] sin modelo de hoguera', e); }
+    /* LLAMA: cono aditivo que respira. El modelo campfire son los leños; el fuego lo pone esto. */
+    flame = new THREE.Mesh(new THREE.ConeGeometry(0.31, 0.86, 9),
+      new THREE.MeshBasicMaterial({ color:0xff9430, transparent:true, opacity:0.85,
+        depthWrite:false, blending:THREE.AdditiveBlending }));
+    flame.position.set(0, 0.66, 0); sc.add(flame);
+    sparks = makeSparks(); sc.add(sparks);
+    clk = new THREE.Clock();
+    return true;
+  }
+  /* clona el GLB de una clase con el MISMO recolor de marca que usa el juego (sin él, el corro sale
+     con los colores crudos de Meshy y no se reconoce a nadie) y le engancha su clip 'sit'. */
+  function seat(s){
+    const tpl = (typeof _charTpls!=='undefined') && _charTpls[s.key];
+    if(!tpl || !THREE.SkeletonUtils) return false;
+    const model = THREE.SkeletonUtils.clone(tpl.scene);
+    const fit = (typeof CHAR_FITS!=='undefined' && CHAR_FITS[s.key]) || {};
+    model.traverse(o=>{ if(!o.isMesh) return;
+      o.frustumCulled = false; o.castShadow = false; o.receiveShadow = false;
+      if(typeof BRAND_HUE!=='undefined' && BRAND_HUE[s.key]!=null){
+        o.material = Array.isArray(o.material) ? o.material.map(m=> m && m.clone()) : (o.material && o.material.clone());
+        (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ if(m && m.map){
+          const t = recolorAtlas(m.map, s.key); if(t){ m.map = t; if(m.color) m.color.setRGB(1,1,1); m.needsUpdate = true; } } });
+      }
+      if(s.key==='knight'){                          // mismo aclarado del acero que en preview/podio
+        o.material = Array.isArray(o.material) ? o.material.map(m=> m && m.clone()) : (o.material && o.material.clone());
+        (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ if(!m || !m.emissive) return;
+          m.emissive.setHex(KNIGHT_LIGHTEN); m.emissiveIntensity = KNIGHT_LIGHTEN_I;
+          if('metalness' in m) m.metalness = 0.0; if('roughness' in m) m.roughness = 0.65; m.needsUpdate = true; });
+      }
+    });
+    model.updateMatrixWorld(true);
+    const box = charModelBox(model), sz = new THREE.Vector3(); box.getSize(sz);
+    const k = PUP_H * (fit.hMul || 1) / (sz.y || 1);
+    model.scale.setScalar(k);
+    const rad = s.a * Math.PI/180;
+    const x = Math.sin(rad)*R_X, z = Math.cos(rad)*R_Z;
+    model.position.set(x, -box.min.y*k, z);          // pies (bind) al suelo: el clip 'sit' baja la cadera
+    /* mirar AL FUEGO: el rig mira a +Z, así que basta orientar +Z hacia el centro. Con el corro
+       elíptico no vale el ángulo del asiento — hay que usar la dirección real al centro. */
+    model.rotation.y = Math.atan2(-x, -z) + (typeof CHAR_YAW!=='undefined' ? CHAR_YAW : 0) + (fit.yaw||0)
+                     + (s.yaw||0)*Math.PI/180;
+    sc.add(model);
+    s.model = model;
+    const anims = tpl.animations || [];
+    const clip = anims.find(a=>a.name==='sit') || anims.find(a=>a.name==='idle') || null;
+    if(clip){
+      s.mixer = new THREE.AnimationMixer(model);
+      const act = s.mixer.clipAction(clip);
+      act.setLoop(THREE.LoopRepeat);
+      act.play();
+      /* ASENTARLOS: el bind pose tiene los pies en y=0, pero el clip 'sit' baja la cadera MUY por
+         debajo de ese origen (medido: pies a -0.30) → sin corregir salen medio enterrados y solo
+         asoma el busto. Se muestrea el ciclo entero y se sube el modelo hasta que el hueso más bajo
+         toca el suelo. Va por PERSONAJE porque cada clip se sienta a su manera (el caballero, con la
+         armadura, 0,2 m más alto que el resto). */
+      const v = new THREE.Vector3();
+      let lo = Infinity;
+      for(let i=0;i<8;i++){
+        s.mixer.setTime(clip.duration*i/8);
+        model.updateMatrixWorld(true);
+        model.traverse(o=>{ if(o.isBone || o.type==='Bone'){ o.getWorldPosition(v); if(v.y < lo) lo = v.y; } });
+      }
+      if(lo < Infinity) model.position.y += -lo + SOLE;
+      s.mixer.setTime(Math.random()*clip.duration);  // desfase: samurái y sacerdotisa comparten clip
+      model.updateMatrixWorld(true);
+      /* ASIENTO: los 6 clips de Mixamo se sientan en una SILLA — cadera a ~0,35 y pies en el suelo,
+         no en cuclillas. Con los pies apoyados, el culo queda en el aire. En vez de retorcer la
+         animación se pone debajo lo que habría en un campamento de verdad: una PIEDRA del stage 1
+         con su cara de arriba justo a la altura de la cadera. */
+      let hipBone = null;
+      model.traverse(o=>{ if((o.isBone||o.type==='Bone') && /hips$/i.test(o.name.replace(/[^a-z]/gi,''))) hipBone = hipBone || o; });
+      if(hipBone) stool(s, hipBone.getWorldPosition(new THREE.Vector3()));
+    }
+    return true;
+  }
+  /* la piedra en la que se sienta cada uno (ver ASIENTO, arriba) */
+  const STONES = ['rocks2','rocks3','rocks1','rocks3','rocks1','rocks2'];
+  const STOOL_H = 0.62;                              // alto del canto (parte se entierra: se ve menos)
+  function stool(s, hips){
+    let m = null;
+    try{ m = (typeof getModel==='function') ? getModel(STONES[seats.indexOf(s) % STONES.length], DECOR_DEFS) : null; }
+    catch(e){ m = null; }
+    if(!m) return;
+    const hh = m.userData.halfH || 0.4;
+    const f  = STOOL_H / (2*hh);
+    m.scale.setScalar(f);
+    /* la piedra va un pelín HACIA FUERA del corro: el culo no está en el centro del personaje, y
+       centrarla en la cadera la metía entre las piernas. */
+    const out = 0.10, d = Math.hypot(hips.x, hips.z) || 1;
+    m.position.set(hips.x*(1+out/d), (hips.y - 0.09) - hh*f, hips.z*(1+out/d));
+    m.rotation.y = Math.random()*Math.PI*2;
+    m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+    sc.add(m);
+  }
+  function fill(){                                   // pobla los sitios que ya tengan su GLB listo
+    for(const s of seats) if(!s.model && seat(s)) missing--;
+  }
+  function step(dt){
+    const t = performance.now()/1000;
+    for(const s of seats) if(s.mixer) s.mixer.update(dt);
+    /* PARPADEO: dos senos inconmensurables + un pellizco aleatorio. Un seno solo se lee como un
+       latido mecánico; esto se lee como fuego. */
+    const fl = 0.82 + 0.13*Math.sin(t*7.3) + 0.09*Math.sin(t*13.7+1.1) + 0.05*Math.random();
+    if(light) light.intensity = lightBase * fl;
+    if(flame){ flame.scale.set(1-(fl-1)*0.25, fl, 1-(fl-1)*0.25); flame.rotation.y += dt*2.4; }
+    if(sparks){
+      const p = sparks.geometry.attributes.position, ph = sparks.userData.ph;
+      for(let i=0;i<ph.length;i++){
+        const q = ph[i]; q.t += dt*q.sp*0.42; if(q.t > 1){ q.t -= 1; q.a = Math.random()*6.283; }
+        const r = q.r*(1 + q.t*1.5);
+        p.array[i*3]   = Math.cos(q.a + q.t*2.2)*r;
+        p.array[i*3+1] = 0.5 + q.t*1.9;
+        p.array[i*3+2] = Math.sin(q.a + q.t*2.2)*r;
+      }
+      p.needsUpdate = true;
+      sparks.material.opacity = 0.55 + 0.35*fl;
+    }
+    if(pr && sc && cam) pr.render(sc, cam);
+  }
+  /* 30 fps, no 60: son seis skinned meshes en un SEGUNDO contexto WebGL, y al otro lado de la
+     portada el juego sigue montando el attract y parseando assets. La escena es gente sentada
+     alrededor de un fuego — a 30 no se nota, y el arranque va notablemente más suelto. */
+  const FRAME = 1/30;
+  let acc = 0;
+  function loop(){
+    const ov = document.getElementById('titleOverlay');
+    if(!ov || ov.style.display === 'none' || ov.classList.contains('out')){ stop(); return; }
+    raf = requestAnimationFrame(loop);
+    acc += Math.min(clk.getDelta(), 0.05);
+    if(acc < FRAME) return;
+    if(missing > 0 && (++scan % 10) === 0) fill();   // los GLB van llegando durante la carga
+    step(acc); acc = 0;
+  }
+  /* el corro mide 3,4 de radio en X: en una pantalla estrecha (móvil de pie) la banda deja de ser
+     3,6:1 y los DOS de los extremos se salen de cuadro. En vez de recolocarlos, la cámara se aleja
+     lo justo para que quepan — así el encuadre afinado en escritorio se respeta tal cual. */
+  const FIT_W = 3.75;
+  function reframe(){          // (no confundir con el frame() del bucle del juego)
+    if(!cam) return;
+    cam.aspect = W/H;
+    const half = Math.tan(cam.fov*Math.PI/360) * cam.aspect;
+    cam.position.set(CAM.x, CAM.y, Math.max(CAM.z, 0.75 + FIT_W/(half||1)));
+    cam.lookAt(CAM.tx, CAM.ty, CAM.tz);
+    cam.updateProjectionMatrix();
+  }
+  function resize(){
+    const cv = document.getElementById('tiScene'); if(!cv || !pr) return;
+    const w = cv.clientWidth|0, h = cv.clientHeight|0;
+    if(!w || !h || (w===W && h===H)) return;
+    W=w; H=h; pr.setSize(W,H,false); reframe();
+  }
+  function start(){
+    if(raf) return;
+    const ov = document.getElementById('titleOverlay');
+    if(!ov || ov.style.display === 'none') return;   // la portada ya no está: nada que montar
+    if(!ensure()){ setTimeout(start, 300); return; } // sin layout o sin WebGL todavía: reintenta
+    if(!seats.length) for(const s of SEATS) seats.push({ key:s.key, a:s.a, yaw:s.yaw||0, model:null, mixer:null });
+    fill();
+    addEventListener('resize', resize);
+    clk.getDelta();
+    raf = requestAnimationFrame(loop);
+  }
+  function stop(){
+    if(raf){ cancelAnimationFrame(raf); raf = 0; }
+    removeEventListener('resize', resize);
+    /* suelta el 2º contexto WebGL: la portada no vuelve, y dejarlo vivo cuesta memoria de GPU
+       toda la partida (algunos navegadores solo admiten 8-16 contextos a la vez). */
+    if(pr){ try{ pr.dispose(); pr.forceContextLoss && pr.forceContextLoss(); }catch(e){} pr = null; }
+    sc = null; cam = null; seats.length = 0; missing = SEATS.length;
+    const cv = document.getElementById('tiScene'); if(cv) cv.style.display = 'none';
+  }
+  /* _tick: avance manual de un frame — SOLO para los verificadores headless (con el rAF congelado) */
+  return { start, stop, CAM, _tick(dt){ if(!pr) return; fill(); step(dt||0.05); }, _seats:seats,
+           _dbg(){ return { pr, sc, cam, fire, flame, light, sparks }; } };   // solo para afinar el encuadre en headless
+})();
+window.__tiFire = titleCampfire;
+titleCampfire.start();
+
 /* ►WARMUP en reposo: mientras el jugador lee el menú, se va compilando todo por adelantado. No basta
    con una pasada al cargar — los personajes y los jefes llegan por GLB ASÍNCRONO, así que sus
    materiales aparecen SEGUNDOS DESPUÉS (medido: con una sola pasada al arranque, seguían compilándose
