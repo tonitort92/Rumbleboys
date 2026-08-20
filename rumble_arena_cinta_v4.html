@@ -16395,6 +16395,50 @@ function updatePvpShieldFX(){
     '  background:#151b2e url("data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2796%27 height=%2796%27><g fill=%27none%27 stroke=%27%23ffffff%27 stroke-opacity=%270.05%27 stroke-width=%272%27><path d=%27M24 12l8 8-8 8-8-8z%27/><circle cx=%2772%27 cy=%2724%27 r=%275%27/><path d=%27M68 68h12M74 62v12%27/><path d=%27M12 74l10-8 10 8%27/><rect x=%2744%27 y=%2744%27 width=%278%27 height=%278%27 transform=%27rotate(15 48 48)%27/></g></svg>") repeat;',
     '  border-left:1px solid rgba(255,255,255,.14);',
     '  box-shadow:-26px 0 60px rgba(0,0,0,.45); }',
+    /* ºCUÑA (20/08, pedido de Toni: "el que manda es el que tiene la home nueva"): el FONDO del
+       selector ya no es el drawer antracita (#isPill, OCULTO, no borrado) sino la DIAGONAL DE
+       CRISTAL traída de la rama integracion: #skyBg (cielo estrellado opaco, recortado con el
+       COMPLEMENTO de la cuña ’ tapa todo menos la diagonal) + #wsWedge (ventana de cristal con
+       desenfoque sobre el canvas del juego). Encima flota el selector de siempre: isla + planeta
+       + placa + chips + Â ¸ + SELECCIONAR. Los dos nodos los crea build() (cielo ANTES del confeti,
+       cuña DESPUÉS: el orden del DOM es el orden de pintado).
+         #startOverlay SIN fondo y SIN backdrop-filter: un ancestro con backdrop-filter es BACKDROP
+       ROOT y la ventana desenfocaría un color plano en vez del juego (medido en integracion). */
+    '#isPill{ display:none; }',
+    '#startOverlay{ --wsW:min(760px,52vw); --wsLeanK:.13; --wsLean:calc(var(--wsW) * var(--wsLeanK));',
+    '  --wsBlur:18px; --wsTile:46px; --wsJoint:3.2px;',
+    '  background:none !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }',
+    '#hsIslas{ width:var(--wsW); }',   // la caja del selector = la caja de la cuña
+    '#skyBg{ position:fixed; inset:0; z-index:-1; pointer-events:none;',
+    '  clip-path:polygon(0 0, calc(100% - var(--wsW) + var(--wsLean) + 1px) 0, calc(100% - var(--wsW) + 1px) 100%, 0 100%);',
+    '  background-image:',
+    '    radial-gradient(circle at 34px 22px,   rgba(255,255,255,.95) 0 1.3px, rgba(0,0,0,0) 1.9px),',
+    '    radial-gradient(circle at 122px 78px,  rgba(200,225,255,.75) 0 1.1px, rgba(0,0,0,0) 1.7px),',
+    '    radial-gradient(circle at 61px 168px,  rgba(255,246,214,.80) 0 1.6px, rgba(0,0,0,0) 2.3px),',
+    '    radial-gradient(circle at 208px 96px,  rgba(255,255,255,.55) 0 0.9px, rgba(0,0,0,0) 1.5px),',
+    '    radial-gradient(circle at 17px 141px,  rgba(255,255,255,.70) 0 1.1px, rgba(0,0,0,0) 1.7px),',
+    '    radial-gradient(circle at 154px 31px,  rgba(214,232,255,.60) 0 1.0px, rgba(0,0,0,0) 1.6px),',
+    '    radial-gradient(circle at 89px 233px,  rgba(255,255,255,.85) 0 1.4px, rgba(0,0,0,0) 2.0px),',
+    '    radial-gradient(circle at 246px 187px, rgba(255,228,190,.65) 0 1.2px, rgba(0,0,0,0) 1.8px),',
+    '    radial-gradient(circle at 43px 77px,   rgba(255,255,255,.45) 0 0.8px, rgba(0,0,0,0) 1.4px),',
+    '    radial-gradient(ellipse 60% 45% at 68% 26%, rgba(96,64,168,.26), rgba(0,0,0,0) 70%),',
+    '    radial-gradient(ellipse 55% 40% at 22% 72%, rgba(40,86,150,.20), rgba(0,0,0,0) 72%),',
+    '    radial-gradient(ellipse at 50% 38%, #131a33 0%, #0a0e1e 46%, #05070f 100%);',
+    '  background-size:137px 137px, 199px 199px, 263px 263px, 331px 331px, 173px 173px, 211px 211px, 289px 289px, 367px 367px, 149px 149px, cover, cover, cover; }',
+    '#wsWedge{ position:fixed; top:0; right:0; bottom:0; width:var(--wsW); z-index:-1; pointer-events:none;',
+    '  clip-path:polygon(var(--wsLean) 0, 100% 0, 100% 100%, 0 100%);',
+    '  background:linear-gradient(203deg, rgba(13,17,32,.34) 0%, rgba(9,12,24,.50) 100%);',
+    '  -webkit-backdrop-filter:blur(var(--wsBlur)) saturate(1.15); backdrop-filter:blur(var(--wsBlur)) saturate(1.15);',
+    '  filter:drop-shadow(-10px 0 22px rgba(0,0,0,.5)); }',
+    '#wsWedge::before{ content:""; position:absolute; inset:0;',
+    '  background-image:linear-gradient(90deg, rgba(0,0,0,0) calc(100% - var(--wsJoint)), rgba(9,12,24,.22) 0),',
+    '    linear-gradient(180deg, rgba(0,0,0,0) calc(100% - var(--wsJoint)), rgba(9,12,24,.22) 0),',
+    '    repeating-conic-gradient(rgba(215,236,255,.03) 0% 25%, rgba(143,200,232,.01) 0% 50%);',
+    '  background-size:var(--wsTile) var(--wsTile), var(--wsTile) var(--wsTile), calc(var(--wsTile)*2) calc(var(--wsTile)*2);',
+    '  background-position:100% 0;',
+    '  -webkit-mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%);',
+    '  mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%); }',
+    '@media (max-width:900px){ #startOverlay{ --wsW:min(430px,74vw); --wsLeanK:.20; } #skyBg, #wsWedge{ display:none; } #isPill{ display:block; } }',
     /* ---- retoques de la COLUMNA IZQUIERDA (pedidos 17/08; overrides desde esta hoja, que va
        DESPUÃ‰S de la base â†’ gana sin tocar las lÃ­neas de la otra sesiÃ³n) ---- */
     '#hsLogo{ width:min(440px,38vw) !important; }',                                  // logo mÃ¡s grande
@@ -16510,6 +16554,14 @@ function updatePvpShieldFX(){
       b.addEventListener('click', ()=>{ if(b._t) return; b._t = true; const old = b.textContent;
         b.textContent = 'PRÃ“XIMAMENTEâ€¦'; setTimeout(()=>{ b.textContent = old; b._t = false; }, 1100); });
       tr.insertAdjacentElement('afterend', b);
+    }
+    /* ºCUÑA: cielo ANTES del confeti (titila encima, fuera de la diagonal) y ventana DESPUÉS */
+    if(!document.getElementById('wsWedge')){
+      const conf = document.getElementById('startConfetti');
+      const sky = document.createElement('div'); sky.id = 'skyBg'; sky.setAttribute('aria-hidden','true');
+      const wed = document.createElement('div'); wed.id = 'wsWedge'; wed.setAttribute('aria-hidden','true');
+      if(conf){ home.insertBefore(sky, conf); conf.insertAdjacentElement('afterend', wed); }
+      else { home.prepend(sky); sky.insertAdjacentElement('afterend', wed); }
     }
     const w = document.createElement('div'); w.id = 'hsIslas';
     w.innerHTML = '<div id="isPill"></div><div id="isLine"></div>'
