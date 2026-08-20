@@ -16406,7 +16406,7 @@ function updatePvpShieldFX(){
        seguir siendo las mismas a un lado y otro del canto). */
     '#isPill{ display:none; }',
     '#startOverlay{ --wsW:min(760px,52vw); --wsLeanK:.13; --wsLean:calc(var(--wsW) * var(--wsLeanK));',
-    '  --wsBlur:5px; --wsTile:46px; --wsJoint:3.2px; }',
+    '  --wsBlur:2px; --wsTile:46px; --wsJoint:3.2px; }',   /* 2px: el stage en vivo tiene que LEERSE (►VENTANA) */
     '#hsIslas{ width:var(--wsW); }',   // la caja del selector = la caja de la cuña
     '#wsWedge{ position:fixed; top:0; right:0; bottom:0; width:var(--wsW); z-index:-1; pointer-events:none;',
     '  clip-path:polygon(var(--wsLean) 0, 100% 0, 100% 100%, 0 100%);',
@@ -16656,13 +16656,13 @@ function updatePvpShieldFX(){
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
     #hdPlay{ margin-top:8px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
       background:linear-gradient(180deg, color-mix(in srgb, var(--hc) 88%, #fff), color-mix(in srgb, var(--hc) 72%, #000));
-      border:3px solid color-mix(in srgb, var(--hc) 45%, #fff); border-radius:18px; padding:10px 44px 12px;
+      border:3px solid #000; border-radius:18px; padding:10px 44px 12px;   /* borde NEGRO (Toni 20/08) */
       box-shadow:0 12px 34px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--hc) 45%, transparent);
       transition:transform .13s ease, box-shadow .13s ease, background .25s ease, border-color .25s ease; }
     #hdPlay:hover, #hdPlay.uinav-focus, #hdPlay:focus-visible{ outline:none; transform:scale(1.04);
       box-shadow:0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent); }
     #hdPlay b{ display:block; font-size:clamp(30px,3.4vw,46px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
-      -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
+      -webkit-text-stroke:2.5px #000;   /* outline NEGRO (Toni 20/08) */ paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
     #hdPlay small{ display:block; margin-top:5px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; opacity:.9; text-shadow:0 1px 0 rgba(0,0,0,.5); }
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:900; letter-spacing:3px;
       color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:5px; padding:2px; }
@@ -16716,9 +16716,9 @@ function updatePvpShieldFX(){
     /* ---- el CAMINO DE TROFEOS ---- */
     /* sin banda oscura (Toni 20/08): el camino flota sobre el cielo, con aire por debajo */
     #hdPath{ position:absolute; left:0; right:0; bottom:0; height:var(--hdPathH,168px); box-sizing:border-box;
-      display:flex; align-items:center; justify-content:center; padding:10px clamp(16px,3vw,60px) 46px; overflow-x:auto; }
-    #hdPathIn{ display:flex; align-items:center; gap:0; }
-    .hdNode{ position:relative; flex:0 0 auto; width:56px; height:56px; border-radius:50%; cursor:pointer; font-family:inherit;
+      display:flex; align-items:center; justify-content:center; padding:10px clamp(16px,3vw,60px) 46px; overflow:hidden; }
+    #hdPathIn{ display:flex; align-items:center; gap:0; width:100%; max-width:1500px; }   /* 16 eslabones: los enlaces son ELÁSTICOS, el camino siempre cabe */
+    .hdNode{ position:relative; flex:0 0 auto; width:50px; height:50px; border-radius:50%; cursor:pointer; font-family:inherit;
       background:#1a2140; border:2.5px solid var(--nc,#5b647a); color:#fff; display:grid; place-items:center;
       font-size:17px; font-weight:900; font-style:italic; transition:transform .14s ease, box-shadow .14s ease; }
     .hdStop{ position:relative; flex:0 0 auto; display:flex; flex-direction:column; align-items:center; }
@@ -16739,8 +16739,24 @@ function updatePvpShieldFX(){
     .hdNode:hover:not(.next){ transform:scale(1.1); }
     .hdNode.uinav-focus{ transform:scale(1.14) !important; }
     .hdNode.next.uinav-focus{ transform:rotate(45deg) scale(1.14) !important; }
-    .hdLink{ flex:0 0 auto; width:clamp(18px,3.2vw,56px); height:4px; background:rgba(255,255,255,.14); border-radius:2px; }
+    .hdLink{ flex:1 1 14px; min-width:6px; max-width:56px; height:4px; background:rgba(255,255,255,.14); border-radius:2px; }
     .hdLink.done{ background:linear-gradient(90deg, var(--a), var(--b)); box-shadow:0 0 10px rgba(255,216,79,.35); }
+    /* los MINIJUEGOS son pasos, no metas: nodo pequeño, sin trofeo */
+    .hdNode.mini{ width:34px; height:34px; font-size:13px; font-style:normal; border-width:2px; background:#151b2e; }
+    .hdNode.mini.done{ background:var(--nc); box-shadow:0 0 10px var(--nc); }
+    .hdNode.mini.sel{ transform:scale(1.2); }
+    /* ►VENTANA (Toni 20/08: "el vídeo del stage en el fondo de la diagonal"): el cielo de la portada
+       (#titleOverlay.sky) se RECORTA con el complemento de la cuña → dentro de la diagonal se ve el
+       canvas del juego (el attract en vivo) bajo el cristal; fuera, el cielo sigue intacto. Las
+       medidas de la cuña viven en html.race porque #titleOverlay no desciende de #startOverlay.
+       El recorte entra con transición al acabar el vuelo (la base lleva el rectángulo entero para
+       que haya de dónde animar). */
+    html.race{ --wsW:min(1040px,58vw); --wsLeanK:.13; --wsLean:calc(var(--wsW) * var(--wsLeanK)); }
+    html.race #titleOverlay{ clip-path:polygon(0 0, 100% 0, 100% 100%, 0 100%); transition:opacity .45s ease, clip-path .7s ease .15s; }
+    html.race #titleOverlay.sky{ clip-path:polygon(0 0, calc(100% - var(--wsW) + var(--wsLean) + 1px) 0, calc(100% - var(--wsW) + 1px) 100%, 0 100%); }
+    /* eslabón SIN DESCUBRIR: telón sobre la ventana (sin spoiler) y el ? encima */
+    #startOverlay.hidW #wsWedge{ background:linear-gradient(203deg, rgba(8,10,20,.90) 0%, rgba(5,7,15,.96) 100%); }
+    #hdCoverWrap .isStop{ display:none; }
     @media (max-width:900px){
       #startOverlay.race{ --hdPathH:104px; }
       #hdLeft{ width:48%; padding-bottom:10px; }
@@ -16757,28 +16773,50 @@ function updatePvpShieldFX(){
   const hexOf = c => '#' + ((c==null ? 0xffd84f : c)>>>0).toString(16).padStart(6,'0').slice(-6);
   const worldCol = st => hexOf(((typeof PORTAL_PAL!=='undefined' && PORTAL_PAL[st]) || [])[1]);
   const tagOf = st => (typeof STAGE_TAG!=='undefined' && STAGE_TAG[st]) || ('MUNDO ' + st);
-  const stages = () => (typeof CAMPAIGN_STAGES!=='undefined') ? CAMPAIGN_STAGES : [1];
+  /* ►16 ESLABONES (Toni 20/08): el camino es la RUTA real de la carrera —mundos Y minijuegos—, no
+     solo los 10 mundos de CAMPAIGN_STAGES. Un eslabón con `mini` (arena, cuadrimanía, los tres
+     descensos, el tubo) es un PASO sin trofeo ni marca; los demás son MUNDOS con trofeo. */
+  const ruta = () => (typeof RUTA!=='undefined') ? RUTA : [{ st:1 }];
+  const isMini = e => !!e.mini;
+  const linkName = e => e.st ? tagOf(e.st) : (e.tag || String(e.mini).toUpperCase());
+  /* el stage que "representa" a un eslabón: el suyo, o el mundo anterior si es un minijuego (es lo
+     que mapSelApply previsualiza en el fondo) */
+  const stageOf = i => { const R = ruta(); return R[i].st || ((typeof _rutaMundoPrevio==='function') ? _rutaMundoPrevio(i) : 1); };
   let sel = -1;
 
-  /* el estado de cada mundo, leído del save de siempre (trophies / marks / bestStage) */
+  /* el estado de cada eslabón, leído del save de siempre (trophies / marks / bestStage).
+     bestStage es un índice 1..N dentro de CAMPAIGN_STAGES → se traduce a eslabón de la RUTA. */
   function state(){
-    const s = saveGet(), tr = s.trophies||{}, mk = s.marks||{}, best = s.bestStage||0, S = stages();
-    const won = S.map(st => !!tr[st]);
-    const disc = S.map((st,i) => i===0 || i < best || won[i] || !!mk[st]);
-    let next = won.indexOf(false); if(next < 0) next = S.length-1;
-    return { S, tr, mk, best, won, disc, next, nWon: won.filter(Boolean).length };
+    const s = saveGet(), tr = s.trophies||{}, mk = s.marks||{}, best = s.bestStage||0, R = ruta();
+    let reached = 0;
+    if(best > 0 && typeof CAMPAIGN_STAGES!=='undefined' && typeof rutaIndiceDe==='function'){
+      const stg = CAMPAIGN_STAGES[Math.min(best, CAMPAIGN_STAGES.length)-1];
+      reached = Math.max(0, rutaIndiceDe(stg));
+    }
+    const mini = R.map(isMini);
+    const won  = R.map((e,i) => !mini[i] && !!tr[e.st]);
+    const disc = R.map((e,i) => i===0 || i <= reached || won[i] || (!!e.st && !!mk[e.st]));
+    let next = -1;
+    for(let i=0;i<R.length;i++) if(!mini[i] && !won[i]){ next = i; break; }
+    if(next < 0) for(let i=R.length-1;i>=0;i--) if(!mini[i]){ next = i; break; }
+    const nWorlds = mini.filter(x=>!x).length;
+    return { R, tr, mk, best, reached, mini, won, disc, next, nWorlds, nWon: won.filter(Boolean).length };
   }
 
   function build(){
     const home = $('startOverlay');
     if(!home || $('hdRace')) return;
     home.classList.add('race');
+    /* el <html> lleva la marca: el recorte del cielo de la portada (#titleOverlay, que va ANTES en
+       el documento y no puede mirar el estado de la home) se engancha aquí — ver ►VENTANA en el CSS */
+    document.documentElement.classList.add('race');
+    window.__ESFERAS_OFF = true;   // los planetas del selector viejo no se ven: que no se rendericen
     const r = document.createElement('div'); r.id = 'hdRace';
     /* JUGAR va el PRIMERO del DOM a propósito: ►UINAV enfoca el primer accionable si #hsPlay (su
        FIRST_PICK) está oculto, y el CTA principal debe ser lo primero que enfoque el mando */
     r.innerHTML =
         '<div id="hdLeft">'
-      +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>CARRERA · MUNDO 1 → ' + stages().length + ' · DEL TIRÓN</small></button>'
+      +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>CARRERA · ' + ruta().length + ' ESLABONES · DEL TIRÓN</small></button>'
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdName"></div>'
       +   '<div id="hdMeta"></div>'
@@ -16801,17 +16839,6 @@ function updatePvpShieldFX(){
       + '<div id="hdPath"><div id="hdPathIn"></div></div>';
     home.appendChild(r);
 
-    /* EL COVER DE CADA MUNDO = el PLANETA de ►ESFERAS (el suelo real del stage con sus props) con la
-       isla encima: la parada central del selector viejo (.isStop.cur, con #isImg) se muda tal cual
-       al territorio del mundo. ►ESFERAS la encuentra por su clase y lee el mundo de #isIdx, que
-       select() mantiene al día. Las paradas prev/next se DESENGANCHAN (no se borran: quedan en
-       window.__isStopsPark) para no renderizar dos planetas que nadie ve. Cuando exista un cover
-       ilustrado (mundoN_cover.png), #isImg lo enseña en vez de la isla y el planeta queda detrás. */
-    { const cur = document.querySelector('#hsIslas .isStop.cur');
-      if(cur){ $('hdCoverWrap').insertBefore(cur, $('hdQ'));
-        window.__isStopsPark = [];
-        ['prev','next'].forEach(c=>{ const e = document.querySelector('#hsIslas .isStop.' + c); if(e){ window.__isStopsPark.push(e); e.remove(); } }); } }
-
     /* el carrusel de personajes: se muda el APARCAMIENTO entero (#charPickerHome) a la columna
        izquierda y se enseña. El asistente (paso 3) y CONTROLES siguen llevándoselo y devolviéndolo
        a ese mismo nodo, así que no hay que tocarles nada. */
@@ -16822,26 +16849,19 @@ function updatePvpShieldFX(){
     r.querySelectorAll('.hdIco').forEach(b => b.addEventListener('click', ()=>{ const t = $(b.dataset.for); if(t) t.click(); }));
     $('hdOnline').addEventListener('click', ()=>{ const b = $('hsOnline'); if(b) b.click(); });
 
-    /* JUGAR = LA CARRERA, siempre desde el mundo 1: si el fondo/MENU_STAGE se quedó en otro mundo
-       (una práctica anterior, F9…), se devuelve al 1 antes de abrir el asistente de siempre */
+    /* JUGAR = LA CARRERA, siempre desde el eslabón 0: si el fondo se quedó en otro mundo (el que
+       estabas mirando, una práctica anterior, F9…), se devuelve al 1 antes de abrir el asistente */
     $('hdPlay').addEventListener('click', ()=>{
-      try{
-        const first = stages()[0];
-        if(typeof MENU_STAGE!=='undefined' && MENU_STAGE !== first && typeof rutaIndiceDe==='function'){
-          const i = rutaIndiceDe(first); if(i >= 0){ MENU_RUTA_I = i; mapSelApply(); }
-        }
-      }catch(e){ console.warn('[carrera] jugar', e); }
+      try{ if(typeof MENU_RUTA_I!=='undefined' && MENU_RUTA_I !== 0){ MENU_RUTA_I = 0; mapSelApply(); } }
+      catch(e){ console.warn('[carrera] jugar', e); }
       const b = $('playSoloBtn'); if(b) b.click();
     });
-    /* ENTRENAR ESTE MUNDO = la única puerta a "elegir mundo": monta ese mundo (►MAPSEL) y entra por
-       el camino de ENTRENAR que ya existía (#hsTrain → asistente → ENTRENAMIENTO) */
+    /* ENTRENAR ESTE MUNDO = la única puerta a "elegir mundo": monta ese eslabón (►MAPSEL, que sabe
+       de minijuegos) y entra por el camino de ENTRENAR que ya existía (#hsTrain → asistente) */
     $('hdTrain').addEventListener('click', e=>{
       e.stopPropagation();
-      try{
-        const st = stages()[sel];
-        const i = (typeof rutaIndiceDe==='function') ? rutaIndiceDe(st) : -1;
-        if(i >= 0){ MENU_RUTA_I = i; mapSelApply(); }
-      }catch(err){ console.warn('[carrera] entrenar', err); }
+      try{ if(sel >= 0){ MENU_RUTA_I = sel; mapSelApply(); } }
+      catch(err){ console.warn('[carrera] entrenar', err); }
       const t = $('hsTrain'); if(t) t.click();
     });
     /* la ficha completa (puntos, visitas, escala de notas) es la de MARCAS de siempre */
@@ -16860,7 +16880,7 @@ function updatePvpShieldFX(){
     $('hdPath').addEventListener('click', e=>{ const n = e.target.closest && e.target.closest('.hdNode'); if(n){ select(+n.dataset.i); n.focus(); } });
 
     /* al volver a la home (tras una run, un minijuego…) el progreso pudo cambiar: se repinta cada vez
-       que la pantalla se enseña, y el mundo por defecto vuelve a ser el SIGUIENTE OBJETIVO */
+       que la pantalla se enseña, y el eslabón por defecto vuelve a ser el SIGUIENTE OBJETIVO */
     window.addEventListener('tiFlyDone', ()=> refresh(true));
     if(window.MutationObserver) new MutationObserver(()=>{ if(home.style.display !== 'none') refresh(true); })
       .observe(home, { attributes:true, attributeFilter:['style'] });
@@ -16884,26 +16904,30 @@ function updatePvpShieldFX(){
     const st = state(), s = saveGet();
     const cls = (s.cls||{})[k] || {};
     $('hdMeta').innerHTML =
-        '<span>🏆 <b>' + st.nWon + '/' + st.S.length + '</b></span>'
-      + '<span>MEJOR CARRERA: <b>' + (st.best ? ('MUNDO ' + st.best) : '—') + '</b></span>'
+        '<span>🏆 <b>' + st.nWon + '/' + st.nWorlds + '</b></span>'
+      + '<span>MEJOR CARRERA: <b>' + (st.best ? ('ESLABÓN ' + (st.reached+1) + '/' + st.R.length) : '—') + '</b></span>'
       + (cls.wins ? '<span>VICTORIAS: <b>' + cls.wins + '</b></span>' : '')
       + '<button type="button" id="hdLogros">LOGROS</button>';
     const lg = $('hdLogros'); if(lg) lg.addEventListener('click', ()=>{ const b = $('trophyLink'); if(b) b.click(); });
   }
 
+  /* el camino: SIN nombres (Toni) — solo número, icono y marca. Los minijuegos son nodos pequeños. */
   function renderPath(st){
     const box = $('hdPathIn'); if(!box) return;
     let h = '';
-    st.S.forEach((stage, i)=>{
-      const col = worldCol(stage), m = st.mk[stage];
+    st.R.forEach((e, i)=>{
+      const col = worldCol(stageOf(i)), m = e.st ? st.mk[e.st] : null;
+      const passed = st.won[i] || (st.mini[i] && st.disc[i] && i < st.next);
       if(i){
-        const prevDone = st.won[i-1], done = prevDone && (st.won[i] || i === st.next);
-        h += '<span class="hdLink' + (prevDone ? ' done' : '') + '" style="--a:' + worldCol(st.S[i-1]) + ';--b:' + (done ? col : '#5b647a') + '"></span>';
+        const prevPassed = st.won[i-1] || (st.mini[i-1] && i-1 < st.next);
+        h += '<span class="hdLink' + (prevPassed ? ' done' : '') + '" style="--a:' + worldCol(stageOf(i-1)) + ';--b:' + (passed || i === st.next ? col : '#5b647a') + '"></span>';
       }
-      const cls = st.won[i] ? 'done' : (i === st.next ? 'next' : (st.disc[i] ? '' : 'lock'));
-      const ico = st.won[i] ? '🏆' : (i === st.next ? '★' : (st.disc[i] ? String(i+1) : '🔒'));
+      let cls, ico;
+      if(st.mini[i]){ cls = 'mini' + (passed ? ' done' : (st.disc[i] ? '' : ' lock')); ico = st.disc[i] ? '✦' : '🔒'; }
+      else { cls = st.won[i] ? 'done' : (i === st.next ? 'next' : (st.disc[i] ? '' : 'lock'));
+             ico = st.won[i] ? '🏆' : (i === st.next ? '★' : (st.disc[i] ? String(i+1) : '🔒')); }
       h += '<span class="hdStop"><button type="button" class="hdNode ' + cls + (i===sel ? ' sel' : '') + '" data-i="' + i + '" style="--nc:' + (st.disc[i] ? col : '#5b647a') + '"'
-         +   ' title="' + (i+1) + ' · ' + tagOf(stage) + '" aria-label="' + (i+1) + ' · ' + tagOf(stage) + '">'
+         +   ' aria-label="' + (i+1) + ' · ' + linkName(e) + '">'
          +   '<span>' + ico + '</span>'
          +   (st.won[i] && m ? '<span class="mk" style="color:' + gradeColorOf(m.g) + '">' + m.g + '</span>' : '')
          + '</button><span class="n">' + (i+1) + '</span></span>';
@@ -16911,52 +16935,55 @@ function updatePvpShieldFX(){
     box.innerHTML = h;
   }
 
-  let _coverStage = null;
-  function setCover(stage, hidden){
-    const stop = document.querySelector('#hdCoverWrap .isStop'), img = $('isImg'), q = $('hdQ'); if(!stop || !img) return;
-    const show = ()=>{ stop.classList.toggle('hid', !!hidden); q.style.display = hidden ? 'block' : 'none'; };
-    /* mismo mundo (repintado tras una run, cambio de héroe…): sin fundido. Si se volviera a poner
-       el mismo src, el onload no dispara y el crossfade se quedaría a opacidad 0 (pasó en headless). */
-    if(stage === _coverStage){ show(); stop.classList.remove('swap'); return; }
-    _coverStage = stage;
-    stop.classList.add('swap');
-    const done = ()=> stop.classList.remove('swap');
-    setTimeout(()=>{
-      show();
-      /* cadena de assets: cover ilustrado → isla del stage → solo el planeta */
-      img.onerror = ()=>{
-        if(/_cover\.png$/.test(img.src)) img.src = 'mundo' + stage + '_iso.png';
-        else { img.style.visibility = 'hidden'; done(); }
-      };
-      img.onload = ()=>{ img.style.visibility = ''; done(); };
-      img.src = 'mundo' + stage + '_cover.png';
-      setTimeout(done, 600);   // red: pase lo que pase con la imagen, el planeta vuelve a verse
-    }, 170);
+  /* ►VENTANA: el fondo de la diagonal es el STAGE EN VIVO del attract (el juego de verdad, detrás del
+     cristal). Al enfocar un eslabón descubierto, el attract cambia a ese mundo con la maquinaria
+     ►MAPSEL de siempre (rebuildBelt + tema + música) — con un respiro de 450 ms para que recorrer el
+     camino con el mando no reconstruya diez mundos. Un eslabón SIN DESCUBRIR no se enseña: se baja
+     el telón (#startOverlay.hidW) y queda el "?" — no hay spoiler. */
+  let _liveT = 0;
+  function setLive(i, disc){
+    const home = $('startOverlay'); if(!home) return;
+    home.classList.toggle('hidW', !disc);
+    const q = $('hdQ'); if(q) q.style.display = disc ? 'none' : 'block';
+    clearTimeout(_liveT);
+    if(!disc) return;
+    _liveT = setTimeout(()=>{
+      try{
+        if(typeof running !== 'undefined' && running) return;
+        if(typeof MENU_RUTA_I==='undefined' || typeof mapSelApply!=='function') return;
+        if(MENU_RUTA_I !== i){ MENU_RUTA_I = i; mapSelApply(); }
+      }catch(e){ console.warn('[carrera] ventana', e); }
+    }, 450);
   }
+
   function select(i, force){
-    const st = state(); if(!st.S.length) return;
-    i = Math.max(0, Math.min(st.S.length-1, i|0));
+    const st = state(); if(!st.R.length) return;
+    i = Math.max(0, Math.min(st.R.length-1, i|0));
     if(i === sel && !force) return;
     sel = i;
-    const stage = st.S[i], col = worldCol(stage), m = st.mk[stage], won = st.won[i], disc = st.disc[i];
+    const e = st.R[i], stage = stageOf(i), col = worldCol(stage), m = e.st ? st.mk[e.st] : null;
+    const won = st.won[i], disc = st.disc[i], mini = st.mini[i];
     document.querySelectorAll('#hdPathIn .hdNode').forEach(n => n.classList.toggle('sel', +n.dataset.i === i));
-    const num = $('hdWNum'); num.textContent = (i+1) + ' · ' + tagOf(stage); num.style.setProperty('--wc', col);
+    const num = $('hdWNum'); num.textContent = (i+1) + ' · ' + linkName(e); num.style.setProperty('--wc', col);
     const ws = $('hdWState'); ws.className = won ? 'tro' : (i === st.next ? 'next' : '');
-    ws.textContent = won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
+    ws.textContent = mini ? (disc ? 'MINIJUEGO · SIN TROFEO' : '🔒 MINIJUEGO · SIN DESCUBRIR')
+                   : won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
                    : (i === st.next ? '★ SIGUIENTE OBJETIVO' : (disc ? 'SIN TROFEO TODAVÍA' : '🔒 SIN DESCUBRIR'));
-    { const lbl = $('isIdx'); if(lbl) lbl.textContent = (i+1) + '/' + st.S.length; }   // ►ESFERAS lee aquí qué planeta pintar
-    setCover(stage, !disc);
+    setLive(i, disc);
     const body = $('hdCardBody');
-    if(disc){
+    if(!disc){
+      body.innerHTML = '<p id="hdCardNote">Aún no has llegado aquí. Los trofeos se ganan del tirón desde el Mundo 1: supera los eslabones anteriores en la carrera y este se revelará.</p>';
+    } else if(mini){
+      body.innerHTML = '<p id="hdCardNote">Minijuego entre mundos: un respiro en la carrera. No reparte trofeo ni marca, pero sí puntos para la tienda.</p>';
+    } else {
       body.innerHTML =
           '<div class="hdRow"><span>MEJOR MARCA</span><b class="mk" style="color:' + (m ? gradeColorOf(m.g) : '#6b7a99') + '">' + (m ? m.g : '—') + '</b></div>'
         + '<div class="hdRow"><span>PUNTOS</span><b>' + (m ? Math.round(m.pts||0).toLocaleString('es-ES') : '—') + '</b></div>'
         + '<div class="hdRow"><span>VECES JUGADO</span><b>' + (m ? (m.n||1) : 0) + '</b></div>'
-        + '<div class="hdRow"><span>TROFEOS GANADOS</span><b>' + (st.tr[stage]||0) + '</b></div>'
+        + '<div class="hdRow"><span>TROFEOS GANADOS</span><b>' + (st.tr[e.st]||0) + '</b></div>'
         + (won ? '' : '<p id="hdCardNote">Los trofeos se ganan del tirón desde el Mundo 1.</p>');
-    } else {
-      body.innerHTML = '<p id="hdCardNote">Aún no has llegado aquí. Los trofeos se ganan del tirón desde el Mundo 1: supera los anteriores en la carrera y este mundo se revelará.</p>';
     }
+    const tb = $('hdTrain'); if(tb) tb.firstChild.textContent = mini ? 'ENTRENAR ESTE MINIJUEGO' : 'ENTRENAR ESTE MUNDO';
   }
 
   function refresh(resetSel){
