@@ -16661,8 +16661,8 @@ function updatePvpShieldFX(){
     .hdLog .co{ flex:0 0 auto; font-size:12px; font-weight:900; color:#ffd84f; letter-spacing:1px; } .hdLog.off .co{ color:#6b7a99; }
     /* ---- izquierda: el QUIÉN ---- */
     #hdLeft{ position:absolute; left:0; top:108px; bottom:var(--hdPathH,124px);   /* top: deja la franja de logo + ficha de jugador */ width:calc(100% - var(--wsW) + var(--wsLean)*.5);
-      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
-      padding:0 2vw 12px; box-sizing:border-box; }
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+      padding:0 2vw 12px; box-sizing:border-box; }   /* CENTRADA en vertical (Toni); el bloque ya es compacto y cabe entre la ficha y el camino */
     /* el carrusel en la home: solo muñeco + flechas (rol, pros/contras, ataques y diagramas viven
        en CONTROLES y en el asistente, que se lo llevan entero cuando lo piden) */
     #hdLeft #charPickerHome{ display:block !important; width:auto; }
@@ -16673,7 +16673,7 @@ function updatePvpShieldFX(){
     #hdLeft .cpRow{ gap:0; }
     #hdLeft .cpTop{ flex:0 0 auto; width:auto; gap:0; position:relative; }
     #hdLeft #cpInfo, #hdLeft #cpPC, #hdLeft #cpAtkBtn, #hdLeft #cpDiag{ display:none !important; }
-    #hdLeft #cpView{ width:min(270px,22vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
+    #hdLeft #cpView{ width:min(236px,19vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
       filter:drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
     /* LA PLATAFORMA bajo el personaje: un disco con el color del héroe (--hc) */
     #hdLeft .cpTop::after{ display:none; content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
@@ -16682,7 +16682,7 @@ function updatePvpShieldFX(){
     #hdLeft .cpTop::before{ display:none; content:''; position:absolute; left:50%; bottom:13%; width:66%; height:8%; transform:translateX(-50%);
       border-radius:50%; z-index:0; border:2px solid var(--hc,#ffd84f); opacity:.75; box-shadow:0 0 18px var(--hc,#ffd84f); }
     #hdLeft #cpDots{ margin-top:2px; }
-    #hdName{ font-size:clamp(26px,2.8vw,40px); font-weight:900; font-style:italic; letter-spacing:2px; line-height:1; margin:2px 0 0;
+    #hdName{ font-size:clamp(24px,2.5vw,34px); font-weight:900; font-style:italic; letter-spacing:2px; line-height:1; margin:0;
       -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
     #hdMeta{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px 14px; font-size:12px; font-weight:900; letter-spacing:1.5px;
       color:#c9d3ee; text-shadow:0 2px 6px rgba(0,0,0,.8); }
@@ -16692,24 +16692,24 @@ function updatePvpShieldFX(){
     #hdMeta button:hover, #hdMeta button.uinav-focus{ color:#fff; }
     #hdCharHost{ order:1; } #hdName{ order:2; } #hdAtk{ order:3; } #hdMeta{ order:4; } #hdPlay{ order:5; } #hdOnline{ order:6; }
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
-    #hdPlay{ margin-top:8px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
+    #hdPlay{ margin-top:4px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
       background:linear-gradient(180deg, color-mix(in srgb, var(--hc) 88%, #fff), color-mix(in srgb, var(--hc) 72%, #000));
-      border:3px solid #000; border-radius:18px; padding:10px 44px 12px;   /* borde NEGRO (Toni 20/08) */
+      border:3px solid #000; border-radius:18px; padding:7px 40px 9px;   /* borde NEGRO (Toni 20/08) */
       box-shadow:0 12px 34px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--hc) 45%, transparent);
       transition:transform .13s ease, box-shadow .13s ease, background .25s ease, border-color .25s ease; }
     #hdPlay:hover, #hdPlay.uinav-focus, #hdPlay:focus-visible{ outline:none; transform:scale(1.04);
       box-shadow:0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent); }
-    #hdPlay b{ display:block; font-size:clamp(30px,3.4vw,46px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
+    #hdPlay b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
       -webkit-text-stroke:2.5px #000;   /* outline NEGRO (Toni 20/08) */ paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
     #hdPlay small{ display:block; margin-top:5px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; opacity:.9; text-shadow:0 1px 0 rgba(0,0,0,.5); }
-    #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:900; letter-spacing:3px;
-      color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:5px; padding:2px; }
+    #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:900; letter-spacing:3px;
+      color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:4px; padding:0; }
     #hdOnline:hover, #hdOnline.uinav-focus{ opacity:1; }
     /* ---- ►ATKGRID (Toni 20/08): los ataques del héroe bajo su nombre; hover → botón + tecla + qué hace.
        El vídeo existe (char_video/) pero AÚN no se enseña: la celda lleva data-vid para enchufarlo. ---- */
-    #hdAtk{ display:grid; grid-template-columns:repeat(5, auto); gap:6px; margin:4px 0 2px; }
+    #hdAtk{ display:grid; grid-template-columns:repeat(5, auto); gap:5px; margin:2px 0 0; }
     .hdAt{ cursor:default; font-family:inherit; font-size:10.5px; font-weight:900; letter-spacing:1px; color:#e8eefc; text-align:center;
-      padding:6px 9px; border-radius:9px; background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); text-shadow:none;
+      padding:4px 8px; border-radius:9px; background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); text-shadow:none;
       display:flex; flex-direction:column; align-items:center; gap:3px; min-width:64px; transition:border-color .13s ease, background .13s ease; }
     .hdAt.com{ color:#9fb0d6; }
     .hdAt i{ font-style:normal; font-size:9px; font-weight:900; letter-spacing:1.5px; padding:1px 6px; border-radius:999px; color:#0b0f20; background:var(--pc,#9fe8ff); }
@@ -16723,8 +16723,18 @@ function updatePvpShieldFX(){
     #hdAtkTip .keys svg{ display:block; }
     #hdAtkTip p{ margin:0; font-size:12px; line-height:1.4; color:#c9d3ee; }
     #hdAtkTip .vid{ margin-top:8px; height:6px; border-radius:999px; background:repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 8px, rgba(255,255,255,.05) 8px 16px); }
+    /* ---- ►ARTE DEL MUNDO (Toni 20/08): sobre la ventana, la ISLA flotante del stage (mundoN_iso.png)
+       y, detrás de ella, el PERSONAJE ilustrado del mundo (mundoN_char.png), grande, en la esquina
+       inferior derecha y sangrando por abajo del visor. Convención por stage: un mundo sin PNG no
+       enseña nada (onerror). Van en #hdRace, ANTES de #hdRight, para quedar bajo el cartel y la ficha. */
+    #hdChar{ position:absolute; right:-3vw; bottom:-7vh; height:min(900px,92vh); width:auto; z-index:0; pointer-events:none; display:none;
+      filter:drop-shadow(-3px 0 9px rgba(160,210,255,.25)) drop-shadow(-14px 10px 26px rgba(0,0,0,.55)); }
+    #hdIso{ position:absolute; right:calc(var(--wsW) * 0.46); top:calc((100% - var(--hdPathH,168px)) / 2); width:min(450px,26vw); height:auto; transform:translate(50%,-50%); z-index:1;
+      pointer-events:none; display:none; filter:drop-shadow(0 30px 30px rgba(0,0,0,.55)); animation:hdFloat 6s ease-in-out infinite; }
+    /* la ficha del mundo se va al canto IZQUIERDO de la cuña: la esquina derecha es del goblin */
+    #hdCard{ left:calc(100% - var(--wsW) + 28px); right:auto; }
     /* ---- derecha: el DÓNDE (dentro de la cuña) ---- */
-    #hdRight{ position:absolute; right:0; top:0; bottom:var(--hdPathH,124px); width:var(--wsW); pointer-events:none; }
+    #hdRight{ position:absolute; right:0; top:0; bottom:var(--hdPathH,124px); width:var(--wsW); pointer-events:none; z-index:2; }   /* cartel y ficha por ENCIMA de la isla y el goblin */
     #hdRight > *{ pointer-events:auto; }
     /* el cover ocupa el territorio: centrado en la cuña, fundido hacia el canto */
     #hdCoverWrap{ position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; overflow:visible; padding:0 6% 14% 0; box-sizing:border-box; }
@@ -16892,6 +16902,8 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdIco" data-for="hsOpts" title="OPCIONES">⚙️</button>'
       +   '<button type="button" class="hdIco" data-for="hsLang" title="IDIOMA">🌐</button>'
       + '</div>'
+      + '<img id="hdChar" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
+      + '<img id="hdIso" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
       + '<div id="hdRight">'
       +   '<div id="hdCoverWrap"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
       +   '<div id="hdWorld"><div id="hdWNum"></div><div id="hdWState"></div></div>'
@@ -17083,6 +17095,13 @@ function updatePvpShieldFX(){
                    : won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
                    : (i === st.next ? '★ SIGUIENTE OBJETIVO' : (disc ? 'SIN TROFEO TODAVÍA' : '🔒 SIN DESCUBRIR'));
     setLive(i, disc);
+    /* arte del mundo: solo mundos (no minis) descubiertos; el PNG que no exista se apaga solo */
+    [['hdChar','_char'],['hdIso','_iso']].forEach(([id,suf])=>{ const im = $(id); if(!im) return;
+      if(!e.st || !disc){ im.style.display = 'none'; return; }
+      const want = 'mundo' + e.st + suf + '.png';
+      if(im.getAttribute('src') === want){ im.style.display = (im.complete && im.naturalWidth) ? 'block' : 'none'; return; }   // mismo PNG: el onload no repite
+      im.onload = ()=>{ im.style.display = 'block'; };
+      im.style.display = 'none'; im.src = want; });
     const body = $('hdCardBody');
     if(!disc){
       body.innerHTML = '<p id="hdCardNote">Aún no has llegado aquí. Los trofeos se ganan del tirón desde el Mundo 1: supera los eslabones anteriores en la carrera y este se revelará.</p>';
@@ -37978,6 +37997,7 @@ function refreshSetup(){
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
 
   let cur = null, pMixer = null;
+  window.__cpDbg = { scene:pScene, cam:pCam, cur:()=>cur };   // gancho de medida (headless): escena del torno y modelo actual
   function disposeCur(){
     if(!cur) return;
     pScene.remove(cur.root);
@@ -37997,7 +38017,7 @@ function refreshSetup(){
     const base = new THREE.Color(hex);
     const tone = (c, t)=>{ const o = c.clone(); if(t > 0) o.lerp(new THREE.Color(0xffffff), t); else o.lerp(new THREE.Color(0x000000), -t); return '#' + o.getHexString(); };
     const pal = [tone(base,.10), tone(base,-.08), tone(base,-.22), tone(base,-.38), tone(base,-.55)];   // tonos hacia OSCURO y bien separados: a plena luz los claros se lavan y los cuadrados no se leen
-    const g = new THREE.Group();
+    const g = new THREE.Group(); g.userData.__peana = true;
     const W = 2.0, D = 2.0;   // CUADRADA (Toni): el muñeco queda dentro por los cuatro lados
     const top = new THREE.Mesh(organicSlabGeo(W, D, 0.26, 0.55, 0.10, 0.08),
       new THREE.MeshStandardMaterial({ map: makeFieldTexture(pal, 1/2.4), roughness:.95, metalness:0 }));   // 16 celdas por 2,4 u → cuadrados de 0,15 u
@@ -38061,6 +38081,28 @@ function refreshSetup(){
         pMixer.update(0); model.updateMatrixWorld(true);   // posa el idle ANTES de colgar armas → la alineación al frente mide el hueso en su pose real
       }
       try { attachPreviewWeapons(model, k, PUP_H/CHAR_TARGET_H); } catch(e){ console.warn('[preview] arma falló', e); }   // muestra el arma de clase en el preview (escala proporcional al cuerpo del encuadre)
+      /* ►PEANA · CENTRADO POSADO (medido, 20/08): la caja de bind (charModelBox) no es la del muñeco
+         POSADO — con el idle y el yaw, arquera y caballero caían 0,3 u a un lado y el samurái 0,46 u
+         hacia atrás. Se posa el idle (mixer.update(0)), se deforman los vértices con boneTransform y
+         se recentra el modelo dentro del pivote con ESA caja. Solo la malla con esqueleto: las armas
+         (arco, lanza) no cuentan, o tirarían del centro hacia su lado. */
+      try{
+        piv.updateMatrixWorld(true);
+        const inv = new THREE.Matrix4().copy(piv.matrixWorld).invert(), bb = new THREE.Box3(), v = new THREE.Vector3();
+        const sample = ()=>{ model.updateMatrixWorld(true);
+          model.traverse(o=>{ if(o.isSkinnedMesh && o.geometry && o.geometry.attributes.position){
+            o.skeleton.update();
+            const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count/900));
+            for(let i=0;i<pos.count;i+=step){ o.boneTransform(i, v); v.applyMatrix4(o.matrixWorld).applyMatrix4(inv); bb.expandByPoint(v); }
+          } }); };
+        /* el idle MUEVE el cuerpo a lo largo del ciclo (medido: un solo fotograma dejaba 0,17 u de
+           deriva y los pies 0,15 u bajo la losa en arquera y caballero). Se muestrea el ciclo entero
+           y se centra con la UNIÓN: el centro es el del vaivén y el suelo, el punto más bajo. */
+        const act = pMixer && pMixer._actions && pMixer._actions[0], dur = (act && act.getClip().duration) || 0;
+        if(pMixer && dur > 0){ for(let f=0; f<8; f++){ pMixer.setTime(dur*f/8); sample(); } pMixer.setTime(0); }
+        else sample();
+        if(!bb.isEmpty()){ const c = new THREE.Vector3(); bb.getCenter(c); model.position.x -= c.x; model.position.z -= c.z; model.position.y -= bb.min.y; }
+      }catch(e){ console.warn('[preview] centrado posado', e); }
       piv.updateMatrixWorld(true);
       root.add(piv); try{ root.add(heroSlab(k)); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
       cur = { root, _sharedGeo:true };
