@@ -16395,27 +16395,19 @@ function updatePvpShieldFX(){
     '  background:#151b2e url("data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2796%27 height=%2796%27><g fill=%27none%27 stroke=%27%23ffffff%27 stroke-opacity=%270.05%27 stroke-width=%272%27><path d=%27M24 12l8 8-8 8-8-8z%27/><circle cx=%2772%27 cy=%2724%27 r=%275%27/><path d=%27M68 68h12M74 62v12%27/><path d=%27M12 74l10-8 10 8%27/><rect x=%2744%27 y=%2744%27 width=%278%27 height=%278%27 transform=%27rotate(15 48 48)%27/></g></svg>") repeat;',
     '  border-left:1px solid rgba(255,255,255,.14);',
     '  box-shadow:-26px 0 60px rgba(0,0,0,.45); }',
-    /* ºCUÑA (20/08, pedido de Toni: "el que manda es el que tiene la home nueva"): el FONDO del
+    /* â–ºCUÃ‘A (20/08, pedido de Toni: "el que manda es el que tiene la home nueva"): el FONDO del
        selector ya no es el drawer antracita (#isPill, OCULTO, no borrado) sino la DIAGONAL DE
-       CRISTAL traída de la rama integracion: #skyBg (cielo estrellado opaco, recortado con el
-       COMPLEMENTO de la cuña ’ tapa todo menos la diagonal) + #wsWedge (ventana de cristal con
-       desenfoque sobre el canvas del juego). Encima flota el selector de siempre: isla + planeta
-       + placa + chips + Â ¸ + SELECCIONAR. Los dos nodos los crea build() (cielo ANTES del confeti,
-       cuña DESPUÉS: el orden del DOM es el orden de pintado).
-         #startOverlay SIN fondo y SIN backdrop-filter: un ancestro con backdrop-filter es BACKDROP
-       ROOT y la ventana desenfocaría un color plano en vez del juego (medido en integracion). */
+       CRISTAL traÃ­da de la rama integracion (#wsWedge). Encima flota el selector de siempre: isla
+       + planeta + placa + chips + â—‚ â–¸ + SELECCIONAR. El nodo lo crea build(), tras el confeti.
+       âš  EL FONDO NO CAMBIA (Toni, 3Âª vuelta): detrÃ¡s de la home 2 sigue el CIELO DE LA PORTADA
+       (#titleOverlay.sky, z:4, con #startOverlay.enter transparente â€” ver â–ºVUELO), para que la
+       transiciÃ³n home1â†’home2 no se note. Por eso aquÃ­ NO hay velo ni cielo propio: el cristal es
+       solo un tinte con desenfoque SUAVE sobre ese mismo cielo (--wsBlur bajo: las estrellas deben
+       seguir siendo las mismas a un lado y otro del canto). */
     '#isPill{ display:none; }',
     '#startOverlay{ --wsW:min(760px,52vw); --wsLeanK:.13; --wsLean:calc(var(--wsW) * var(--wsLeanK));',
-    '  --wsBlur:18px; --wsTile:46px; --wsJoint:3.2px;',
-    '  background:none !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }',
-    '#hsIslas{ width:var(--wsW); }',   // la caja del selector = la caja de la cuña
-    /* ºVELO (Toni 20/08, "quédate con el fondo del menú izquierdo que tenías antes"): fuera del
-       cristal NO hay cielo estrellado sino el velo de siempre de .overlay (mismo color y mismo
-       blur de 3px), pero como HERMANO de la cuña y recortado con su complemento: si lo llevara el
-       propio #startOverlay, sería backdrop root y la ventana desenfocaría un color plano. */
-    '#skyBg{ position:fixed; inset:0; z-index:-1; pointer-events:none;',
-    '  clip-path:polygon(0 0, calc(100% - var(--wsW) + var(--wsLean) + 1px) 0, calc(100% - var(--wsW) + 1px) 100%, 0 100%);',
-    '  background:rgba(8,11,26,.55); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }',
+    '  --wsBlur:5px; --wsTile:46px; --wsJoint:3.2px; }',
+    '#hsIslas{ width:var(--wsW); }',   // la caja del selector = la caja de la cuÃ±a
     '#wsWedge{ position:fixed; top:0; right:0; bottom:0; width:var(--wsW); z-index:-1; pointer-events:none;',
     '  clip-path:polygon(var(--wsLean) 0, 100% 0, 100% 100%, 0 100%);',
     '  background:linear-gradient(203deg, rgba(13,17,32,.34) 0%, rgba(9,12,24,.50) 100%);',
@@ -16429,7 +16421,7 @@ function updatePvpShieldFX(){
     '  background-position:100% 0;',
     '  -webkit-mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%);',
     '  mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%); }',
-    '@media (max-width:900px){ #startOverlay{ --wsW:min(430px,74vw); --wsLeanK:.20; } #skyBg, #wsWedge{ display:none; } #isPill{ display:block; } #startOverlay{ background:rgba(8,11,26,.55) !important; } }',
+    '@media (max-width:900px){ #startOverlay{ --wsW:min(430px,74vw); --wsLeanK:.20; } #wsWedge{ display:none; } #isPill{ display:block; } }',
     /* ---- retoques de la COLUMNA IZQUIERDA (pedidos 17/08; overrides desde esta hoja, que va
        DESPUÃ‰S de la base â†’ gana sin tocar las lÃ­neas de la otra sesiÃ³n) ---- */
     '#hsLogo{ width:min(440px,38vw) !important; }',                                  // logo mÃ¡s grande
@@ -16546,13 +16538,11 @@ function updatePvpShieldFX(){
         b.textContent = 'PRÃ“XIMAMENTEâ€¦'; setTimeout(()=>{ b.textContent = old; b._t = false; }, 1100); });
       tr.insertAdjacentElement('afterend', b);
     }
-    /* ºCUÑA: cielo ANTES del confeti (titila encima, fuera de la diagonal) y ventana DESPUÉS */
+    /* â–ºCUÃ‘A: la ventana de cristal, DESPUÃ‰S del confeti (el orden del DOM es el de pintado) */
     if(!document.getElementById('wsWedge')){
       const conf = document.getElementById('startConfetti');
-      const sky = document.createElement('div'); sky.id = 'skyBg'; sky.setAttribute('aria-hidden','true');
       const wed = document.createElement('div'); wed.id = 'wsWedge'; wed.setAttribute('aria-hidden','true');
-      if(conf){ home.insertBefore(sky, conf); conf.insertAdjacentElement('afterend', wed); }
-      else { home.prepend(sky); sky.insertAdjacentElement('afterend', wed); }
+      if(conf) conf.insertAdjacentElement('afterend', wed); else home.prepend(wed);
     }
     const w = document.createElement('div'); w.id = 'hsIslas';
     w.innerHTML = '<div id="isPill"></div><div id="isLine"></div>'
