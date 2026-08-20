@@ -16660,7 +16660,7 @@ function updatePvpShieldFX(){
     .hdLog.off .tx b{ color:#8b96b5; }
     .hdLog .co{ flex:0 0 auto; font-size:12px; font-weight:900; color:#ffd84f; letter-spacing:1px; } .hdLog.off .co{ color:#6b7a99; }
     /* ---- izquierda: el QUIÉN ---- */
-    #hdLeft{ position:absolute; left:0; top:96px; bottom:var(--hdPathH,124px);   /* top: deja la franja de logo + ficha de jugador */ width:calc(100% - var(--wsW) + var(--wsLean)*.5);
+    #hdLeft{ position:absolute; left:0; top:108px; bottom:var(--hdPathH,124px);   /* top: deja la franja de logo + ficha de jugador */ width:calc(100% - var(--wsW) + var(--wsLean)*.5);
       display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
       padding:0 2vw 12px; box-sizing:border-box; }
     /* el carrusel en la home: solo muñeco + flechas (rol, pros/contras, ataques y diagramas viven
@@ -16673,7 +16673,7 @@ function updatePvpShieldFX(){
     #hdLeft .cpRow{ gap:0; }
     #hdLeft .cpTop{ flex:0 0 auto; width:auto; gap:0; position:relative; }
     #hdLeft #cpInfo, #hdLeft #cpPC, #hdLeft #cpAtkBtn, #hdLeft #cpDiag{ display:none !important; }
-    #hdLeft #cpView{ width:min(300px,24vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
+    #hdLeft #cpView{ width:min(270px,22vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
       filter:drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
     /* LA PLATAFORMA bajo el personaje: un disco con el color del héroe (--hc) */
     #hdLeft .cpTop::after{ display:none; content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
@@ -16690,7 +16690,7 @@ function updatePvpShieldFX(){
     #hdMeta button{ background:none; border:0; color:#9fe8ff; font:inherit; font-weight:900; letter-spacing:inherit; cursor:pointer; padding:0;
       text-decoration:underline; text-underline-offset:4px; }
     #hdMeta button:hover, #hdMeta button.uinav-focus{ color:#fff; }
-    #hdCharHost{ order:1; } #hdName{ order:2; } #hdMeta{ order:3; } #hdPlay{ order:4; } #hdOnline{ order:5; }
+    #hdCharHost{ order:1; } #hdName{ order:2; } #hdAtk{ order:3; } #hdMeta{ order:4; } #hdPlay{ order:5; } #hdOnline{ order:6; }
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
     #hdPlay{ margin-top:8px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
       background:linear-gradient(180deg, color-mix(in srgb, var(--hc) 88%, #fff), color-mix(in srgb, var(--hc) 72%, #000));
@@ -16705,6 +16705,24 @@ function updatePvpShieldFX(){
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:900; letter-spacing:3px;
       color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:5px; padding:2px; }
     #hdOnline:hover, #hdOnline.uinav-focus{ opacity:1; }
+    /* ---- ►ATKGRID (Toni 20/08): los ataques del héroe bajo su nombre; hover → botón + tecla + qué hace.
+       El vídeo existe (char_video/) pero AÚN no se enseña: la celda lleva data-vid para enchufarlo. ---- */
+    #hdAtk{ display:grid; grid-template-columns:repeat(5, auto); gap:6px; margin:4px 0 2px; }
+    .hdAt{ cursor:default; font-family:inherit; font-size:10.5px; font-weight:900; letter-spacing:1px; color:#e8eefc; text-align:center;
+      padding:6px 9px; border-radius:9px; background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); text-shadow:none;
+      display:flex; flex-direction:column; align-items:center; gap:3px; min-width:64px; transition:border-color .13s ease, background .13s ease; }
+    .hdAt.com{ color:#9fb0d6; }
+    .hdAt i{ font-style:normal; font-size:9px; font-weight:900; letter-spacing:1.5px; padding:1px 6px; border-radius:999px; color:#0b0f20; background:var(--pc,#9fe8ff); }
+    .hdAt:hover, .hdAt:focus-visible, .hdAt.uinav-focus{ outline:none; border-color:var(--hc,#ffd84f); background:rgba(255,255,255,.10); }
+    #hdAtkTip{ position:fixed; z-index:14; width:270px; padding:12px 14px; border-radius:14px; pointer-events:none; opacity:0; transform:translateY(6px);
+      background:rgba(10,14,30,.94); border:2px solid var(--hc,#ffd84f); box-shadow:0 16px 44px rgba(0,0,0,.6); text-shadow:none; text-align:left;
+      transition:opacity .14s ease, transform .14s ease; }
+    #hdAtkTip.on{ opacity:1; transform:none; }
+    #hdAtkTip b{ display:block; font-size:15px; font-weight:900; font-style:italic; letter-spacing:1.5px; color:#fff; margin-bottom:6px; }
+    #hdAtkTip .keys{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+    #hdAtkTip .keys svg{ display:block; }
+    #hdAtkTip p{ margin:0; font-size:12px; line-height:1.4; color:#c9d3ee; }
+    #hdAtkTip .vid{ margin-top:8px; height:6px; border-radius:999px; background:repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 8px, rgba(255,255,255,.05) 8px 16px); }
     /* ---- derecha: el DÓNDE (dentro de la cuña) ---- */
     #hdRight{ position:absolute; right:0; top:0; bottom:var(--hdPathH,124px); width:var(--wsW); pointer-events:none; }
     #hdRight > *{ pointer-events:auto; }
@@ -16857,7 +16875,9 @@ function updatePvpShieldFX(){
       +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>CARRERA · ' + ruta().length + ' ESLABONES · DEL TIRÓN</small></button>'
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdName"></div>'
+      +   '<div id="hdAtk" aria-label="Ataques"></div>'
       +   '<div id="hdMeta"></div>'
+      +   '<div id="hdAtkTip"></div>'
       +   '<button type="button" id="hdOnline">ONLINE</button>'
       + '</div>'
       + '<img id="hdLogo" src="logo.png" alt="RUMBLEBOYS" onerror="this.style.display=\'none\'">'
@@ -16956,6 +16976,7 @@ function updatePvpShieldFX(){
     nm.style.color = col;
     const top = document.querySelector('#hdLeft .cpTop'); if(top) top.style.setProperty('--hc', col);
     const pb = $('hdPlay'); if(pb) pb.style.setProperty('--hc', col);
+    renderAtk(k, col);
     /* la línea de progreso. ⚠ El save es GLOBAL (no por personaje): trofeos, mejor carrera y marcas
        son los mismos para los 6 héroes. Cuando el save guarde por clase, esta línea es la que cambia. */
     const st = state(), s = saveGet();
@@ -16967,6 +16988,40 @@ function updatePvpShieldFX(){
       + '<button type="button" id="hdLogros">LOGROS ' + logrosState().n + '/' + LOGROS.length + '</button>';
     const lg = $('hdLogros'); if(lg) lg.addEventListener('click', ()=>{ if(window.__hdLogOpen) window.__hdLogOpen(); });
     renderUser(col, pick ? pick[1] : '');
+  }
+
+  /* ►ATKGRID: una celda por ataque (los 5 de clase + los comunes), con el color del botón del mando.
+     El tooltip reutiliza los dibujos de ►ATKSHOW (padArt/kbdArt) y su descripción larga. */
+  const PAD_COL = { X:'#16B7EF', B:'#EA3B3B', A:'#00E530', Y:'#FFEF22' };
+  let _atkTipT = 0;
+  function renderAtk(k, col){
+    const box = $('hdAtk'), api = window._cpAtk; if(!box) return;
+    box.style.setProperty('--hc', col);
+    if(!api){ box.innerHTML = ''; return; }
+    const CLASS_SLOTS = ['basic','e','r','f','q'];
+    box.innerHTML = api.slides.map((c, j) => {
+      const inf = api.info(k, c), com = CLASS_SLOTS.indexOf(c.slot) < 0;
+      return '<button type="button" class="hdAt' + (com ? ' com' : '') + '" data-j="' + j + '" data-vid="' + (api.src(k, c.slot) || '') + '" style="--pc:' + (PAD_COL[c.pad] || '#c9d3ee') + '">'
+        + '<i>' + c.pad + '</i>' + inf.nm + '</button>';
+    }).join('');
+    const tip = $('hdAtkTip'); if(!tip) return;
+    tip.style.setProperty('--hc', col);
+    const show = b => {
+      const c = api.slides[+b.dataset.j]; if(!c) return;
+      const inf = api.info(k, c);
+      tip.innerHTML = '<b>' + inf.nm + '</b><div class="keys">' + api.pad(c.pad) + api.kbd(c.kbd) + '</div><p>' + api.desc(k, c) + '</p>'
+        + (b.dataset.vid ? '<div class="vid" title="vídeo: próximamente"></div>' : '');
+      const r = b.getBoundingClientRect(), w = 270, M = 10;
+      let x = r.left + r.width/2 - w/2; x = Math.max(M, Math.min(innerWidth - w - M, x));
+      tip.style.left = Math.round(x) + 'px';
+      tip.style.top = Math.round(Math.min(innerHeight - 200, r.bottom + 8)) + 'px';
+      clearTimeout(_atkTipT); tip.classList.add('on');
+    };
+    const hide = ()=>{ clearTimeout(_atkTipT); _atkTipT = setTimeout(()=> tip.classList.remove('on'), 90); };
+    box.onmouseover = e => { const b = e.target.closest && e.target.closest('.hdAt'); if(b) show(b); };
+    box.onmouseleave = hide;
+    box.onfocusin = e => { const b = e.target.closest && e.target.closest('.hdAt'); if(b) show(b); };
+    box.onfocusout = hide;
   }
 
   /* el camino: SIN nombres (Toni) — solo número, icono y marca. Los minijuegos son nodos pequeños. */
@@ -37943,7 +37998,7 @@ function refreshSetup(){
     const tone = (c, t)=>{ const o = c.clone(); if(t > 0) o.lerp(new THREE.Color(0xffffff), t); else o.lerp(new THREE.Color(0x000000), -t); return '#' + o.getHexString(); };
     const pal = [tone(base,.10), tone(base,-.08), tone(base,-.22), tone(base,-.38), tone(base,-.55)];   // tonos hacia OSCURO y bien separados: a plena luz los claros se lavan y los cuadrados no se leen
     const g = new THREE.Group();
-    const W = 1.9, D = 1.5;
+    const W = 2.0, D = 2.0;   // CUADRADA (Toni): el muñeco queda dentro por los cuatro lados
     const top = new THREE.Mesh(organicSlabGeo(W, D, 0.26, 0.55, 0.10, 0.08),
       new THREE.MeshStandardMaterial({ map: makeFieldTexture(pal, 1/2.4), roughness:.95, metalness:0 }));   // 16 celdas por 2,4 u → cuadrados de 0,15 u
     top.position.y = -0.34; g.add(top);                                       // cara pisable en y≈0
@@ -37979,8 +38034,13 @@ function refreshSetup(){
       const box = charModelBox(model); const sz = new THREE.Vector3(); box.getSize(sz);
       const s = PUP_H / (sz.y || 1);
       model.scale.setScalar(s);
-      model.position.y = -box.min.y * s;                 // pies al suelo del encuadre
-      model.rotation.y = CHAR_YAW + (fit.yaw||0) + (RICH_CFG[k] ? Math.PI : 0);   // chars Mixamo (samurái/barbarian) miran a +Z (juego); en el preview gíralos para arrancar de cara
+      /* ►PEANA · CENTRADO: el modelo va dentro de un PIVOTE. El giro (yaw de clase + torno) se aplica
+         al pivote y el modelo se desplaza dentro para que el CENTRO de su caja caiga en el eje: si
+         se girase el modelo con su origen descentrado, el muñeco orbitaría alrededor de la peana. */
+      const piv = new THREE.Group();
+      model.position.set(-(box.min.x + box.max.x)/2 * s, -box.min.y * s, -(box.min.z + box.max.z)/2 * s);   // centrado en x/z, pies en y=0
+      piv.rotation.y = CHAR_YAW + (fit.yaw||0) + (RICH_CFG[k] ? Math.PI : 0);   // chars Mixamo (samurái/barbarian) miran a +Z (juego); en el preview gíralos para arrancar de cara
+      piv.add(model);
       model.traverse(o=>{ if(o.isMesh){ o.frustumCulled = false; o.castShadow = false;
         if(BRAND_HUE[k]!=null){   // mismo RECOLOR DE MARCA que en partida (textura recoloreada, reusa la cache)
           o.material = Array.isArray(o.material) ? o.material.map(m=> m && m.clone()) : (o.material && o.material.clone());
@@ -38001,7 +38061,8 @@ function refreshSetup(){
         pMixer.update(0); model.updateMatrixWorld(true);   // posa el idle ANTES de colgar armas → la alineación al frente mide el hueso en su pose real
       }
       try { attachPreviewWeapons(model, k, PUP_H/CHAR_TARGET_H); } catch(e){ console.warn('[preview] arma falló', e); }   // muestra el arma de clase en el preview (escala proporcional al cuerpo del encuadre)
-      root.add(model); try{ root.add(heroSlab(k)); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
+      piv.updateMatrixWorld(true);
+      root.add(piv); try{ root.add(heroSlab(k)); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
       cur = { root, _sharedGeo:true };
       return;
     }
@@ -38525,6 +38586,8 @@ function refreshSetup(){
     if(k && k!==MATCH.cls && window._cpSync){ MATCH.cls = k; try{ window._cpSync(); }catch(e){} }
   }
   { const b = document.getElementById('cpAtkBtn'); if(b) b.addEventListener('click', atkOpen); }
+  /* ►ATKGRID: la home (►CARRERA) pinta una rejilla con estos mismos datos y dibujos */
+  window._cpAtk = { slides:ATK_SLIDES, info:ctlInfo, pad:padArt, kbd:kbdArt, desc:atkDescOf, src:sqSrc, open:atkOpen };
   { const b = document.getElementById('atkClose'); if(b) b.addEventListener('click', atkDismiss); }
   { const b = document.getElementById('atkPrev'); if(b) b.addEventListener('click', ()=> atkGo(atkI-1)); }
   { const b = document.getElementById('atkNext'); if(b) b.addEventListener('click', ()=> atkGo(atkI+1)); }
