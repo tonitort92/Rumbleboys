@@ -16727,12 +16727,14 @@ function updatePvpShieldFX(){
        y, detrás de ella, el PERSONAJE ilustrado del mundo (mundoN_char.png), grande, en la esquina
        inferior derecha y sangrando por abajo del visor. Convención por stage: un mundo sin PNG no
        enseña nada (onerror). Van en #hdRace, ANTES de #hdRight, para quedar bajo el cartel y la ficha. */
-    #hdChar{ position:absolute; right:-3vw; bottom:-7vh; height:min(900px,92vh); width:auto; z-index:0; pointer-events:none; display:none;
+    #hdChar{ position:absolute; right:calc(var(--wsW) * 0.10); bottom:-17vh; height:min(900px,92vh); width:auto;   /* DENTRO de la diagonal y bajado (Toni) */ z-index:0; pointer-events:none; display:none;
       filter:drop-shadow(-3px 0 9px rgba(160,210,255,.25)) drop-shadow(-14px 10px 26px rgba(0,0,0,.55)); }
-    #hdIso{ position:absolute; right:calc(var(--wsW) * 0.46); top:calc((100% - var(--hdPathH,168px)) / 2); width:min(450px,26vw); height:auto; transform:translate(50%,-50%); z-index:1;
-      pointer-events:none; display:none; filter:drop-shadow(0 30px 30px rgba(0,0,0,.55)); animation:hdFloat 6s ease-in-out infinite; }
+    #hdIso{ position:absolute; right:calc(var(--wsW) / 2); top:50%; width:min(450px,26vw); height:auto;   /* el CENTRO EXACTO de la cuña (ancho --wsW, alto entero) */ transform:translate(50%,-50%); z-index:1;
+      pointer-events:none; display:none; filter:drop-shadow(0 30px 30px rgba(0,0,0,.55)); animation:hdIsoFloat 6s ease-in-out infinite; }
+    /* la flotación lleva el centrado DENTRO: una animación de transform pisa el translate(50%,-50%) del centrado */
+    @keyframes hdIsoFloat{ 0%,100%{ transform:translate(50%,-50%) translateY(-7px) } 50%{ transform:translate(50%,-50%) translateY(7px) } }
     /* la ficha del mundo se va al canto IZQUIERDO de la cuña: la esquina derecha es del goblin */
-    #hdCard{ left:calc(100% - var(--wsW) + 28px); right:auto; }
+    #hdCard{ right:clamp(18px,2.4vw,40px); }   /* la ficha, en la zona derecha (Toni) */
     /* ---- derecha: el DÓNDE (dentro de la cuña) ---- */
     #hdRight{ position:absolute; right:0; top:0; bottom:var(--hdPathH,124px); width:var(--wsW); pointer-events:none; z-index:2; }   /* cartel y ficha por ENCIMA de la isla y el goblin */
     #hdRight > *{ pointer-events:auto; }
