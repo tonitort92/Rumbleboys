@@ -16673,6 +16673,11 @@ function updatePvpShieldFX(){
     @keyframes hdFloat{ 0%,100%{ transform:translateY(-6px) } 50%{ transform:translateY(6px) } }
     #hdCover.hid{ filter:brightness(0) contrast(0) opacity(.78) drop-shadow(0 0 22px rgba(0,0,0,.6)); }
     #hdCover.swap{ opacity:0; }
+    #hdCoverWrap .isStop{ position:absolute; left:50%; top:46%; width:min(500px,36vw); transform:translate(-50%,-50%);
+      transition:opacity .3s ease, filter .3s ease; }
+    #hdCoverWrap .isStop.swap{ opacity:0; }
+    #hdCoverWrap .isStop.hid{ filter:brightness(0) contrast(0) opacity(.8) drop-shadow(0 0 26px rgba(0,0,0,.7)); }
+    #hdCoverWrap .isStop img{ filter:drop-shadow(0 30px 26px rgba(0,0,0,.5)); }
     #hdBlob{ position:absolute; left:50%; top:46%; width:min(520px,60%); aspect-ratio:1/1; transform:translate(-50%,-50%); border-radius:50%;
       background:radial-gradient(circle at 40% 35%, var(--wc,#6a8cff), rgba(0,0,0,0) 70%); opacity:.6; filter:blur(20px); pointer-events:none; display:none; }
     #hdQ{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; display:none; }
@@ -16764,7 +16769,6 @@ function updatePvpShieldFX(){
     const home = $('startOverlay');
     if(!home || $('hdRace')) return;
     home.classList.add('race');
-    window.__ESFERAS_OFF = true;   // los planetas del selector viejo no se ven: que no se rendericen
     const r = document.createElement('div'); r.id = 'hdRace';
     /* JUGAR va el PRIMERO del DOM a propósito: ►UINAV enfoca el primer accionable si #hsPlay (su
        FIRST_PICK) está oculto, y el CTA principal debe ser lo primero que enfoque el mando */
@@ -16784,7 +16788,7 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdIco" data-for="hsLang" title="IDIOMA">🌐</button>'
       + '</div>'
       + '<div id="hdRight">'
-      +   '<div id="hdCoverWrap"><div id="hdBlob"></div><img id="hdCover" alt=""><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
+      +   '<div id="hdCoverWrap"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
       +   '<div id="hdWorld"><div id="hdWNum"></div><div id="hdWState"></div></div>'
       +   '<div id="hdCard" tabindex="0"><h4>FICHA DEL MUNDO</h4><div id="hdCardBody"></div>'
       +     '<button type="button" id="hdTrain">ENTRENAR ESTE MUNDO<small>MODO PRÁCTICA · AQUÍ NO SE GANAN TROFEOS</small></button>'
@@ -16792,6 +16796,17 @@ function updatePvpShieldFX(){
       + '</div>'
       + '<div id="hdPath"><div id="hdPathIn"></div></div>';
     home.appendChild(r);
+
+    /* EL COVER DE CADA MUNDO = el PLANETA de ►ESFERAS (el suelo real del stage con sus props) con la
+       isla encima: la parada central del selector viejo (.isStop.cur, con #isImg) se muda tal cual
+       al territorio del mundo. ►ESFERAS la encuentra por su clase y lee el mundo de #isIdx, que
+       select() mantiene al día. Las paradas prev/next se DESENGANCHAN (no se borran: quedan en
+       window.__isStopsPark) para no renderizar dos planetas que nadie ve. Cuando exista un cover
+       ilustrado (mundoN_cover.png), #isImg lo enseña en vez de la isla y el planeta queda detrás. */
+    { const cur = document.querySelector('#hsIslas .isStop.cur');
+      if(cur){ $('hdCoverWrap').insertBefore(cur, $('hdQ'));
+        window.__isStopsPark = [];
+        ['prev','next'].forEach(c=>{ const e = document.querySelector('#hsIslas .isStop.' + c); if(e){ window.__isStopsPark.push(e); e.remove(); } }); } }
 
     /* el carrusel de personajes: se muda el APARCAMIENTO entero (#charPickerHome) a la columna
        izquierda y se enseña. El asistente (paso 3) y CONTROLES siguen llevándoselo y devolviéndolo
@@ -16889,25 +16904,20 @@ function updatePvpShieldFX(){
   }
 
   function setCover(stage, hidden){
-    const img = $('hdCover'), blob = $('hdBlob'), q = $('hdQ'); if(!img) return;
-    const col = worldCol(stage);
-    blob.style.setProperty('--wc', col);
-    img.classList.add('swap');
+    const stop = document.querySelector('#hdCoverWrap .isStop'), img = $('isImg'), q = $('hdQ'); if(!stop || !img) return;
+    stop.classList.add('swap');
     setTimeout(()=>{
-      img.classList.toggle('hid', !!hidden);
+      stop.classList.toggle('hid', !!hidden);
       q.style.display = hidden ? 'block' : 'none';
-      blob.style.display = 'none';
-      /* cadena de assets: cover ilustrado → isla del stage → color del mundo */
+      /* cadena de assets: cover ilustrado → isla del stage → solo el planeta */
       img.onerror = ()=>{
         if(/_cover\.png$/.test(img.src)) img.src = 'mundo' + stage + '_iso.png';
-        else { img.style.display = 'none'; blob.style.display = 'block'; img.classList.remove('swap'); }
+        else { img.style.visibility = 'hidden'; stop.classList.remove('swap'); }
       };
-      img.onload = ()=>{ img.style.display = ''; img.classList.remove('swap'); };
-      img.style.display = '';
+      img.onload = ()=>{ img.style.visibility = ''; stop.classList.remove('swap'); };
       img.src = 'mundo' + stage + '_cover.png';
     }, 170);
   }
-
   function select(i, force){
     const st = state(); if(!st.S.length) return;
     i = Math.max(0, Math.min(st.S.length-1, i|0));
@@ -16919,6 +16929,7 @@ function updatePvpShieldFX(){
     const ws = $('hdWState'); ws.className = won ? 'tro' : (i === st.next ? 'next' : '');
     ws.textContent = won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
                    : (i === st.next ? '★ SIGUIENTE OBJETIVO' : (disc ? 'SIN TROFEO TODAVÍA' : '🔒 SIN DESCUBRIR'));
+    { const lbl = $('isIdx'); if(lbl) lbl.textContent = (i+1) + '/' + st.S.length; }   // ►ESFERAS lee aquí qué planeta pintar
     setCover(stage, !disc);
     const body = $('hdCardBody');
     if(disc){
