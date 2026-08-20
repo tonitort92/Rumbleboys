@@ -16621,8 +16621,46 @@ function updatePvpShieldFX(){
       background:rgba(10,14,30,.55); color:#fff; font-size:20px; line-height:1; display:grid; place-items:center;
       transition:background .13s ease, transform .13s ease; }
     .hdIco:hover, .hdIco.uinav-focus, .hdIco:focus-visible{ background:rgba(255,255,255,.16); outline:none; }
+    /* ---- FICHA DEL JUGADOR (arriba, junto al logo): nº de usuario, nivel, barra de XP y monedas.
+       MOCK (Toni 20/08): la XP sale de lo que ya guarda el save (runs, victorias, trofeos, marcas,
+       logros); la fórmula es provisional y vive en playerXP(). ---- */
+    #hdUser{ position:absolute; left:calc(clamp(18px,2.4vw,40px) + min(250px,20vw) + 22px); top:clamp(16px,2.2vh,28px);
+      display:flex; align-items:center; gap:12px; padding:8px 14px 8px 8px; border-radius:16px;
+      background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(6px);
+      box-shadow:0 10px 30px rgba(0,0,0,.45); text-shadow:none; cursor:pointer; }
+    #hdUser:hover, #hdUser.uinav-focus, #hdUser:focus-visible{ border-color:rgba(255,255,255,.34); outline:none; }
+    #hdAva{ width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-size:22px; font-weight:900; font-style:italic;
+      background:linear-gradient(180deg, color-mix(in srgb, var(--hc,#ffd84f) 80%, #fff), color-mix(in srgb, var(--hc,#ffd84f) 70%, #000));
+      border:2px solid #000; color:#fff; -webkit-text-stroke:1.5px #000; paint-order:stroke fill; }
+    #hdUTxt{ display:flex; flex-direction:column; gap:3px; min-width:170px; }
+    #hdUName{ font-size:12px; font-weight:900; letter-spacing:2px; color:#fff; }
+    #hdUName small{ color:#9fb0d6; letter-spacing:1px; margin-left:6px; }
+    #hdULvl{ display:flex; align-items:center; gap:8px; font-size:10.5px; font-weight:900; letter-spacing:1.5px; color:#9fe8ff; }
+    #hdXp{ flex:1 1 auto; height:7px; border-radius:999px; background:rgba(255,255,255,.12); overflow:hidden; }
+    #hdXp i{ display:block; height:100%; width:0; border-radius:999px; background:linear-gradient(90deg,#3fa9ff,#9fe8ff); transition:width .6s ease; }
+    #hdUXp{ color:#c9d3ee; letter-spacing:.5px; }
+    #hdCoins{ display:flex; align-items:center; gap:5px; padding:5px 10px; border-radius:999px; font-size:13px; font-weight:900; letter-spacing:1px;
+      color:#ffd84f; background:rgba(255,216,79,.10); border:1px solid rgba(255,216,79,.4); }
+    /* aviso de LOGRO nuevo */
+    #hdToast{ position:fixed; left:50%; top:78px; transform:translate(-50%,-30px); opacity:0; z-index:12; pointer-events:none;
+      padding:10px 20px; border-radius:14px; background:rgba(10,14,30,.9); border:2px solid #ffd84f; color:#fff; font-weight:900; letter-spacing:1.5px;
+      font-size:14px; box-shadow:0 14px 40px rgba(0,0,0,.55); transition:transform .35s ease, opacity .35s ease; }
+    #hdToast.on{ transform:translate(-50%,0); opacity:1; }
+    #hdToast b{ color:#ffd84f; }
+    /* la ficha de LOGROS */
+    #hdLogCard{ position:relative; box-sizing:border-box; width:min(640px,94vw); max-height:92vh; overflow-y:auto; text-align:left; text-shadow:none;
+      background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14); border-radius:20px; padding:26px 24px 22px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+    #hdLogCard h2{ margin:0 0 2px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
+    #hdLogCard .gsub{ margin:0 0 16px; font-size:13px; color:#9fb0d6; text-align:center; }
+    .hdLog{ display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:12px; border:1px solid rgba(255,255,255,.08); margin-bottom:7px; background:rgba(255,255,255,.03); }
+    .hdLog.on{ border-color:rgba(255,216,79,.45); background:rgba(255,216,79,.07); }
+    .hdLog .ic{ width:40px; height:40px; border-radius:11px; display:grid; place-items:center; font-size:20px; background:rgba(10,14,30,.7); flex:0 0 auto; }
+    .hdLog.off .ic{ filter:grayscale(1); opacity:.55; }
+    .hdLog .tx{ flex:1 1 auto; min-width:0; } .hdLog .tx b{ display:block; font-size:13px; letter-spacing:1px; color:#fff; } .hdLog .tx span{ font-size:12px; color:#9fb0d6; }
+    .hdLog.off .tx b{ color:#8b96b5; }
+    .hdLog .co{ flex:0 0 auto; font-size:12px; font-weight:900; color:#ffd84f; letter-spacing:1px; } .hdLog.off .co{ color:#6b7a99; }
     /* ---- izquierda: el QUIÉN ---- */
-    #hdLeft{ position:absolute; left:0; top:0; bottom:var(--hdPathH,124px); width:calc(100% - var(--wsW) + var(--wsLean)*.5);
+    #hdLeft{ position:absolute; left:0; top:96px; bottom:var(--hdPathH,124px);   /* top: deja la franja de logo + ficha de jugador */ width:calc(100% - var(--wsW) + var(--wsLean)*.5);
       display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
       padding:0 2vw 12px; box-sizing:border-box; }
     /* el carrusel en la home: solo muñeco + flechas (rol, pros/contras, ataques y diagramas viven
@@ -16638,10 +16676,10 @@ function updatePvpShieldFX(){
     #hdLeft #cpView{ width:min(300px,24vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
       filter:drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
     /* LA PLATAFORMA bajo el personaje: un disco con el color del héroe (--hc) */
-    #hdLeft .cpTop::after{ content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
+    #hdLeft .cpTop::after{ display:none; content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
       border-radius:50%; z-index:0; background:radial-gradient(ellipse at 50% 40%, var(--hc,#ffd84f) 0%, rgba(0,0,0,0) 72%);
       opacity:.55; filter:blur(2px); }
-    #hdLeft .cpTop::before{ content:''; position:absolute; left:50%; bottom:13%; width:66%; height:8%; transform:translateX(-50%);
+    #hdLeft .cpTop::before{ display:none; content:''; position:absolute; left:50%; bottom:13%; width:66%; height:8%; transform:translateX(-50%);
       border-radius:50%; z-index:0; border:2px solid var(--hc,#ffd84f); opacity:.75; box-shadow:0 0 18px var(--hc,#ffd84f); }
     #hdLeft #cpDots{ margin-top:2px; }
     #hdName{ font-size:clamp(26px,2.8vw,40px); font-weight:900; font-style:italic; letter-spacing:2px; line-height:1; margin:2px 0 0;
@@ -16823,6 +16861,11 @@ function updatePvpShieldFX(){
       +   '<button type="button" id="hdOnline">ONLINE</button>'
       + '</div>'
       + '<img id="hdLogo" src="logo.png" alt="RUMBLEBOYS" onerror="this.style.display=\'none\'">'
+      + '<div id="hdUser" tabindex="0" title="Ver logros"><div id="hdAva"></div><div id="hdUTxt">'
+      +   '<div id="hdUName"></div>'
+      +   '<div id="hdULvl"><span id="hdULv"></span><div id="hdXp"><i></i></div><span id="hdUXp"></span></div>'
+      + '</div><div id="hdCoins">🪙 <span id="hdCoinN">0</span></div></div>'
+      + '<div id="hdToast"></div>'
       + '<div id="hdUtil">'
       +   '<button type="button" class="hdIco" data-for="hsCtl"  title="CONTROLES">🎮</button>'
       +   '<button type="button" class="hdIco" data-for="hsTuto" title="TUTORIALES">🎓</button>'
@@ -16838,6 +16881,19 @@ function updatePvpShieldFX(){
       + '</div>'
       + '<div id="hdPath"><div id="hdPathIn"></div></div>';
     home.appendChild(r);
+    /* la ficha de LOGROS: overlay propio con el contrato de siempre (✕, velo, Esc) */
+    const lm = document.createElement('div'); lm.className = 'overlay'; lm.id = 'hdLogModal'; lm.style.display = 'none';
+    lm.innerHTML = '<div id="hdLogCard"><button type="button" class="modalClose" id="hdLogClose" aria-label="Cerrar">✕</button>'
+      + '<h2>LOGROS</h2><p class="gsub" id="hdLogSub"></p><div id="hdLogList"></div></div>';
+    document.body.appendChild(lm);
+    const logClose = ()=>{ lm.style.display = 'none'; };
+    $('hdLogClose').addEventListener('click', logClose);
+    lm.addEventListener('click', e=>{ if(e.target === lm) logClose(); });
+    addEventListener('keydown', e=>{ if(lm.style.display === 'flex' && e.key === 'Escape'){ logClose(); e.preventDefault(); } });
+    const logOpen = ()=>{ renderLogros(); lm.style.display = 'flex'; lm.scrollTop = 0; };
+    $('hdUser').addEventListener('click', logOpen);
+    $('hdUser').addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); logOpen(); } });
+    window.__hdLogOpen = logOpen;
 
     /* el carrusel de personajes: se muda el APARCAMIENTO entero (#charPickerHome) a la columna
        izquierda y se enseña. El asistente (paso 3) y CONTROLES siguen llevándoselo y devolviéndolo
@@ -16890,6 +16946,7 @@ function updatePvpShieldFX(){
   /* COLOR INSIGNIA de cada héroe (Toni 20/08): bárbaro rojo · caballero gris/blanco · mago verde ·
      bruja azul · samurái lila · arquera amarillo. Tiñe el aura, el nombre y el botón JUGAR. */
   const HERO_COL = { voxelhero:'#ff4d38', knight:'#e3e8f2', link:'#3fd95a', nun:'#3fa9ff', samurai:'#b45cff', archer:'#ffd84f' };
+  window.HERO_COL = HERO_COL;   // la peana del torno (►PEANA, en charPicker) pinta su tapa con esto
   function renderChar(){
     const k = (typeof MATCH!=='undefined' && MATCH.cls) || '';
     const pick = (typeof CLASS_PICK!=='undefined' ? CLASS_PICK : []).find(c => c[0]===k);
@@ -16907,8 +16964,9 @@ function updatePvpShieldFX(){
         '<span>🏆 <b>' + st.nWon + '/' + st.nWorlds + '</b></span>'
       + '<span>MEJOR CARRERA: <b>' + (st.best ? ('ESLABÓN ' + (st.reached+1) + '/' + st.R.length) : '—') + '</b></span>'
       + (cls.wins ? '<span>VICTORIAS: <b>' + cls.wins + '</b></span>' : '')
-      + '<button type="button" id="hdLogros">LOGROS</button>';
-    const lg = $('hdLogros'); if(lg) lg.addEventListener('click', ()=>{ const b = $('trophyLink'); if(b) b.click(); });
+      + '<button type="button" id="hdLogros">LOGROS ' + logrosState().n + '/' + LOGROS.length + '</button>';
+    const lg = $('hdLogros'); if(lg) lg.addEventListener('click', ()=>{ if(window.__hdLogOpen) window.__hdLogOpen(); });
+    renderUser(col, pick ? pick[1] : '');
   }
 
   /* el camino: SIN nombres (Toni) — solo número, icono y marca. Los minijuegos son nodos pequeños. */
@@ -16986,9 +17044,72 @@ function updatePvpShieldFX(){
     const tb = $('hdTrain'); if(tb) tb.firstChild.textContent = mini ? 'ENTRENAR ESTE MINIJUEGO' : 'ENTRENAR ESTE MUNDO';
   }
 
+  /* ►LOGROS (Toni 20/08, base): mini-logros que se desbloquean leyendo el save y dan MONEDAS.
+     Cada uno: id estable (se persiste en s.logros), icono, título, pista, monedas y un test sobre
+     (save, estado del camino). Añadir un logro = una fila. Las monedas se acumulan en s.monedas
+     (todavía no hay dónde gastarlas: es la base). */
+  const LOGROS = [
+    { id:'run1',    ic:'🥊', t:'PRIMER ASALTO',      d:'Juega tu primera carrera.',                 co:50,  test:(s,st)=> (s.runs||0) >= 1 },
+    { id:'tro1',    ic:'🏆', t:'PRIMER TROFEO',      d:'Conquista el Mundo 1.',                    co:100, test:(s,st)=> st.nWon >= 1 },
+    { id:'tro3',    ic:'🥉', t:'TRÍO DE ASES',       d:'Tres trofeos en la vitrina.',              co:150, test:(s,st)=> st.nWon >= 3 },
+    { id:'tro5',    ic:'🥈', t:'MEDIA CARRERA',      d:'Cinco trofeos: ya no hay vuelta atrás.',   co:250, test:(s,st)=> st.nWon >= 5 },
+    { id:'troAll',  ic:'🥇', t:'DEL TIRÓN',          d:'Todos los trofeos de la carrera.',         co:800, test:(s,st)=> st.nWorlds > 0 && st.nWon >= st.nWorlds },
+    { id:'mini1',   ic:'🎢', t:'RESPIRO',            d:'Llega al primer minijuego.',               co:60,  test:(s,st)=> st.reached >= 3 },
+    { id:'markS',   ic:'⭐', t:'NOTA ALTA',          d:'Saca una S en cualquier mundo.',           co:150, test:(s,st)=> Object.values(s.marks||{}).some(m => m && m.gi <= 1) },
+    { id:'markSS',  ic:'🌟', t:'PERFECCIÓN',         d:'Saca una S+ en cualquier mundo.',          co:300, test:(s,st)=> Object.values(s.marks||{}).some(m => m && m.gi === 0) },
+    { id:'runs10',  ic:'🔁', t:'VETERANO',           d:'Diez carreras jugadas.',                   co:120, test:(s,st)=> (s.runs||0) >= 10 },
+    { id:'win1',    ic:'👑', t:'REY DE LA CINTA',    d:'Gana una partida.',                        co:120, test:(s,st)=> (s.wins||0) >= 1 },
+    { id:'boss3',   ic:'👹', t:'CAZAJEFES',          d:'Tumba a tres jefes distintos.',            co:200, test:(s,st)=> Object.keys(s.bosses||{}).length >= 3 },
+    { id:'heroes',  ic:'🎭', t:'TODOS LOS HÉROES',   d:'Juega con los seis personajes.',           co:200, test:(s,st)=> Object.keys(s.cls||{}).length >= 6 },
+  ];
+  function logrosState(){
+    const s = saveGet(), got = s.logros || {};
+    return { got, n: LOGROS.filter(l => got[l.id]).length, coins: s.monedas || 0 };
+  }
+  /* comprueba los tests, apunta los nuevos (y sus monedas) y avisa. Se llama en cada refresh. */
+  function checkLogros(st){
+    const s = saveGet(); const fresh = [];
+    LOGROS.forEach(l => { try{ if(!(s.logros||{})[l.id] && l.test(s, st)) fresh.push(l); }catch(e){} });
+    if(!fresh.length) return;
+    saveBump(o => { if(!o.logros) o.logros = {}; fresh.forEach(l => { o.logros[l.id] = Date.now(); o.monedas = (o.monedas||0) + l.co; }); });
+    let k = 0; const toast = $('hdToast');
+    const show = ()=>{ if(!toast || k >= fresh.length) return; const l = fresh[k++];
+      toast.innerHTML = '🏅 LOGRO · <b>' + l.t + '</b> · +' + l.co + ' 🪙'; toast.classList.add('on');
+      try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){}
+      setTimeout(()=>{ toast.classList.remove('on'); setTimeout(show, 400); }, 2200); };
+    show();
+  }
+  function renderLogros(){
+    const ls = logrosState(), box = $('hdLogList'); if(!box) return;
+    $('hdLogSub').textContent = ls.n + ' de ' + LOGROS.length + ' · ' + ls.coins + ' monedas ganadas';
+    box.innerHTML = LOGROS.map(l => '<div class="hdLog ' + (ls.got[l.id] ? 'on' : 'off') + '"><div class="ic">' + l.ic + '</div>'
+      + '<div class="tx"><b>' + l.t + '</b><span>' + l.d + '</span></div><div class="co">' + (ls.got[l.id] ? '✓ ' : '+') + l.co + ' 🪙</div></div>').join('');
+  }
+  /* ►NIVEL (mock): XP = lo que llevas jugado y ganado. Fórmula provisional, toda aquí. */
+  function playerXP(st){
+    const s = saveGet();
+    let pts = 0; Object.values(s.marks||{}).forEach(m => { pts += (m && m.pts) || 0; });
+    const xp = (s.runs||0)*40 + (s.wins||0)*150 + st.nWon*300 + Math.round(pts/50) + (s.monedas||0);
+    const lvl = Math.floor(Math.sqrt(xp/120)) + 1;
+    const lo = 120*(lvl-1)*(lvl-1), hi = 120*lvl*lvl;
+    return { xp, lvl, lo, hi, frac: Math.max(0, Math.min(1, (xp-lo)/(hi-lo))) };
+  }
+  function renderUser(col, heroName){
+    const s = saveGet();
+    if(!s.uid) saveBump(o => { o.uid = 1000 + Math.floor(Math.random()*89999); });   // nº de usuario: se crea una vez y se queda
+    const st = state(), x = playerXP(st), ls = logrosState();
+    const ava = $('hdAva'); if(ava){ ava.style.setProperty('--hc', col); ava.textContent = (heroName||'?').charAt(0); }
+    $('hdUName').innerHTML = 'JUGADOR <small>#' + String(saveGet().uid).padStart(5,'0') + '</small>';
+    $('hdULv').textContent = 'NIVEL ' + x.lvl;
+    $('hdUXp').textContent = (x.xp - x.lo) + ' / ' + (x.hi - x.lo) + ' XP';
+    const bar = $('hdXp'); if(bar) bar.firstChild.style.width = Math.round(x.frac*100) + '%';
+    $('hdCoinN').textContent = ls.coins;
+  }
+
   function refresh(resetSel){
     const st = state();
     if(resetSel || sel < 0) sel = st.next;
+    checkLogros(st);
     renderPath(st);
     renderChar();
     select(sel, true);
@@ -37796,7 +37917,7 @@ function refreshSetup(){
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 1.35, 6.4); pCam.lookAt(0, 1.0, 0);
+  pCam.position.set(0, 1.7, 7.4); pCam.lookAt(0, 0.72, 0);   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -37809,6 +37930,42 @@ function refreshSetup(){
     cur = null; pMixer = null;
   }
   const PUP_H = 2.4;   // altura objetivo en el encuadre: TODAS las clases se normalizan a esto
+  /* ►PEANA (Toni 20/08): el héroe SIEMPRE de pie sobre una plataformita —la receta de la losa de la
+     portada (tapa + labio + pared de tierra, organicSlabGeo)— pero con la tapa de CUADRADOS
+     MULTITONO de su COLOR INSIGNIA (window.HERO_COL, lo publica ►CARRERA) en vez de césped. Va
+     colgada del mismo root que el modelo, así gira con él como un torno. Una por clase, cacheada:
+     cambiar de héroe no fabrica geometría nueva. */
+  const _peanas = {};
+  function heroSlab(k){
+    if(_peanas[k]) return _peanas[k];
+    const hex = (window.HERO_COL && window.HERO_COL[k]) || '#ffd84f';
+    const base = new THREE.Color(hex);
+    const tone = (c, t)=>{ const o = c.clone(); if(t > 0) o.lerp(new THREE.Color(0xffffff), t); else o.lerp(new THREE.Color(0x000000), -t); return '#' + o.getHexString(); };
+    const pal = [tone(base,.10), tone(base,-.08), tone(base,-.22), tone(base,-.38), tone(base,-.55)];   // tonos hacia OSCURO y bien separados: a plena luz los claros se lavan y los cuadrados no se leen
+    const g = new THREE.Group();
+    const W = 1.9, D = 1.5;
+    const top = new THREE.Mesh(organicSlabGeo(W, D, 0.26, 0.55, 0.10, 0.08),
+      new THREE.MeshStandardMaterial({ map: makeFieldTexture(pal, 1/2.4), roughness:.95, metalness:0 }));   // 16 celdas por 2,4 u → cuadrados de 0,15 u
+    top.position.y = -0.34; g.add(top);                                       // cara pisable en y≈0
+    const lip = new THREE.Mesh(organicSlabGeo(W+0.12, D+0.12, 0.14, 0.6, 0.09, 0.06),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(tone(base,-.45)), roughness:1, metalness:0 }));
+    lip.position.y = -0.52; g.add(lip);
+    const dirtM = (typeof M!=='undefined' && M.dirt) ? M.dirt.clone() : new THREE.MeshStandardMaterial({ color:0x7a5a3c, roughness:1 });
+    if(dirtM.map){ dirtM.map = dirtM.map.clone(); dirtM.map.repeat.set(1/2.2, 1/2.2); dirtM.map.needsUpdate = true; }
+    if(dirtM.color) dirtM.color.setRGB(0.92, 0.86, 0.80);
+    dirtM.vertexColors = false; dirtM.needsUpdate = true;
+    const dirt = new THREE.Mesh(organicSlabGeo(W-0.16, D-0.16, 0.42, 0.5, 0.09, 0.05), dirtM);
+    dirt.position.y = -0.96; g.add(dirt);
+    for(let i=0;i<5;i++){                                                      // pedruscos medio enterrados
+      const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.06 + Math.random()*0.06, 0),
+        new THREE.MeshStandardMaterial({ color:0x8e96a6, roughness:1 }));
+      const a = (i/5)*Math.PI*2 + 0.4;
+      st.position.set(Math.cos(a)*W*0.42, -0.68 - Math.random()*0.2, Math.sin(a)*D*0.42);
+      st.rotation.set(Math.random()*3, Math.random()*3, 0); g.add(st);
+    }
+    g.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = false; o.frustumCulled = false; } });
+    return (_peanas[k] = g);
+  }
   function showPuppet(k){
     disposeCur();
     /* si el MODELO 3D de la clase ya cargó (DEBUG_MODEL), muestra el modelo real (animado en el samurái)
@@ -37844,7 +38001,7 @@ function refreshSetup(){
         pMixer.update(0); model.updateMatrixWorld(true);   // posa el idle ANTES de colgar armas → la alineación al frente mide el hueso en su pose real
       }
       try { attachPreviewWeapons(model, k, PUP_H/CHAR_TARGET_H); } catch(e){ console.warn('[preview] arma falló', e); }   // muestra el arma de clase en el preview (escala proporcional al cuerpo del encuadre)
-      root.add(model); pScene.add(root);
+      root.add(model); try{ root.add(heroSlab(k)); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
       cur = { root, _sharedGeo:true };
       return;
     }
