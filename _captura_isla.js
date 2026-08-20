@@ -1,5 +1,10 @@
-/* Captura ISOMÉTRICA del mundo con ALFA: congela el loop, croma magenta, render crudo (sin
-   composer/niebla), vuelca el canvas WebGL a un canvas 2D y quita el croma → PNG transparente. */
+/* Captura ISOMÉTRICA del mundo con ALFA — receta v2 (20/08): congela el loop, renderer PROPIO
+   con canal alfa (v1 usaba croma magenta: el tone mapping por-stage lo volvía rosa/rojo pastel y
+   el filtro no lo reconocía — HIELO salía sobre rosa y JAPÓN, que ES rosa, se lo comía entero),
+   recorte elíptico GLOBAL parametrizable, y el mismo revelado/tinta/limpieza de siempre.
+   Parámetros nuevos del JSON de cámara: rx/rz (radios de la elipse global, def. 22/19) y cx
+   (centro desplazado en x, p.ej. el saloon del western vive en x≈-14). Elipses prietas (rx≈9-15)
+   = modo "trozo"; ojo: matan la losa principal de los mundos de losa gigante (desierto, japón). */
 const fs = require('fs');
 const CAM = JSON.parse(process.argv[2] || '{"px":24,"py":22,"pz":24,"tx":0,"ty":2,"tz":-3,"fov":30}');
 const OUT = process.argv[3] || (__dirname + '\\isla1.png');
@@ -21,8 +26,11 @@ const ev=async e=>{ const r=await send('Runtime.evaluate',{expression:e,returnBy
     if(!window.__frozen){ window.__frozen = true; window.requestAnimationFrame = ()=>0; }   // congela el loop
     document.querySelectorAll('.overlay').forEach(o=>o.style.display='none');
     const hud=document.getElementById('hud'); if(hud) hud.style.display='none';
+    /* la foto es del MUNDO, no de la partida: fuera los muñecos (players; los minions del demo
+       caen luego con la regla de SkinnedMesh del recorte global) */
+    if(typeof players!=='undefined') for(const p of players){ if(p.gfx && p.gfx.root) p.gfx.root.visible = false; }
     scene.fog = null;
-    scene.background = new THREE.Color(0xff00ff);
+    scene.background = null;   // v2: el alfa lo da el renderer, no un croma que adivinar
     /* ISLA: fuera cielo, mar y segmentos lejanos — queda SOLO el segmento central de la cinta */
     { const box = new THREE.Box3(), sz = new THREE.Vector3();
       for(const ch of scene.children){
@@ -67,6 +75,23 @@ const ev=async e=>{ const r=await send('Runtime.evaluate',{expression:e,returnBy
           if(!apoyado) v.ch.visible = false;
         }
       }
+      /* v2: RECORTE ELÍPTICO GLOBAL — la selección de arriba solo mira central.group, pero el mar
+         de nubes del desierto o los icebergs del hielo viven en otros grupos y llenaban el cuadro.
+         Regla pareja para TODO lo visible: personajes fuera (SkinnedMesh), gigantes fuera
+         (mega-suelos y mares de nubes, bbox > 55 u), fuera de la elipse fuera, y fuera también lo
+         que CRUZA el borde de la elipse (puentes/cintas: mejor un hueco que un puente rebanado). */
+      { const bbG = new THREE.Box3(), szG = new THREE.Vector3(), ctG = new THREE.Vector3();
+        const RXg = ${CAM.rx||22}, RZg = ${CAM.rz||19}, CZg = ${CAM.cz!=null?CAM.cz:-3}, CXg = ${CAM.cx||0};
+        scene.traverse(o=>{ if(!o.isMesh || !o.visible) return;
+          if(o.isSkinnedMesh){ o.visible = false; return; }
+          try{ bbG.setFromObject(o); bbG.getSize(szG); bbG.getCenter(ctG); }catch(e){ return; }
+          if(szG.x > 55 || szG.z > 55){ o.visible = false; return; }
+          const ex = (ctG.x-CXg)/RXg, ez = (ctG.z-CZg)/RZg;
+          if(ex*ex + ez*ez > 1 || ctG.y > 16 || ctG.y < -6){ o.visible = false; return; }
+          if(bbG.min.x < CXg-RXg-4 || bbG.max.x > CXg+RXg+4 ||
+             bbG.min.z < CZg-RZg-4 || bbG.max.z > CZg+RZg+4) o.visible = false;
+        });
+      }
     }
     const C = ${JSON.stringify(CAM)};
     camera.position.set(C.px, C.py, C.pz);
@@ -74,22 +99,25 @@ const ev=async e=>{ const r=await send('Runtime.evaluate',{expression:e,returnBy
     camera.fov = C.fov; camera.updateProjectionMatrix();
     /* SUPERSAMPLING ×2: render a doble resolución y reducción a la mitad = antialiasing real
        (el render crudo sin FXAA salía "crispy") */
-    const pr0 = renderer.getPixelRatio();
-    renderer.setPixelRatio(pr0*2); renderer.setSize(innerWidth, innerHeight, false);
-    renderer.render(scene, camera);                       // crudo: sin vignette/bloom/tinta → croma limpio
-    const src = renderer.domElement;
+    /* v2: renderer PROPIO con alpha:true — el del juego nació sin canal alfa. Compila sus
+       programas una vez (en SwiftShader tarda unos segundos, da igual); misma curva que el juego. */
+    if(!window.__capGL) window.__capGL = new THREE.WebGLRenderer({ alpha:true, antialias:true });
+    const pr2 = window.__capGL;
+    pr2.setPixelRatio(renderer.getPixelRatio()*2); pr2.setSize(innerWidth, innerHeight, false);
+    pr2.toneMapping = renderer.toneMapping; pr2.toneMappingExposure = renderer.toneMappingExposure;
+    if(renderer.outputEncoding !== undefined) pr2.outputEncoding = renderer.outputEncoding;
+    pr2.setClearColor(0x000000, 0);
+    pr2.render(scene, camera);                            // crudo: sin vignette/bloom/tinta
+    const src = pr2.domElement;
     const c = document.createElement('canvas'); c.width = (src.width/2)|0; c.height = (src.height/2)|0;
     const g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     g.drawImage(src, 0, 0, c.width, c.height);
-    renderer.setPixelRatio(pr0); renderer.setSize(innerWidth, innerHeight, false);
     const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
     let minX=c.width, minY=c.height, maxX=0, maxY=0;
     for(let i=0;i<d.length;i+=4){
       const r=d[i], gg=d[i+1], b=d[i+2];
-      const key = Math.max(0, Math.min(r,b) - gg);        // cuánta "magenta" tiene el píxel
-      if(key > 110){ d[i+3] = 0; }                        // croma puro → fuera
-      else if(key > 40){ d[i+3] = Math.round(255 * (1 - (key-40)/70));   // borde antialias → semitransparente
-        d[i] = Math.min(255, r); d[i+2] = Math.max(0, b - key); }        // y le quitamos el tinte rosa
+      /* v2: el alfa ya viene del renderer — sin croma que adivinar */
+      if(d[i+3] < 12){ d[i+3] = 0; }
       else {                                              // píxel de la ISLA: le devolvemos el PUNCH del grade
         const SAT = 1.3, CON = 1.2, GAM = 1.55, DIM = 0.88, PIV = 118;   // v5: bajada global de luz + gamma honda + pivote bajo
         const l = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
