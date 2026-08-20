@@ -16409,22 +16409,13 @@ function updatePvpShieldFX(){
     '  --wsBlur:18px; --wsTile:46px; --wsJoint:3.2px;',
     '  background:none !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }',
     '#hsIslas{ width:var(--wsW); }',   // la caja del selector = la caja de la cuña
+    /* ºVELO (Toni 20/08, "quédate con el fondo del menú izquierdo que tenías antes"): fuera del
+       cristal NO hay cielo estrellado sino el velo de siempre de .overlay (mismo color y mismo
+       blur de 3px), pero como HERMANO de la cuña y recortado con su complemento: si lo llevara el
+       propio #startOverlay, sería backdrop root y la ventana desenfocaría un color plano. */
     '#skyBg{ position:fixed; inset:0; z-index:-1; pointer-events:none;',
     '  clip-path:polygon(0 0, calc(100% - var(--wsW) + var(--wsLean) + 1px) 0, calc(100% - var(--wsW) + 1px) 100%, 0 100%);',
-    '  background-image:',
-    '    radial-gradient(circle at 34px 22px,   rgba(255,255,255,.95) 0 1.3px, rgba(0,0,0,0) 1.9px),',
-    '    radial-gradient(circle at 122px 78px,  rgba(200,225,255,.75) 0 1.1px, rgba(0,0,0,0) 1.7px),',
-    '    radial-gradient(circle at 61px 168px,  rgba(255,246,214,.80) 0 1.6px, rgba(0,0,0,0) 2.3px),',
-    '    radial-gradient(circle at 208px 96px,  rgba(255,255,255,.55) 0 0.9px, rgba(0,0,0,0) 1.5px),',
-    '    radial-gradient(circle at 17px 141px,  rgba(255,255,255,.70) 0 1.1px, rgba(0,0,0,0) 1.7px),',
-    '    radial-gradient(circle at 154px 31px,  rgba(214,232,255,.60) 0 1.0px, rgba(0,0,0,0) 1.6px),',
-    '    radial-gradient(circle at 89px 233px,  rgba(255,255,255,.85) 0 1.4px, rgba(0,0,0,0) 2.0px),',
-    '    radial-gradient(circle at 246px 187px, rgba(255,228,190,.65) 0 1.2px, rgba(0,0,0,0) 1.8px),',
-    '    radial-gradient(circle at 43px 77px,   rgba(255,255,255,.45) 0 0.8px, rgba(0,0,0,0) 1.4px),',
-    '    radial-gradient(ellipse 60% 45% at 68% 26%, rgba(96,64,168,.26), rgba(0,0,0,0) 70%),',
-    '    radial-gradient(ellipse 55% 40% at 22% 72%, rgba(40,86,150,.20), rgba(0,0,0,0) 72%),',
-    '    radial-gradient(ellipse at 50% 38%, #131a33 0%, #0a0e1e 46%, #05070f 100%);',
-    '  background-size:137px 137px, 199px 199px, 263px 263px, 331px 331px, 173px 173px, 211px 211px, 289px 289px, 367px 367px, 149px 149px, cover, cover, cover; }',
+    '  background:rgba(8,11,26,.55); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }',
     '#wsWedge{ position:fixed; top:0; right:0; bottom:0; width:var(--wsW); z-index:-1; pointer-events:none;',
     '  clip-path:polygon(var(--wsLean) 0, 100% 0, 100% 100%, 0 100%);',
     '  background:linear-gradient(203deg, rgba(13,17,32,.34) 0%, rgba(9,12,24,.50) 100%);',
@@ -16438,7 +16429,7 @@ function updatePvpShieldFX(){
     '  background-position:100% 0;',
     '  -webkit-mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%);',
     '  mask-image:linear-gradient(97deg, #000 0%, rgba(0,0,0,.35) 22%, rgba(0,0,0,.08) 55%, rgba(0,0,0,0) 80%); }',
-    '@media (max-width:900px){ #startOverlay{ --wsW:min(430px,74vw); --wsLeanK:.20; } #skyBg, #wsWedge{ display:none; } #isPill{ display:block; } }',
+    '@media (max-width:900px){ #startOverlay{ --wsW:min(430px,74vw); --wsLeanK:.20; } #skyBg, #wsWedge{ display:none; } #isPill{ display:block; } #startOverlay{ background:rgba(8,11,26,.55) !important; } }',
     /* ---- retoques de la COLUMNA IZQUIERDA (pedidos 17/08; overrides desde esta hoja, que va
        DESPUÃ‰S de la base â†’ gana sin tocar las lÃ­neas de la otra sesiÃ³n) ---- */
     '#hsLogo{ width:min(440px,38vw) !important; }',                                  // logo mÃ¡s grande
