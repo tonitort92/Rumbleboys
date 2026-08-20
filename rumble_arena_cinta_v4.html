@@ -758,6 +758,28 @@ window.addEventListener('load', function(){
     filter:drop-shadow(0 0 4px currentColor);
     animation:tiTwinkle var(--tw,3s) ease-in-out var(--d,0s) infinite; }
   @media (prefers-reduced-motion: reduce){ .tiStar, .tiShoot, .tiDust, .tiSpark { animation:none; } .tiShoot { display:none; } }
+  /* ►VUELO (transición home1→home2, Toni 20/08): al pulsar, TODO corre hacia arriba — texto,
+     PULSA y el canvas 3D entero (losa + archipiélagos) — y el CIELO (tiSky + confeti +
+     gradientes del overlay) se queda quieto como fondo de la home 2. */
+  #titleOverlay.fly > :not(#tiSky):not(#titleConfetti){
+    transition:transform .8s cubic-bezier(.55,0,.85,.36);
+    transform:translateY(-110vh); }
+  /* PULSA/chevron llevan translateX(-50%) (y el chevron ANIMA su transform, que ganaría al
+     vuelo): animación fuera y vuelo con el -50% incluido */
+  #titleOverlay.fly #tiPress, #titleOverlay.fly #tiChev { animation:none;
+    transition:transform .8s cubic-bezier(.55,0,.85,.36);
+    transform:translate(-50%,-110vh); }
+  /* tras el vuelo, el overlay queda DEGRADADO a cielo de fondo: bajo la home (.overlay=10),
+     sin capturar clics, y con los hijos volados fuera del árbol de pintado */
+  #titleOverlay.sky { z-index:4; pointer-events:none; }
+  #titleOverlay.sky > :not(#tiSky):not(#titleConfetti){ display:none; }
+  /* la home 2 entra SOBRE el cielo: sin su velo (era para taparse del attract; sobre el cielo
+     lo atenuaría) y con los bloques apareciendo suaves y escalonados */
+  #startOverlay.enter { background:transparent; backdrop-filter:none; }
+  #startOverlay.enter > *{ animation:hsIn .5s ease-out backwards; }
+  #startOverlay.enter > :nth-child(2){ animation-delay:.1s; }
+  #startOverlay.enter > :nth-child(3){ animation-delay:.2s; }
+  @keyframes hsIn { from{ opacity:0; transform:translateY(26px); } to{ opacity:1; transform:none; } }
   /* EL CORRO: canvas 3D propio (renderer aparte, patrón de winCelebrate) con los 6 sentados
      alrededor de la hoguera del stage 1. Va DEBAJO del "pulsa cualquier botón" — es la estampa, no
      la instrucción. Sin `height` fija en px: en pantallas bajas se come el texto. */
@@ -1489,11 +1511,16 @@ window.addEventListener('load', function(){
     if(!home) return;                                  // aún no parseada: la siguiente pulsación la pillará
     gone = true;
     if(raf) cancelAnimationFrame(raf);
-    ti.classList.add('out');
-    home.style.display = 'flex';                       // la pantalla 2, ya detrás del fundido
-    setTimeout(function(){ ti.style.display = 'none';
+    /* ►VUELO: nada de fundido — el contenido sale volando hacia arriba y el CIELO se queda.
+       El bucle del corro sigue vivo durante el vuelo (la losa se balancea mientras sube). */
+    ti.classList.add('fly');
+    setTimeout(function(){
       if(window.__tiFire) window.__tiFire.stop();      // ►HOGUERA: suelta el 2º contexto WebGL del corro
-    }, 500);
+      ti.classList.remove('fly'); ti.classList.add('sky');   // el overlay queda como FONDO (z:4): nebulosas + estrellas + confeti
+      home.classList.add('enter');
+      home.style.display = 'flex';                     // la pantalla 2, sobre el mismo cielo
+      try{ window.dispatchEvent(new Event('tiFlyDone')); }catch(e){}   // gancho para la CUÑA de la pantalla 2 (sesión integracion)
+    }, 780);
   }
 
   ['keydown','pointerdown','mousedown','touchstart','wheel'].forEach(function(ev){
