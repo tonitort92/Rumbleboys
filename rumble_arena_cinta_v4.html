@@ -16909,6 +16909,16 @@ function updatePvpShieldFX(){
     .hdRbLbl::before{ content:''; position:absolute; left:-6px; top:50%; width:10px; height:10px; transform:translateY(-50%) rotate(45deg);
       background:rgba(10,14,30,.92); border-left:1px solid rgba(255,255,255,.18); border-bottom:1px solid rgba(255,255,255,.18); }
     .hdRb:hover .hdRbLbl, .hdRb:focus-visible .hdRbLbl, .hdRb.uinav-focus .hdRbLbl{ opacity:1; transform:translate(0,-50%); }
+    /* ---- (Toni 21/08) vídeo en el popover de ataques · flechas del color del héroe · cartel del mundo sin caja
+       · sin icono de mapa · el camino diagonal al lado IZQUIERDO del canto ---- */
+    #hdAtkTip video.vid{ display:block; width:100%; height:auto !important; max-height:190px; object-fit:cover; border-radius:10px;
+      margin-top:8px; background:#000; border:1px solid rgba(255,255,255,.12); }
+    #hdLeft .cpArrow{ color:var(--hc,#9fe8ff); }
+    #hdLeft .cpArrow:hover, #hdLeft .cpArrow.uinav-focus, #hdLeft .cpArrow:focus-visible{ color:#fff; }
+    #hdWIco{ display:none; }
+    #hdWNum{ background:none; border:0; box-shadow:none; padding:0 4px; transform:skewX(-4deg); color:#fff;
+      -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 14px rgba(0,0,0,.7); font-size:clamp(30px,3.2vw,48px); }
+    .hdStop .n{ right:auto; left:-12px; transform:translate(-100%,-50%); }   /* números al lado izquierdo */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -17103,6 +17113,7 @@ function updatePvpShieldFX(){
     nm.style.color = col;
     const top = document.querySelector('#hdLeft .cpTop'); if(top) top.style.setProperty('--hc', col);
     const pb = $('hdPlay'); if(pb) pb.style.setProperty('--hc', col);
+    { const lf = $('hdLeft'); if(lf) lf.style.setProperty('--hc', col); }   // las flechas ‹ › del color del héroe
     { const ro = $('hdRole'); if(ro) ro.textContent = (window._cpAtk && _cpAtk.role) ? _cpAtk.role(k) : ''; }   // HERO CLASS real (CP_TEXT)
     renderAtk(k, col);   // los controles del héroe bajo su nombre (tecla + nombre de CTL_MAP/CLASS_MOVES, como los diagramas)
     /* la línea de progreso. ⚠ El save es GLOBAL (no por personaje): trofeos, mejor carrera y marcas
@@ -17138,11 +17149,13 @@ function updatePvpShieldFX(){
       const c = api.slides[+b.dataset.j]; if(!c) return;
       const inf = api.info(k, c);
       tip.innerHTML = '<b>' + inf.nm + '</b><div class="keys">' + api.pad(c.pad) + api.kbd(c.kbd) + '</div><p>' + api.desc(k, c) + '</p>'
-        + (b.dataset.vid ? '<div class="vid" title="vídeo: próximamente"></div>' : '');
+        + (b.dataset.vid ? '<video class="vid" src="' + b.dataset.vid + '" muted playsinline loop autoplay preload="auto"></video>' : '');
+      { const v = tip.querySelector('video'); if(v){ v.play().catch(()=>{}); } }   // muted+playsinline → autoplay permitido
       const r = b.getBoundingClientRect(), w = 270, M = 10;
       let x = r.left + r.width/2 - w/2; x = Math.max(M, Math.min(innerWidth - w - M, x));
       tip.style.left = Math.round(x) + 'px';
-      tip.style.top = Math.round(Math.min(innerHeight - 200, r.bottom + 8)) + 'px';
+      { const th = tip.offsetHeight || 200; let y = r.bottom + 8; if(y + th > innerHeight - 8) y = r.top - 8 - th;   // si no cabe abajo (con el video), arriba de la celda
+        tip.style.top = Math.round(Math.max(8, y)) + 'px'; }
       clearTimeout(_atkTipT); tip.classList.add('on');
     };
     const hide = ()=>{ clearTimeout(_atkTipT); _atkTipT = setTimeout(()=> tip.classList.remove('on'), 90); };
@@ -17202,7 +17215,7 @@ function updatePvpShieldFX(){
     const n = stops.length; if(!n) return;
     const H = innerHeight, r = wedge.getBoundingClientRect();
     let lean = 0; { const m = /polygon\(\s*([\d.]+)px/.exec(getComputedStyle(wedge).clipPath || ''); if(m) lean = parseFloat(m[1]); }
-    const PAD = 44, OFF = 40;
+    const PAD = 44, OFF = -40;   // NEGATIVO: las paradas van al lado IZQUIERDO del canto (sobre el cielo), no dentro del cristal (Toni 21/08)
     const pts = stops.map((st, i)=>{
       const y = H - PAD - (n > 1 ? i/(n-1) : 0) * (H - 2*PAD);
       const x = r.left + lean * (1 - y/H) + OFF;
