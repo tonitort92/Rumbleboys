@@ -17022,6 +17022,13 @@ function updatePvpShieldFX(){
     #hdAtk{ margin:0 0 14px; grid-template-columns:repeat(5, 62px); }
     .hdAt{ min-width:0; max-width:62px; box-sizing:border-box; }
     .hdAt .nm{ display:block; max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }   /* nombres largos (Orbe energia) se recortan con puntos; el tooltip los da enteros */
+    /* ---- ►VISOR DEL CORRO (Toni 21/08): el canvas pasa a APAISADO y ocupa el ancho de la columna para que los
+       vecinos no salgan cortados; las flechas se superponen a los bordes del canvas. _cpResize ajusta el aspecto. ---- */
+    #hdLeft #cpStage{ position:relative; width:100%; justify-content:center; gap:0; }
+    #hdLeft #cpView{ width:min(440px,28vw); max-width:none; aspect-ratio:440/330; height:auto; }   /* ancho EXPLICITO: el padre es shrink-to-fit y un 100% se quedaba en 172px */
+    #hdLeft .cpArrow{ position:absolute; top:50%; transform:translateY(-50%); z-index:3; }
+    #hdLeft #cpPrev{ left:-8px; } #hdLeft #cpNext{ right:-8px; }
+    #hdLeft .cpArrow:hover, #hdLeft .cpArrow.uinav-focus, #hdLeft .cpArrow:focus-visible{ transform:translateY(-50%) scale(1.15); }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -38482,8 +38489,21 @@ function refreshSetup(){
     cur = gfx;
   }
 
+  /* ►CORRO · PENUMBRA: los huecos que no están delante se oscurecen (color y emisivo × DIM) con un fundido
+     por frame, para que casen con el cielo y no compitan con el elegido. Se guarda el color original
+     de cada material una vez (userData.__c0/__e0); los cascos de tinta no se tocan. */
+  const DIM = 0.30;
+  function slotMats(slot){ if(slot.userData.__mats) return slot.userData.__mats; const out = [];
+    slot.traverse(o=>{ if(!o.isMesh || o.userData.__ink || !o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m=>{ if(!m || out.indexOf(m) >= 0) return;
+      if(m.color && !m.userData.__c0) m.userData.__c0 = m.color.clone(); if(m.emissive && !m.userData.__e0) m.userData.__e0 = m.emissive.clone(); out.push(m); }); });
+    return (slot.userData.__mats = out); }
+  function applyDim(slot, t){   // t: 0 = a plena luz, 1 = en penumbra
+    const f = 1 - (1 - DIM) * t;
+    slotMats(slot).forEach(m=>{ if(m.userData.__c0) m.color.copy(m.userData.__c0).multiplyScalar(f); if(m.userData.__e0) m.emissive.copy(m.userData.__e0).multiplyScalar(f); });
+  }
+  let frontKey = null;
   function showPuppet(k){
-    ensureRing();
+    ensureRing(); frontKey = k;
     CLASS_PICK.forEach(c=>{ try{ buildSlot(c[0]); }catch(e){ console.warn('[corro]', c[0], e); } });
     ringTarget = -ringAngle(Math.max(0, CLASS_PICK.findIndex(c=>c[0]===k)));   // el elegido, delante
   }
@@ -39081,6 +39101,8 @@ function refreshSetup(){
     const dt = Math.min(.05, _cpAcc); _cpAcc = 0;
     for(const m of pMixers) m.update(dt);   // ►CORRO: los seis animan su idle
     if(ring){ let d = ringTarget - ring.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ring.rotation.y += d * Math.min(1, dt*5); }   // ►CORRO: el círculo gira (camino corto) hasta poner delante al elegido
+    for(const key in slots){ const sl = slots[key], want = (key === frontKey) ? 0 : 1, cur0 = (sl.userData.dimT == null) ? want : sl.userData.dimT;
+      const nt = cur0 + (want - cur0) * Math.min(1, dt*4); if(Math.abs(nt - cur0) > 1e-4 || sl.userData.dimT == null){ sl.userData.dimT = nt; applyDim(sl, nt); } }   // ►CORRO · PENUMBRA
     pr.render(pScene, pCam);
   })(last);
 })();
