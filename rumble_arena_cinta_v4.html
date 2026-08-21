@@ -16932,6 +16932,7 @@ function updatePvpShieldFX(){
     .hdModeBtn small{ display:block; font-size:9.5px; line-height:1.3; margin-top:2px; opacity:.85; }
     .hdModeBtn.on{ background:rgba(255,255,255,.12); color:#fff; border-color:rgba(255,255,255,.22); }
     .hdModeBtn.on b{ color:#ffd84f; }
+    .hdModeBtn[data-mode="on"] b{ color:#9fe8ff; }   /* v30 (Toni 21/08): JUGAR ONLINE en azul teal, como LOGROS POR DESBLOQUEAR; OFFLINE se queda amarillo */
     .hdModeBtn:hover, .hdModeBtn.uinav-focus, .hdModeBtn:focus-visible{ color:#fff; outline:none; background:rgba(255,255,255,.08); }
     #hdRail{ left:28px; top:auto; bottom:16px; transform:none; align-items:flex-start; flex-direction:column; gap:10px; }
     #hdRailBox{ flex-direction:column; width:auto; gap:3px; }   /* lista VERTICAL, como antes (Toni 21/08) */
@@ -16981,6 +16982,13 @@ function updatePvpShieldFX(){
     .hdNode.mini{ width:32px; height:32px; font-size:12px; border-width:2.5px; }
     .hdNode.lock{ border-style:solid; border-color:var(--nc); opacity:.92; }
     .hdStop .n{ left:-16px; font-size:15px; font-weight:900; color:#fff; -webkit-text-stroke:1.4px #000; paint-order:stroke fill; text-shadow:0 2px 0 #000; letter-spacing:0; }
+    /* ►PÍLDORA (Toni 21/08, v30): el número va dentro de una píldora del color del nodo que sale por debajo del círculo, como si el borde se
+       expandiera para abrazarlo. Más baja que el círculo de mundo; en los minijuegos, igual de alta que su círculo (32px: es el alto de todas). */
+    .hdStop .n{ left:auto; right:50%; top:50%; transform:translateY(-50%); height:32px; line-height:26px; box-sizing:border-box; padding:0 31px 0 11px; border-radius:999px 0 0 999px;
+      background:#1a2140; border:3px solid var(--nc,#5b647a); border-right:0; color:#fff; font-size:15px; font-style:italic; z-index:0; box-shadow:0 4px 12px rgba(0,0,0,.45); }
+    .hdStop.mini .n{ padding:0 22px 0 10px; border-width:2.5px; font-size:13px; line-height:27px; }
+    .hdStop .hdNode{ z-index:1; }   /* el círculo va por encima de la píldora */
+    .hdStop .hdNode.next + .n{ padding-right:44px; }   /* el rombo de la estrella (girado 45°) es más ancho: la píldora asoma igual */
     .hdNode .mk{ right:-10px; top:-10px; min-width:22px; height:22px; font-size:11px; line-height:19px; }
     /* chip del jugador */
     #hdUName{ font-size:14px; } #hdUName small{ font-size:12px; }
@@ -17004,7 +17012,7 @@ function updatePvpShieldFX(){
     #hdUser{ gap:8px; padding:5px 9px 5px 5px; } #hdUTxt{ min-width:126px; } #hdCoins{ font-size:14px; padding:5px 9px; }
     #hdLogMini{ width:248px; }
     /* logo +30% (Toni 21/08); el chip se estrecha un pelo para no tocarlo */
-    #hdLogo{ width:min(286px,21vw); top:22px; }
+    #hdLogo{ width:min(330px,24vw); top:22px; }   /* v30: aún más grande (Toni 21/08) */
     #hdUTxt{ min-width:110px; } #hdCoins{ padding:4px 8px; } #hdUser{ gap:7px; }
     #hdUName small{ display:none; }   /* el numero de usuario se ve en la ficha de logros; aqui comia el sitio del logo */
     /* ►RESPIRO (Toni 21/08): mas margen izquierdo, superior e inferior en el lado izquierdo */
@@ -17025,7 +17033,7 @@ function updatePvpShieldFX(){
     /* ---- ►VISOR DEL CORRO (Toni 21/08): el canvas pasa a APAISADO y ocupa el ancho de la columna para que los
        vecinos no salgan cortados; las flechas se superponen a los bordes del canvas. _cpResize ajusta el aspecto. ---- */
     #hdLeft #cpStage{ position:relative; width:100%; justify-content:center; gap:0; }
-    #hdLeft #cpView{ width:760px; max-width:none; aspect-ratio:760/440; height:auto; flex:0 0 auto; margin:0 -120px 0 -220px; }   /* 50px corrido a la izquierda: el vecino derecho no se mete bajo el camino */   /* v29 (Toni 21/08): MAS grande (580→760) y mas alto de proporcion: nada se corta por los lados ni por abajo; desborda la columna por los dos lados */
+    #hdLeft #cpView{ width:880px; max-width:none; aspect-ratio:2/1; height:auto; flex:0 0 auto; margin:0 -200px 0 -260px; }   /* v30 (Toni 21/08): el VISOR crece (880x440) para que el corro de siempre no se corte por los lados ni por abajo; 30px corrido a la izquierda */   /* v29 (Toni 21/08): MAS grande (580→760) y mas alto de proporcion: nada se corta por los lados ni por abajo; desborda la columna por los dos lados */
     #hdLeft, #hdLeft #cpStage, #hdLeft .cpCard, #hdLeft .cpTop, #hdLeft #charPicker{ overflow:visible; }
     #hdLeft .cpArrow{ display:none !important; }   /* v29 (Toni 21/08): en la home las flechas del visor se esconden; mandan las del bloque del titulo (#hdPrev/#hdNext, abajo). Cuando el asistente o CONTROLES se llevan el carrusel, las suyas vuelven a verse */
     #hdNameRow{ order:2; display:flex; align-items:center; justify-content:center; gap:18px; } #hdNameRow #hdName{ order:0; } #hdPrev{ order:-1; } #hdNext{ order:1; }   /* el order:2 de #hdName (columna) no vale dentro de la fila: ‹ nombre › */
@@ -17329,7 +17337,7 @@ function updatePvpShieldFX(){
       if(st.mini[i]){ cls = 'mini' + (passed ? ' done' : (st.disc[i] ? '' : ' lock')); ico = st.disc[i] ? '✦' : '🔒'; }
       else { cls = st.won[i] ? 'done' : (i === st.next ? 'next' : (st.disc[i] ? '' : 'lock'));
              ico = st.won[i] ? '🏆' : (i === st.next ? '★' : (st.disc[i] ? String(i+1) : '🔒')); }
-      h += '<span class="hdStop"><button type="button" class="hdNode ' + cls + (i===sel ? ' sel' : '') + '" data-i="' + i + '" style="--nc:' + RB_COLS[i % RB_COLS.length] + '"'
+      h += '<span class="hdStop' + (st.mini[i] ? ' mini' : '') + '" style="--nc:' + RB_COLS[i % RB_COLS.length] + '"><button type="button" class="hdNode ' + cls + (i===sel ? ' sel' : '') + '" data-i="' + i + '" style="--nc:' + RB_COLS[i % RB_COLS.length] + '"'   /* v30: el color también en el .hdStop, para la píldora del número */
          +   ' aria-label="' + (i+1) + ' · ' + linkName(e) + '">'
          +   '<span>' + ico + '</span>'
          +   (st.won[i] && m ? '<span class="mk" style="color:' + gradeColorOf(m.g) + '">' + m.g + '</span>' : '')
@@ -38308,8 +38316,8 @@ function refreshSetup(){
   setTimeout(window._cpResize, 0);   // el canvas ya está en la home (►CARRERA se construyó antes que este bloque): ajustar ya
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
-  const pCam = new THREE.PerspectiveCamera(35, cw/ch, 0.1, 100);   // v29: 32→35°, cabe el corro entero (cabezas y peana delantera) con la cámara más cerca
-  pCam.position.set(0, 2.3, 6.9); pCam.lookAt(0, 0.96, -0.5);   // v29: más cerca (conjunto más grande) y mirando más abajo: la peana delantera entera en el visor 760x440   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
+  pCam.position.set(0, 2.1, 8.3); pCam.lookAt(0, 0.95, -0.5);   // v30: el encuadre de v28 (7,9 / 1,05) con un pelín más de aire abajo para la peana delantera; el tamaño lo da el visor de 880x440   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -38394,7 +38402,7 @@ function refreshSetup(){
      flechas no cambian de modelo: GIRAN el círculo (easing en el bucle) hasta traer al siguiente. Cada
      hueco se construye UNA vez (al llegar su GLB, _cpOnModelLoaded) con la receta de siempre: pivote,
      centrado posado, arma, tinta y peana. */
-  const RING_R = 2.25;   // v29: círculo más prieto (4,4→2,25): los seis caben en la columna sin meterse bajo el camino ni el rail, y con la cámara más cerca el conjunto sale más grande
+  const RING_R = 4.4;   // radio amplio: los vecinos asoman por los lados, no invaden al elegido (v30: Toni NO quiere las peanas juntas; lo que crece es el VISOR)
   let ring = null, ringTarget = 0; const slots = {}, pMixers = [];
   const ringAngle = i => i * Math.PI * 2 / CLASS_PICK.length;
   function ensureRing(){ if(ring) return; ring = new THREE.Group(); ring.position.set(0, 0, -RING_R); pScene.add(ring); cur = { root: ring, _sharedGeo:true }; }
