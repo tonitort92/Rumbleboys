@@ -17023,7 +17023,7 @@ function updatePvpShieldFX(){
     #hdUser{ gap:8px; padding:5px 9px 5px 5px; } #hdUTxt{ min-width:126px; } #hdCoins{ font-size:14px; padding:5px 9px; }
     #hdLogMini{ width:248px; }
     /* logo +30% (Toni 21/08); el chip se estrecha un pelo para no tocarlo */
-    #hdLogo{ width:min(330px,24vw); top:22px; }   /* v30: aún más grande (Toni 21/08) */
+    #hdLogo{ width:min(390px,27vw); top:22px; z-index:3; }   /* v32: aún más grande (Toni 21/08); layoutLogo() lo centra en vertical entre el chip y el toggle */
     #hdUTxt{ min-width:110px; } #hdCoins{ padding:4px 8px; } #hdUser{ gap:7px; }
     #hdUName small{ display:none; }   /* el numero de usuario se ve en la ficha de logros; aqui comia el sitio del logo */
     /* ►RESPIRO (Toni 21/08): mas margen izquierdo, superior e inferior en el lado izquierdo */
@@ -17175,6 +17175,13 @@ function updatePvpShieldFX(){
     /* el torno a la medida real del canvas (nitidez) — ahora y en cada resize */
     const fitCp = ()=>{ try{ if(window._cpResize) window._cpResize(); }catch(e){} };
     fitCp(); setTimeout(fitCp, 300); window.addEventListener('resize', fitCp);
+    /* ►LOGO (Toni 21/08, v32): sigue sobre el selector de personajes, pero su centro vertical va al punto medio entre la BASE del chip
+       de jugador y el TECHO del bloque ONLINE/OFFLINE (medido de las cajas reales; el logo es absoluto, no empuja nada). */
+    const layoutLogo = ()=>{ try{ const lg = $('hdLogo'), u = $('hdUser'), m = $('hdMode'); if(!lg || !u || !m || !lg.offsetHeight) return;
+      const ru = u.getBoundingClientRect(), rm = m.getBoundingClientRect(), rh = (lg.offsetParent || home).getBoundingClientRect();
+      lg.style.top = Math.round((ru.bottom + rm.top) / 2 - rh.top - lg.offsetHeight / 2) + 'px'; }catch(e){} };
+    window.__hdLayoutLogo = layoutLogo;   // build() corre con la home OCULTA (offsetHeight 0): se repite al enseñarla (refresh) y al acabar el vuelo de la portada
+    layoutLogo(); setTimeout(layoutLogo, 300); window.addEventListener('resize', layoutLogo); window.addEventListener('tiFlyDone', ()=>{ layoutLogo(); setTimeout(layoutLogo, 850); }); { const lg = $('hdLogo'); if(lg) lg.addEventListener('load', layoutLogo); }
 
     /* ►RAIL: cada icono pulsa lo que ya existía */
     const RAIL_ACT = {
@@ -17516,6 +17523,7 @@ function updatePvpShieldFX(){
     checkLogros(st);
     try{ if(window.__hdRenderLogMini) window.__hdRenderLogMini(); }catch(e){}
     try{ if(window._cpResize) window._cpResize(); }catch(e){}   // nitidez del torno: cada vez que la home se enseña
+    try{ if(window.__hdLayoutLogo) window.__hdLayoutLogo(); }catch(e){}   // v32: el logo se centra entre chip y toggle con las cajas reales
     renderPath(st);
     renderChar();
     select(sel, true);
