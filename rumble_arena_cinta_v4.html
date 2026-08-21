@@ -16967,6 +16967,13 @@ function updatePvpShieldFX(){
     #hdLeft{ top:100px; }   /* la columna empieza bajo el logo */
     /* el logo ARRIBA, en la misma vertical que el torno: centro del contenido de la columna = padding-left + (ancho - paddings)/2 */
     #hdLogo{ position:absolute; top:26px; left:calc(232px + (100% - var(--wsW) + var(--wsLean) * .5 - 302px) / 2); transform:translateX(-50%); width:min(220px,16vw); margin:0; }
+    /* ---- ►RAIL CENTRADO (Toni 21/08, insiste): el menú izquierdo va centrado en VERTICAL; la caja de logros ocupa
+       lo que queda entre el rail y el margen inferior (con 22px de hueco), con scroll. #hdRail deja de apilar. ---- */
+    #hdRail{ position:static; display:contents; }
+    #hdRailBox{ position:absolute; left:var(--hdML); top:50%; transform:translateY(-50%); z-index:4; }
+    #hdLogMini{ position:absolute; left:var(--hdML); bottom:var(--hdMB); top:calc(50% + 158px + 22px); z-index:4; display:flex; flex-direction:column; }
+    #hdLogMiniList{ max-height:none; flex:1 1 auto; min-height:0; }
+    #hdLogMore{ flex:0 0 auto; }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -17189,9 +17196,7 @@ function updatePvpShieldFX(){
     const cls = (s.cls||{})[k] || {};
     $('hdMeta').innerHTML =
         '<span>🏆 <b>' + st.nWon + '/' + st.nWorlds + '</b></span>'
-      + '<span>MEJOR CARRERA: <b>' + (st.best ? ('ESLABÓN ' + (st.reached+1) + '/' + st.R.length) : '—') + '</b></span>'
-      + (cls.wins ? '<span>VICTORIAS: <b>' + cls.wins + '</b></span>' : '')
-      + '<button type="button" id="hdLogros">LOGROS ' + logrosState().n + '/' + LOGROS.length + '</button>';
+      + (cls.wins ? '<span>VICTORIAS: <b>' + cls.wins + '</b></span>' : '');   // (Toni 21/08) fuera MEJOR CARRERA y LOGROS de debajo del personaje
     const lg = $('hdLogros'); if(lg) lg.addEventListener('click', ()=>{ if(window.__hdLogOpen) window.__hdLogOpen(); });
     renderUser(col, pick ? pick[1] : '');
   }
