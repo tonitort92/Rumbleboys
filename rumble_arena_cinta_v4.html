@@ -16880,6 +16880,17 @@ function updatePvpShieldFX(){
     #hdLore i{ font-style:normal; color:#ffd84f; font-weight:900; }
     #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(400px,28vw); }   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la version absoluta */
     #hdCard{ position:static; order:4; width:min(400px,28vw) !important; padding-right:14px !important; }
+    /* ►CORTE DIAGONAL (Toni 21/08, v31): el marco del mapa y la ficha del mundo llevan las esquinas superior-izquierda e inferior-derecha
+       cortadas en diagonal "/", como el canto de la cuña que separa las secciones (--dcX ancho, --dcY alto del corte). El clip-path se
+       come el borde en el corte, así que cada diagonal lleva su propia línea (::before arriba-izquierda, ::after abajo-derecha). */
+    #hdFrame, #hdCard{ --dcX:34px; --dcY:58px; clip-path:polygon(var(--dcX) 0, 100% 0, 100% calc(100% - var(--dcY)), calc(100% - var(--dcX)) 100%, 0 100%, 0 var(--dcY)); border-radius:12px; }
+    #hdFrame::before, #hdFrame::after, #hdCard::before, #hdCard::after{ content:""; position:absolute; z-index:4; pointer-events:none; width:calc(var(--dcX) * 1.98); height:2px; transform-origin:50% 50%; transform:rotate(-59.6deg); }
+    #hdFrame::before, #hdFrame::after{ background:rgba(225,238,255,.8); }
+    #hdCard::before, #hdCard::after{ background:rgba(255,255,255,.14); }
+    #hdFrame::before, #hdCard::before{ left:calc(var(--dcX) * .5 - var(--dcX) * .99); top:calc(var(--dcY) * .5 - 1px); }
+    #hdFrame::after,  #hdCard::after{  right:calc(var(--dcX) * .5 - var(--dcX) * .99); bottom:calc(var(--dcY) * .5 - 1px); }
+    #hdCard{ position:relative; right:auto; bottom:auto; padding-right:18px !important; padding-bottom:26px; }   /* relative para sus ::before/::after (y sin los offsets de la versión absoluta); aire abajo-derecha para que el corte no muerda el botón */
+    #hdCard h4{ padding-left:26px; }   /* el título esquiva el corte de arriba a la izquierda */
     #hdTrain small{ font-size:9px; }
     /* ---- ►CAMINO DIAGONAL (Toni 21/08): los 16 eslabones van SOBRE el canto de la cuña, del 1 (abajo) al 16
        (arriba), números a la derecha. La posición la pone layoutPath() leyendo el clip-path real de #wsWedge
@@ -17025,15 +17036,15 @@ function updatePvpShieldFX(){
     /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
     #hdRailBox{ top:50%; }   /* centrado exacto (Toni) */
     /* ---- aire vertical en la columna del héroe (Toni 21/08) ---- */
-    #hdLeft #cpDots{ margin:10px 0 12px; }
-    #hdRole{ margin:2px 0 12px; }
-    #hdAtk{ margin:0 0 14px; grid-template-columns:repeat(5, 62px); }
+    #hdLeft #cpDots{ margin:2px 0 6px; }
+    #hdRole{ margin:2px 0 8px; }
+    #hdAtk{ margin:0 0 10px; grid-template-columns:repeat(5, 62px); }
     .hdAt{ min-width:0; max-width:62px; box-sizing:border-box; }
     .hdAt .nm{ display:block; max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }   /* nombres largos (Orbe energia) se recortan con puntos; el tooltip los da enteros */
     /* ---- ►VISOR DEL CORRO (Toni 21/08): el canvas pasa a APAISADO y ocupa el ancho de la columna para que los
        vecinos no salgan cortados; las flechas se superponen a los bordes del canvas. _cpResize ajusta el aspecto. ---- */
     #hdLeft #cpStage{ position:relative; width:100%; justify-content:center; gap:0; }
-    #hdLeft #cpView{ width:880px; max-width:none; aspect-ratio:2/1; height:auto; flex:0 0 auto; margin:0 -200px 0 -260px; }   /* v30 (Toni 21/08): el VISOR crece (880x440) para que el corro de siempre no se corte por los lados ni por abajo; 30px corrido a la izquierda */   /* v29 (Toni 21/08): MAS grande (580→760) y mas alto de proporcion: nada se corta por los lados ni por abajo; desborda la columna por los dos lados */
+    #hdLeft #cpView{ width:880px; max-width:none; aspect-ratio:880/480; height:auto; flex:0 0 auto; margin:0 -200px 0 -260px; }   /* v31: 40px más alto (Toni: seguía cortando por abajo); los huecos de debajo se aprietan para no pasarse del alto de la columna */   /* v30 (Toni 21/08): el VISOR crece (880x440) para que el corro de siempre no se corte por los lados ni por abajo; 30px corrido a la izquierda */   /* v29 (Toni 21/08): MAS grande (580→760) y mas alto de proporcion: nada se corta por los lados ni por abajo; desborda la columna por los dos lados */
     #hdLeft, #hdLeft #cpStage, #hdLeft .cpCard, #hdLeft .cpTop, #hdLeft #charPicker{ overflow:visible; }
     #hdLeft .cpArrow{ display:none !important; }   /* v29 (Toni 21/08): en la home las flechas del visor se esconden; mandan las del bloque del titulo (#hdPrev/#hdNext, abajo). Cuando el asistente o CONTROLES se llevan el carrusel, las suyas vuelven a verse */
     #hdNameRow{ order:2; display:flex; align-items:center; justify-content:center; gap:18px; } #hdNameRow #hdName{ order:0; } #hdPrev{ order:-1; } #hdNext{ order:1; }   /* el order:2 de #hdName (columna) no vale dentro de la fila: ‹ nombre › */
@@ -38317,7 +38328,7 @@ function refreshSetup(){
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 2.1, 8.3); pCam.lookAt(0, 0.95, -0.5);   // v30: el encuadre de v28 (7,9 / 1,05) con un pelín más de aire abajo para la peana delantera; el tamaño lo da el visor de 880x440   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  pCam.position.set(0, 2.1, 8.5); pCam.lookAt(0, 0.80, -0.5);   // v30: el encuadre de v28 (7,9 / 1,05) con un pelín más de aire abajo para la peana delantera; el tamaño lo da el visor de 880x440   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
