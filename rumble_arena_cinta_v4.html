@@ -16687,8 +16687,9 @@ function updatePvpShieldFX(){
     #hdLeft .cpRow{ gap:0; }
     #hdLeft .cpTop{ flex:0 0 auto; width:auto; gap:0; position:relative; }
     #hdLeft #cpInfo, #hdLeft #cpPC, #hdLeft #cpAtkBtn, #hdLeft #cpDiag{ display:none !important; }
-    #hdLeft #cpView{ width:min(236px,19vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;
-      filter:drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
+    #hdLeft #cpView{ width:min(284px,23vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;   /* +20% (Toni 21/08) */
+      /* OUTLINE de tinta (como el ►INK del juego) sobre el canvas transparente: 4 sombras duras de 2px + la sombra al suelo */
+      filter:drop-shadow(2px 0 0 #14102b) drop-shadow(-2px 0 0 #14102b) drop-shadow(0 2px 0 #14102b) drop-shadow(0 -2px 0 #14102b) drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
     /* LA PLATAFORMA bajo el personaje: un disco con el color del héroe (--hc) */
     #hdLeft .cpTop::after{ display:none; content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
       border-radius:50%; z-index:0; background:radial-gradient(ellipse at 50% 40%, var(--hc,#ffd84f) 0%, rgba(0,0,0,0) 72%);
@@ -16973,6 +16974,9 @@ function updatePvpShieldFX(){
        a ese mismo nodo, así que no hay que tocarles nada. */
     const park = $('charPickerHome');
     if(park){ $('hdCharHost').appendChild(park); park.style.display = ''; }
+    /* el torno a la medida real del canvas (nitidez) — ahora y en cada resize */
+    const fitCp = ()=>{ try{ if(window._cpResize) window._cpResize(); }catch(e){} };
+    fitCp(); setTimeout(fitCp, 300); window.addEventListener('resize', fitCp);
 
     /* ►RAIL: cada icono pulsa lo que ya existía */
     const RAIL_ACT = {
@@ -17251,6 +17255,7 @@ function updatePvpShieldFX(){
     const st = state();
     if(resetSel || sel < 0) sel = st.next;
     checkLogros(st);
+    try{ if(window._cpResize) window._cpResize(); }catch(e){}   // nitidez del torno: cada vez que la home se enseña
     renderPath(st);
     renderChar();
     select(sel, true);
@@ -38055,10 +38060,15 @@ function refreshSetup(){
   const pr = new THREE.WebGLRenderer({ canvas:view, alpha:true, antialias:true });
   pr.setPixelRatio(Math.min(devicePixelRatio, 2));
   pr.setSize(cw, ch, false);
+  /* ►PEANA · CALIDAD: el buffer se dimensionó con el canvas de ARRANQUE (172×230); en la home el canvas es
+     mucho mayor y salía borroso. La home llama a esto al montarlo y en cada resize. */
+  window._cpResize = function(){ const w = view.clientWidth, h = view.clientHeight; if(!w || !h) return;
+    pr.setPixelRatio(Math.min(devicePixelRatio, 2)); pr.setSize(w, h, false); pCam.aspect = w/h; pCam.updateProjectionMatrix(); };
+  setTimeout(window._cpResize, 0);   // el canvas ya está en la home (►CARRERA se construyó antes que este bloque): ajustar ya
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 1.7, 7.4); pCam.lookAt(0, 0.72, 0);   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  pCam.position.set(0, 1.8, 7.9); pCam.lookAt(0, 0.74, 0);   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -38085,7 +38095,7 @@ function refreshSetup(){
     const tone = (c, t)=>{ const o = c.clone(); if(t > 0) o.lerp(new THREE.Color(0xffffff), t); else o.lerp(new THREE.Color(0x000000), -t); return '#' + o.getHexString(); };
     const pal = [tone(base,.10), tone(base,-.08), tone(base,-.22), tone(base,-.38), tone(base,-.55)];   // tonos hacia OSCURO y bien separados: a plena luz los claros se lavan y los cuadrados no se leen
     const g = new THREE.Group(); g.userData.__peana = true;
-    const W = 2.0, D = 2.0;   // CUADRADA (Toni): el muñeco queda dentro por los cuatro lados
+    const W = 2.5, D = 2.5;   // CUADRADA (Toni) y más ancha (21/08): el muñeco queda dentro por los cuatro lados
     const top = new THREE.Mesh(organicSlabGeo(W, D, 0.26, 0.55, 0.10, 0.08),
       new THREE.MeshStandardMaterial({ map: makeFieldTexture(pal, 1/2.4), roughness:.95, metalness:0 }));   // 16 celdas por 2,4 u → cuadrados de 0,15 u
     top.position.y = -0.34; g.add(top);                                       // cara pisable en y≈0
