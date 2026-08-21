@@ -17003,6 +17003,10 @@ function updatePvpShieldFX(){
     /* el chip no debe tocar el logo (que vive en la vertical del torno) ni los logros la rejilla de ataques */
     #hdUser{ gap:8px; padding:5px 9px 5px 5px; } #hdUTxt{ min-width:126px; } #hdCoins{ font-size:14px; padding:5px 9px; }
     #hdLogMini{ width:248px; }
+    /* logo +30% (Toni 21/08); el chip se estrecha un pelo para no tocarlo */
+    #hdLogo{ width:min(286px,21vw); top:22px; }
+    #hdUTxt{ min-width:110px; } #hdCoins{ padding:4px 8px; } #hdUser{ gap:7px; }
+    #hdUName small{ display:none; }   /* el numero de usuario se ve en la ficha de logros; aqui comia el sitio del logo */
     /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
     #hdRailBox{ top:50%; }   /* centrado exacto (Toni) */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
