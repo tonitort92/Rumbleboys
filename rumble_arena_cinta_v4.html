@@ -16919,6 +16919,43 @@ function updatePvpShieldFX(){
     #hdWNum{ background:none; border:0; box-shadow:none; padding:0 4px; transform:skewX(-4deg); color:#fff;
       -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 14px rgba(0,0,0,.7); font-size:clamp(30px,3.2vw,48px); }
     .hdStop .n{ right:auto; left:-12px; transform:translate(-100%,-50%); }   /* números al lado izquierdo */
+    /* ---- ►CABECERA v2 (Toni 21/08): logo arriba en su línea, chip del jugador debajo alineado a la izquierda,
+       toggle JUGAR ONLINE/OFFLINE debajo, rail con margen y, bajo el rail, la lista de LOGROS por desbloquear
+       (3 a la vez, VER MÁS, con scroll). La columna del héroe se estrecha y se compacta para no pisar el camino. ---- */
+    #hdLogo{ position:absolute; left:28px; top:14px; width:min(220px,16vw); order:initial; margin:0; }
+    #hdUser{ left:28px; top:88px; }
+    #hdMode{ position:absolute; left:28px; top:152px; display:flex; gap:6px; padding:5px; border-radius:14px; z-index:4;
+      background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(6px); box-shadow:0 10px 30px rgba(0,0,0,.45); }
+    .hdModeBtn{ cursor:pointer; font-family:inherit; text-align:left; width:148px; padding:7px 10px; border-radius:10px; border:1px solid transparent;
+      background:none; color:#9fb0d6; transition:background .13s ease, color .13s ease; text-shadow:none; }
+    .hdModeBtn b{ display:block; font-size:12px; font-weight:900; letter-spacing:1.5px; font-style:italic; }
+    .hdModeBtn small{ display:block; font-size:9.5px; line-height:1.3; margin-top:2px; opacity:.85; }
+    .hdModeBtn.on{ background:rgba(255,255,255,.12); color:#fff; border-color:rgba(255,255,255,.22); }
+    .hdModeBtn.on b{ color:#ffd84f; }
+    .hdModeBtn:hover, .hdModeBtn.uinav-focus, .hdModeBtn:focus-visible{ color:#fff; outline:none; background:rgba(255,255,255,.08); }
+    #hdRail{ left:28px; top:auto; bottom:16px; transform:none; align-items:flex-start; flex-direction:column; gap:10px; }
+    #hdRailBox{ flex-direction:row; flex-wrap:wrap; width:230px; box-sizing:border-box; gap:2px; }
+    #hdLogMini{ width:230px; box-sizing:border-box; padding:9px 10px 8px; border-radius:14px; background:rgba(10,14,30,.74); border:1px solid rgba(255,255,255,.14);
+      backdrop-filter:blur(6px); box-shadow:0 12px 36px rgba(0,0,0,.5); text-shadow:none; }
+    #hdLogMini h5{ margin:0 0 6px; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff; display:flex; justify-content:space-between; }
+    #hdLogMini h5 span{ color:#ffd84f; }
+    #hdLogMiniList{ max-height:132px; overflow-y:auto; scrollbar-width:thin; display:flex; flex-direction:column; gap:4px; padding-right:2px; }
+    .hdLm{ display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:9px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }
+    .hdLm .ic{ width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-size:14px; background:rgba(10,14,30,.8); flex:0 0 auto; filter:grayscale(1); opacity:.8; }
+    .hdLm .tx{ flex:1 1 auto; min-width:0; } .hdLm .tx b{ display:block; font-size:10px; letter-spacing:1px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hdLm .tx span{ display:block; font-size:9px; color:#9fb0d6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hdLm .co{ flex:0 0 auto; font-size:10px; font-weight:900; color:#ffd84f; }
+    #hdLogMore{ margin-top:6px; width:100%; cursor:pointer; font-family:inherit; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff;
+      background:none; border:1px dashed rgba(255,255,255,.18); border-radius:8px; padding:5px; }
+    #hdLogMore:hover, #hdLogMore.uinav-focus{ background:rgba(255,255,255,.08); color:#fff; outline:none; }
+    /* la columna del héroe, más a la derecha y compacta */
+    #hdLeft{ top:14px; padding-left:232px !important; padding-right:70px !important; }   /* hueco a la derecha para el camino diagonal */
+    #hdLeft #cpView{ width:min(250px,20vw); }
+    #hdPlay{ max-width:300px; padding:6px 22px 8px; white-space:nowrap; }
+    #hdPlay b{ font-size:clamp(24px,2.6vw,36px); }
+    #hdPlay small{ font-size:9.5px; letter-spacing:2px; }
+    .hdAt{ padding:3px 6px; min-width:56px; font-size:9.5px; }
+    #hdMeta{ font-size:11px; gap:4px 10px; }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -16983,16 +17020,19 @@ function updatePvpShieldFX(){
       +   '<div id="hdULvl"><span id="hdULv"></span><div id="hdXp"><i></i></div><span id="hdUXp"></span></div>'
       + '</div><div id="hdCoins">🪙 <span id="hdCoinN">0</span></div></div>'
       + '<div id="hdToast"></div>'
+      + '<div id="hdMode" role="group" aria-label="Modo de juego">'
+      +   '<button type="button" class="hdModeBtn" data-mode="off"><b>JUGAR OFFLINE</b><small>Tú solo o con CPUs en este PC. Cuenta para trofeos y logros.</small></button>'
+      +   '<button type="button" class="hdModeBtn" data-mode="on"><b>JUGAR ONLINE</b><small>Con amigos por internet: crea o únete a una sala.</small></button>'
+      + '</div>'
       + '<div id="hdRail"><div id="hdRailBox">'
       +   '<button type="button" class="hdRb" data-act="ctl"    data-lbl="CONTROLES"  title="Controles">🎮</button>'
       +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="CÓMO JUGAR BIEN"   title="Cómo jugar bien">🎓</button>'
       +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS Y MEJORAS"    title="Objetos y mejoras">📦</button>'
       +   '<button type="button" class="hdRb sep" data-act="vit" data-lbl="VITRINA DE TROFEOS"   title="Vitrina de trofeos">🏆</button>'
       +   '<button type="button" class="hdRb" data-act="log"    data-lbl="LOGROS"     title="Logros">🏅</button>'
-      +   '<button type="button" class="hdRb sep" data-act="online" data-lbl="MULTIJUGADOR ONLINE" title="Multijugador online">🌐</button>'
       +   '<button type="button" class="hdRb" data-act="opts"   data-lbl="OPCIONES"   title="Opciones">⚙️</button>'
       +   '<button type="button" class="hdRb" data-act="lang"   data-lbl="IDIOMA"     title="Idioma">🈯</button>'
-      + '</div><div id="hdRailLbl">MENÚ</div></div>'
+      + '</div><div id="hdRailLbl">MENÚ</div><div id="hdLogMini"><h5>LOGROS POR DESBLOQUEAR <span id="hdLogMiniCo"></span></h5><div id="hdLogMiniList"></div><button type="button" id="hdLogMore">+ VER MÁS</button></div></div>'
       + '<img id="hdChar" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
       + '<div id="hdRight">'
       +   '<div id="hdFrame"><img id="hdIso" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
@@ -17029,7 +17069,6 @@ function updatePvpShieldFX(){
        izquierda y se enseña. El asistente (paso 3) y CONTROLES siguen llevándoselo y devolviéndolo
        a ese mismo nodo, así que no hay que tocarles nada. */
     /* el LOGO, dentro de la columna del héroe: queda centrado con el torno (Toni 21/08) */
-    { const lg = $('hdLogo'), lf = $('hdLeft'); if(lg && lf) lf.prepend(lg); }
     /* cada icono del rail lleva su nombre completo desplegable al lado */
     r.querySelectorAll('.hdRb').forEach(b => { const e = document.createElement('span'); e.className = 'hdRbLbl'; e.textContent = b.dataset.lbl; b.appendChild(e); });
     const park = $('charPickerHome');
@@ -17048,7 +17087,6 @@ function updatePvpShieldFX(){
       guide:  ()=>{ const t = $('guideLink'); if(t) t.click(); },
       vit:    ()=>{ const t = $('trophyLink'); if(t) t.click(); },
       log:    ()=>{ if(window.__hdLogOpen) window.__hdLogOpen(); },
-      online: ()=>{ const t = $('hsOnline'); if(t) t.click(); },
       opts:   ()=>{ const t = $('hsOpts'); if(t) t.click(); },
       lang:   ()=>{ const t = $('hsLang'); if(t) t.click(); },
     };
@@ -17064,11 +17102,29 @@ function updatePvpShieldFX(){
 
     /* JUGAR = LA CARRERA, siempre desde el eslabón 0: si el fondo se quedó en otro mundo (el que
        estabas mirando, una práctica anterior, F9…), se devuelve al 1 antes de abrir el asistente */
+    /* ►MODO (Toni 21/08): OFFLINE (asistente de siempre) u ONLINE (sala multijugador). Se recuerda en el save. */
+    const modeGet = ()=> (saveGet().playMode === 'on' ? 'on' : 'off');
+    function renderMode(){ const m = modeGet(); r.querySelectorAll('.hdModeBtn').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+      const sm = $('hdPlay') && $('hdPlay').querySelector('small'); if(sm) sm.textContent = 'CARRERA · ' + ruta().length + ' ESLABONES · ' + (m === 'on' ? 'ONLINE' : 'OFFLINE'); }
+    r.querySelectorAll('.hdModeBtn').forEach(b => b.addEventListener('click', ()=>{ saveBump(o => { o.playMode = b.dataset.mode; }); renderMode(); try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){} }));
+    renderMode();
     $('hdPlay').addEventListener('click', ()=>{
       try{ if(typeof MENU_RUTA_I!=='undefined' && MENU_RUTA_I !== 0){ MENU_RUTA_I = 0; mapSelApply(); } }
       catch(e){ console.warn('[carrera] jugar', e); }
-      const b = $('playSoloBtn'); if(b) b.click();
+      const b = $(modeGet() === 'on' ? 'playMultiBtn' : 'playSoloBtn'); if(b) b.click();
     });
+    /* ►LOGROS MINI: los pendientes, de 3 en 3 (VER MÁS) y con scroll; la ficha completa sigue en el rail */
+    let _lmN = 3;
+    $('hdLogMore').addEventListener('click', ()=>{ _lmN += 3; renderLogMini(); });
+    window.__hdRenderLogMini = renderLogMini;
+    function renderLogMini(){
+      const ls = logrosState(), box = $('hdLogMiniList'), more = $('hdLogMore'); if(!box) return;
+      const pend = LOGROS.filter(l => !ls.got[l.id]);
+      $('hdLogMiniCo').textContent = '🪙 ' + ls.coins;
+      box.innerHTML = pend.length ? pend.slice(0, _lmN).map(l => '<div class="hdLm"><div class="ic">' + l.ic + '</div><div class="tx"><b>' + l.t + '</b><span>' + l.d + '</span></div><div class="co">+' + l.co + '</div></div>').join('')
+        : '<div class="hdLm"><div class="tx"><b>¡TODO DESBLOQUEADO!</b></div></div>';
+      if(more) more.style.display = pend.length > _lmN ? '' : 'none';
+    }
     /* ENTRENAR ESTE MUNDO = la única puerta a "elegir mundo": monta ese eslabón (►MAPSEL, que sabe
        de minijuegos) y entra por el camino de ENTRENAR que ya existía (#hsTrain → asistente) */
     $('hdTrain').addEventListener('click', e=>{
@@ -17215,7 +17271,7 @@ function updatePvpShieldFX(){
     const n = stops.length; if(!n) return;
     const H = innerHeight, r = wedge.getBoundingClientRect();
     let lean = 0; { const m = /polygon\(\s*([\d.]+)px/.exec(getComputedStyle(wedge).clipPath || ''); if(m) lean = parseFloat(m[1]); }
-    const PAD = 44, OFF = -40;   // NEGATIVO: las paradas van al lado IZQUIERDO del canto (sobre el cielo), no dentro del cristal (Toni 21/08)
+    const PAD = 44, OFF = -30;   // NEGATIVO: las paradas van al lado IZQUIERDO del canto (sobre el cielo), no dentro del cristal (Toni 21/08)
     const pts = stops.map((st, i)=>{
       const y = H - PAD - (n > 1 ? i/(n-1) : 0) * (H - 2*PAD);
       const x = r.left + lean * (1 - y/H) + OFF;
@@ -17363,6 +17419,7 @@ function updatePvpShieldFX(){
     const st = state();
     if(resetSel || sel < 0) sel = st.next;
     checkLogros(st);
+    try{ if(window.__hdRenderLogMini) window.__hdRenderLogMini(); }catch(e){}
     try{ if(window._cpResize) window._cpResize(); }catch(e){}   // nitidez del torno: cada vez que la home se enseña
     renderPath(st);
     renderChar();
