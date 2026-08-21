@@ -16697,6 +16697,11 @@ function updatePvpShieldFX(){
     #hdLeft .cpTop::before{ display:none; content:''; position:absolute; left:50%; bottom:13%; width:66%; height:8%; transform:translateX(-50%);
       border-radius:50%; z-index:0; border:2px solid var(--hc,#ffd84f); opacity:.75; box-shadow:0 0 18px var(--hc,#ffd84f); }
     #hdLeft #cpDots{ margin-top:2px; }
+    /* flechas ‹ › → chevrones SVG sin caja ni borde (Toni 21/08); solo en la home, el resto de pantallas no cambia */
+    #hdLeft .cpArrow{ border:0; background:none; width:44px; height:64px; color:#9fe8ff; padding:0; display:grid; place-items:center;
+      filter:drop-shadow(0 2px 0 #000) drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+    #hdLeft .cpArrow:hover, #hdLeft .cpArrow.uinav-focus, #hdLeft .cpArrow:focus-visible{ background:none; border:0; color:#fff; transform:scale(1.15); outline:none; }
+    #hdLeft .cpArrow svg{ width:30px; height:42px; display:block; }
     #hdName{ font-size:clamp(24px,2.5vw,34px); font-weight:900; font-style:italic; letter-spacing:2px; line-height:1; margin:0;
       -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
     #hdMeta{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px 14px; font-size:12px; font-weight:900; letter-spacing:1.5px;
@@ -16710,22 +16715,22 @@ function updatePvpShieldFX(){
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
     #hdPlay{ margin-top:4px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
       background:linear-gradient(180deg, color-mix(in srgb, var(--hc) 88%, #fff), color-mix(in srgb, var(--hc) 72%, #000));
-      border:2px solid #2a0d0a; border-radius:18px; padding:7px 40px 9px;   /* DOBLE BORDE (maqueta Gemini): oscuro dentro, oro fuera (box-shadow) */
-      box-shadow:0 0 0 3px #ffd84f, 0 12px 34px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--hc) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.35);
+      border:2px solid #000; border-radius:18px; padding:6px 36px 8px;   /* DOBLE BORDE NEGRO (Toni 21/08): negro dentro y fuera (box-shadow) */
+      box-shadow:0 0 0 3px #000, 0 12px 34px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--hc) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.35);
       transition:transform .13s ease, box-shadow .13s ease, background .25s ease, border-color .25s ease; }
     #hdPlay:hover, #hdPlay.uinav-focus, #hdPlay:focus-visible{ outline:none; transform:scale(1.04);
-      box-shadow:0 0 0 3px #ffd84f, 0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
+      box-shadow:0 0 0 3px #000, 0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
     #hdPlay b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
-      -webkit-text-stroke:1.5px #2a0d0a; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }
-    #hdPlay small{ display:block; margin-top:5px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; opacity:.9; text-shadow:0 1px 0 rgba(0,0,0,.5); }
+      -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 6px rgba(0,0,0,.6); }   /* más outline (Toni 21/08) */
+    #hdPlay small{ display:block; margin-top:4px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; -webkit-text-stroke:1px #000; paint-order:stroke fill; text-shadow:0 1px 0 #000; }
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:900; letter-spacing:3px;
       color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:4px; padding:0; }
     #hdOnline:hover, #hdOnline.uinav-focus{ opacity:1; }
     /* ---- ►ATKGRID (Toni 20/08): los ataques del héroe bajo su nombre; hover → botón + tecla + qué hace.
        El vídeo existe (char_video/) pero AÚN no se enseña: la celda lleva data-vid para enchufarlo. ---- */
-    #hdAtk{ display:grid; grid-template-columns:repeat(5, auto); gap:5px; margin:2px 0 0; }
-    .hdAt{ cursor:default; font-family:inherit; font-size:10.5px; font-weight:900; letter-spacing:1px; color:#e8eefc; text-align:center;
-      padding:4px 8px; border-radius:9px; background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); text-shadow:none;
+    #hdAtk{ display:grid; grid-template-columns:repeat(5, auto); gap:4px; margin:2px 0 0; }
+    .hdAt{ cursor:default; font-family:inherit; font-size:10px; font-weight:900; letter-spacing:1px; color:#e8eefc; text-align:center;
+      padding:4px 7px; border-radius:9px; background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); text-shadow:none;
       display:flex; flex-direction:column; align-items:center; gap:3px; min-width:64px; transition:border-color .13s ease, background .13s ease; }
     .hdAt.com{ color:#9fb0d6; }
     .hdAt i{ font-style:normal; font-size:9px; font-weight:900; letter-spacing:1.5px; padding:1px 6px; border-radius:999px; color:#0b0f20; background:var(--pc,#9fe8ff); }
@@ -16916,7 +16921,7 @@ function updatePvpShieldFX(){
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdName"></div>'
       +   '<div id="hdRole"></div>'
-      +   '<div id="hdAtk" aria-label="Ataques" style="display:none"></div>'   /* la rejilla se RETIRA de la columna (el rail abre ATAQUES); renderAtk sigue, desactivado */
+      +   '<div id="hdAtk" aria-label="Ataques"></div>'   /* los CONTROLES del héroe, bajo su nombre (Toni 21/08): mismas tablas que los diagramas (CTL_MAP + CLASS_MOVES) */
       +   '<div id="hdMeta"></div>'
       +   '<div id="hdAtkTip"></div>'
       +   '<button type="button" id="hdOnline" style="display:none">ONLINE</button>'   /* ONLINE vive ahora en el RAIL */
@@ -16929,7 +16934,6 @@ function updatePvpShieldFX(){
       + '<div id="hdToast"></div>'
       + '<div id="hdRail"><div id="hdRailBox">'
       +   '<button type="button" class="hdRb" data-act="ctl"    data-lbl="CONTROLES"  title="Controles">🎮</button>'
-      +   '<button type="button" class="hdRb" data-act="atk"    data-lbl="ATAQUES"    title="Ataques">⚔️</button>'
       +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="TUTORIAL"   title="Cómo jugar bien">🎓</button>'
       +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS"    title="Objetos y mejoras">📦</button>'
       +   '<button type="button" class="hdRb sep" data-act="vit" data-lbl="VITRINA"   title="Vitrina de trofeos">🏆</button>'
@@ -16974,6 +16978,9 @@ function updatePvpShieldFX(){
        a ese mismo nodo, así que no hay que tocarles nada. */
     const park = $('charPickerHome');
     if(park){ $('hdCharHost').appendChild(park); park.style.display = ''; }
+    /* los ‹ › de texto pasan a chevrones SVG (los listeners cuelgan del botón, no del texto) */
+    { const chev = dir => '<svg viewBox="0 0 24 36" aria-hidden="true"><polyline points="' + (dir < 0 ? '17,4 7,18 17,32' : '7,4 17,18 7,32') + '" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const p = $('cpPrev'), n = $('cpNext'); if(p) p.innerHTML = chev(-1); if(n) n.innerHTML = chev(1); }
     /* el torno a la medida real del canvas (nitidez) — ahora y en cada resize */
     const fitCp = ()=>{ try{ if(window._cpResize) window._cpResize(); }catch(e){} };
     fitCp(); setTimeout(fitCp, 300); window.addEventListener('resize', fitCp);
@@ -16981,7 +16988,6 @@ function updatePvpShieldFX(){
     /* ►RAIL: cada icono pulsa lo que ya existía */
     const RAIL_ACT = {
       ctl:    ()=>{ const t = $('hsCtl'); if(t) t.click(); },
-      atk:    ()=>{ if(window._cpAtk && _cpAtk.open) _cpAtk.open(); },
       tuto:   ()=>{ const t = $('howToLink'); if(t) t.click(); },
       guide:  ()=>{ const t = $('guideLink'); if(t) t.click(); },
       vit:    ()=>{ const t = $('trophyLink'); if(t) t.click(); },
@@ -17052,7 +17058,7 @@ function updatePvpShieldFX(){
     const top = document.querySelector('#hdLeft .cpTop'); if(top) top.style.setProperty('--hc', col);
     const pb = $('hdPlay'); if(pb) pb.style.setProperty('--hc', col);
     { const ro = $('hdRole'); if(ro) ro.textContent = (window._cpAtk && _cpAtk.role) ? _cpAtk.role(k) : ''; }   // HERO CLASS real (CP_TEXT)
-    // renderAtk(k, col);   // ►RAIL: la rejilla de ataques se retiró de la columna (el rail abre el slideshow)
+    renderAtk(k, col);   // los controles del héroe bajo su nombre (tecla + nombre de CTL_MAP/CLASS_MOVES, como los diagramas)
     /* la línea de progreso. ⚠ El save es GLOBAL (no por personaje): trofeos, mejor carrera y marcas
        son los mismos para los 6 héroes. Cuando el save guarde por clase, esta línea es la que cambia. */
     const st = state(), s = saveGet();
@@ -38130,7 +38136,7 @@ function refreshSetup(){
     const sc = new THREE.Vector3();
     list.forEach(o=>{
       o.getWorldScale(sc); const t = T / Math.max(1e-6, (Math.abs(sc.x)+Math.abs(sc.y)+Math.abs(sc.z))/3);
-      const mat = new THREE.MeshBasicMaterial({ color:0x14102b, side:THREE.BackSide, skinning: !!o.isSkinnedMesh,
+      const mat = new THREE.MeshBasicMaterial({ color:0x000000, side:THREE.BackSide, skinning: !!o.isSkinnedMesh,   /* NEGRO (Toni 21/08) */
         morphTargets: !!(o.morphTargetInfluences && o.morphTargetInfluences.length) });
       mat.toneMapped = false;
       /* r128: `skinMatrix` solo existe en skinnormal_vertex (y MeshBasic no lo incluye); la normal
