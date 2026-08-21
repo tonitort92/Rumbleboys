@@ -16975,6 +16975,36 @@ function updatePvpShieldFX(){
     #hdLogMiniList{ max-height:clamp(120px, 17vh, 156px); flex:0 1 auto; min-height:0; }   /* 4 filas: cabe bajo el rail centrado sin tocarlo */
     #hdMeta{ display:none; }   /* (Toni 21/08) sin contador de trofeos bajo el personaje */
     #hdLogMore{ flex:0 0 auto; }
+    /* ---- ►LEGIBILIDAD (Toni 21/08): nodos del camino más grandes con borde de los colores RUMBLEBOYS alternados y
+       números grandes blancos con outline negro; tipos más grandes en chip, toggle y logros. ---- */
+    .hdNode{ width:50px; height:50px; font-size:17px; border-width:3px; }
+    .hdNode.mini{ width:32px; height:32px; font-size:12px; border-width:2.5px; }
+    .hdNode.lock{ border-style:solid; border-color:var(--nc); opacity:.92; }
+    .hdStop .n{ left:-16px; font-size:15px; font-weight:900; color:#fff; -webkit-text-stroke:1.4px #000; paint-order:stroke fill; text-shadow:0 2px 0 #000; letter-spacing:0; }
+    .hdNode .mk{ right:-10px; top:-10px; min-width:22px; height:22px; font-size:11px; line-height:19px; }
+    /* chip del jugador */
+    #hdUName{ font-size:14px; } #hdUName small{ font-size:12px; }
+    #hdULvl{ font-size:12.5px; } #hdUXp{ font-size:12px; }
+    #hdCoins{ font-size:15px; padding:6px 12px; }
+    #hdAva{ width:48px; height:48px; font-size:24px; }
+    /* toggle */
+    .hdModeBtn{ width:176px; padding:8px 11px; }
+    .hdModeBtn b{ font-size:14px; } .hdModeBtn small{ font-size:11.5px; line-height:1.3; }
+    #hdMode{ top:104px; }
+    /* logros */
+    #hdLogMini{ width:262px; }
+    #hdLogMini h5{ font-size:12px; }
+    .hdLm{ padding:6px 8px; gap:9px; } .hdLm .ic{ width:30px; height:30px; font-size:16px; }
+    .hdLm .tx b{ font-size:12.5px; } .hdLm .tx span{ font-size:11px; } .hdLm .co{ font-size:12.5px; }
+    #hdLogMore{ font-size:12px; padding:6px; }
+    #hdLogMiniList{ max-height:clamp(110px, 16vh, 148px); }   /* 3-4 filas: no toca el rail centrado */
+    #hdPlay{ max-width:282px; }   /* un pelo mas estrecho: los nodos grandes se acercan */
+    #hdPlay small{ font-size:9px; letter-spacing:1.2px; }   /* el subtitulo (nowrap) es lo que fija el ancho minimo */
+    /* el chip no debe tocar el logo (que vive en la vertical del torno) ni los logros la rejilla de ataques */
+    #hdUser{ gap:8px; padding:5px 9px 5px 5px; } #hdUTxt{ min-width:126px; } #hdCoins{ font-size:14px; padding:5px 9px; }
+    #hdLogMini{ width:248px; }
+    /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
+    #hdRailBox{ top:50%; }   /* centrado exacto (Toni) */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -17256,6 +17286,7 @@ function updatePvpShieldFX(){
   const LORE_LOCK = 'Nadie ha vuelto para contarlo. Gana los eslabones anteriores y sabrás qué duerme aquí.';
 
   /* el camino: SIN nombres (Toni) — solo número, icono y marca. Los minijuegos son nodos pequeños. */
+  const RB_COLS = ['#ff3b30','#ff9a2e','#ffd84f','#3ad06a','#5ec8ff','#b45cff'];   // la paleta del logo, alternada nodo a nodo
   function renderPath(st){
     const box = $('hdPathIn'); if(!box) return;
     let h = '';
@@ -17270,7 +17301,7 @@ function updatePvpShieldFX(){
       if(st.mini[i]){ cls = 'mini' + (passed ? ' done' : (st.disc[i] ? '' : ' lock')); ico = st.disc[i] ? '✦' : '🔒'; }
       else { cls = st.won[i] ? 'done' : (i === st.next ? 'next' : (st.disc[i] ? '' : 'lock'));
              ico = st.won[i] ? '🏆' : (i === st.next ? '★' : (st.disc[i] ? String(i+1) : '🔒')); }
-      h += '<span class="hdStop"><button type="button" class="hdNode ' + cls + (i===sel ? ' sel' : '') + '" data-i="' + i + '" style="--nc:' + (st.disc[i] ? col : '#5b647a') + '"'
+      h += '<span class="hdStop"><button type="button" class="hdNode ' + cls + (i===sel ? ' sel' : '') + '" data-i="' + i + '" style="--nc:' + RB_COLS[i % RB_COLS.length] + '"'
          +   ' aria-label="' + (i+1) + ' · ' + linkName(e) + '">'
          +   '<span>' + ico + '</span>'
          +   (st.won[i] && m ? '<span class="mk" style="color:' + gradeColorOf(m.g) + '">' + m.g + '</span>' : '')
