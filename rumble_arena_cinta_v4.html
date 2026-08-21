@@ -16971,8 +16971,9 @@ function updatePvpShieldFX(){
        lo que queda entre el rail y el margen inferior (con 22px de hueco), con scroll. #hdRail deja de apilar. ---- */
     #hdRail{ position:static; display:contents; }
     #hdRailBox{ position:absolute; left:var(--hdML); top:50%; transform:translateY(-50%); z-index:4; }
-    #hdLogMini{ position:absolute; left:var(--hdML); bottom:var(--hdMB); top:calc(50% + 158px + 22px); z-index:4; display:flex; flex-direction:column; }
-    #hdLogMiniList{ max-height:none; flex:1 1 auto; min-height:0; }
+    #hdLogMini{ position:absolute; left:var(--hdML); bottom:var(--hdMB); top:auto; z-index:4; display:flex; flex-direction:column; }   /* INDEPENDIENTE del rail: abajo a la izquierda, con su propia altura */
+    #hdLogMiniList{ max-height:clamp(120px, 17vh, 156px); flex:0 1 auto; min-height:0; }   /* 4 filas: cabe bajo el rail centrado sin tocarlo */
+    #hdMeta{ display:none; }   /* (Toni 21/08) sin contador de trofeos bajo el personaje */
     #hdLogMore{ flex:0 0 auto; }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
