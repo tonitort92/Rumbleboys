@@ -17007,6 +17007,13 @@ function updatePvpShieldFX(){
     #hdLogo{ width:min(286px,21vw); top:22px; }
     #hdUTxt{ min-width:110px; } #hdCoins{ padding:4px 8px; } #hdUser{ gap:7px; }
     #hdUName small{ display:none; }   /* el numero de usuario se ve en la ficha de logros; aqui comia el sitio del logo */
+    /* ►RESPIRO (Toni 21/08): mas margen izquierdo, superior e inferior en el lado izquierdo */
+    #startOverlay{ --hdML:56px; --hdMB:44px; }
+    #hdUser{ top:44px; } #hdMode{ top:118px; } #hdLogo{ top:30px; }
+    #hdUTxt{ min-width:96px; } #hdCoins{ padding:4px 7px; }
+    #hdLogMini{ width:236px; }
+    #hdUXp{ display:none; }   /* la barra basta; los numeros de XP comian el sitio del logo */
+    #hdLogMiniList{ max-height:clamp(96px, 13vh, 120px); }   /* 3 filas: aire entre rail y logros con el margen inferior mayor */
     /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
     #hdRailBox{ top:50%; }   /* centrado exacto (Toni) */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
