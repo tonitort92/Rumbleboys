@@ -38152,6 +38152,7 @@ function refreshSetup(){
       o.add(h);
     });
   }
+  window._addInk = addInk;   // la PORTADA (►HOGUERA) la usa para losa, mini-losas, decorado y corro
   function showPuppet(k){
     disposeCur();
     /* si el MODELO 3D de la clase ya cargó (DEBUG_MODEL), muestra el modelo real (animado en el samurái)
@@ -39362,6 +39363,13 @@ const titleCampfire = (function(){
      decenas: con el material compartido, three recompila el shader en CADA frame, alternando entre
      las dos escenas — justo el problema que persigue ►LUZCONSTANTE. Por eso todo lo que se trae
      del juego (hoguera, piedras, decorado, losa) pasa por aquí. */
+  /* ►TINTA DE PORTADA (Toni 21/08: "le falta el outline como el del juego"): el mismo casco
+     invertido del torno (window._addInk, en charPicker) sobre TODO lo que cuelga de la escena —
+     losa, mini-losas, decorado y los seis del corro (también animados) —, en negro. El fuego y las
+     sombras de contacto (blob) quedan fuera a propósito: no tienen silueta que entintar. Grosor en
+     unidades de mundo; la losa mide ~9 u. ►►► AJUSTA INK_T ◄◄◄ */
+  const INK_T = 0.04;
+  function tinta(o){ try{ if(o && window._addInk){ if(root) root.updateMatrixWorld(true); window._addInk(o, INK_T); } }catch(e){ console.warn('[portada] tinta', e); } return o; }
   const NIGHT = 0.64;          // los verdes y arenas de S1 están pintados para el MEDIODÍA
   function own(root, dim){
     const seen = new Map();
@@ -39465,7 +39473,7 @@ const titleCampfire = (function(){
       m.rotation.y = Math.random()*Math.PI*2;
       m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
       if(r > 0.28){ const sh = blob(Math.min(r*1.05, 0.9), 0.3); sh.position.set(x, 0.012, z); root.add(sh); }   // v17
-      root.add(own(m));
+      { const _m = own(m); root.add(_m); tinta(_m); }
     }
   }
   /* v17: SOMBRAS DE CONTACTO — disco radial oscuro bajo personajes y props de la losa
@@ -39660,9 +39668,9 @@ const titleCampfire = (function(){
        que los colores de cada mundo se aprecien; cálida-neutra para no matar la noche */
     const front = new THREE.DirectionalLight(0xffe4c8, 0.55); front.position.set(2, 6, 12); sc.add(front);
     light = new THREE.PointLight(0xff8a2e, lightBase, 12.5, 1.8); light.position.set(0, 0.9, 0); root.add(light);
-    root.add(island());
+    root.add(island()); tinta(root.children[root.children.length-1]);   // ►TINTA
     dress();
-    root.add(satIslands());   // ►MINI-LOSAS: los mundos, en plataformas pequeñas repartidas por el cielo
+    root.add(satIslands()); tinta(root.children[root.children.length-1]);   // ►TINTA   // ►MINI-LOSAS: los mundos, en plataformas pequeñas repartidas por el cielo
     /* la HOGUERA es el modelo campfire del stage 1 (DECOR_DEFS), el mismo que quema al tocarlo */
     try{
       fire = (typeof getModel==='function') ? getModel('campfire', DECOR_DEFS) : null;
@@ -39710,7 +39718,7 @@ const titleCampfire = (function(){
     /* mirar AL FUEGO: el rig mira a +Z, así que basta orientar +Z hacia el centro. Con el corro
        elíptico no vale el ángulo del asiento — hay que usar la dirección real al centro. */
     model.rotation.y = Math.atan2(-x, -z) + (typeof CHAR_YAW!=='undefined' ? CHAR_YAW : 0) + (fit.yaw||0);
-    root.add(model);
+    root.add(model); tinta(model);   // ►TINTA: el casco comparte esqueleto y sigue el clip 'sit'
     { const sh = blob(0.62, 0.34); sh.position.set(x, 0.015, z); root.add(sh); }   // v17: sombra de contacto
     s.model = model;
     const anims = tpl.animations || [];
@@ -39787,7 +39795,7 @@ const titleCampfire = (function(){
     m.position.set(hips.x*(1+out/d), (hips.y - 0.09) - hh*f, hips.z*(1+out/d));
     m.rotation.y = Math.random()*Math.PI*2;
     m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
-    root.add(own(m));
+    { const _m = own(m); root.add(_m); tinta(_m); }
   }
   function fill(){                                   // pobla los sitios que ya tengan su GLB listo
     for(const s of seats) if(!s.model && seat(s)) missing--;
