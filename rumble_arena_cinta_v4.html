@@ -16922,7 +16922,7 @@ function updatePvpShieldFX(){
     /* ---- ►CABECERA v2 (Toni 21/08): logo arriba en su línea, chip del jugador debajo alineado a la izquierda,
        toggle JUGAR ONLINE/OFFLINE debajo, rail con margen y, bajo el rail, la lista de LOGROS por desbloquear
        (3 a la vez, VER MÁS, con scroll). La columna del héroe se estrecha y se compacta para no pisar el camino. ---- */
-    #hdLogo{ position:absolute; left:28px; top:14px; width:min(220px,16vw); order:initial; margin:0; }
+    #hdLogo{ position:absolute; left:calc((100% - var(--wsW) + var(--wsLean) / 2) / 2); transform:translateX(-50%); top:12px; width:min(240px,17vw); order:initial; margin:0; }   /* centrado en la SECCION izquierda (hasta la diagonal) */
     #hdUser{ left:28px; top:88px; }
     #hdMode{ position:absolute; left:28px; top:152px; display:flex; gap:6px; padding:5px; border-radius:14px; z-index:4;
       background:rgba(10,14,30,.62); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(6px); box-shadow:0 10px 30px rgba(0,0,0,.45); }
@@ -16934,7 +16934,7 @@ function updatePvpShieldFX(){
     .hdModeBtn.on b{ color:#ffd84f; }
     .hdModeBtn:hover, .hdModeBtn.uinav-focus, .hdModeBtn:focus-visible{ color:#fff; outline:none; background:rgba(255,255,255,.08); }
     #hdRail{ left:28px; top:auto; bottom:16px; transform:none; align-items:flex-start; flex-direction:column; gap:10px; }
-    #hdRailBox{ flex-direction:row; flex-wrap:wrap; width:230px; box-sizing:border-box; gap:2px; }
+    #hdRailBox{ flex-direction:column; width:auto; gap:3px; }   /* lista VERTICAL, como antes (Toni 21/08) */
     #hdLogMini{ width:230px; box-sizing:border-box; padding:9px 10px 8px; border-radius:14px; background:rgba(10,14,30,.74); border:1px solid rgba(255,255,255,.14);
       backdrop-filter:blur(6px); box-shadow:0 12px 36px rgba(0,0,0,.5); text-shadow:none; }
     #hdLogMini h5{ margin:0 0 6px; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff; display:flex; justify-content:space-between; }
