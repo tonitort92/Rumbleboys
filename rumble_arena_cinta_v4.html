@@ -16689,7 +16689,7 @@ function updatePvpShieldFX(){
     #hdLeft #cpInfo, #hdLeft #cpPC, #hdLeft #cpAtkBtn, #hdLeft #cpDiag{ display:none !important; }
     #hdLeft #cpView{ width:min(284px,23vw); height:auto; aspect-ratio:344/460; background:none; border:0; position:relative; z-index:1;   /* +20% (Toni 21/08) */
       /* OUTLINE de tinta (como el ►INK del juego) sobre el canvas transparente: 4 sombras duras de 2px + la sombra al suelo */
-      filter:drop-shadow(2px 0 0 #14102b) drop-shadow(-2px 0 0 #14102b) drop-shadow(0 2px 0 #14102b) drop-shadow(0 -2px 0 #14102b) drop-shadow(0 18px 18px rgba(0,0,0,.55)); }
+      filter:drop-shadow(0 18px 18px rgba(0,0,0,.55)); }   /* el outline va en 3D (►TINTA DEL TORNO, en charPicker) */
     /* LA PLATAFORMA bajo el personaje: un disco con el color del héroe (--hc) */
     #hdLeft .cpTop::after{ display:none; content:''; position:absolute; left:50%; bottom:12%; width:78%; height:11%; transform:translateX(-50%);
       border-radius:50%; z-index:0; background:radial-gradient(ellipse at 50% 40%, var(--hc,#ffd84f) 0%, rgba(0,0,0,0) 72%);
@@ -38118,6 +38118,34 @@ function refreshSetup(){
     g.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = false; o.frustumCulled = false; } });
     return (_peanas[k] = g);
   }
+  /* ►TINTA DEL TORNO (Toni 21/08: "no percibo el outline"): contorno de verdad, en 3D — el casco
+     invertido de siempre (backfaces del mismo mallado, infladas a lo largo de la normal y pintadas
+     del oscuro de la casa), como el de los planetas de ►ESFERAS pero GENÉRICO: vale para mallas
+     rígidas y con ESQUELETO (el casco es un SkinnedMesh hermano que comparte skeleton y sigue el
+     idle). El inflado va en el shader (después de skinning_vertex, con la normal ya deformada) y
+     en unidades de MUNDO: se divide por la escala de cada malla. Se cuelga como HIJO del original
+     → hereda transform y se va con él. */
+  function addInk(rootObj, T){
+    const list = []; rootObj.traverse(o=>{ if(o.isMesh && o.geometry && !o.userData.__ink && !o.userData.__inkDone) list.push(o); });
+    const sc = new THREE.Vector3();
+    list.forEach(o=>{
+      o.getWorldScale(sc); const t = T / Math.max(1e-6, (Math.abs(sc.x)+Math.abs(sc.y)+Math.abs(sc.z))/3);
+      const mat = new THREE.MeshBasicMaterial({ color:0x14102b, side:THREE.BackSide, skinning: !!o.isSkinnedMesh,
+        morphTargets: !!(o.morphTargetInfluences && o.morphTargetInfluences.length) });
+      mat.toneMapped = false;
+      /* r128: `skinMatrix` solo existe en skinnormal_vertex (y MeshBasic no lo incluye); la normal
+         deformada se rehace con boneMatX..W de skinbase_vertex, que sí están. */
+      mat.onBeforeCompile = sh => {
+        sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>',
+          '#include <skinning_vertex>\n vec3 inkN = vec3(normal);\n #ifdef USE_SKINNING\n mat4 inkSkin = mat4(0.0); inkSkin += skinWeight.x * boneMatX; inkSkin += skinWeight.y * boneMatY; inkSkin += skinWeight.z * boneMatZ; inkSkin += skinWeight.w * boneMatW; inkSkin = bindMatrixInverse * inkSkin * bindMatrix;\n inkN = (inkSkin * vec4(inkN, 0.0)).xyz;\n #endif\n transformed += normalize(inkN) * ' + t.toFixed(6) + ';');
+      };
+      const h = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, mat) : new THREE.Mesh(o.geometry, mat);
+      if(o.isSkinnedMesh){ h.bind(o.skeleton, o.bindMatrix); h.bindMode = o.bindMode; }
+      h.userData.__ink = true; h.frustumCulled = false; h.castShadow = h.receiveShadow = false; h.renderOrder = -1;
+      o.userData.__inkDone = true;
+      o.add(h);
+    });
+  }
   function showPuppet(k){
     disposeCur();
     /* si el MODELO 3D de la clase ya cargó (DEBUG_MODEL), muestra el modelo real (animado en el samurái)
@@ -38181,7 +38209,8 @@ function refreshSetup(){
         if(!bb.isEmpty()){ const c = new THREE.Vector3(); bb.getCenter(c); model.position.x -= c.x; model.position.z -= c.z; model.position.y -= bb.min.y; }
       }catch(e){ console.warn('[preview] centrado posado', e); }
       piv.updateMatrixWorld(true);
-      root.add(piv); try{ root.add(heroSlab(k)); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
+      try{ addInk(piv, 0.045); }catch(e){ console.warn('[preview] tinta', e); }   // ►TINTA: contorno del héroe (y su arma)
+      root.add(piv); try{ const sl = heroSlab(k); root.updateMatrixWorld(true); if(!sl.userData.__inkDone){ addInk(sl, 0.04); sl.userData.__inkDone = true; } root.add(sl); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
       cur = { root, _sharedGeo:true };
       return;
     }
