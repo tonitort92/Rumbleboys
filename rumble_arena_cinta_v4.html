@@ -16949,7 +16949,7 @@ function updatePvpShieldFX(){
       background:none; border:1px dashed rgba(255,255,255,.18); border-radius:8px; padding:5px; }
     #hdLogMore:hover, #hdLogMore.uinav-focus{ background:rgba(255,255,255,.08); color:#fff; outline:none; }
     /* la columna del héroe, más a la derecha y compacta */
-    #hdLeft{ top:14px; padding-left:232px !important; padding-right:70px !important; }   /* hueco a la derecha para el camino diagonal */
+    #hdLeft{ top:14px; padding-left:244px !important; padding-right:62px !important; }   /* hueco a la derecha para el camino diagonal */
     #hdLeft #cpView{ width:min(250px,20vw); }
     #hdPlay{ max-width:300px; padding:6px 22px 8px; white-space:nowrap; }
     #hdPlay b{ font-size:clamp(24px,2.6vw,36px); }
@@ -16966,7 +16966,7 @@ function updatePvpShieldFX(){
     #hdLogMiniList{ max-height:clamp(140px, 28vh, 240px); }
     #hdLeft{ top:100px; }   /* la columna empieza bajo el logo */
     /* el logo ARRIBA, en la misma vertical que el torno: centro del contenido de la columna = padding-left + (ancho - paddings)/2 */
-    #hdLogo{ position:absolute; top:26px; left:calc(232px + (100% - var(--wsW) + var(--wsLean) * .5 - 302px) / 2); transform:translateX(-50%); width:min(220px,16vw); margin:0; }
+    #hdLogo{ position:absolute; top:26px; left:calc(244px + (100% - var(--wsW) + var(--wsLean) * .5 - 306px) / 2); transform:translateX(-50%); width:min(220px,16vw); margin:0; }
     /* ---- ►RAIL CENTRADO (Toni 21/08, insiste): el menú izquierdo va centrado en VERTICAL; la caja de logros ocupa
        lo que queda entre el rail y el margen inferior (con 22px de hueco), con scroll. #hdRail deja de apilar. ---- */
     #hdRail{ position:static; display:contents; }
@@ -17016,6 +17016,12 @@ function updatePvpShieldFX(){
     #hdLogMiniList{ max-height:clamp(96px, 13vh, 120px); }   /* 3 filas: aire entre rail y logros con el margen inferior mayor */
     /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
     #hdRailBox{ top:50%; }   /* centrado exacto (Toni) */
+    /* ---- aire vertical en la columna del héroe (Toni 21/08) ---- */
+    #hdLeft #cpDots{ margin:10px 0 12px; }
+    #hdRole{ margin:2px 0 12px; }
+    #hdAtk{ margin:0 0 14px; grid-template-columns:repeat(5, 62px); }
+    .hdAt{ min-width:0; max-width:62px; box-sizing:border-box; }
+    .hdAt .nm{ display:block; max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }   /* nombres largos (Orbe energia) se recortan con puntos; el tooltip los da enteros */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -17255,7 +17261,7 @@ function updatePvpShieldFX(){
     box.innerHTML = api.slides.map((c, j) => {
       const inf = api.info(k, c), com = CLASS_SLOTS.indexOf(c.slot) < 0;
       return '<button type="button" class="hdAt' + (com ? ' com' : '') + '" data-j="' + j + '" data-vid="' + (api.src(k, c.slot) || '') + '" style="--pc:' + (PAD_COL[c.pad] || '#c9d3ee') + '">'
-        + '<i>' + c.pad + '</i>' + inf.nm + '</button>';
+        + '<i>' + c.pad + '</i><span class="nm">' + inf.nm + '</span></button>';
     }).join('');
     const tip = $('hdAtkTip'); if(!tip) return;
     tip.style.setProperty('--hc', col);
@@ -38292,7 +38298,7 @@ function refreshSetup(){
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 1.8, 7.9); pCam.lookAt(0, 0.74, 0);   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  pCam.position.set(0, 2.5, 9.9); pCam.lookAt(0, 1.0, -0.9);   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -38371,13 +38377,25 @@ function refreshSetup(){
     });
   }
   window._addInk = addInk;   // la PORTADA (►HOGUERA) la usa para losa, mini-losas, decorado y corro
-  function showPuppet(k){
-    disposeCur();
+  /* ►CORRO (Toni 21/08): los SEIS héroes a la vez, cada uno sobre su peana, repartidos en un CÍRCULO
+     de radio RING_R cuyo centro queda detrás del punto de encuadre. El elegido está delante (en el
+     origen, donde mira la cámara) y los demás se ven detrás, en perspectiva, mirando hacia fuera. Las
+     flechas no cambian de modelo: GIRAN el círculo (easing en el bucle) hasta traer al siguiente. Cada
+     hueco se construye UNA vez (al llegar su GLB, _cpOnModelLoaded) con la receta de siempre: pivote,
+     centrado posado, arma, tinta y peana. */
+  const RING_R = 4.4;   // radio amplio: los vecinos asoman por los lados, no invaden al elegido
+  let ring = null, ringTarget = 0; const slots = {}, pMixers = [];
+  const ringAngle = i => i * Math.PI * 2 / CLASS_PICK.length;
+  function ensureRing(){ if(ring) return; ring = new THREE.Group(); ring.position.set(0, 0, -RING_R); pScene.add(ring); cur = { root: ring, _sharedGeo:true }; }
+  function buildSlot(k){
+    if(slots[k]) return slots[k];
     /* si el MODELO 3D de la clase ya cargó (DEBUG_MODEL), muestra el modelo real (animado en el samurái)
        en vez del muñeco de cajas; si aún no cargó, cae al muñeco de abajo */
     const tpl = (DEBUG_MODEL && _charTpls && _charTpls[k]) ? _charTpls[k] : null;
     if(tpl){
-      const root = new THREE.Group();
+      const i0 = Math.max(0, CLASS_PICK.findIndex(c=>c[0]===k)), a0 = ringAngle(i0);
+      const root = new THREE.Group();   // el HUECO del corro: en su punto del círculo, mirando hacia fuera
+      root.position.set(Math.sin(a0)*RING_R, 0, Math.cos(a0)*RING_R); root.rotation.y = a0; root.userData.base = a0;
       const model = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(tpl.scene) : tpl.scene;
       const fit = CHAR_FITS[k] || {};
       model.updateMatrixWorld(true);
@@ -38405,7 +38423,7 @@ function refreshSetup(){
         }
       } });
       if(tpl.animations && tpl.animations.length){       // samurái: reproduce idle girando
-        pMixer = new THREE.AnimationMixer(model);
+        pMixer = new THREE.AnimationMixer(model); pMixers.push(pMixer);   // ►CORRO: todos los mixers animan a la vez
         const idle = tpl.animations.find(a=>a.name==='idle') || tpl.animations[0];
         if(idle) pMixer.clipAction(idle).play();
         pMixer.update(0); model.updateMatrixWorld(true);   // posa el idle ANTES de colgar armas → la alineación al frente mide el hueso en su pose real
@@ -38435,15 +38453,15 @@ function refreshSetup(){
       }catch(e){ console.warn('[preview] centrado posado', e); }
       piv.updateMatrixWorld(true);
       try{ addInk(piv, 0.045); }catch(e){ console.warn('[preview] tinta', e); }   // ►TINTA: contorno del héroe (y su arma)
-      root.add(piv); try{ const sl = heroSlab(k); root.updateMatrixWorld(true); if(!sl.userData.__inkDone){ addInk(sl, 0.04); sl.userData.__inkDone = true; } root.add(sl); }catch(e){ console.warn('[preview] peana falló', e); } pScene.add(root);   // ►PEANA
-      cur = { root, _sharedGeo:true };
-      return;
+      root.add(piv); try{ const sl = heroSlab(k); root.updateMatrixWorld(true); if(!sl.userData.__inkDone){ addInk(sl, 0.04); sl.userData.__inkDone = true; } root.add(sl); }catch(e){ console.warn('[preview] peana falló', e); }   // ►PEANA
+      ring.add(root); slots[k] = root;
+      return root;
     }
     /* ►SINBLOQUES (1/08): si el GLB de la clase AÚN no ha parseado, NO enseñar el muñeco de cajas
        viejo (Toni: "sale un modelo feo de bloques y luego el real, se ve muy raro"). Canvas vacío
        un instante: _cpOnModelLoaded re-llama a showPuppet en cuanto la plantilla llega. El fallback
        de cajas se conserva solo si el sistema GLB entero está apagado (DEBUG_MODEL=false). */
-    if(DEBUG_MODEL && window.CHAR_MODELS_B64 && window.CHAR_MODELS_B64[k]){ cur = null; return; }
+    return null;   // ►CORRO: sin GLB todavía, el hueco espera a _cpOnModelLoaded (el muñeco de cajas de abajo queda sin uso)
     const gfx = buildFighter(CLASS_COLOR[k] || 0xffffff);   // OJO: buildFighter hace scene.add(root)
     scene.remove(gfx.root);                                  // lo sacamos de la escena principal del juego
     applySkin({ gfx, _charKey:k, groundRing:null, locator:null, ult:false });
@@ -38462,6 +38480,12 @@ function refreshSetup(){
     gfx.root.position.y = -box2.min.y;                       // pies al suelo del encuadre
     pScene.add(gfx.root);
     cur = gfx;
+  }
+
+  function showPuppet(k){
+    ensureRing();
+    CLASS_PICK.forEach(c=>{ try{ buildSlot(c[0]); }catch(e){ console.warn('[corro]', c[0], e); } });
+    ringTarget = -ringAngle(Math.max(0, CLASS_PICK.findIndex(c=>c[0]===k)));   // el elegido, delante
   }
 
   /* --- carrusel --- */
@@ -39028,7 +39052,7 @@ function refreshSetup(){
   };
   /* el loader avisa cuando un modelo GLB acaba de cargar → si el preview muestra esa clase, lo cambia
      del muñeco de cajas al modelo real (evita que se quede la caja si abriste el menú antes de cargar) */
-  window._cpOnModelLoaded = function(k){ if(MATCH.cls===k){ try { showPuppet(k); } catch(e){} } };
+  window._cpOnModelLoaded = function(k){ try { showPuppet(MATCH.cls); } catch(e){} };   // ►CORRO: cada GLB que llega ocupa su hueco
   document.getElementById('cpPrev').addEventListener('click', ()=> select(idx-1));
   document.getElementById('cpNext').addEventListener('click', ()=> select(idx+1));
   select(idx);
@@ -39055,8 +39079,8 @@ function refreshSetup(){
        la velocidad de giro exacta. */
     if(_cpAcc < 1/30) return;
     const dt = Math.min(.05, _cpAcc); _cpAcc = 0;
-    if(pMixer) pMixer.update(dt);          // anima el preview (idle del rig)
-    if(cur) cur.root.rotation.y += dt*0.7; // ►CHARUI: giro suave en reposo. La demo procedural del dock murió: los ataques se ven en VÍDEO REAL en el popover del diagrama
+    for(const m of pMixers) m.update(dt);   // ►CORRO: los seis animan su idle
+    if(ring){ let d = ringTarget - ring.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ring.rotation.y += d * Math.min(1, dt*5); }   // ►CORRO: el círculo gira (camino corto) hasta poner delante al elegido
     pr.render(pScene, pCam);
   })(last);
 })();
