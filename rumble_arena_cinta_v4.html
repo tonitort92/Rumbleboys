@@ -16878,7 +16878,7 @@ function updatePvpShieldFX(){
     #hdLore{ order:2; max-width:min(440px,30vw); text-align:center; font-size:12.5px; line-height:1.45; color:#dbe4ff;
       text-shadow:0 2px 6px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.6); margin:0 0 2px; pointer-events:none; }
     #hdLore i{ font-style:normal; color:#ffd84f; font-weight:900; }
-    #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(400px,28vw); }   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la versi�n absoluta */   /* relative, no static: el planeta y el ? van absolutos DENTRO del marco */
+    #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(400px,28vw); }   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la version absoluta */
     #hdCard{ position:static; order:4; width:min(400px,28vw) !important; padding-right:14px !important; }
     #hdTrain small{ font-size:9px; }
     /* ---- ►CAMINO DIAGONAL (Toni 21/08): los 16 eslabones van SOBRE el canto de la cuña, del 1 (abajo) al 16
@@ -16893,6 +16893,22 @@ function updatePvpShieldFX(){
     .hdNode.mini{ width:26px; height:26px; font-size:11px; }
     .hdNode .mk{ right:-8px; top:-8px; min-width:18px; height:18px; padding:0 4px; font-size:9.5px; line-height:15px; }
     #hdLeft{ bottom:16px; } #hdRight{ bottom:16px; }   /* sin banda abajo: las dos columnas recuperan el alto */
+    /* ---- ►CABECERA IZQUIERDA (Toni 21/08): el logo va DENTRO de la columna del héroe (centrado con el torno),
+       la ficha del jugador se alinea con el rail (mismo borde izquierdo, arriba) y el rail despliega el nombre
+       completo de la sección AL LADO del icono al pasar por encima (fuera el rótulo vertical). ---- */
+    #hdLeft{ top:14px; }
+    #hdLeft #hdLogo{ position:static; order:0; width:min(230px,17vw); margin:0 0 2px; pointer-events:none; }
+    #hdUser{ left:clamp(10px,1.2vw,22px); top:14px; padding:6px 12px 6px 6px; gap:10px; }
+    #hdUTxt{ min-width:150px; }
+    #hdRailLbl{ display:none; }
+    #hdRail{ top:calc(50% + 30px); }
+    .hdRb{ position:relative; overflow:visible; }
+    .hdRbLbl{ position:absolute; left:calc(100% + 14px); top:50%; transform:translate(-8px,-50%); white-space:nowrap; pointer-events:none;
+      padding:6px 12px; border-radius:9px; background:rgba(10,14,30,.92); border:1px solid rgba(255,255,255,.18); color:#fff;
+      font-size:12px; font-weight:900; letter-spacing:2px; opacity:0; transition:opacity .14s ease, transform .14s ease; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+    .hdRbLbl::before{ content:''; position:absolute; left:-6px; top:50%; width:10px; height:10px; transform:translateY(-50%) rotate(45deg);
+      background:rgba(10,14,30,.92); border-left:1px solid rgba(255,255,255,.18); border-bottom:1px solid rgba(255,255,255,.18); }
+    .hdRb:hover .hdRbLbl, .hdRb:focus-visible .hdRbLbl, .hdRb.uinav-focus .hdRbLbl{ opacity:1; transform:translate(0,-50%); }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -16959,11 +16975,11 @@ function updatePvpShieldFX(){
       + '<div id="hdToast"></div>'
       + '<div id="hdRail"><div id="hdRailBox">'
       +   '<button type="button" class="hdRb" data-act="ctl"    data-lbl="CONTROLES"  title="Controles">🎮</button>'
-      +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="TUTORIAL"   title="Cómo jugar bien">🎓</button>'
-      +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS"    title="Objetos y mejoras">📦</button>'
-      +   '<button type="button" class="hdRb sep" data-act="vit" data-lbl="VITRINA"   title="Vitrina de trofeos">🏆</button>'
+      +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="CÓMO JUGAR BIEN"   title="Cómo jugar bien">🎓</button>'
+      +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS Y MEJORAS"    title="Objetos y mejoras">📦</button>'
+      +   '<button type="button" class="hdRb sep" data-act="vit" data-lbl="VITRINA DE TROFEOS"   title="Vitrina de trofeos">🏆</button>'
       +   '<button type="button" class="hdRb" data-act="log"    data-lbl="LOGROS"     title="Logros">🏅</button>'
-      +   '<button type="button" class="hdRb sep" data-act="online" data-lbl="ONLINE" title="Multijugador online">🌐</button>'
+      +   '<button type="button" class="hdRb sep" data-act="online" data-lbl="MULTIJUGADOR ONLINE" title="Multijugador online">🌐</button>'
       +   '<button type="button" class="hdRb" data-act="opts"   data-lbl="OPCIONES"   title="Opciones">⚙️</button>'
       +   '<button type="button" class="hdRb" data-act="lang"   data-lbl="IDIOMA"     title="Idioma">🈯</button>'
       + '</div><div id="hdRailLbl">MENÚ</div></div>'
@@ -17002,6 +17018,10 @@ function updatePvpShieldFX(){
     /* el carrusel de personajes: se muda el APARCAMIENTO entero (#charPickerHome) a la columna
        izquierda y se enseña. El asistente (paso 3) y CONTROLES siguen llevándoselo y devolviéndolo
        a ese mismo nodo, así que no hay que tocarles nada. */
+    /* el LOGO, dentro de la columna del héroe: queda centrado con el torno (Toni 21/08) */
+    { const lg = $('hdLogo'), lf = $('hdLeft'); if(lg && lf) lf.prepend(lg); }
+    /* cada icono del rail lleva su nombre completo desplegable al lado */
+    r.querySelectorAll('.hdRb').forEach(b => { const e = document.createElement('span'); e.className = 'hdRbLbl'; e.textContent = b.dataset.lbl; b.appendChild(e); });
     const park = $('charPickerHome');
     if(park){ $('hdCharHost').appendChild(park); park.style.display = ''; }
     /* los ‹ › de texto pasan a chevrones SVG (los listeners cuelgan del botón, no del texto) */
