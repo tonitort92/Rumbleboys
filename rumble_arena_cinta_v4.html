@@ -17025,9 +17025,10 @@ function updatePvpShieldFX(){
     /* ---- ►VISOR DEL CORRO (Toni 21/08): el canvas pasa a APAISADO y ocupa el ancho de la columna para que los
        vecinos no salgan cortados; las flechas se superponen a los bordes del canvas. _cpResize ajusta el aspecto. ---- */
     #hdLeft #cpStage{ position:relative; width:100%; justify-content:center; gap:0; }
-    #hdLeft #cpView{ width:min(440px,28vw); max-width:none; aspect-ratio:440/330; height:auto; }   /* ancho EXPLICITO: el padre es shrink-to-fit y un 100% se quedaba en 172px */
+    #hdLeft #cpView{ width:580px; max-width:none; aspect-ratio:580/330; height:auto; flex:0 0 auto; margin:0 -80px; }   /* MUY ancho y desbordando la columna por los dos lados (margen negativo): el corro entero cabe */
+    #hdLeft, #hdLeft #cpStage, #hdLeft .cpCard, #hdLeft .cpTop, #hdLeft #charPicker{ overflow:visible; }
     #hdLeft .cpArrow{ position:absolute; top:50%; transform:translateY(-50%); z-index:3; }
-    #hdLeft #cpPrev{ left:-8px; } #hdLeft #cpNext{ right:-8px; }
+    #hdLeft #cpPrev{ left:calc(50% - 188px); } #hdLeft #cpNext{ right:calc(50% - 188px); }   /* junto al elegido, no en los extremos del visor ancho */
     #hdLeft .cpArrow:hover, #hdLeft .cpArrow.uinav-focus, #hdLeft .cpArrow:focus-visible{ transform:translateY(-50%) scale(1.15); }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
@@ -38305,7 +38306,7 @@ function refreshSetup(){
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 2.5, 9.9); pCam.lookAt(0, 1.0, -0.9);   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  pCam.position.set(0, 2.1, 7.9); pCam.lookAt(0, 1.05, -0.5);   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -39102,7 +39103,9 @@ function refreshSetup(){
     for(const m of pMixers) m.update(dt);   // ►CORRO: los seis animan su idle
     if(ring){ let d = ringTarget - ring.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ring.rotation.y += d * Math.min(1, dt*5); }   // ►CORRO: el círculo gira (camino corto) hasta poner delante al elegido
     for(const key in slots){ const sl = slots[key], want = (key === frontKey) ? 0 : 1, cur0 = (sl.userData.dimT == null) ? want : sl.userData.dimT;
-      const nt = cur0 + (want - cur0) * Math.min(1, dt*4); if(Math.abs(nt - cur0) > 1e-4 || sl.userData.dimT == null){ sl.userData.dimT = nt; applyDim(sl, nt); } }   // ►CORRO · PENUMBRA
+      const nt = cur0 + (want - cur0) * Math.min(1, dt*4); if(Math.abs(nt - cur0) > 1e-4 || sl.userData.dimT == null){ sl.userData.dimT = nt; applyDim(sl, nt); }
+      /* el ELEGIDO gira como un torno; los demas vuelven a su orientacion base y se quedan quietos */
+      if(key === frontKey) sl.rotation.y += dt*0.7; else { let d2 = sl.userData.base - sl.rotation.y; d2 = Math.atan2(Math.sin(d2), Math.cos(d2)); sl.rotation.y += d2 * Math.min(1, dt*5); } }   // ►CORRO · PENUMBRA + TORNO
     pr.render(pScene, pCam);
   })(last);
 })();
