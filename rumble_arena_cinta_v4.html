@@ -17025,11 +17025,13 @@ function updatePvpShieldFX(){
     /* ---- ►VISOR DEL CORRO (Toni 21/08): el canvas pasa a APAISADO y ocupa el ancho de la columna para que los
        vecinos no salgan cortados; las flechas se superponen a los bordes del canvas. _cpResize ajusta el aspecto. ---- */
     #hdLeft #cpStage{ position:relative; width:100%; justify-content:center; gap:0; }
-    #hdLeft #cpView{ width:580px; max-width:none; aspect-ratio:580/330; height:auto; flex:0 0 auto; margin:0 -80px; }   /* MUY ancho y desbordando la columna por los dos lados (margen negativo): el corro entero cabe */
+    #hdLeft #cpView{ width:760px; max-width:none; aspect-ratio:760/440; height:auto; flex:0 0 auto; margin:0 -120px 0 -220px; }   /* 50px corrido a la izquierda: el vecino derecho no se mete bajo el camino */   /* v29 (Toni 21/08): MAS grande (580→760) y mas alto de proporcion: nada se corta por los lados ni por abajo; desborda la columna por los dos lados */
     #hdLeft, #hdLeft #cpStage, #hdLeft .cpCard, #hdLeft .cpTop, #hdLeft #charPicker{ overflow:visible; }
-    #hdLeft .cpArrow{ position:absolute; top:50%; transform:translateY(-50%); z-index:3; }
-    #hdLeft #cpPrev{ left:calc(50% - 188px); } #hdLeft #cpNext{ right:calc(50% - 188px); }   /* junto al elegido, no en los extremos del visor ancho */
-    #hdLeft .cpArrow:hover, #hdLeft .cpArrow.uinav-focus, #hdLeft .cpArrow:focus-visible{ transform:translateY(-50%) scale(1.15); }
+    #hdLeft .cpArrow{ display:none !important; }   /* v29 (Toni 21/08): en la home las flechas del visor se esconden; mandan las del bloque del titulo (#hdPrev/#hdNext, abajo). Cuando el asistente o CONTROLES se llevan el carrusel, las suyas vuelven a verse */
+    #hdNameRow{ order:2; display:flex; align-items:center; justify-content:center; gap:18px; } #hdNameRow #hdName{ order:0; } #hdPrev{ order:-1; } #hdNext{ order:1; }   /* el order:2 de #hdName (columna) no vale dentro de la fila: ‹ nombre › */
+    .hdNav{ border:0; background:none; width:40px; height:56px; padding:0; margin:0; display:grid; place-items:center; cursor:pointer; color:var(--hc,#9fe8ff); filter:drop-shadow(0 2px 4px rgba(0,0,0,.8)); transition:transform .12s; }
+    .hdNav svg{ width:26px; height:38px; display:block; }
+    .hdNav:hover, .hdNav.uinav-focus, .hdNav:focus-visible{ color:#fff; outline:none; transform:scale(1.18); }
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -17081,7 +17083,7 @@ function updatePvpShieldFX(){
         '<div id="hdLeft">'
       +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>MODO CARRERA · ' + ruta().length + ' ESLABONES · PREPÁRATE</small></button>'
       +   '<div id="hdCharHost"></div>'
-      +   '<div id="hdName"></div>'
+      +   '<div id="hdNameRow"><button type="button" class="hdNav" id="hdPrev" aria-label="Anterior"></button><div id="hdName"></div><button type="button" class="hdNav" id="hdNext" aria-label="Siguiente"></button></div>'   /* v29: las flechas ‹ › del heroe, a los lados del titulo (Toni 21/08); pulsan las del carrusel */
       +   '<div id="hdRole"></div>'
       +   '<div id="hdAtk" aria-label="Ataques"></div>'   /* los CONTROLES del héroe, bajo su nombre (Toni 21/08): mismas tablas que los diagramas (CTL_MAP + CLASS_MOVES) */
       +   '<div id="hdMeta"></div>'
@@ -17149,7 +17151,8 @@ function updatePvpShieldFX(){
     if(park){ $('hdCharHost').appendChild(park); park.style.display = ''; }
     /* los ‹ › de texto pasan a chevrones SVG (los listeners cuelgan del botón, no del texto) */
     { const chev = dir => '<svg viewBox="0 0 24 36" aria-hidden="true"><polyline points="' + (dir < 0 ? '17,4 7,18 17,32' : '7,4 17,18 7,32') + '" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      const p = $('cpPrev'), n = $('cpNext'); if(p) p.innerHTML = chev(-1); if(n) n.innerHTML = chev(1); }
+      const p = $('cpPrev'), n = $('cpNext'); if(p) p.innerHTML = chev(-1); if(n) n.innerHTML = chev(1);
+      const hp = $('hdPrev'), hn = $('hdNext'); if(hp){ hp.innerHTML = chev(-1); hp.addEventListener('click', ()=>{ const b = $('cpPrev'); if(b) b.click(); }); } if(hn){ hn.innerHTML = chev(1); hn.addEventListener('click', ()=>{ const b = $('cpNext'); if(b) b.click(); }); } }
     /* el torno a la medida real del canvas (nitidez) — ahora y en cada resize */
     const fitCp = ()=>{ try{ if(window._cpResize) window._cpResize(); }catch(e){} };
     fitCp(); setTimeout(fitCp, 300); window.addEventListener('resize', fitCp);
@@ -38305,8 +38308,8 @@ function refreshSetup(){
   setTimeout(window._cpResize, 0);   // el canvas ya está en la home (►CARRERA se construyó antes que este bloque): ajustar ya
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
-  const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
-  pCam.position.set(0, 2.1, 7.9); pCam.lookAt(0, 1.05, -0.5);   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
+  const pCam = new THREE.PerspectiveCamera(35, cw/ch, 0.1, 100);   // v29: 32→35°, cabe el corro entero (cabezas y peana delantera) con la cámara más cerca
+  pCam.position.set(0, 2.3, 6.9); pCam.lookAt(0, 0.96, -0.5);   // v29: más cerca (conjunto más grande) y mirando más abajo: la peana delantera entera en el visor 760x440   // cerca: el elegido GRANDE; el visor apaisado (620/330) da el ancho para ver a los demas   // ►CORRO: algo más alta y atrás: el elegido delante, los demás asomando detrás   // ►PEANA: un pelín más alto y atrás para que quepa la plataformita
   pScene.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, 0.95));
   const pKey = new THREE.DirectionalLight(0xffd9a8, 1.7); pKey.position.set(3, 5, 4); pScene.add(pKey);
   const pRim = new THREE.DirectionalLight(0x88bbff, 0.7); pRim.position.set(-4, 3, -3); pScene.add(pRim);
@@ -38391,7 +38394,7 @@ function refreshSetup(){
      flechas no cambian de modelo: GIRAN el círculo (easing en el bucle) hasta traer al siguiente. Cada
      hueco se construye UNA vez (al llegar su GLB, _cpOnModelLoaded) con la receta de siempre: pivote,
      centrado posado, arma, tinta y peana. */
-  const RING_R = 4.4;   // radio amplio: los vecinos asoman por los lados, no invaden al elegido
+  const RING_R = 2.25;   // v29: círculo más prieto (4,4→2,25): los seis caben en la columna sin meterse bajo el camino ni el rail, y con la cámara más cerca el conjunto sale más grande
   let ring = null, ringTarget = 0; const slots = {}, pMixers = [];
   const ringAngle = i => i * Math.PI * 2 / CLASS_PICK.length;
   function ensureRing(){ if(ring) return; ring = new THREE.Group(); ring.position.set(0, 0, -RING_R); pScene.add(ring); cur = { root: ring, _sharedGeo:true }; }
