@@ -16868,6 +16868,31 @@ function updatePvpShieldFX(){
       .hdNode{ width:42px; height:42px; font-size:14px; } .hdLink{ width:14px; }
       #hdCoverWrap #hdCover{ width:70%; }
     }
+    /* ---- ►DERECHA CENTRADA (Toni 21/08): fuera el goblin; cartel, subtítulo (lore), frame del mapa y ficha
+       apilados, centrados en horizontal en la cuña y como grupo en vertical. Van DESPUÉS de las reglas de
+       cada pieza a propósito: misma especificidad, gana la última. ---- */
+    #hdChar{ display:none !important; }
+    #hdRight{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:0 0 6px; box-sizing:border-box; }
+    #hdWorld{ position:static; text-align:center; order:1; }
+    #hdWState{ margin-top:6px; }
+    #hdLore{ order:2; max-width:min(440px,30vw); text-align:center; font-size:12.5px; line-height:1.45; color:#dbe4ff;
+      text-shadow:0 2px 6px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.6); margin:0 0 2px; pointer-events:none; }
+    #hdLore i{ font-style:normal; color:#ffd84f; font-weight:900; }
+    #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(400px,28vw); }   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la versi�n absoluta */   /* relative, no static: el planeta y el ? van absolutos DENTRO del marco */
+    #hdCard{ position:static; order:4; width:min(400px,28vw) !important; padding-right:14px !important; }
+    #hdTrain small{ font-size:9px; }
+    /* ---- ►CAMINO DIAGONAL (Toni 21/08): los 16 eslabones van SOBRE el canto de la cuña, del 1 (abajo) al 16
+       (arriba), números a la derecha. La posición la pone layoutPath() leyendo el clip-path real de #wsWedge
+       (así coincide con la diagonal a cualquier tamaño). Estas reglas anulan la caja horizontal. ---- */
+    #hdPath{ position:absolute; inset:0; height:auto; padding:0; display:block; overflow:visible; pointer-events:none; background:none; }
+    #hdPathIn{ position:absolute; inset:0; width:auto; max-width:none; margin:0; padding:0; background:none; border:0; box-shadow:none; backdrop-filter:none; border-radius:0; display:block; }
+    .hdStop{ position:absolute; transform:translate(-50%,-50%); z-index:2; }
+    .hdStop .n{ left:auto; right:-22px; bottom:auto; top:50%; transform:translateY(-50%); font-size:10px; }
+    .hdLink{ position:absolute; z-index:1; flex:none; width:0; min-width:0; max-width:none; height:4px; transform-origin:0 50%; }
+    .hdNode{ width:40px; height:40px; font-size:14px; }
+    .hdNode.mini{ width:26px; height:26px; font-size:11px; }
+    .hdNode .mk{ right:-8px; top:-8px; min-width:18px; height:18px; padding:0 4px; font-size:9.5px; line-height:15px; }
+    #hdLeft{ bottom:16px; } #hdRight{ bottom:16px; }   /* sin banda abajo: las dos columnas recuperan el alto */
     @media (prefers-reduced-motion: reduce){ #hdCover, .hdNode.next{ animation:none; } }
   `;
   document.head.appendChild(css);
@@ -16946,6 +16971,7 @@ function updatePvpShieldFX(){
       + '<div id="hdRight">'
       +   '<div id="hdFrame"><img id="hdIso" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
       +   '<div id="hdWorld"><div><span id="hdWIco">🗺️</span><span id="hdWNum"></span></div><div id="hdWState"></div></div>'
+      +   '<div id="hdLore"></div>'
       +   '<div id="hdCard" tabindex="0"><h4>FICHA DEL MUNDO</h4><div id="hdCardBody"></div>'
       +     '<button type="button" id="hdTrain">ENTRENAR ESTE MUNDO<small>MODO PRÁCTICA · AQUÍ NO SE GANAN TROFEOS</small></button>'
       +   '</div>'
@@ -17106,6 +17132,23 @@ function updatePvpShieldFX(){
     box.onfocusout = hide;
   }
 
+  /* ►LORE (Toni 21/08): una línea por mundo — qué es y la amenaza que DUERME en lo más profundo del mapa
+     (el jefe). Texto fuente en español; ►I18N lo traduce si está en el diccionario. */
+  const WORLD_LORE = {
+    1:  'Colinas verdes y cinta mansa para empezar la carrera. Bajo las raíces del prado <i>duerme un monstruo</i> que despertará en cuanto caiga el primer trofeo.',
+    2:  'Selva de tormenta: caen rayos del cielo y la cinta se esconde entre la maleza. En lo más hondo del barro <i>ronca algo enorme</i>.',
+    3:  'Jardines, puentes y emboscadas tras cada farol. Bajo el templo <i>duerme un demonio</i> que no soporta el ruido de la pelea.',
+    11: 'Mesetas del cañón, barriles explosivos y mucho vacío. En el fondo de la mina <i>duerme la bestia</i> que vació el pueblo.',
+    4:  'Dunas que te tragan y ráfagas que te empujan al borde. Bajo la arena <i>duerme un coloso</i> que solo despierta con las peleas.',
+    5:  'Trampas, bolas de fuego y pasadizos. En la cámara más profunda <i>duerme el guardián</i> de la pirámide.',
+    12: 'Cañonazos, cubierta mojada y un mar que no perdona. En lo más hondo del casco <i>duerme algo</i> que ni los piratas se atreven a nombrar.',
+    7:  'Cumbres nevadas y suelo que resbala. Bajo el glaciar <i>duerme un monstruo</i> congelado desde hace siglos.',
+    8:  'La fábrica: cohetes que despegan y temblores a cada rato. En el horno más profundo <i>duerme la máquina</i> que lo construyó todo.',
+    10: 'La vía final: menos gravedad y más vértigo. Al final del arcoíris <i>duerme el último monstruo</i> de la carrera.',
+  };
+  const LORE_MINI = 'Un respiro entre mundos: aquí no duerme ningún monstruo, solo hay que llegar entero y con los puntos intactos.';
+  const LORE_LOCK = 'Nadie ha vuelto para contarlo. Gana los eslabones anteriores y sabrás qué duerme aquí.';
+
   /* el camino: SIN nombres (Toni) — solo número, icono y marca. Los minijuegos son nodos pequeños. */
   function renderPath(st){
     const box = $('hdPathIn'); if(!box) return;
@@ -17128,7 +17171,32 @@ function updatePvpShieldFX(){
          + '</button><span class="n">' + (i+1) + '</span></span>';
     });
     box.innerHTML = h;
+    layoutPath();
   }
+  /* ►CAMINO DIAGONAL: coloca paradas y enlaces a lo largo del canto izquierdo de la cuña. El canto se lee
+     del clip-path de #wsWedge ("polygon(LEANpx 0px, ...)") y de su caja: a la altura y, el canto está en
+     x = left + lean·(1 − y/H). Los nodos van OFF px a la derecha del canto (dentro del cristal). */
+  function layoutPath(){
+    const box = $('hdPathIn'), wedge = $('wsWedge'); if(!box || !wedge) return;
+    const stops = Array.from(box.querySelectorAll('.hdStop')), links = Array.from(box.querySelectorAll('.hdLink'));
+    const n = stops.length; if(!n) return;
+    const H = innerHeight, r = wedge.getBoundingClientRect();
+    let lean = 0; { const m = /polygon\(\s*([\d.]+)px/.exec(getComputedStyle(wedge).clipPath || ''); if(m) lean = parseFloat(m[1]); }
+    const PAD = 44, OFF = 40;
+    const pts = stops.map((st, i)=>{
+      const y = H - PAD - (n > 1 ? i/(n-1) : 0) * (H - 2*PAD);
+      const x = r.left + lean * (1 - y/H) + OFF;
+      st.style.left = x.toFixed(1) + 'px'; st.style.top = y.toFixed(1) + 'px';
+      return { x, y };
+    });
+    links.forEach((lk, i)=>{
+      const a = pts[i], b = pts[i+1]; if(!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
+      lk.style.left = a.x.toFixed(1) + 'px'; lk.style.top = a.y.toFixed(1) + 'px'; lk.style.width = len.toFixed(1) + 'px';
+      lk.style.transform = 'translateY(-50%) rotate(' + ang.toFixed(4) + 'rad)';
+    });
+  }
+  let _lpT = 0; window.addEventListener('resize', ()=>{ clearTimeout(_lpT); _lpT = setTimeout(layoutPath, 120); });
 
   /* ►VENTANA: el fondo de la diagonal es el STAGE EN VIVO del attract (el juego de verdad, detrás del
      cristal). Al enfocar un eslabón descubierto, el attract cambia a ese mundo con la maquinaria
@@ -17164,6 +17232,7 @@ function updatePvpShieldFX(){
     ws.textContent = mini ? (disc ? 'MINIJUEGO · SIN TROFEO' : '🔒 MINIJUEGO · SIN DESCUBRIR')
                    : won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
                    : (i === st.next ? '★ SIGUIENTE OBJETIVO' : (disc ? 'SIN TROFEO TODAVÍA' : '🔒 SIN DESCUBRIR'));
+    { const lo = $('hdLore'); if(lo) lo.innerHTML = !disc ? LORE_LOCK : (mini ? LORE_MINI : (WORLD_LORE[e.st] || '')); }
     setLive(i, disc);
     /* ►ESFERAS lee #isIdx como índice 1..N dentro de CAMPAIGN_STAGES (no de la RUTA) */
     { const lbl = $('isIdx'); if(lbl && typeof CAMPAIGN_STAGES!=='undefined'){ const ci = CAMPAIGN_STAGES.indexOf(stage); lbl.textContent = (ci < 0 ? 1 : ci+1) + '/' + CAMPAIGN_STAGES.length; } }
