@@ -3813,7 +3813,7 @@ function sueloCarpetGeo(){
   const H = CARPET_H, pos = [], col = [], nrm = [], c0 = new THREE.Color(0x2f7a22), c1 = new THREE.Color(0xc6e35a), ct = new THREE.Color();
   let seed = 11; const rnd = ()=>{ seed = (seed*16807) % 2147483647; return seed/2147483647; };
   const V = (x,y,z,t,nx,nz)=>{ pos.push(x,y,z); ct.copy(c0).lerp(c1, t*t); col.push(ct.r,ct.g,ct.b); const l = Math.hypot(nx, 1.2, nz); nrm.push(nx/l, 1.2/l, nz/l); };
-  const NB = 8;
+  const NB = 6;   // 6 hojas x 4 tris = 24 tris por mata (hay miles en pantalla)
   for(let b=0;b<NB;b++){
     const a = (b/NB)*Math.PI*2 + rnd()*.7, dx = Math.cos(a), dz = Math.sin(a);
     const h = H*(.6 + rnd()*.4), w = .12 + rnd()*.06, lean = .45 + rnd()*.35, r0 = .03 + rnd()*.06;
@@ -3838,7 +3838,7 @@ function sueloCarpetMat(){
   _carpetMat = m; return m;
 }
 function sueloCarpet(g, sx, sz, topY, cx, cz){
-  const n = Math.min(4600, Math.round(sx*sz*5)); if(n < 8) return;   // ~5 matas/u2 para cerrar los huecos (4.600 x 32 tris = ~150k tris, 1 draw call, ~300 KB)
+  const n = Math.min(2400, Math.round(sx*sz*4)); if(n < 8) return;   // ~4 matas/u2, tope 2.400 por plataforma; el LOD por distancia recorta im.count en las lejanas
   const im = new THREE.InstancedMesh(sueloCarpetGeo(), sueloCarpetMat(), n);
   const M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0,1,0), c = new THREE.Color();
   const surf = topY - 0.45; let k = 0;
@@ -3851,8 +3851,21 @@ function sueloCarpet(g, sx, sz, topY, cx, cz){
     c.setHSL(0.26 + (Math.random()-.5)*0.03, 0.6 + Math.random()*0.2, 0.5 + Math.random()*0.16); im.setColorAt(k, c);
     k++;
   }
-  im.count = k; im.frustumCulled = false; im.castShadow = false; im.receiveShadow = true; im.userData.noOcc = true; im.userData.shared = true;
-  g.add(im);
+  im.count = k; im.frustumCulled = false; im.castShadow = false; im.receiveShadow = true; im.userData.noOcc = true; im.userData.shared = true; im.userData._full = k;
+  g.add(im); _carpets.push(im);
+}
+/* LOD por distancia: las instancias estan en orden aleatorio, asi que bajar im.count aclara el felpudo de forma
+   uniforme (cerca 100 %, media 60 %, lejos 30 %). Coste: una distancia por plataforma y frame. */
+const _carpets = []; const _cpW = new THREE.Vector3();
+function sueloCarpetLOD(){
+  if(!_carpets.length) return;
+  const cx = camera.position.x, cz = camera.position.z; let vivos = 0;
+  for(const im of _carpets){ if(!im.parent) continue; vivos++;
+    if(!im.parent.visible || (im.parent.parent && !im.parent.parent.visible)) continue;
+    im.getWorldPosition(_cpW); const d = Math.hypot(_cpW.x-cx, _cpW.z-cz);
+    const f = d < 28 ? 1 : d < 55 ? 0.6 : d < 90 ? 0.3 : 0.15;
+    const c = Math.max(8, Math.round(im.userData._full * f)); if(c !== im.count) im.count = c; }
+  if(vivos < _carpets.length && _carpets.length > 64){ for(let i=_carpets.length-1;i>=0;i--) if(!_carpets[i].parent) _carpets.splice(i,1); }   // limpia los de cintas ya desmontadas
 }
 /* pisadores: jugadores vivos + los 2 minions más cercanos al P1; radio = huella. Se rellena en cada drawScene. */
 const _pushTmp = [];
@@ -4119,9 +4132,9 @@ function addBumps(g, sx, sz, topY, grassMat, cx, cz){
 function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   if(!_CAP && !_ISLAND) return;
   const g = new THREE.Group();
-  if(SUELO_TEST && STAGE===1 && !addFloorBlock._done && grassMat===M.grass && sx>=9 && sz>=9){   // ►SUELOTEST: solo esta
-    addFloorBlock._done = true; grassMat = sueloTestMat(); g.userData._sueloTest = true;
-    _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
+  if(SUELO_TEST && STAGE===1 && grassMat===M.grass && sx>=4 && sz>=4){   // TODAS las plataformas verdes del prado (Toni 22/08) // ►SUELOTEST: solo esta
+    grassMat = sueloTestMat(); g.userData._sueloTest = true;
+    if(!_sueloB) _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
   }
   const dirt = aoMesh(organicSlabGeo(Math.max(1, sx-0.6), Math.max(1, sz-0.6), 4.15, 1.7, 0.34, 0.18), M.dirt);   // tierra alargada SOLO por debajo: la cima se queda bajo el césped (topY-0.35), el fondo baja
   dirt.position.y = topY - 4.5; dirt.castShadow = dirt.receiveShadow = true; g.add(dirt);
@@ -4129,7 +4142,7 @@ function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   lip.position.y = topY - 0.95; lip.castShadow = true; g.add(lip);
   const grass = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), grassMat);
   grass.position.y = topY - 0.7; grass.castShadow = grass.receiveShadow = true; g.add(grass);
-  if(g.userData._sueloTest){ addBumps(g, sx, sz, topY, grassMat, cx, cz); sueloCarpet(g, sx, sz, topY, cx, cz); sueloGrassClumps(g, sx, sz, topY, cx, cz); }   // ►SUELOTEST: lomas + FELPUDO instanciado + algunas matas altas
+  if(g.userData._sueloTest) sueloCarpet(g, sx, sz, topY, cx, cz);   // ►SUELOTEST: lomas + FELPUDO instanciado + algunas matas altas
   _grassJobs.push({ g, sx, sz, topY, cx, cz, grassMat });  // césped+lomas diferidos (tras los muros)
   const nst = Math.round((sx+sz)/8);
   for(let i=0;i<nst;i++){
@@ -24179,7 +24192,7 @@ const _boundaryWalls = [];
 const WALL_SPAN = 56;   // ►MUROVENTANA · ►AJUSTA: largo (u) del tramo de cristal visible alrededor de la cámara (la cinta mide 104)
 function updateBoundaryWalls(){
   _windU.value = performance.now() * 0.001;   // ►SUELOTEST: reloj del viento de las matas
-  if(_sueloB) sueloPushUpdate();               // ►SUELOTEST: pisadores del felpudo
+  if(_sueloB){ sueloPushUpdate(); sueloCarpetLOD(); }   // ►SUELOTEST: pisadores + LOD del felpudo
   for(const g of _boundaryWalls){
     const w = g.userData._win; if(!w || !g.visible) continue;
     const half = WALL_SPAN/2;
