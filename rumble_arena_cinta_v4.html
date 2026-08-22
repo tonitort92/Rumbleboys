@@ -3767,7 +3767,7 @@ function sueloGrassClumps(g, sx, sz, topY, cx, cz){
   const cA = new THREE.Color(0x2e7d2c), cB = new THREE.Color(0x7fd04a), cT = new THREE.Color(), cBase = new THREE.Color();   // base oscura → punta clara
   const push = (p, c)=>{ pos.push(p.x, p.y, p.z); col.push(c.r, c.g, c.b); };
   const q = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const nC = Math.min(160, Math.round(sx*sz/4.5));
+  const nC = Math.min(40, Math.round(sx*sz/20));   // pocas matas altas: el cuerpo lo pone el felpudo
   for(let i=0;i<nC;i++){
     const lx = (Math.random()-.5)*sx*0.86, lz = (Math.random()-.5)*sz*0.86;
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.6)) continue;
@@ -3797,6 +3797,65 @@ function sueloGrassClumps(g, sx, sz, topY, cx, cz){
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, sueloGrassMat()); m.castShadow = false; m.receiveShadow = true; m.userData.noOcc = true;
   g.add(m);
+}
+/* ►SUELOTEST · FELPUDO (Toni 22/08): hierba CORTA a ras de suelo cubriendo TODA la plataforma, que se aparta al
+   pisarla. Rendimiento: UNA InstancedMesh por plataforma (1 hoja de 4 tris × ~3.000 instancias = 1 draw call,
+   ~200 KB); el viento y el APLASTADO por pisadas van enteros en el vertex shader con hasta 8 "pisadores"
+   (jugadores + minions cercanos) como uniforms → cero trabajo por hoja en CPU. */
+const CARPET_H = 0.4;                                   // alto de la hoja base (la escala por instancia lo varía)
+const _pushU = { value: Array.from({length:8}, ()=> new THREE.Vector4(0,0,0,0)) };
+let _carpetGeo = null, _carpetMat = null;
+function sueloCarpetGeo(){
+  if(_carpetGeo) return _carpetGeo;
+  const w = 0.2, H = CARPET_H, pos = [], col = [], c0 = new THREE.Color(0x2b7a2a), c1 = new THREE.Color(0x86d84c), ct = new THREE.Color();
+  const P = (x,y,z,t)=>{ pos.push(x,y,z); ct.copy(c0).lerp(c1, t*t); col.push(ct.r, ct.g, ct.b); };
+  const rows = [[w*.5, 0, 0], [w*.42, H*.5, 0.05], [0.0, H, 0.12]];   // (semiancho, altura, inclinación) por tramo
+  for(let i=0;i<2;i++){ const a=rows[i], b=rows[i+1];
+    const t0=a[1]/H, t1=b[1]/H;
+    P(-a[0],a[1],a[2],t0); P(a[0],a[1],a[2],t0); P(b[0],b[1],b[2],t1);
+    P(-a[0],a[1],a[2],t0); P(b[0],b[1],b[2],t1); P(-b[0],b[1],b[2],t1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.computeVertexNormals();
+  _carpetGeo = g; return g;
+}
+function sueloCarpetMat(){
+  if(_carpetMat) return _carpetMat;
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:true, side:THREE.DoubleSide, roughness:.95, metalness:0 });
+  m.customProgramCacheKey = ()=> 'suelocarpet';
+  m.onBeforeCompile = sh=>{ sh.uniforms.uWind = _windU; sh.uniforms.uPush = _pushU;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', "#include <common>\\nuniform float uWind; uniform vec4 uPush[8];").replace('#include <begin_vertex>', "#include <begin_vertex>\\n{ vec3 ipos = (modelMatrix * instanceMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vec3 rgt = normalize(instanceMatrix[0].xyz); vec3 fwd = normalize(instanceMatrix[2].xyz); float hh = clamp(position.y / 0.40, 0.0, 1.0); vec2 off = vec2(0.0); float flat_ = 0.0;\\nfor(int i=0;i<8;i++){ vec4 p = uPush[i]; if(p.w <= 0.0) continue; vec2 d = ipos.xz - p.xz; float l = length(d); if(l < p.w){ float k = 1.0 - l/p.w; off += (d / max(l, 0.05)) * k * 0.5; flat_ = max(flat_, k); } }\\nfloat ph = uWind*1.6 + ipos.x*0.5 + ipos.z*0.4; off += vec2(sin(ph)*0.05 + sin(ph*2.3+0.9)*0.02, cos(ph*0.8)*0.03);\\nvec3 o3 = vec3(off.x, 0.0, off.y); vec2 loc = vec2(dot(o3, rgt), dot(o3, fwd)); float k2 = hh*hh; transformed.x += loc.x * k2; transformed.z += loc.y * k2; transformed.y -= (length(off) * 0.35 + flat_ * 0.55) * hh * 0.40; }"); };
+  _carpetMat = m; return m;
+}
+function sueloCarpet(g, sx, sz, topY, cx, cz){
+  const n = Math.min(3200, Math.round(sx*sz*3.2)); if(n < 8) return;
+  const im = new THREE.InstancedMesh(sueloCarpetGeo(), sueloCarpetMat(), n);
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0,1,0), c = new THREE.Color();
+  const surf = topY - 0.45; let k = 0;
+  for(let i=0;i<n;i++){
+    const lx = (Math.random()-.5)*sx*0.92, lz = (Math.random()-.5)*sz*0.92;
+    if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.25)) continue;
+    q.setFromAxisAngle(up, Math.random()*Math.PI*2); p.set(lx, surf - 0.02, lz);
+    const s0 = 0.8 + Math.random()*0.5; sc.set(s0, 0.75 + Math.random()*0.7, s0);
+    M.compose(p, q, sc); im.setMatrixAt(k, M);
+    c.setHSL(0.27 + (Math.random()-.5)*0.03, 0.55 + Math.random()*0.2, 0.42 + Math.random()*0.14); im.setColorAt(k, c);
+    k++;
+  }
+  im.count = k; im.frustumCulled = false; im.castShadow = false; im.receiveShadow = true; im.userData.noOcc = true; im.userData.shared = true;
+  g.add(im);
+}
+/* pisadores: jugadores vivos + los 2 minions más cercanos al P1; radio = huella. Se rellena en cada drawScene. */
+const _pushTmp = [];
+function sueloPushUpdate(){
+  const arr = _pushU.value; let k = 0;
+  if(typeof players !== 'undefined') for(const p of players){ if(k>=8) break; if(!p || p.dead || p.out || !p.pos) continue; if(p.gfx && p.gfx._ljOff) continue;
+    arr[k++].set(p.pos.x, p.pos.y, p.pos.z, p.onGround ? 1.15 : 0.0); }
+  if(typeof minions !== 'undefined' && typeof P1 !== 'undefined' && P1){
+    _pushTmp.length = 0;
+    for(const mn of minions){ if(mn.dead || !mn.onGround) continue; const d = (mn.pos.x-P1.pos.x)*(mn.pos.x-P1.pos.x)+(mn.pos.z-P1.pos.z)*(mn.pos.z-P1.pos.z); if(d < 900) _pushTmp.push(mn); }
+    _pushTmp.sort((a,b)=> ((a.pos.x-P1.pos.x)**2+(a.pos.z-P1.pos.z)**2) - ((b.pos.x-P1.pos.x)**2+(b.pos.z-P1.pos.z)**2));
+    for(let i=0;i<_pushTmp.length && k<8;i++){ const mn=_pushTmp[i]; arr[k++].set(mn.pos.x, mn.pos.y, mn.pos.z, 0.7*Math.max(.6, mn.scale||1)); }
+  }
+  for(;k<8;k++) arr[k].w = 0;
 }
 function sueloBumpMat(){
   if(_sueloBumpMat) return _sueloBumpMat;
@@ -4059,7 +4118,7 @@ function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   lip.position.y = topY - 0.95; lip.castShadow = true; g.add(lip);
   const grass = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), grassMat);
   grass.position.y = topY - 0.7; grass.castShadow = grass.receiveShadow = true; g.add(grass);
-  if(g.userData._sueloTest){ addBumps(g, sx, sz, topY, grassMat, cx, cz); sueloGrassClumps(g, sx, sz, topY, cx, cz); }   // ►SUELOTEST: terrones + matas low-poly de hojas anchas
+  if(g.userData._sueloTest){ addBumps(g, sx, sz, topY, grassMat, cx, cz); sueloCarpet(g, sx, sz, topY, cx, cz); sueloGrassClumps(g, sx, sz, topY, cx, cz); }   // ►SUELOTEST: lomas + FELPUDO instanciado + algunas matas altas
   _grassJobs.push({ g, sx, sz, topY, cx, cz, grassMat });  // césped+lomas diferidos (tras los muros)
   const nst = Math.round((sx+sz)/8);
   for(let i=0;i<nst;i++){
@@ -23228,7 +23287,7 @@ function disposeTree(root){
 function registerOccluder(root, seg){              // registra un OBJETO entero: clona materiales y agrupa sus mallas
   if(!root || root.userData._occ) return;
   const meshes = [];
-  root.traverse(o=>{ if(o.isMesh && o.material){
+  root.traverse(o=>{ if(o.isMesh && o.material && !(o.userData && o.userData.noOcc)){   // ►SUELOTEST: las mallas noOcc (felpudo/matas con shader propio) no se clonan
     const _cl = m=>{ const c = m.clone(); c.userData._occClone = true; return c; };
     o.material = Array.isArray(o.material) ? o.material.map(_cl) : _cl(o.material);   // clon propio → se funde sin tocar a otros que compartan material · ►PERF-MEM: marcado para poder liberarlo
     o.userData._occRoot = root; meshes.push(o); occluders.push(o);
@@ -24108,6 +24167,7 @@ const _boundaryWalls = [];
 const WALL_SPAN = 56;   // ►MUROVENTANA · ►AJUSTA: largo (u) del tramo de cristal visible alrededor de la cámara (la cinta mide 104)
 function updateBoundaryWalls(){
   _windU.value = performance.now() * 0.001;   // ►SUELOTEST: reloj del viento de las matas
+  if(_sueloB) sueloPushUpdate();               // ►SUELOTEST: pisadores del felpudo
   for(const g of _boundaryWalls){
     const w = g.userData._win; if(!w || !g.visible) continue;
     const half = WALL_SPAN/2;
