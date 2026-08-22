@@ -8870,6 +8870,7 @@ function scatterModelDecor(startIdx){
    ya existen y se esquivan. Anti-flotado: margen interior = medio-extent del parche, así el
    parche NUNCA asoma por el borde de la plataforma. */
 function scatterGrassPatches(startIdx){
+  if(STAGE===1) return;   // SINBRIZNAS (Toni 22/08): en el prado fuera tambien los parches grasspatch (briznas finas = aliasing); el cesped lo pone el felpudo
   if(!_modelAvailable()) return;
   if(STAGE>=2) return;                          // en stage 2/3 la vegetación la coloca su scatter temático
   const tpl = getModel('grasspatch', DECOR_DEFS);
