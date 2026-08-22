@@ -17578,7 +17578,7 @@ function updatePvpShieldFX(){
     #hdRailBox{ flex-direction:column; width:auto; gap:3px; }   /* lista VERTICAL, como antes (Toni 21/08) */
     #hdLogMini{ width:230px; box-sizing:border-box; padding:9px 10px 8px; border-radius:14px; background:rgba(10,14,30,.74); border:1px solid rgba(255,255,255,.14);
       backdrop-filter:blur(6px); box-shadow:0 12px 36px rgba(0,0,0,.5); text-shadow:none; }
-    #hdLogMini h5{ margin:0 0 6px; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff; display:flex; justify-content:space-between; }
+    #hdLogMini h5{ margin:2px 6px 10px; padding:0 4px; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff; display:flex; justify-content:space-between; }
     #hdLogMini h5 span{ color:#ffd84f; }
     #hdLogMiniList{ max-height:132px; overflow-y:auto; scrollbar-width:thin; display:flex; flex-direction:column; gap:4px; padding-right:2px; }
     .hdLm{ display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:9px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }
@@ -17759,7 +17759,7 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdRb" data-act="log"    data-lbl="LOGROS"     title="Logros">🏅</button>'
       +   '<button type="button" class="hdRb" data-act="opts"   data-lbl="OPCIONES"   title="Opciones">⚙️</button>'
       +   '<button type="button" class="hdRb" data-act="lang"   data-lbl="IDIOMA"     title="Idioma">🈯</button>'
-      + '</div><div id="hdRailLbl">MENÚ</div><div id="hdLogMini"><h5>LOGROS POR DESBLOQUEAR</h5><div id="hdLogMiniList"></div><button type="button" id="hdLogMore">+ VER MÁS</button><button type="button" id="hdLogVer">VER LOGROS</button></div></div>'
+      + '</div><div id="hdRailLbl">MENÚ</div><div id="hdLogMini"><h5>LOGROS POR DESBLOQUEAR</h5><div id="hdLogMiniList"></div><button type="button" id="hdLogMore" style="display:none">+ VER MÁS</button><button type="button" id="hdLogVer">VER LOGROS</button></div></div>'
       + '<img id="hdChar" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
       + '<div id="hdRight">'
       +   '<div id="hdFrame"><img id="hdIso" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
@@ -17860,7 +17860,7 @@ function updatePvpShieldFX(){
       { const _co = $('hdLogMiniCo'); if(_co) _co.textContent = '🪙 ' + ls.coins; }   // (las monedas ya no van en el título — Toni 23/08)
       box.innerHTML = pend.length ? pend.slice(0, _lmN).map(l => '<div class="hdLm"><div class="ic">' + l.ic + '</div><div class="tx"><b>' + l.t + '</b><span>' + l.d + '</span></div><div class="co">+' + l.co + '</div></div>').join('')
         : '<div class="hdLm"><div class="tx"><b>¡TODO DESBLOQUEADO!</b></div></div>';
-      if(more) more.style.display = pend.length > _lmN ? '' : 'none';
+      if(more) more.style.display = 'none';   // VER MAS retirado (Toni 23/08): la lista hace scroll
     }
     /* ENTRENAR ESTE MUNDO = la única puerta a "elegir mundo": monta ese eslabón (►MAPSEL, que sabe
        de minijuegos) y entra por el camino de ENTRENAR que ya existía (#hsTrain → asistente) */
