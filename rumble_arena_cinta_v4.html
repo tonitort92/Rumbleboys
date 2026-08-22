@@ -64,6 +64,24 @@ window.addEventListener('load', function(){
                 filter:drop-shadow(0 0 6px rgba(255,255,255,.35));
                 animation:splashRot 1.05s linear infinite; }
   @keyframes splashRot { to { transform:rotate(360deg); } }
+  /* ►CARGA (Toni 22/08): pantalla de carga de PARTIDA (al pulsar JUGAR y en cada salto de mundo).
+     Mismo antracita/logo/aro que el #splash de arranque, para que sea UNA pieza. z-index 70: sobre
+     #fadeVeil (60) y por debajo del #splash (9999). Opaca: tapa el montaje del mundo y los warmups. */
+  #loadScreen { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+                background:radial-gradient(circle at 50% 42%, #181d30, #0e1220 78%); opacity:0; transition:opacity .4s ease; pointer-events:auto; }
+  #loadScreen.on { display:flex; }
+  #loadScreen.vis { opacity:1; }
+  #loadScreen .splashLogo { width:min(420px,70vw); }
+  #ldTitle { margin:22px auto 0; font-size:clamp(18px,2.2vw,28px); font-weight:900; font-style:italic; letter-spacing:4px; color:#ffd84f;
+             text-shadow:0 2px 0 #000, 0 0 18px rgba(255,216,79,.35); }
+  #ldSub { margin-top:6px; font-size:12px; letter-spacing:3px; color:#8fa3c8; font-weight:700; }
+  #ldTips { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; max-width:min(980px,88vw); margin:34px auto 0; min-height:48px; }
+  .ldTip { display:inline-flex; align-items:center; gap:10px; padding:9px 16px; border-radius:999px; font-size:14px; font-weight:700; color:#e6eeff;
+           background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); box-shadow:0 6px 18px rgba(0,0,0,.35);
+           opacity:0; transform:translateY(8px); transition:opacity .45s ease, transform .45s ease; }
+  .ldTip.in { opacity:1; transform:none; }
+  .ldTip i { font-style:normal; font-size:18px; }
+  #titleOverlay.off { display:none !important; }   /* ►CARGA: el cielo de la portada se apaga al JUGAR (skyOff) y vuelve al menú (skyOn) */
 
   /* ---------- HUD ---------- */
   #hud { position:fixed; inset:0; pointer-events:none; }
@@ -1303,6 +1321,14 @@ window.addEventListener('load', function(){
        onerror="this.style.display='none';var t=this.parentNode.querySelector('.splashTitle');if(t)t.style.display='block';">
   <div class="splashTitle" style="display:none">RUMBLEBOYS</div>
   <div class="splashSpin"></div>
+</div></div>
+<!-- ►CARGA: pantalla de carga de partida (JUGAR y saltos de mundo). La rellena loadScreenShow(). -->
+<div id="loadScreen"><div class="splashInner">
+  <img class="splashLogo" src="logo.png" alt="RUMBLEBOYS">
+  <div id="ldTitle"></div>
+  <div id="ldSub">CARGANDO</div>
+  <div class="splashSpin"></div>
+  <div id="ldTips"></div>
 </div></div>
 <canvas id="c"></canvas>
 
@@ -7209,7 +7235,6 @@ let music = mkTrack(PLAYLIST[_mi]);                     // tema actual (la lista
 setInterval(()=>{ try{ if(musicOn && music && music.paused && _menuAudioStarted) music.play().catch(()=>{}); }catch(e){} }, 4000);
 /* locución del narrador antes de la partida (sustituye a los viejos clips "preparados" + "3,2,1") */
 const voiceStart = new Audio('narrator/starting-match.mp3'); voiceStart.volume = .95; voiceStart.preload = 'auto';
-const INTRO_CLIPS = [voiceStart];
 
 /* cuenta atrás visual sincronizada: los números hablados del clip caen
    en 2.08s / 3.56s / 4.95s (medido por detección de silencios) */
@@ -7226,13 +7251,8 @@ function showCount(n, color){
   count321.classList.remove('pop'); void count321.offsetWidth;
   count321.classList.add('pop');
 }
-/* cuenta visual 3·2·1 en los últimos segundos del clip del narrador (justo antes de "¡LUCHA!") */
-voiceStart._cue = ()=>{
-  const d = (isFinite(voiceStart.duration) && voiceStart.duration > 3) ? voiceStart.duration : 6;
-  cueTimers.push(setTimeout(()=>showCount('3', '#ffd84f'), Math.max(0,(d-2.6))*1000));
-  cueTimers.push(setTimeout(()=>showCount('2', '#ff9100'), Math.max(0,(d-1.7))*1000));
-  cueTimers.push(setTimeout(()=>showCount('1', '#ff3b3b'), Math.max(0,(d-0.8))*1000));
-};
+/* ►CARGA: la cuenta 3·2·1 ya no va por timers: la gobierna el reloj de la voz en _stageIntroCue
+   (NARR_CUES, medido sobre el clip). El mismo eslabón sirve para el Stage 1 y para cada salto de mundo. */
 let musicOn = true;
 function ensureMusic(){
   if(musicOn) music.play().catch(()=>{});
@@ -7316,27 +7336,8 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState=
 ['pointerdown','mousedown','click','keydown','touchstart','touchend'].forEach(ev=>
   addEventListener(ev, startMenuAudio, { capture:true, passive:true }));
 
-/* secuencia de presentación: encadena los clips de voz y luego arranca */
-let introTimer = null, cancelIntro = null;   // cancelIntro(): aborta la cuenta atrás "¿PREPARADOS?" en curso (p.ej. ESC → menú)
-function playIntro(onDone){
-  let i = 0, done = false;
-  clearCues();
-  const finish = ()=>{ if(done) return; done = true; clearTimeout(introTimer); clearCues(); cancelIntro = null; onDone(); };
-  cancelIntro = ()=>{ if(done) return; done = true; clearTimeout(introTimer); clearCues(); cancelIntro = null;   // corta audio e impide que onDone monte la partida
-    try{ for(const c of INTRO_CLIPS){ if(c){ c.onended = null; c.pause(); } } }catch(e){} };
-  const next = ()=>{
-    if(i >= INTRO_CLIPS.length) return finish();
-    const clip = INTRO_CLIPS[i++];
-    clip.onended = next;
-    clearTimeout(introTimer);   // red de seguridad por si el audio no llega a sonar
-    const durMs = (isFinite(clip.duration) && clip.duration>0 ? clip.duration : 4)*1000;
-    introTimer = setTimeout(next, durMs + 1200);
-    clip.currentTime = 0;
-    if(clip._cue) clip._cue();
-    clip.play().catch(()=>setTimeout(next, 400));
-  };
-  next();
-}
+/* ►CARGA: playIntro()/cancelIntro() ("¿PREPARADOS?" sobre el attract) han desaparecido: el Stage 1
+   entra por el MISMO eslabón que los demás mundos (pantalla de carga → narrateStageStart → stageIntroGo). */
 const musicBtn = document.getElementById('musicBtn');
 musicBtn.addEventListener('mousedown', e=>e.stopPropagation());  // que no dispare martillazos
 musicBtn.addEventListener('click', e=>{
@@ -7473,8 +7474,14 @@ function narrateAwe(){                                        // asombro: MUY de
    OJO: `voiceStart` es UN SOLO Audio compartido con playIntro() → hay que rebobinar, soltar el
    onended (o reentraría en la cadena del intro) y re-armar los cues en cada uso.
    Mientras habla, los jugadores CAEN al stage pero no responden (stageIntroT → readInput/aiThink). */
-const STAGE_INTRO_T = 6.0;   // fallback si el clip aún no ha cargado su duración
+/* ►CARGA · CUES MEDIDOS (22/08, ffmpeg silencedetect sobre narrator/starting-match.mp3, 12,51 s):
+   tramos hablados 0,00-1,26 · 2,55-4,38 · 5,47-6,22 ("3") · 7,42-8,06 ("2") · 9,18-9,95 ("1") · 11,24-12,22 ("fight!").
+   El 3·2·1 en pantalla cae EN el número hablado y el ¡LUCHA! en el "fight": la presentación dura NARR_CUES.go,
+   no el clip entero (la cola de la voz suena ya sobre la pelea). */
+const NARR_CUES = { n3:5.47, n2:7.42, n1:9.18, go:11.24 };
+const STAGE_INTRO_T = NARR_CUES.go;
 let stageIntroT = 0, _stageIntroDur = STAGE_INTRO_T, _siLastCount = -1, _siCamA0 = 0;
+let stageIntroHold = false, _siT0 = 0, _siVoice = false, _siPending = false, _siBannerTxt = '', _siBannerT = 0;
 /* ►STAGECAUTION: aviso de PELIGRO por stage, mostrado durante la cinemática de presentación.
    Texto en ESPAÑOL (fuente); la capa ►I18N lo traduce en vivo al idioma elegido. Solo los stages con
    peligro propio; 1/6/9 no llevan aviso. */
@@ -7505,15 +7512,18 @@ function hideStageCaution(){
   if(_cautionTimer){ clearTimeout(_cautionTimer); _cautionTimer = null; }
 }
 function narrateStageStart(){
-  /* ►INTERSTAGE FIX: el freeze y el "¡LUCHA!" cuelgan de stageIntroT (game-time) = duración del clip de
-     voz → nunca se desincroniza el descongelado con la narración aunque caigan frames al cargar el stage.
-     Ya NO hay cuenta 3·2·1 en pantalla (se quitó a petición); solo corre el reloj de la voz. */
-  const d = (isFinite(voiceStart.duration) && voiceStart.duration > 3) ? voiceStart.duration : STAGE_INTRO_T;
-  _stageIntroDur = d;
-  stageIntroT = d;               // congela SIEMPRE, aunque no suene la voz (musicOn apagado)
+  /* ►CARGA (22/08): PREPARAR la presentación. Si hay pantalla de carga delante, el reloj queda en
+     HOLD (stageIntroHold) y la voz no arranca hasta que loadScreenHide() llame a stageIntroGo(): así la
+     narración y el 3·2·1 empiezan con TODO precargado. Sin carga (F9, ?stage=) arranca en el acto.
+     El reloj es REAL (currentTime de la voz, o performance.now si no suena): nunca se desincroniza. */
+  _stageIntroDur = NARR_CUES.go;
+  stageIntroT = NARR_CUES.go;    // congela SIEMPRE, aunque no suene la voz (musicOn apagado)
+  stageIntroHold = true; _siPending = true; _siVoice = false;
   _siLastCount = -1;
   _siCamA0 = -Math.PI*0.62;      // ángulo de arranque del travelling de presentación
-  showStageCaution();            // ►STAGECAUTION: aviso de peligro visible durante la presentación
+  /* el banner "¡STAGE N: X!" que acaba de pedir goToStageN se guarda y se enseña al ARRANCAR (no bajo la carga) */
+  try{ if(typeof bannerT!=='undefined' && bannerT>0 && banner.textContent){ _siBannerTxt = banner.textContent; _siBannerT = bannerT; bannerT = 0; banner.classList.remove('show'); } else { _siBannerTxt = ''; } }catch(e){ _siBannerTxt = ''; }
+  hideStageCaution();            // ►STAGECAUTION: el aviso sale con la voz (stageIntroGo), no bajo la carga
   /* ►INTERSTAGE FIX (como el Stage 1): durante la presentación NADIE aparece ni pelea — la cámara
      viaja sobre el stage VACÍO mientras el speaker narra. Los luchadores quedan OCULTOS y CONGELADOS
      (el bucle de updateFighter está gateado por stageIntroT en frame()) y APARECEN — cayendo desde su
@@ -7528,16 +7538,43 @@ function narrateStageStart(){
      invisible) lo que antes se pagaba con un bloqueo de 2-3 s justo cuando APARECÍAN al acabar la voz */
   try{ warmupReveal('presentación de stage'); }catch(e){}
   clearCues();                   // por si quedaban timers de la cuenta del intro de partida
+  if(!loadScreenOn()) stageIntroGo();   // sin pantalla de carga delante (F9, ?stage=): arranca ya
+}
+/* ►CARGA: ARRANCAR la presentación (voz + reloj + banner + aviso). Lo llama loadScreenHide() al retirar
+   la carga, o narrateStageStart() directamente si no había carga. */
+function stageIntroGo(){
+  if(!_siPending) return;
+  _siPending = false; stageIntroHold = false;
+  _siT0 = performance.now(); _siLastCount = -1;
+  if(_siBannerTxt){ showBanner(_siBannerTxt, _siBannerT || 2.6); _siBannerTxt = ''; }
+  showStageCaution();            // ►STAGECAUTION: aviso de peligro visible durante la presentación
   if(!musicOn || demo) return;   // mismos frenos que narrate()
   try{
-    voiceStart.onended = null;   // que NO reentre en la cadena de playIntro
+    voiceStart.onended = null;
     voiceStart.pause(); voiceStart.currentTime = 0;
-    voiceStart.play().catch(()=>{});   // la voz suena de fondo; la cuenta/descongelado los lleva stageIntroT
+    voiceStart.play().then(()=>{ _siVoice = true; }).catch(()=>{ _siVoice = false; });   // si suena, SU currentTime manda el reloj
   }catch(e){}
 }
-/* ►INTERSTAGE: cuenta 3·2·1 gobernada por el tiempo RESTANTE de stageIntroT (mismo reloj que el freeze). */
+/* tiempo RESTANTE de presentación según el reloj real: la voz si suena, performance.now si no */
+function _stageIntroClock(){
+  let el = (performance.now() - _siT0) / 1000;
+  try{ if(_siVoice && !voiceStart.paused && voiceStart.currentTime > 0) el = voiceStart.currentTime; }catch(e){}
+  return NARR_CUES.go - el;
+}
+/* aborta una presentación o una carga a medias (ESC → menú): sin voz colgada ni cuenta a medias */
+function stageIntroAbort(){
+  _siPending = false; stageIntroHold = false; stageIntroT = 0; _siVoice = false; _siBannerTxt = '';
+  try{ voiceStart.onended = null; voiceStart.pause(); voiceStart.currentTime = 0; }catch(e){}
+  clearCues(); hideStageCaution();
+  try{ interlude = false; shopOpen = false; ISTAGE.ph = 'none'; }catch(e){}   // la tienda/clasificación a medias tampoco sobrevive al menú
+  if(typeof fadeClear==='function') fadeClear();   // y el fundido pendiente de la tienda/minijuego: su callback montaría el stage siguiente SOBRE el menú
+  if(typeof loadScreenHide==='function') loadScreenHide(null, true);
+}
+/* ►INTERSTAGE: cuenta 3·2·1 gobernada por el tiempo RESTANTE de stageIntroT (mismo reloj que el freeze).
+   Umbrales = NARR_CUES: el número aparece cuando el narrador lo dice. */
 function _stageIntroCue(now){
-  const n = now<=0 ? 0 : now<=0.8 ? 1 : now<=1.7 ? 2 : now<=2.6 ? 3 : -1;
+  const g = NARR_CUES.go;
+  const n = now<=0 ? 0 : now<=g-NARR_CUES.n1 ? 1 : now<=g-NARR_CUES.n2 ? 2 : now<=g-NARR_CUES.n3 ? 3 : -1;
   if(n===_siLastCount) return;
   _siLastCount = n;
   if(n===3) showCount('3', '#ffd84f');
@@ -7555,7 +7592,8 @@ function _stageIntroEnd(){
     if(p.gfx && p.gfx.root) fighterShow(p.gfx); // ►aparecen ahora, no durante la cinemática (►LUZFIJA)
   }
   hideStageCaution();            // ►STAGECAUTION: se retira el aviso justo con el "¡LUCHA!"
-  showBanner('¡LUCHA!', 1); try{ tone(330,.18,'square',.15, 200); }catch(e){}
+  showBanner((typeof TRAIN!=='undefined' && TRAIN.on) ? '¡A ENTRENAR!' : '¡LUCHA!', 1); try{ tone(330,.18,'square',.15, 200); }catch(e){}
+  if(typeof music!=='undefined' && music) music.volume = .45;
   try{ crowdCheer(.55); }catch(e){}
 }
 /* detectores de "momento épico" (solo alimentan a narrateAwe, ya throttleado) */
@@ -20144,7 +20182,8 @@ function lanzarMini(e){
     rutaSiguiente();
     return;
   }
-  fadeOut(()=>{
+  loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.tag || e.mini).toUpperCase() });   // ►CARGA: tapa el montaje del módulo (él trae su propia presentación)
+  requestAnimationFrame(()=>{
     try {
       mod.lanzar({ piel:e.piel, campana:true, alAcabar:(res)=>{
         /* ►LOS PUNTOS DEL MINIJUEGO VAN A LA CARTERA. Decisión ya tomada con
@@ -20155,12 +20194,12 @@ function lanzarMini(e){
             P1.runXP = (P1.runXP || 0) + Math.round(res.puntos * MINI_XP);
           }
         } catch(err){}
-        fadeOut(()=>{ rutaSiguiente(); fadeIn(); });
+        fadeOut(()=>{ saltoConCarga(rutaSiguiente); });   // ►CARGA: el siguiente eslabón también bajo la carga
       }});
-      fadeIn();
+      esperarListo(()=> loadScreenHide(null));
     } catch(err){
       console.warn('[ruta] fallo lanzando "' + e.mini + '"', err);
-      rutaSiguiente(); fadeIn();
+      saltoConCarga(rutaSiguiente);
     }
   });
 }
@@ -20297,7 +20336,7 @@ function goToShopScreen(){
       if(typeof _clearGradeStamp==='function') _clearGradeStamp();   // ►STAMPGRADE
       try{ winCelebrate.hide(); }catch(e){} }
     const ov=document.getElementById('perkOverlay'), me=shopPlayer();
-    if(!ov || !me || me.out){ interlude=false; stageAdvance(); fadeIn(); return; }
+    if(!ov || !me || me.out){ interlude=false; saltoConCarga(stageAdvance); return; }   // ►CARGA: sin tienda → salto bajo la pantalla de carga
     const t=document.getElementById('perkTitle'); if(t) t.textContent='🛒 TIENDA · antes del STAGE '+stageNum(_nextStage());
     for(const p of players) p._buysThisStage = 0;   // ►INTERSTAGE: el tope de 2 es POR STAGE
     /* ►DRAFT: se reparte la mano AQUÍ, una sola vez por tienda. El contador de re-tiradas vuelve a
@@ -20318,8 +20357,7 @@ function closePerkBoard(){
     const ov=document.getElementById('perkOverlay');
     if(ov){ ov.style.display='none'; ov.classList.remove('panic'); }
     interlude = false;
-    stageAdvance();   // el mundo se monta A OSCURAS…
-    fadeIn();         // …y aclara ya en el stage nuevo (goToStageN dispara al speaker)
+    saltoConCarga(stageAdvance);   // ►CARGA: el mundo se monta BAJO LA PANTALLA DE CARGA; al estar listo, el speaker presenta (goToStageN deja la presentación en HOLD)
   });
 }
 { const _pc=document.getElementById('perkContinue'); if(_pc) _pc.onclick = closePerkBoard; }
@@ -37716,12 +37754,16 @@ function jugarMiniDesdeHome(e){
   const ov = document.getElementById('startOverlay');
   fadeOut(()=>{
     if(ov) ov.style.display = 'none';
-    mod.lanzar({ piel:e.piel, campana:true, alAcabar:()=>{
-      /* de vuelta a la portada: no había partida detrás, así que no hay run
-         que continuar — solo se vuelve a enseñar el menú */
-      fadeOut(()=>{ if(ov) ov.style.display = ''; mapSelApply(); fadeIn(); });
-    }});
-    fadeIn();
+    skyOff();                                                     // ►CARGA: el cielo de la portada no tapa el minijuego
+    loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.tag || e.mini).toUpperCase() });
+    requestAnimationFrame(()=>{
+      mod.lanzar({ piel:e.piel, campana:true, alAcabar:()=>{
+        /* de vuelta a la portada: no había partida detrás, así que no hay run
+           que continuar — solo se vuelve a enseñar el menú */
+        fadeOut(()=>{ if(ov) ov.style.display = ''; skyOn(); mapSelApply(); fadeIn(); });
+      }});
+      esperarListo(()=> loadScreenHide(null));
+    });
   });
   return true;
 }
@@ -37766,8 +37808,9 @@ function frame(now){
   /* ►INTERSTAGE: la cuenta atrás del entre-stage va ANTES del hitstop — su `return` se la saltaba
      entera, y el KO del jefe dispara hitstop justo antes de abrirse la tienda (se atascaba). */
   if(interlude) updateInterstage(dt);                         // clasificación → tienda (la sim está congelada)
-  if(stageIntroT>0){                                          // ►INTERSTAGE: presentación del speaker (stage VACÍO bajo el travelling; los luchadores aún no aparecen)
-    stageIntroT -= dt;                                        // sin cuenta 3·2·1 en pantalla y sin spar: solo corre el reloj de la narración
+  if(stageIntroT>0 && !stageIntroHold){                       // ►INTERSTAGE: presentación del speaker (stage VACÍO bajo el travelling; los luchadores aún no aparecen) · ►CARGA: en HOLD bajo la pantalla de carga
+    stageIntroT = _stageIntroClock();                         // reloj REAL (la voz manda): el 3·2·1 cae en los números hablados
+    _stageIntroCue(stageIntroT);
     if(stageIntroT<=0){ stageIntroT=0; _stageIntroEnd(); }    // ¡LUCHA! → aparecen los luchadores (cayendo)
   }
 
@@ -37975,7 +38018,7 @@ function startDemo(){
   for(let i=0;i<allPlayers.length;i++) allPlayers[i]._charKey = CHAR_ROSTER[i % CHAR_ROSTER.length];   // asigna la clase: antes nadie lo hacía (el init de modelos está gateado por DEBUG_MODEL=false)
   for(const q of allPlayers) applySkin(q);   // ahora SÍ hay _charKey → skin por clase en el attract (no el fantasma genérico)
   crowdTarget = .08; startCrowd();   // ambiente de público suave en el menú/attract
-  STAGE_LOG.length = 0; stageIntroT = 0; ISTAGE.ph = 'none';   // ►INTERSTAGE: el attract no arrastra roadmap ni presentación
+  STAGE_LOG.length = 0; stageIntroT = 0; stageIntroHold = false; _siPending = false; ISTAGE.ph = 'none';   // ►INTERSTAGE: el attract no arrastra roadmap ni presentación
   if(HOME_NO_FIGHTERS){   // ►HOME solo-mapa: oculta a los 6 (y limpia su FX) y NO los simula ni construye modelos → portada = escenario
     for(const q of allPlayers){ clearFX(q); fighterHide(q.gfx); q.dead = false; q.out = false; }   // ►LUZCONSTANTE: la home ya no saca las luces de la cuenta (era otra recompilación global al volver al menú)
     return;
@@ -38060,8 +38103,8 @@ function warmupReveal(motivo){
   finally { for(const g of shown) fighterHide(g); }
 }
 let _warmRenderDone = false;   // ►HOMECALM: ya hubo al menos UN render completo de calentamiento (sin él nunca se salta)
-function warmupGPU(){
-  if(!warmupPermitido()) return;
+function warmupGPU(forzar){
+  if(!forzar && !warmupPermitido()) return;   // ►CARGA: bajo la pantalla de carga SÍ (es justo donde cabe su segundo)
   const ocultos = [], mostrados = [];   // ►LUZCONSTANTE: restauración en finally (antes vivía dentro del try y se perdía si algo lanzaba)
   try {
     const cam0 = camera.clone();                 // cámara "alejada" para meter TODA la decoración en el frustum
@@ -38138,7 +38181,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   cineT = 0; cineTarget = null; parrySlow = 0; hitstopGlobal = 0;
   chaosLvl = 0; chaosT = 0; capT = 8; matchT = 0; outCount = 0;
   interlude = false; shopOpen = false; shopT = 0;   // ►SHOP: tienda cerrada al (re)empezar
-  ISTAGE.ph = 'none'; ISTAGE.t = 0; STAGE_LOG.length = 0; stageIntroT = 0; fadeClear();   // ►INTERSTAGE: entre-stage, roadmap y presentación a cero
+  ISTAGE.ph = 'none'; ISTAGE.t = 0; STAGE_LOG.length = 0; stageIntroT = 0; stageIntroHold = false; _siPending = false; clearCues(); fadeClear();   // ►INTERSTAGE: entre-stage, roadmap y presentación a cero
   _bossSeen.clear();   // ►SAVE: los jefes de la run anterior ya se contaron; esta partida empieza a contar de nuevo
   { const _po=document.getElementById('perkOverlay'); if(_po) _po.style.display='none'; }
   { const _lo=document.getElementById('lbOverlay'); if(_lo) _lo.style.display='none'; }   // ►LBREDO: la clasificación tampoco sobrevive a un (re)inicio (winCelebrate se auto-apaga al verla oculta)
@@ -38202,6 +38245,112 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
   for(let i=mprojs.length-1;i>=0;i--) killMproj(i);
   if(typeof resetBossFight==='function') resetBossFight();  // desmonta arena/aro/jefe y restaura BELT/bossActive
 }
+/* =====================================================================
+   ►CARGA (Toni 22/08): pantalla de carga de PARTIDA + cielo de la portada + "listo".
+   Un único eslabón para TODAS las entradas a un mundo (JUGAR, cerrar la tienda, volver de un minijuego):
+     skyOff → loadScreenShow → [frame] montar el mundo → esperarListo (diferidos + warmups + frames
+     estables) → loadScreenHide → stageIntroGo (voz + travelling + 3·2·1) → ¡LUCHA!
+   ===================================================================== */
+const LD_TIPS = [
+  ['🧱','Las paredes de cristal marcan el límite: fuera del mapa pierdes una vida.'],
+  ['❤️','Tienes 4 vidas por mundo. Sin vidas, eliminado… hasta el siguiente mundo.'],
+  ['🏃','La cinta se mueve: corre CONTRA la flecha verde o te arrastra al vacío.'],
+  ['👹','Cada minuto sube el CAOS: más monstruos y más rápido. Poténciate antes.'],
+  ['👑','A CAOS 10 se abre el portal del jefe. Vencerlo abre el siguiente mundo.'],
+  ['🛒','Entre mundos hay tienda: solo 2 compras por mundo, elige bien.'],
+  ['⭐','Todo suma puntos: dañar, rematar, recoger objetos y aguantar con vida.'],
+  ['🤲','Puedes cargar con monstruos y rivales… y lanzarlos al vacío.'],
+  ['🛡️','Los primeros segundos tras caer eres intocable: úsalos para recolocarte.'],
+  ['💊','Las cápsulas potencian SOLO ese mundo; lo comprado en la tienda es para toda la carrera.'],
+  ['⚔️','Cada héroe tiene un ataque especial y una definitiva: mira el HUD de abajo.'],
+  ['🔄','Esquiva rodando: un instante de invulnerabilidad que te saca de un apuro.'],
+  ['🏆','Gana el que MÁS PUNTÚA, no el último en pie. Aguantar vivo multiplica ×1,3.'],
+  ['⚠️','Lee el aviso amarillo de cada mundo: dice qué te va a matar ahí.'],
+];
+let _ldGen = 0, _ldShownAt = 0, _ldTipTimer = 0, _ldTipI = 0;
+const LD_MIN_MS = 1500;   // mínimo en pantalla (que dé tiempo a leer un consejo)
+function loadScreenOn(){ const el = document.getElementById('loadScreen'); return !!el && el.classList.contains('on'); }
+function _ldTipsRender(){
+  const box = document.getElementById('ldTips'); if(!box) return;
+  box.innerHTML = '';
+  for(let k=0;k<3;k++){ const t = LD_TIPS[(_ldTipI + k) % LD_TIPS.length];
+    const d = document.createElement('div'); d.className = 'ldTip'; d.innerHTML = '<i>' + t[0] + '</i><span>' + t[1] + '</span>'; box.appendChild(d);
+    setTimeout(()=> d.classList.add('in'), 30 + k*120); }
+}
+function loadScreenShow(o){
+  const el = document.getElementById('loadScreen'); if(!el) return;
+  _ldGen++; _ldShownAt = performance.now();
+  const t = document.getElementById('ldTitle'); if(t) t.textContent = (o && o.titulo) || '';
+  el.classList.add('on'); void el.offsetWidth; el.classList.add('vis');
+  _ldTipI = (Math.random() * LD_TIPS.length) | 0; _ldTipsRender();
+  clearInterval(_ldTipTimer); _ldTipTimer = setInterval(()=>{ _ldTipI = (_ldTipI + 3) % LD_TIPS.length; _ldTipsRender(); }, 2600);
+  fadeClear();   // el velo negro de los fundidos no tiene que quedar debajo
+}
+/* retira la carga (respetando el mínimo) y, al acabar el fundido, llama a cb (normalmente stageIntroGo).
+   inmediato=true: sin fundido ni mínimo (abortar) */
+function loadScreenHide(cb, inmediato){
+  const el = document.getElementById('loadScreen'); if(!el){ if(cb) cb(); return; }
+  const gen = _ldGen;
+  const go = ()=>{
+    if(gen !== _ldGen) return;                  // otra carga se abrió mientras tanto
+    clearInterval(_ldTipTimer); _ldTipTimer = 0;
+    el.classList.remove('vis');
+    if(inmediato){ el.classList.remove('on'); if(cb) cb(); return; }
+    setTimeout(()=>{ if(gen === _ldGen) el.classList.remove('on'); }, 420);
+    if(cb) cb();                                // la voz arranca mientras la carga se desvanece (0,4 s)
+  };
+  if(inmediato) return go();
+  const falta = LD_MIN_MS - (performance.now() - _ldShownAt);
+  if(falta > 0) setTimeout(go, falta); else go();
+}
+/* "listo": drena los trabajos diferidos, compila/sube TODO (warmup completo: aquí sí cabe su segundo)
+   y pinta frames hasta que dos seguidos bajen de 50 ms (tope 4 s). Todo tapado por la carga. */
+function esperarListo(cb){
+  const gen = _ldGen, t0 = performance.now();
+  let dren = 0; try{ while(procesarDiferidos()) dren++; }catch(e){}
+  try{ warmupGPU(true); }catch(e){ console.warn('[carga] warmupGPU', e); }
+  try{ warmupLigero('carga'); }catch(e){}
+  try{ warmupReveal('carga'); }catch(e){}
+  let nfr = 0, buenos = 0;
+  const step = ()=>{
+    if(gen !== _ldGen) return;                  // abortado / otra carga
+    const a = performance.now();
+    try{ drawScene(); }catch(e){}
+    const ms = performance.now() - a; nfr++;
+    if(ms < 50) buenos++; else buenos = 0;
+    if((buenos >= 2 && nfr >= 3) || performance.now() - t0 > 4000){
+      console.log('[carga] lista en ' + Math.round(performance.now() - t0) + ' ms · ' + nfr + ' frames · ' + dren + ' diferidos · último frame ' + ms.toFixed(1) + ' ms');
+      cb(); return;
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+/* el cielo de la portada (#titleOverlay.sky, z:4, con la diagonal de html.race) se queda ENCIMA del canvas
+   del juego si nadie lo apaga: esto lo apaga al jugar y lo devuelve al volver al menú */
+function skyOff(){ const ti = document.getElementById('titleOverlay'); if(ti && ti.classList.contains('sky')) ti.classList.add('off'); fadeClear(); }
+function skyOn(){ const ti = document.getElementById('titleOverlay'); if(ti) ti.classList.remove('off'); }
+/* rótulo del destino para la carga ("STAGE 3 · JAPÓN") */
+function ldTitulo(st){
+  const s = (st === undefined) ? STAGE : st;
+  const tag = (typeof STAGE_TAG!=='undefined' && STAGE_TAG[s]) || ('MUNDO ' + s);
+  if(s === 13 || s === 14) return 'MINIJUEGO · ' + tag;
+  return 'STAGE ' + (typeof stageNum==='function' ? stageNum(s) : s) + ' · ' + tag;
+}
+/* salto de mundo bajo la carga: monta (stageAdvance/rutaSiguiente ya saben a dónde) y arranca la
+   presentación cuando está listo. Si el salto acaba en un minijuego módulo o en el fin de la run,
+   no hay presentación pendiente y la carga simplemente se retira. */
+function saltoConCarga(avanzar, titulo){
+  loadScreenShow({ titulo: titulo || '' });
+  const gen = _ldGen;
+  requestAnimationFrame(()=>{
+    if(gen !== _ldGen) return;                                   // abortada (ESC → menú) antes de montar: no se monta nada
+    try{ avanzar(); }catch(e){ console.warn('[carga] salto', e); }
+    const t = document.getElementById('ldTitle'); if(t && !titulo) t.textContent = ldTitulo();
+    if(window.DESC && DESC.on || window.TUBO && TUBO.on || gameOver){ loadScreenHide(null); return; }   // módulo con presentación propia / fin de run
+    esperarListo(()=> loadScreenHide(()=>{ stageIntroGo(); }));
+  });
+}
 function launchMatch(){
   /* ►MAPSEL · LA GUARDA VA AQUÍ, que es por donde pasan TODOS los caminos de
      arranque (el asistente, "OTRA VEZ", el mando por UINAV…). Ponerla solo en
@@ -38221,17 +38370,17 @@ function launchMatch(){
      1 tarea/250 ms) puede no haber drenado — y esos trabajos NO corren en partida, así que el primer
      spawn de cada tipo compilaba sus 2 programas en pleno combate (+2 ≈ 117 ms medidos). Drenarla
      ENTERA aquí: estamos aún fuera de partida y "¿PREPARADOS?" (2,6 s) lo tapa. Caso normal: 0 tareas. */
-  { let _dren = 0; try{ while(procesarDiferidos()) _dren++; }catch(e){}
-    if(_dren) console.log('[diferido] ' + _dren + ' trabajos drenados antes de la partida (tapados por ¿PREPARADOS?)'); }
-  document.getElementById('startOverlay').style.display = 'none';   // oculta menús ya (el demo/cinemática se ve detrás de "¿PREPARADOS?")
+  /* ►CARGA (22/08): ya no hay "¿PREPARADOS?" sobre el attract. Cielo fuera, pantalla de carga, y la
+     partida se MONTA debajo (roster, modelos, warmups, frames estables); luego el narrador presenta el
+     stage con su 3·2·1 y los luchadores aparecen en el ¡LUCHA!, igual que en cualquier salto de mundo. */
+  skyOff();
+  document.getElementById('startOverlay').style.display = 'none';
   document.getElementById('endOverlay').style.display = 'none';
   document.getElementById('endNowBtn').style.display = 'none';
   { const _sb=document.getElementById('specBar'); if(_sb) _sb.style.display='none'; }
-  showBanner('¿PREPARADOS?', 2.6);
+  stageIntroAbort();                                        // por si venimos de OTRA VEZ con una presentación a medias
   crowdTarget = .24; startCrowd();                         // murmullo de público durante la pelea
-  /* el DEMO (cinemática de la pantalla de inicio) sigue de fondo durante "¿PREPARADOS?";
-     la partida real se monta justo en "¡LUCHA!" */
-  playIntro(()=>{
+  saltoConCarga(()=>{
     TRAIN.on = (MATCH.mode==='training');
     /* P1 = la CLASE elegida; el resto de clases se reparten en orden (sin duplicar) */
     const order = [MATCH.cls, ...CHAR_ROSTER.filter(k=>k!==MATCH.cls)];
@@ -38255,10 +38404,10 @@ function launchMatch(){
        programas GPU de una tacada (tapado por "¡LUCHA!") en vez de compilar-al-aparecer durante los
        primeros 5-10 s de juego. Tras el warmup, un drawScene() con la cámara real evita el flash del
        encuadre ancho que usa el warmup. (warmupGPU ya iba en try/catch; antes solo corría al cargar). */
-    try { warmupLigero('¡LUCHA!'); warmupReveal('¡LUCHA!'); drawScene(); } catch(e){ console.warn('[PERF-C] warmup omitido', e); }   // ►MEDIDO: warmupLigero compila la variante de PANTALLA; warmupReveal añade la variante LINEAR del composer + sube los atlas (el bloqueo de 2-3 s "al aparecer" era eso). Ambos caben tapados por "¡LUCHA!".
-    music.volume = .45; running = true;
-    showBanner(TRAIN.on?'¡A ENTRENAR!':'¡LUCHA!', 1); tone(330,.18,'square',.15, 200); crowdCheer(.55);
-  });
+    /* los warmups (ligero + reveal + completo) y los frames de estabilización los hace esperarListo() bajo la carga */
+    running = true;
+    narrateStageStart();   // prepara la presentación (queda en HOLD hasta que se retire la carga)
+  }, ldTitulo(MENU_STAGE));
 }
 /* ---- configuración de partida desde el menú (modo / CPUs / humanos / mando) ---- */
 /* plan: 'campaign' | 'survival' → intención elegida en el menú. HOY NO LO LEE NADIE: campaña y
@@ -39492,7 +39641,7 @@ document.getElementById('restartBtn').addEventListener('click', ()=>{
 });
 /* ---- VOLVER AL MENÚ: sale de la partida (botón final o tecla ESC). Corta intro/online en curso. ---- */
 function returnToMenu(){
-  if(cancelIntro) cancelIntro();   // si saltó durante "¿PREPARADOS?", aborta la cuenta atrás (si no, montaría la partida luego)
+  stageIntroAbort();   // ►CARGA: corta una carga o una presentación a medias (voz, cuenta, aviso)
   try{ if(window._net && _net.room && _net.room.leave) _net.room.leave(); }catch(e){}   // ONLINE: abandona la sala P2P
   if(window._net){ _net.role='local'; _net.room=null; _net.started=false; _net.peerId=null; _net.peerCls=null;
                    _net.remote=null; _net.localPlayer=null; _net.snap=null; _net.sendInput=_net.sendSnap=_net.sendHi=null; }
@@ -39505,6 +39654,7 @@ function returnToMenu(){
   document.getElementById('endNowBtn').style.display = 'none';
   { const _sb=document.getElementById('specBar'); if(_sb) _sb.style.display='none'; }
   const lob = document.getElementById('netLobby'); if(lob) lob.style.display = 'none';
+  skyOn();   // ►CARGA: el cielo de la portada vuelve detrás de la home
   document.getElementById('startOverlay').style.display = 'flex';
   /* ►TROFEOS/►MARCAS: vuelves de jugar → los marcadores de la home tienen que traer lo que acabas de
      ganar. Sin esto sólo se refrescaban al recargar la página y parecía que el juego no apuntaba. */
