@@ -555,6 +555,24 @@ window.addEventListener('load', function(){
   #moveSheet { position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center;
                pointer-events:none; background:rgba(6,9,20,.42); backdrop-filter:blur(2px); }
   #moveSheet.show { display:flex; animation:msIn .12s ease-out; }
+  #moveSheet.modal { pointer-events:auto; background:rgba(5,7,15,.55); backdrop-filter:blur(5px); }   /* ►PAUSA: abierto desde el menú de pausa (se cierra con su botón / ESC / B) */
+  #moveSheet.modal .msHint { display:none; }
+  .msBack { display:block; margin:16px auto 0; }
+  /* ►PAUSA (Toni 22/08): pop-up de pausa con fondo oscuro y borroso. Offline congela la partida; online no
+     (la sala sigue), solo enseña el menú. z-index 48: sobre el HUD y #count321 (30), bajo #fadeVeil (60). */
+  #pauseOverlay { background:rgba(5,7,15,.68); backdrop-filter:blur(6px); z-index:48; }
+  #pauseOverlay .modalCard { width:min(440px,92vw); padding:26px 28px 24px; }
+  #pauseOverlay .pauseLogo { display:block; width:min(260px,60vw); margin:0 auto 6px; filter:drop-shadow(0 8px 22px rgba(0,0,0,.6)); }
+  #pauseOverlay .pauseSub { font-size:12px; letter-spacing:4px; font-weight:900; color:#9fe8ff; opacity:.85; margin-bottom:18px; }
+  #pauseOverlay .pauseBtns { display:flex; flex-direction:column; gap:10px; }
+  #pauseOverlay .pauseBtns .btn, #pauseOverlay .pauseBtns .navBtn { width:100%; box-sizing:border-box; font-size:18px; padding:12px 18px; }
+  #pauseOverlay .navBtn.quit { border-color:rgba(255,94,94,.55); color:#ffb3b3; }
+  #pauseConfirm { display:none; }
+  #pauseOverlay.confirm #pauseMain { display:none; } #pauseOverlay.confirm #pauseConfirm { display:block; }
+  #pauseConfirm .q { font-size:20px; font-weight:900; margin:4px 0 16px; }
+  #pauseConfirm .row { display:flex; gap:12px; justify-content:center; }
+  #pauseConfirm .row .btn, #pauseConfirm .row .navBtn { flex:1; font-size:18px; padding:12px 18px; }
+  #pauseOnline { font-size:12px; opacity:.7; margin-top:12px; display:none; } #pauseOverlay.online #pauseOnline { display:block; }
   @keyframes msIn { from{ opacity:0; transform:scale(.97); } to{ opacity:1; transform:scale(1); } }
   .msCard { width:min(880px,95vw); max-height:92vh; overflow:auto; padding:18px 24px 20px;
             background:rgba(12,16,34,.92); border:2px solid rgba(255,255,255,.16); border-radius:16px;
@@ -1950,6 +1968,29 @@ window.addEventListener('load', function(){
 </div>
 
 <!-- ===== ENTRENAMIENTO: opciones en pausa (ESC). No es una partida real: minions a demanda + cambio rápido de personaje ===== -->
+<!-- ►PAUSA: menú de pausa de partida (ESC / Start). Ver openPause()/closePause(). -->
+<div class="overlay" id="pauseOverlay" style="display:none">
+  <div class="modalCard">
+    <img class="pauseLogo" src="logo.png" alt="RUMBLEBOYS">
+    <div class="pauseSub">PAUSA</div>
+    <div id="pauseMain">
+      <div class="pauseBtns">
+        <button class="btn" id="pauseResume">REANUDAR ▶</button>
+        <button class="navBtn" id="pauseCtl">🎮 VER CONTROLES</button>
+        <button class="navBtn quit" id="pauseQuit">✖ ABANDONAR</button>
+      </div>
+      <div id="pauseOnline">Partida ONLINE: el juego no se detiene mientras estás aquí.</div>
+    </div>
+    <div id="pauseConfirm">
+      <div class="q">¿Seguro que quieres abandonar la partida?</div>
+      <div class="row">
+        <button class="btn" id="pauseQuitYes">SÍ, SALIR</button>
+        <button class="navBtn" id="pauseQuitNo">NO, SEGUIR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="trainPause" style="display:none">
   <div class="modalCard">
     <h2 class="modalH">🎯 ENTRENAMIENTO</h2>
@@ -39641,6 +39682,7 @@ document.getElementById('restartBtn').addEventListener('click', ()=>{
 });
 /* ---- VOLVER AL MENÚ: sale de la partida (botón final o tecla ESC). Corta intro/online en curso. ---- */
 function returnToMenu(){
+  if(typeof closePause==='function') closePause(false);   // ►PAUSA: el pop-up no sobrevive al menú
   stageIntroAbort();   // ►CARGA: corta una carga o una presentación a medias (voz, cuenta, aviso)
   try{ if(window._net && _net.room && _net.room.leave) _net.room.leave(); }catch(e){}   // ONLINE: abandona la sala P2P
   if(window._net){ _net.role='local'; _net.room=null; _net.started=false; _net.peerId=null; _net.peerCls=null;
@@ -39683,8 +39725,80 @@ addEventListener('keydown', e=>{
   if(vis('setupModal')){ const b = document.getElementById('setupClose'); if(b) b.click(); return; }   // 1º cierra los popups de la home
   if(vis('netLobby'))  { const b = document.getElementById('netClose');  if(b) b.click(); return; }
   if(TRAIN.on && !vis('startOverlay')){ if(vis('trainPause')) resumeTrain(); else openTrainPause(); return; }   // entrenamiento: ESC abre/cierra opciones (no sale)
-  if(!vis('startOverlay')) returnToMenu();   // fuera de la home (partida, "¿PREPARADOS?" o pantalla final) → al menú
+  if(vis('pauseOverlay')){ pauseBack(); return; }                       // ►PAUSA: dentro del menú de pausa, ESC = atrás (controles → menú → reanudar)
+  if(!vis('startOverlay') && pausePosible()){ openPause(); return; }    // ►PAUSA: en partida, ESC abre el menú de pausa (antes salía al menú a pelo)
+  if(!vis('startOverlay')) returnToMenu();   // fuera de la home (carga, presentación o pantalla final) → al menú
 });
+
+/* ====================== ►PAUSA (Toni 22/08): menú de pausa de PARTIDA ======================
+   ESC o Start en partida → pop-up (fondo oscuro borroso) con REANUDAR · VER CONTROLES (los del
+   personaje que llevas, la chuleta de TAB) · ABANDONAR (pide confirmación SÍ/NO → menú).
+   OFFLINE congela la partida (running=false: frame() sigue dibujando el freeze-frame). ONLINE NO
+   se para (la sala sigue viva): solo se enseña el menú. Si pilla la presentación del narrador,
+   pausa también la voz y su reloj. El entrenamiento conserva su propio panel (trainPause). */
+let pausedGame = false, _pauseCtl = false, _pauseT0 = 0, _pauseVoiceWas = false;
+function pauseOnline(){ return !!(window._net && _net.role && _net.role !== 'local'); }
+function pausePosible(){
+  return running && !gameOver && !demo && !TRAIN.on && !interlude
+      && !(typeof loadScreenOn==='function' && loadScreenOn())
+      && !(window.DESC && DESC.on) && !(window.TUBO && TUBO.on);
+}
+function openPause(){
+  const ov = document.getElementById('pauseOverlay'); if(!ov) return;
+  if(ov.style.display !== 'none' || !pausePosible()) return;
+  pausedGame = true; _pauseT0 = performance.now();
+  ov.classList.toggle('online', pauseOnline()); ov.classList.remove('confirm');
+  if(!pauseOnline()){
+    running = false;                                        // congela la simulación (el frame sigue dibujando)
+    if(stageIntroT > 0){ _pauseVoiceWas = false; try{ if(!voiceStart.paused){ voiceStart.pause(); _pauseVoiceWas = true; } }catch(e){} }   // la presentación también se detiene
+  }
+  try{ if(typeof music!=='undefined' && music) music.volume = .2; }catch(e){}
+  try{ if(document.pointerLockElement===canvas) document.exitPointerLock(); }catch(e){}
+  ov.style.display = 'flex';
+  try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){}
+}
+function closePause(reanudar){
+  const ov = document.getElementById('pauseOverlay'); if(ov){ ov.style.display = 'none'; ov.classList.remove('confirm'); }
+  closePauseCtl();
+  if(pausedGame && reanudar !== false && !pauseOnline() && !gameOver){
+    if(stageIntroT > 0){ _siT0 += performance.now() - _pauseT0; try{ if(_pauseVoiceWas) voiceStart.play().catch(()=>{}); }catch(e){} }   // el reloj de la presentación no cuenta la pausa
+    running = true;
+  }
+  if(reanudar !== false){ try{ if(typeof music!=='undefined' && music) music.volume = .45; }catch(e){} }
+  pausedGame = false;
+}
+/* VER CONTROLES: la chuleta de TAB (renderMoveSheet) del personaje que llevas, en modo modal */
+function openPauseCtl(){
+  const ms = document.getElementById('moveSheet'), card = document.getElementById('moveSheetCard'); if(!ms || !card) return;
+  try{ renderMoveSheet(); }catch(e){}
+  const b = document.createElement('button'); b.className = 'navBtn msBack'; b.id = 'msBack'; b.textContent = '‹ VOLVER'; b.addEventListener('click', closePauseCtl);
+  card.appendChild(b);
+  ms.classList.add('show', 'modal'); _pauseCtl = true;
+  try{ b.focus(); }catch(e){}
+}
+function closePauseCtl(){
+  const ms = document.getElementById('moveSheet'); if(!ms) return;
+  if(!_pauseCtl) return;
+  _pauseCtl = false; ms.classList.remove('show', 'modal');
+  const b = document.getElementById('msBack'); if(b) b.remove();
+}
+/* lo que hace "atrás" (ESC / B del mando) dentro del menú de pausa, según dónde estés */
+function pauseBack(){
+  const ov = document.getElementById('pauseOverlay');
+  if(_pauseCtl){ closePauseCtl(); return; }
+  if(ov && ov.classList.contains('confirm')){ ov.classList.remove('confirm'); return; }
+  closePause(true);
+}
+window.openPause = openPause; window.pauseBack = pauseBack; window.pausePosible = pausePosible;
+(function setupPause(){
+  const $ = id => document.getElementById(id);
+  if(!$('pauseOverlay')) return;
+  $('pauseResume').addEventListener('click', ()=> closePause(true));
+  $('pauseCtl').addEventListener('click', openPauseCtl);
+  $('pauseQuit').addEventListener('click', ()=>{ $('pauseOverlay').classList.add('confirm'); try{ $('pauseQuitNo').focus(); }catch(e){} });
+  $('pauseQuitNo').addEventListener('click', ()=> $('pauseOverlay').classList.remove('confirm'));
+  $('pauseQuitYes').addEventListener('click', ()=>{ closePause(false); returnToMenu(); });
+})();
 
 /* ====================== ENTRENAMIENTO: panel de opciones en pausa (ESC) ====================== */
 function trainSetChar(key){           // cambio rápido de personaje en pleno entrenamiento
@@ -40846,7 +40960,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   var CONTAINERS = ['#startOverlay','#endOverlay','#lbOverlay','#perkOverlay',
                     '#netLobby','#guideModal','#trophyModal','#marksModal','#howToModal',
                     '#optModal','#langModal','#ctlModal','#setupModal',   /* ►HOME2: las tres fichas del menú de lista */
-                    '#trainPause','#atkShow'];
+                    '#trainPause','#pauseOverlay','#atkShow'];   /* ►PAUSA */
   /* En estos overlays las FLECHAS ya las gestiona el juego (cambian slide/personaje). Ahí NO
      movemos el foco con flechas; el mando replica esa navegación pulsando sus botones. */
   var ARROW_OWNED = { atkShow:1, howToModal:1 };
@@ -40854,7 +40968,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   var FIRST_PICK = {
     startOverlay:'#hsPlay',      /* ►HOME2: #playSoloBtn ya está oculto; el primer verbo de la lista es JUGAR */
     endOverlay:'#restartBtn', lbOverlay:'#lbContinue',
-    perkOverlay:'.perkCard.afford', netLobby:'#netCreate', trainPause:'#trainResume',
+    perkOverlay:'.perkCard.afford', netLobby:'#netCreate', trainPause:'#trainResume', pauseOverlay:'#pauseResume',
     setupModal:'.setupStep:not([hidden]) button, .setupStep:not([hidden]) .cpArrow'
   };
   /* incluye <div> clicables (perkCard, puntos) — evita a propósito el confeti (.confetti i.dot) */
@@ -40956,6 +41070,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   }
   function back(){
     if(!activeC) return;
+    if(activeC.id==='pauseOverlay' && window.pauseBack){ pauseBack(); return; }   /* ►PAUSA: B = atrás dentro de la pausa */
     var b = activeC.querySelector('.modalClose');
     if(b && visible(b)){ b.click(); return; }
     b = activeC.querySelector('#menuBtn, #trainMenu');
@@ -40993,14 +41108,14 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   }, false);
 
   /* --- MANDO: sondeo por rAF con detección de flanco + auto-repetición al mantener --- */
-  var pv = {up:false,down:false,left:false,right:false,a:false,b:false}, repAt = 0;
+  var pv = {up:false,down:false,left:false,right:false,a:false,b:false,start:false}, repAt = 0;
   function readPads(){
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    var s = {up:false,down:false,left:false,right:false,a:false,b:false};
+    var s = {up:false,down:false,left:false,right:false,a:false,b:false,start:false};
     for(var i=0;i<pads.length;i++){ var p=pads[i]; if(!p) continue;
       var bx=p.buttons||[], pr=function(n){ return !!(bx[n]&&bx[n].pressed); };
       if(pr(12))s.up=true; if(pr(13))s.down=true; if(pr(14))s.left=true; if(pr(15))s.right=true;
-      if(pr(0))s.a=true; if(pr(1))s.b=true;
+      if(pr(0))s.a=true; if(pr(1))s.b=true; if(pr(9))s.start=true;   /* 9 = Start/Menu (►PAUSA) */
       var ax=p.axes||[], lx=ax[0]||0, ly=ax[1]||0;                  // stick izquierdo
       if(ly<-0.55)s.up=true; if(ly>0.55)s.down=true; if(lx<-0.55)s.left=true; if(lx>0.55)s.right=true;
     }
@@ -41009,7 +41124,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   function tick(now){
     requestAnimationFrame(tick);
     reacquire();
-    if(!activeC){ pv = readPads(); return; }                        // en partida no leemos el mando para menús
+    if(!activeC){ var s0 = readPads(); if(s0.start && !pv.start && window.openPause && window.pausePosible && pausePosible()) openPause(); pv = s0; return; }   // en partida no leemos el mando para menús… salvo Start → ►PAUSA
     var s = readPads();
     var dir  = s.up?'up':s.down?'down':s.left?'left':s.right?'right':null;
     var pdir = pv.up?'up':pv.down?'down':pv.left?'left':pv.right?'right':null;
@@ -41019,6 +41134,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
     }
     if(s.a && !pv.a) activate();
     if(s.b && !pv.b) back();
+    if(s.start && !pv.start && activeC.id==='pauseOverlay' && window.pauseBack) pauseBack();   /* ►PAUSA: Start de nuevo = reanudar */
     pv = s;
   }
   requestAnimationFrame(tick);
