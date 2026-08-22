@@ -3479,7 +3479,7 @@ saveGet();   // carga temprana: el resto del arranque (home, selector) ya la enc
 
 let _shadowTick = 0;
 const _inkV2 = new THREE.Vector2();   // ►INK: scratch del tamaño de buffer
-function drawScene(){ tagInteractiveMask();   // marca cada frame los interactivos (saltadores/boosts/objetos/armas/pasivas) en MASK_LAYER → conservan saturación
+function drawScene(){ tagInteractiveMask(); updateBoundaryWalls();   // ►MUROVENTANA: el tramo de cristal sigue a la cámara   // marca cada frame los interactivos (saltadores/boosts/objetos/armas/pasivas) en MASK_LAYER → conservan saturación
   if(gradePass){ gradePass.uniforms.time.value = performance.now()*0.001;   // anima el grano
     gradePass.uniforms.tCharDepth.value = charDepthRT ? charDepthRT.texture : null;   // ►HALFMASK: ahora es el COLOR (alpha=presencia), no el depth — máscara de PERSONAJES → +10% saturación
     gradePass.uniforms.tProtect.value   = maskRT ? maskRT.texture : null; }            // máscara personajes+interactivos → no se les baja la saturación
@@ -23612,7 +23612,24 @@ function wallHit(p, sign){
 }
 
 /* pared-limite translucida (campo de fuerza) fija en el mundo */
-const _boundaryWalls = [];   // ►S4ATMO: para ocultar el campo de fuerza cuando el chamber de piedra lo sustituye
+const _boundaryWalls = [];
+const WALL_SPAN = 56;   // ►MUROVENTANA · ►AJUSTA: largo (u) del tramo de cristal visible alrededor de la cámara (la cinta mide 104)
+function updateBoundaryWalls(){
+  for(const g of _boundaryWalls){
+    const w = g.userData._win; if(!w || !g.visible) continue;
+    const half = WALL_SPAN/2;
+    const zc = THREE.MathUtils.clamp(camTarget.z, w.zMin + half, w.zMax - half);
+    if(w.wall.position.z !== zc){
+      w.wall.position.z = zc;
+      /* la textura cubre la cinta ENTERA (zMin..zMax): se recorta el tramo correspondiente para que
+         los tiles queden clavados al mundo aunque el plano se mueva */
+      const m = w.wall.material;
+      if(m.map && m.map.__win !== true){ m.map.wrapS = THREE.ClampToEdgeWrapping; m.map.__win = true; }
+      const u0 = (w.zMax - (zc + half)) / w.len;   // rotation.y=+90° lleva el +x local a -z: u crece hacia zMin (u=0 ↔ zMax). Textura compartida por los dos muros: mismo zc → mismo offset
+      if(m.map){ m.map.repeat.x = WALL_SPAN / w.len; m.map.offset.x = u0; }
+    }
+  }
+}   // ►S4ATMO: para ocultar el campo de fuerza cuando el chamber de piedra lo sustituye
 function addBoundaryWall(sign){
   /* ►MUROVIS (16/08, pedido de Toni): fuera el panel-fantasma (0.05) + barras — el límite ahora es
      CRISTAL GLASEADO: tiles cuadrados de 2×2 con tono variado (dos fríos mezclados + brillo
@@ -23645,12 +23662,18 @@ function addBoundaryWall(sign){
     }
     window._muroTex = new THREE.CanvasTexture(cv);
   }
+  /* ►MUROVENTANA (Toni 22/08: "pon un límite de hasta dónde se ven"): el cristal ya no cubre los 104 u
+     de la cinta de golpe, sino una VENTANA de WALL_SPAN u centrada en el punto que mira la cámara, que
+     se desliza con ella (updateBoundaryWalls) y desplaza la textura a la par para que los tiles no
+     resbalen. Menos relleno translúcido en pantalla (el muro lejano ya no se pinta) y menos ruido
+     visual en el horizonte; el look de cerca es idéntico. */
   const mat = new THREE.MeshBasicMaterial({ map: window._muroTex, transparent:true, opacity:0.20,
     side:THREE.DoubleSide, depthWrite:false });   // ►►► AJUSTA: opacity = cuánto canta el cristal
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(zMax-zMin, yMax-yMin), mat);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(WALL_SPAN, yMax-yMin), mat);
   wall.rotation.y = Math.PI/2;
   wall.position.set(x, (yMin+yMax)/2, (zMin+zMax)/2);
   g.add(wall);
+  g.userData._win = { wall, zMin, zMax, len:(zMax-zMin) };
   scene.add(g);
   _boundaryWalls.push(g);
   return g;
@@ -39725,7 +39748,7 @@ addEventListener('keydown', e=>{
   if(vis('setupModal')){ const b = document.getElementById('setupClose'); if(b) b.click(); return; }   // 1º cierra los popups de la home
   if(vis('netLobby'))  { const b = document.getElementById('netClose');  if(b) b.click(); return; }
   if(TRAIN.on && !vis('startOverlay')){ if(vis('trainPause')) resumeTrain(); else openTrainPause(); return; }   // entrenamiento: ESC abre/cierra opciones (no sale)
-  if(vis('pauseOverlay')){ pauseBack(); return; }                       // ►PAUSA: dentro del menú de pausa, ESC = atrás (controles → menú → reanudar)
+  if(vis('pauseOverlay') || _pauseCtl){ pauseBack(); return; }          // ►PAUSA: dentro del menú de pausa (o en su chuleta de controles), ESC = atrás (controles → menú → reanudar)
   if(!vis('startOverlay') && pausePosible()){ openPause(); return; }    // ►PAUSA: en partida, ESC abre el menú de pausa (antes salía al menú a pelo)
   if(!vis('startOverlay')) returnToMenu();   // fuera de la home (carga, presentación o pantalla final) → al menú
 });
@@ -39774,12 +39797,14 @@ function openPauseCtl(){
   const b = document.createElement('button'); b.className = 'navBtn msBack'; b.id = 'msBack'; b.textContent = '‹ VOLVER'; b.addEventListener('click', closePauseCtl);
   card.appendChild(b);
   ms.classList.add('show', 'modal'); _pauseCtl = true;
+  { const ov = document.getElementById('pauseOverlay'); if(ov) ov.style.display = 'none'; }   // el pop-up se aparta del todo: #moveSheet vive dentro de #hud (otro contexto de apilamiento) y el velo borroso de la pausa lo tapaba
   try{ b.focus(); }catch(e){}
 }
 function closePauseCtl(){
   const ms = document.getElementById('moveSheet'); if(!ms) return;
   if(!_pauseCtl) return;
   _pauseCtl = false; ms.classList.remove('show', 'modal');
+  { const ov = document.getElementById('pauseOverlay'); if(ov && pausedGame) ov.style.display = 'flex'; }   // vuelve el pop-up de pausa
   const b = document.getElementById('msBack'); if(b) b.remove();
 }
 /* lo que hace "atrás" (ESC / B del mando) dentro del menú de pausa, según dónde estés */
@@ -40960,7 +40985,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   var CONTAINERS = ['#startOverlay','#endOverlay','#lbOverlay','#perkOverlay',
                     '#netLobby','#guideModal','#trophyModal','#marksModal','#howToModal',
                     '#optModal','#langModal','#ctlModal','#setupModal',   /* ►HOME2: las tres fichas del menú de lista */
-                    '#trainPause','#pauseOverlay','#atkShow'];   /* ►PAUSA */
+                    '#trainPause','#pauseOverlay','#moveSheet','#atkShow'];   /* ►PAUSA (la chuleta solo es contenedor en modo modal: fuera de él no tiene botones) */
   /* En estos overlays las FLECHAS ya las gestiona el juego (cambian slide/personaje). Ahí NO
      movemos el foco con flechas; el mando replica esa navegación pulsando sus botones. */
   var ARROW_OWNED = { atkShow:1, howToModal:1 };
@@ -40968,7 +40993,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   var FIRST_PICK = {
     startOverlay:'#hsPlay',      /* ►HOME2: #playSoloBtn ya está oculto; el primer verbo de la lista es JUGAR */
     endOverlay:'#restartBtn', lbOverlay:'#lbContinue',
-    perkOverlay:'.perkCard.afford', netLobby:'#netCreate', trainPause:'#trainResume', pauseOverlay:'#pauseResume',
+    perkOverlay:'.perkCard.afford', netLobby:'#netCreate', trainPause:'#trainResume', pauseOverlay:'#pauseResume', moveSheet:'#msBack',
     setupModal:'.setupStep:not([hidden]) button, .setupStep:not([hidden]) .cpArrow'
   };
   /* incluye <div> clicables (perkCard, puntos) — evita a propósito el confeti (.confetti i.dot) */
@@ -41070,7 +41095,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   }
   function back(){
     if(!activeC) return;
-    if(activeC.id==='pauseOverlay' && window.pauseBack){ pauseBack(); return; }   /* ►PAUSA: B = atrás dentro de la pausa */
+    if((activeC.id==='pauseOverlay' || activeC.id==='moveSheet') && window.pauseBack){ pauseBack(); return; }   /* ►PAUSA: B = atrás dentro de la pausa / su chuleta */
     var b = activeC.querySelector('.modalClose');
     if(b && visible(b)){ b.click(); return; }
     b = activeC.querySelector('#menuBtn, #trainMenu');
@@ -41134,7 +41159,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
     }
     if(s.a && !pv.a) activate();
     if(s.b && !pv.b) back();
-    if(s.start && !pv.start && activeC.id==='pauseOverlay' && window.pauseBack) pauseBack();   /* ►PAUSA: Start de nuevo = reanudar */
+    if(s.start && !pv.start && (activeC.id==='pauseOverlay' || activeC.id==='moveSheet') && window.pauseBack) pauseBack();   /* ►PAUSA: Start de nuevo = atrás/reanudar */
     pv = s;
   }
   requestAnimationFrame(tick);
