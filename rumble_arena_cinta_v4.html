@@ -3767,7 +3767,7 @@ function sueloGrassClumps(g, sx, sz, topY, cx, cz){
   const cA = new THREE.Color(0x2e7d2c), cB = new THREE.Color(0x7fd04a), cT = new THREE.Color(), cBase = new THREE.Color();   // base oscura → punta clara
   const push = (p, c)=>{ pos.push(p.x, p.y, p.z); col.push(c.r, c.g, c.b); };
   const q = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const nC = Math.min(40, Math.round(sx*sz/20));   // pocas matas altas: el cuerpo lo pone el felpudo
+  const nC = 0;   // sin matas sueltas: el felpudo de matas curvas lo es todo
   for(let i=0;i<nC;i++){
     const lx = (Math.random()-.5)*sx*0.86, lz = (Math.random()-.5)*sz*0.86;
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.6)) continue;
@@ -3802,32 +3802,43 @@ function sueloGrassClumps(g, sx, sz, topY, cx, cz){
    pisarla. Rendimiento: UNA InstancedMesh por plataforma (1 hoja de 4 tris × ~3.000 instancias = 1 draw call,
    ~200 KB); el viento y el APLASTADO por pisadas van enteros en el vertex shader con hasta 8 "pisadores"
    (jugadores + minions cercanos) como uniforms → cero trabajo por hoja en CPU. */
-const CARPET_H = 0.4;                                   // alto de la hoja base (la escala por instancia lo varía)
+const CARPET_H = 0.85;                                  // alto de la mata base (≈ espinilla de un luchador de 2 u); la escala por instancia lo varía
 const _pushU = { value: Array.from({length:8}, ()=> new THREE.Vector4(0,0,0,0)) };
 let _carpetGeo = null, _carpetMat = null;
 function sueloCarpetGeo(){
   if(_carpetGeo) return _carpetGeo;
-  const w = 0.3, H = CARPET_H, pos = [], col = [], c0 = new THREE.Color(0x3a8f2e), c1 = new THREE.Color(0x9ee455), ct = new THREE.Color();
-  const P = (x,y,z,t)=>{ pos.push(x,y,z); ct.copy(c0).lerp(c1, t*t); col.push(ct.r, ct.g, ct.b); };
-  const rows = [[w*.5, 0, 0], [w*.42, H*.5, 0.05], [0.0, H, 0.12]];   // (semiancho, altura, inclinación) por tramo
-  for(let i=0;i<2;i++){ const a=rows[i], b=rows[i+1];
-    const t0=a[1]/H, t1=b[1]/H;
-    P(-a[0],a[1],a[2],t0); P(a[0],a[1],a[2],t0); P(b[0],b[1],b[2],t1);
-    P(-a[0],a[1],a[2],t0); P(b[0],b[1],b[2],t1); P(-b[0],b[1],b[2],t1); }
+  /* MATA de 8 hojas curvas (ref. hexaquo "full-geometry grass"): cada hoja 2 tramos (4 tris), nace en el centro y se
+     curva hacia fuera; ancho 0,12-0,18 u en la base, alto hasta CARPET_H. Normales "de cilindro" (hacia arriba/fuera)
+     para que se ilumine suave como un colchón y no como cuchillas. Degradado base oscura → punta amarillo-verde. */
+  const H = CARPET_H, pos = [], col = [], nrm = [], c0 = new THREE.Color(0x2f7a22), c1 = new THREE.Color(0xc6e35a), ct = new THREE.Color();
+  let seed = 11; const rnd = ()=>{ seed = (seed*16807) % 2147483647; return seed/2147483647; };
+  const V = (x,y,z,t,nx,nz)=>{ pos.push(x,y,z); ct.copy(c0).lerp(c1, t*t); col.push(ct.r,ct.g,ct.b); const l = Math.hypot(nx, 1.2, nz); nrm.push(nx/l, 1.2/l, nz/l); };
+  const NB = 8;
+  for(let b=0;b<NB;b++){
+    const a = (b/NB)*Math.PI*2 + rnd()*.7, dx = Math.cos(a), dz = Math.sin(a);
+    const h = H*(.6 + rnd()*.4), w = .12 + rnd()*.06, lean = .45 + rnd()*.35, r0 = .03 + rnd()*.06;
+    const tx = -dz, tz = dx;   // ancho perpendicular a la caída
+    const ring = t=>{ const hy = h*t, out = r0 + lean*h*t*t, ww = w*(1 - t*.9); return [dx*out - tx*ww, hy, dz*out - tz*ww, dx*out + tx*ww, hy, dz*out + tz*ww]; };
+    let p = ring(0);
+    for(let k=1;k<=2;k++){ const t0 = (k-1)/2, t1 = k/2, q = ring(t1);
+      V(p[0],p[1],p[2],t0,dx,dz); V(p[3],p[4],p[5],t0,dx,dz); V(q[3],q[4],q[5],t1,dx,dz);
+      V(p[0],p[1],p[2],t0,dx,dz); V(q[3],q[4],q[5],t1,dx,dz); V(q[0],q[1],q[2],t1,dx,dz);
+      p = q; }
+  }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.computeVertexNormals();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm,3));
   _carpetGeo = g; return g;
 }
 function sueloCarpetMat(){
   if(_carpetMat) return _carpetMat;
-  const m = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:true, side:THREE.DoubleSide, roughness:.95, metalness:0 });
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:false, side:THREE.DoubleSide, roughness:.9, metalness:0 });
   m.customProgramCacheKey = ()=> 'suelocarpet';
   m.onBeforeCompile = sh=>{ sh.uniforms.uWind = _windU; sh.uniforms.uPush = _pushU;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', "#include <common>\nuniform float uWind; uniform vec4 uPush[8];").replace('#include <begin_vertex>', "#include <begin_vertex>\n{ vec3 ipos = (modelMatrix * instanceMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vec3 rgt = normalize(instanceMatrix[0].xyz); vec3 fwd = normalize(instanceMatrix[2].xyz); float hh = clamp(position.y / 0.40, 0.0, 1.0); vec2 off = vec2(0.0); float flat_ = 0.0;\nfor(int i=0;i<8;i++){ vec4 p = uPush[i]; if(p.w <= 0.0) continue; vec2 d = ipos.xz - p.xz; float l = length(d); if(l < p.w){ float k = 1.0 - l/p.w; off += (d / max(l, 0.05)) * k * 0.5; flat_ = max(flat_, k); } }\nfloat ph = uWind*1.6 + ipos.x*0.5 + ipos.z*0.4; off += vec2(sin(ph)*0.05 + sin(ph*2.3+0.9)*0.02, cos(ph*0.8)*0.03);\nvec3 o3 = vec3(off.x, 0.0, off.y); vec2 loc = vec2(dot(o3, rgt), dot(o3, fwd)); float k2 = hh*hh; transformed.x += loc.x * k2; transformed.z += loc.y * k2; transformed.y -= (length(off) * 0.35 + flat_ * 0.55) * hh * 0.40; }"); };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', "#include <common>\nuniform float uWind; uniform vec4 uPush[8];").replace('#include <begin_vertex>', "#include <begin_vertex>\n{ vec3 ipos = (modelMatrix * instanceMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vec3 rgt = normalize(instanceMatrix[0].xyz); vec3 fwd = normalize(instanceMatrix[2].xyz); float hh = clamp(position.y / 0.85, 0.0, 1.0); vec2 off = vec2(0.0); float flat_ = 0.0;\nfor(int i=0;i<8;i++){ vec4 p = uPush[i]; if(p.w <= 0.0) continue; vec2 d = ipos.xz - p.xz; float l = length(d); if(l < p.w){ float k = 1.0 - l/p.w; off += (d / max(l, 0.05)) * k * 0.5; flat_ = max(flat_, k); } }\nfloat ph = uWind*1.6 + ipos.x*0.5 + ipos.z*0.4; off += vec2(sin(ph)*0.05 + sin(ph*2.3+0.9)*0.02, cos(ph*0.8)*0.03);\nvec3 o3 = vec3(off.x, 0.0, off.y); vec2 loc = vec2(dot(o3, rgt), dot(o3, fwd)); float k2 = hh*hh; transformed.x += loc.x * k2; transformed.z += loc.y * k2; transformed.y -= (length(off) * 0.35 + flat_ * 0.6) * hh * 0.85; }"); };
   _carpetMat = m; return m;
 }
 function sueloCarpet(g, sx, sz, topY, cx, cz){
-  const n = Math.min(9000, Math.round(sx*sz*10)); if(n < 8) return;   // ~10 hojas/u� = felpudo (9.000 � 4 tris = 36k tris, ~600 KB, 1 draw call)
+  const n = Math.min(3000, Math.round(sx*sz*3.2)); if(n < 8) return;   // ~3 matas/u2 x 32 tris = ~85k tris en la plataforma grande, 1 draw call, ~200 KB
   const im = new THREE.InstancedMesh(sueloCarpetGeo(), sueloCarpetMat(), n);
   const M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0,1,0), c = new THREE.Color();
   const surf = topY - 0.45; let k = 0;
@@ -3835,7 +3846,7 @@ function sueloCarpet(g, sx, sz, topY, cx, cz){
     const lx = (Math.random()-.5)*sx*0.92, lz = (Math.random()-.5)*sz*0.92;
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.25)) continue;
     q.setFromAxisAngle(up, Math.random()*Math.PI*2); p.set(lx, topY - 0.21, lz);   // la cara visible de la losa esta en topY-0.2 (surf es la base de las lomas): antes las hojas quedaban enterradas
-    const s0 = 0.85 + Math.random()*0.5; sc.set(s0, 0.6 + Math.random()*0.6, s0);
+    const s0 = 0.8 + Math.random()*0.6; sc.set(s0, 0.7 + Math.random()*0.6, s0);
     M.compose(p, q, sc); im.setMatrixAt(k, M);
     c.setHSL(0.26 + (Math.random()-.5)*0.03, 0.6 + Math.random()*0.2, 0.5 + Math.random()*0.16); im.setColorAt(k, c);
     k++;
