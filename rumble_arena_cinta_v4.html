@@ -874,7 +874,7 @@ window.addEventListener('load', function(){
     letter-spacing:3px; margin:0 0 24px; color:#ffd84f; -webkit-text-stroke:2px #14102b; }
   #hsMenu { display:flex; flex-direction:column; align-items:flex-start; gap:1px; }
   .hsItem { pointer-events:auto; cursor:pointer; background:none; border:0; margin:0; padding:5px 2px;
-    font-family:inherit; font-size:clamp(25px,3.4vw,42px); font-weight:900; font-style:italic;
+    font-family:inherit; font-size:clamp(32px,4.3vw,56px); font-weight:900; font-style:italic;   /* ►MENUGRANDE (Toni 23/08): +30 % */
     letter-spacing:2px; line-height:1.08; color:#fff; text-align:left;
     text-shadow:0 3px 0 rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.85);
     transition:color .13s ease, transform .13s ease; }
@@ -10515,8 +10515,8 @@ let _minDiscIM = null, _minRingIM = null;
 const _mmM = new THREE.Matrix4(), _mmQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI/2), _mmP = new THREE.Vector3(), _mmS = new THREE.Vector3();
 function _minMarkInit(){
   if(_minDiscIM || !MIN_MARK_ON) return;
-  const dm = new THREE.MeshBasicMaterial({ color:0x05070c, transparent:true, opacity:.42, depthWrite:false, fog:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
-  const rm = new THREE.MeshBasicMaterial({ color:MIN_MARK_COL, transparent:true, opacity:.95, depthWrite:false, fog:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
+  const dm = new THREE.MeshBasicMaterial({ color:0x05070c, transparent:true, opacity:.26, depthWrite:false, fog:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+  const rm = new THREE.MeshBasicMaterial({ color:MIN_MARK_COL, transparent:true, opacity:.62, depthWrite:false, fog:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
   _minDiscIM = new THREE.InstancedMesh(new THREE.CircleGeometry(.56, 22), dm, MINION_CAP);
   _minRingIM = new THREE.InstancedMesh(new THREE.RingGeometry(.56, .70, 26), rm, MINION_CAP);
   for(const im of [_minDiscIM, _minRingIM]){ im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.renderOrder = 2; scene.add(im); }
@@ -10527,7 +10527,8 @@ function _minMarkUpdate(n){
     const mn = minions[i];
     if(mn.dead || mn._levi){ _minDiscIM.setMatrixAt(i, _GOB_ZERO); _minRingIM.setMatrixAt(i, _GOB_ZERO); continue; }
     const s = Math.max(.7, (mn.scale||1) * (mn._boss ? 1.6 : mn.type==='large' ? 0.85 : 1.0));
-    _mmP.set(mn.pos.x, mn.pos.y + .05, mn.pos.z); _mmS.set(s, s, 1);
+    if(mn.onGround || mn._discY == null || mn.pos.y < mn._discY) mn._discY = mn.pos.y;   // ►MINMARK (Toni 23/08): el disco se queda en el suelo cuando el minion salta
+    _mmP.set(mn.pos.x, mn._discY + .05, mn.pos.z); _mmS.set(s, s, 1);
     _mmM.compose(_mmP, _mmQ, _mmS);
     _minDiscIM.setMatrixAt(i, _mmM); _minRingIM.setMatrixAt(i, _mmM);
   }
@@ -12483,6 +12484,7 @@ function bossSpawnInst(){
   const acts = {}, dur = {};
   for(const name in tpl.clips){ const c=tpl.clips[name]; const a=mixer.clipAction(c); a.setLoop(THREE.LoopOnce,1); a.clampWhenFinished=true; acts[name]=a; dur[name]=c.duration; }
   scene.add(root);
+  if(typeof registerMinionSil==='function' && !root.userData._silReg){ registerMinionSil(root, true); root.userData._silReg = true; }   // ►BOSSOUTLINE (Toni 23/08): el jefe también lleva contorno
   BOSSFIGHT.inst = { root, mixer, acts, dur, cur:null, _curT:0, baseScale:tpl.baseScale*_sz, baseY:tpl.baseY*_sz, _spec:gspec, _yaw:(gspec&&gspec.yaw)||BOSS_YAW };   // ►SAMBOSS: _spec/_yaw por instancia · ►S2BOSS: sizeMul a escala/baseY · ►G3: sub-spec del gólem
   if(gspec && gspec.tint){ const T=gspec.tint; _tintInst(BOSSFIGHT.inst, T.h, T.s, T.lk, T.la, T.emi, T.amt); }   // ►S2BOSS: recolor MORADO por instancia (deriva de _c0, guardado arriba)
   if(spec && spec.katana && _katanaTpl){   // ►SAMBOSS2: KATANA en la mano derecha (mismo modelo que el samurái jugable), se cuelga del hueso → oscila con las anims
@@ -17587,6 +17589,9 @@ function updatePvpShieldFX(){
     #hdLogMore{ margin-top:6px; width:100%; cursor:pointer; font-family:inherit; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fe8ff;
       background:none; border:1px dashed rgba(255,255,255,.18); border-radius:8px; padding:5px; }
     #hdLogMore:hover, #hdLogMore.uinav-focus{ background:rgba(255,255,255,.08); color:#fff; outline:none; }
+    #hdLogVer{ margin-top:5px; width:100%; cursor:pointer; font-family:inherit; font-size:10px; font-weight:900; letter-spacing:2px; color:#9fb0d6;
+      background:none; border:1px solid rgba(255,255,255,.14); border-radius:8px; padding:5px 6px; opacity:.85; }   /* ►VERLOGROS (Toni 23/08): botón sutil al pie de la caja */
+    #hdLogVer:hover, #hdLogVer.uinav-focus{ color:#fff; border-color:rgba(255,255,255,.35); opacity:1; outline:none; }
     /* la columna del héroe, más a la derecha y compacta */
     #hdLeft{ top:14px; padding-left:244px !important; padding-right:62px !important; }   /* hueco a la derecha para el camino diagonal */
     #hdLeft #cpView{ width:min(250px,20vw); }
@@ -17754,7 +17759,7 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdRb" data-act="log"    data-lbl="LOGROS"     title="Logros">🏅</button>'
       +   '<button type="button" class="hdRb" data-act="opts"   data-lbl="OPCIONES"   title="Opciones">⚙️</button>'
       +   '<button type="button" class="hdRb" data-act="lang"   data-lbl="IDIOMA"     title="Idioma">🈯</button>'
-      + '</div><div id="hdRailLbl">MENÚ</div><div id="hdLogMini"><h5>LOGROS POR DESBLOQUEAR <span id="hdLogMiniCo"></span></h5><div id="hdLogMiniList"></div><button type="button" id="hdLogMore">+ VER MÁS</button></div></div>'
+      + '</div><div id="hdRailLbl">MENÚ</div><div id="hdLogMini"><h5>LOGROS POR DESBLOQUEAR</h5><div id="hdLogMiniList"></div><button type="button" id="hdLogMore">+ VER MÁS</button><button type="button" id="hdLogVer">VER LOGROS</button></div></div>'
       + '<img id="hdChar" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
       + '<div id="hdRight">'
       +   '<div id="hdFrame"><img id="hdIso" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><div id="hdQ"><b>?</b><span>LLEGA HASTA AQUÍ PARA REVELARLO</span></div></div>'
@@ -17847,11 +17852,12 @@ function updatePvpShieldFX(){
     /* ►LOGROS MINI: los pendientes, de 3 en 3 (VER MÁS) y con scroll; la ficha completa sigue en el rail */
     let _lmN = 6;
     $('hdLogMore').addEventListener('click', ()=>{ _lmN += 3; renderLogMini(); });
+    { const _v = $('hdLogVer'); if(_v) _v.addEventListener('click', e=>{ e.stopPropagation(); const b = document.querySelector('.hdRb[data-act="log"]') || $('trophyLink'); if(b) b.click(); }); }   // ►VERLOGROS: abre la ficha completa
     window.__hdRenderLogMini = renderLogMini;
     function renderLogMini(){
       const ls = logrosState(), box = $('hdLogMiniList'), more = $('hdLogMore'); if(!box) return;
       const pend = LOGROS.filter(l => !ls.got[l.id]);
-      $('hdLogMiniCo').textContent = '🪙 ' + ls.coins;
+      { const _co = $('hdLogMiniCo'); if(_co) _co.textContent = '🪙 ' + ls.coins; }   // (las monedas ya no van en el título — Toni 23/08)
       box.innerHTML = pend.length ? pend.slice(0, _lmN).map(l => '<div class="hdLm"><div class="ic">' + l.ic + '</div><div class="tx"><b>' + l.t + '</b><span>' + l.d + '</span></div><div class="co">+' + l.co + '</div></div>').join('')
         : '<div class="hdLm"><div class="tx"><b>¡TODO DESBLOQUEADO!</b></div></div>';
       if(more) more.style.display = pend.length > _lmN ? '' : 'none';
@@ -18004,7 +18010,7 @@ function updatePvpShieldFX(){
     const PAD = 44, OFF = -30;   // NEGATIVO: las paradas van al lado IZQUIERDO del canto (sobre el cielo), no dentro del cristal (Toni 21/08)
     const pts = stops.map((st, i)=>{
       const y = H - PAD - (n > 1 ? i/(n-1) : 0) * (H - 2*PAD);
-      const x = r.left + lean * (1 - y/H) + OFF;
+      const x = r.left + lean * 0.5 + OFF;   // ►VERTICAL (Toni 23/08): línea recta, todos los círculos en la misma x (antes seguía la diagonal del canto)
       st.style.left = x.toFixed(1) + 'px'; st.style.top = y.toFixed(1) + 'px';
       return { x, y };
     });
