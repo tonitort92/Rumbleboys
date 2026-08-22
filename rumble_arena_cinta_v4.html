@@ -17245,7 +17245,7 @@ function updatePvpShieldFX(){
   const css = document.createElement('style');
   css.textContent = `
     /* la cuña (►CUÑA) pasa a ser el territorio del MUNDO: algo más ancha (spec: 55-60%) */
-    #startOverlay{ --wsW:min(1040px,58vw); --hdPathH:150px; }
+    #startOverlay{ --wsW:33.4vw; --wsLeanK:0; --hdPathH:150px; }   /* 2:1 (Toni 23/08): menu 2/3, ventana del mundo 1/3, corte VERTICAL acompanando la linea de eslabones */
     #startOverlay.race #homeShell, #startOverlay.race #hsIslas{ display:none !important; }
     #startOverlay.race{ overflow:hidden; }   /* todo es fixed: nada que desplazar, fuera la barra */
     #hdRace{ position:fixed; inset:0; pointer-events:none; z-index:3; font-family:inherit; text-align:left; }
@@ -17490,7 +17490,7 @@ function updatePvpShieldFX(){
        medidas de la cuña viven en html.race porque #titleOverlay no desciende de #startOverlay.
        El recorte entra con transición al acabar el vuelo (la base lleva el rectángulo entero para
        que haya de dónde animar). */
-    html.race{ --wsW:min(1040px,58vw); --wsLeanK:.13; --wsLean:calc(var(--wsW) * var(--wsLeanK)); }
+    html.race{ --wsW:33.4vw; --wsLeanK:0; --wsLean:calc(var(--wsW) * var(--wsLeanK)); }   /* 2:1 vertical (Toni 23/08) */
     html.race #titleOverlay{ clip-path:polygon(0 0, 100% 0, 100% 100%, 0 100%); transition:opacity .45s ease, clip-path .7s ease .15s; }
     html.race #titleOverlay.sky{ clip-path:polygon(0 0, calc(100% - var(--wsW) + var(--wsLean) + 1px) 0, calc(100% - var(--wsW) + 1px) 100%, 0 100%); }
     /* eslabón SIN DESCUBRIR: telón sobre la ventana (sin spoiler) y el ? encima */
