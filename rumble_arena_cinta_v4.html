@@ -16875,23 +16875,15 @@ function updatePvpShieldFX(){
     #hdRight{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:0 0 6px; box-sizing:border-box; }
     #hdWorld{ position:static; text-align:center; order:1; }
     #hdWState{ margin-top:6px; }
-    #hdLore{ order:2; max-width:min(440px,30vw); text-align:center; font-size:12.5px; line-height:1.45; color:#dbe4ff;
-      text-shadow:0 2px 6px rgba(0,0,0,.95), 0 0 12px rgba(0,0,0,.6); margin:0 0 2px; pointer-events:none; }
-    #hdLore i{ font-style:normal; color:#ffd84f; font-weight:900; }
-    #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(400px,28vw); }   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la version absoluta */
-    #hdCard{ position:static; order:4; width:min(400px,28vw) !important; padding-right:14px !important; }
-    /* ►CORTE DIAGONAL (Toni 21/08, v31): el marco del mapa y la ficha del mundo llevan las esquinas superior-izquierda e inferior-derecha
-       cortadas en diagonal "/", como el canto de la cuña que separa las secciones (--dcX ancho, --dcY alto del corte). El clip-path se
-       come el borde en el corte, así que cada diagonal lleva su propia línea (::before arriba-izquierda, ::after abajo-derecha). */
-    #hdFrame, #hdCard{ --dcX:34px; --dcY:58px; clip-path:polygon(var(--dcX) 0, 100% 0, 100% calc(100% - var(--dcY)), calc(100% - var(--dcX)) 100%, 0 100%, 0 var(--dcY)); border-radius:12px; }
-    #hdFrame::before, #hdFrame::after, #hdCard::before, #hdCard::after{ content:""; position:absolute; z-index:4; pointer-events:none; width:calc(var(--dcX) * 1.98); height:2px; transform-origin:50% 50%; transform:rotate(-59.6deg); }
-    #hdFrame::before, #hdFrame::after{ background:rgba(225,238,255,.8); }
-    #hdCard::before, #hdCard::after{ background:rgba(255,255,255,.14); }
-    #hdFrame::before, #hdCard::before{ left:calc(var(--dcX) * .5 - var(--dcX) * .99); top:calc(var(--dcY) * .5 - 1px); }
-    #hdFrame::after,  #hdCard::after{  right:calc(var(--dcX) * .5 - var(--dcX) * .99); bottom:calc(var(--dcY) * .5 - 1px); }
-    #hdCard{ position:relative; right:auto; bottom:auto; padding-right:18px !important; padding-bottom:26px; }   /* relative para sus ::before/::after (y sin los offsets de la versión absoluta); aire abajo-derecha para que el corte no muerda el botón */
-    #hdCard h4{ padding-left:26px; }   /* el título esquiva el corte de arriba a la izquierda */
+    #hdLore{ order:2; max-width:min(460px,32vw); text-align:center; font-size:12.5px; line-height:1.45; color:#0b0e1a; font-weight:700;
+      text-shadow:0 1px 0 rgba(255,255,255,.35); margin:0 0 2px; pointer-events:none; }   /* v33: texto NEGRO (Toni 22/08) sobre el cielo claro de la cuña */
+    #hdLore i{ font-style:normal; color:#7a3b00; font-weight:900; }   /* el acento, ámbar oscuro: el amarillo no se leía sobre claro */
+    #startOverlay.hidW #hdLore{ color:#dbe4ff; text-shadow:0 2px 6px rgba(0,0,0,.95); } #startOverlay.hidW #hdLore i{ color:#ffd84f; }   /* con el telón oscuro (mundo sin descubrir) el negro no se lee: ahí, claro como antes */
+    #hdFrame{ position:relative; top:auto; right:auto; left:auto; bottom:auto; order:3; width:min(460px,32vw); }   /* v33: +15% (Toni 22/08) */   /* relative (el planeta y el ? van absolutos dentro) y SIN los offsets de la version absoluta */
+    #hdCard{ position:static; order:4; width:min(460px,32vw) !important; padding-right:14px !important; }   /* v33: +15% (Toni 22/08) */
     #hdTrain small{ font-size:9px; }
+    #hdTrainLock{ display:none; margin-top:10px; padding:10px 12px; border-radius:12px; border:1px dashed rgba(255,255,255,.28); color:#9fb0d6; font-size:11px; font-weight:900; letter-spacing:1.5px; text-align:center; text-transform:uppercase; }   /* v33: sustituye al botón en los mundos no superados */
+    #hdCard.locked #hdTrain{ display:none; } #hdCard.locked #hdTrainLock{ display:block; }
     /* ---- ►CAMINO DIAGONAL (Toni 21/08): los 16 eslabones van SOBRE el canto de la cuña, del 1 (abajo) al 16
        (arriba), números a la derecha. La posición la pone layoutPath() leyendo el clip-path real de #wsWedge
        (así coincide con la diagonal a cualquier tamaño). Estas reglas anulan la caja horizontal. ---- */
@@ -17135,6 +17127,7 @@ function updatePvpShieldFX(){
       +   '<div id="hdLore"></div>'
       +   '<div id="hdCard" tabindex="0"><h4>FICHA DEL MUNDO</h4><div id="hdCardBody"></div>'
       +     '<button type="button" id="hdTrain">ENTRENAR ESTE MUNDO<small>MODO PRÁCTICA · AQUÍ NO SE GANAN TROFEOS</small></button>'
+      +     '<div id="hdTrainLock">🔒 No se puede entrenar hasta superarlo en la carrera</div>'
       +   '</div>'
       + '</div>'
       + '<div id="hdPath"><div id="hdPathIn"></div></div>';
@@ -17453,6 +17446,7 @@ function updatePvpShieldFX(){
         + (won ? '' : '<p id="hdCardNote">Los trofeos se ganan del tirón desde el Mundo 1.</p>');
     }
     const tb = $('hdTrain'); if(tb) tb.firstChild.textContent = mini ? 'ENTRENAR ESTE MINIJUEGO' : 'ENTRENAR ESTE MUNDO';
+    { const cd = $('hdCard'); if(cd) cd.classList.toggle('locked', !disc); }   // v33 (Toni 22/08): sin botón ENTRENAR en lo no desbloqueado; en su lugar el aviso #hdTrainLock
   }
 
   /* ►LOGROS (Toni 20/08, base): mini-logros que se desbloquean leyendo el save y dan MONEDAS.
