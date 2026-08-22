@@ -1576,8 +1576,8 @@ window.addEventListener('load', function(){
   /* MANDO: no emite eventos de DOM, hay que sondearlo. El bucle se apaga solo al retirarse la
      pantalla, así que no compite con el sondeo de menús (►UINAV) ni con el del juego. */
   (function pollPads(){
+    if(gone) return;                                   // ►PERF-RAF: al descartar la portada el bucle muere (antes se re-armaba para siempre)
     raf = requestAnimationFrame(pollPads);
-    if(gone) return;
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for(var i=0;i<pads.length;i++){
       var p = pads[i]; if(!p) continue;
@@ -2057,6 +2057,7 @@ window.addEventListener('load', function(){
 <!-- ►INTERSTAGE: telón de fundido a negro (compartido por todas las transiciones) -->
 <div id="fadeVeil"></div>
 
+<script>window._LT0 = performance.now();</script><!-- ►LOADTIME: el reloj arranca ANTES de los 72 <script src> (121 MB de JS): antes se medía solo lo que venía después -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- postprocesado (bloom) — versiones globales r128 -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
@@ -2236,8 +2237,9 @@ const VISUAL = {
    `modelos 1012 ms · mundo 2312 ms · shaders 2611 ms · 1er frame 202 ms · TOTAL 6137 ms`
    ►Si molesta, borra este bloque y sus 4 llamadas a _mark().
    ===================================================================== */
-const _LT0 = performance.now(), _LT = [];
+const _LT0 = window._LT0 || performance.now(), _LT = [];
 function _mark(n){ _LT.push([n, performance.now()]); }
+_mark("assets js (descarga+parse)");   // ►LOADTIME: la parte que faltaba en el informe
 function _loadReport(){
   let prev = _LT0, s = '';
   for(const [n, t] of _LT){ s += n + ' ' + Math.round(t - prev) + ' ms · '; prev = t; }
@@ -2671,7 +2673,7 @@ const _minSil = [];
 const MIN_SIL_RING = true;    // ►MINMARK (Toni 22/08): la masa vuelve al pase de silueta, pero con contorno NEGRO (tinta), distinto del de color de los jugadores
 function registerMinionSil(root, keepRing){
   if(!root || !(keepRing || MIN_SIL_RING)) return;
-  root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } });
+  root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); o.userData._silRoot = root; _minSil.push(o); } });   // ►PERF-SIL: _silRoot = para saber si la instancia está en escena
 }
 /* marca un objeto (y su jerarquía) en MASK_LAYER → no se le baja la saturación */
 function tagMaskLayer(root){ if(root) root.traverse(o=>{ if(o.isMesh) o.layers.enable(MASK_LAYER); }); }
@@ -2776,12 +2778,16 @@ try {
           /* matrices de proyección FRESCAS (el fovKick de los golpes cambia el FOV cada pocos frames) */
           try{ ssaoPass.ssaoMaterial.uniforms['cameraProjectionMatrix'].value.copy(camera.projectionMatrix);
                ssaoPass.ssaoMaterial.uniforms['cameraInverseProjectionMatrix'].value.copy(camera.projectionMatrixInverse); }catch(e){}
+          /* ►PERF-AO: el recorrido completo de la escena se hace cada 12 frames (~200 ms), no cada frame; entre
+             medias se reutilizan las listas (un transparente recién creado entra en el AO un instante: invisible).
+             Los SkinnedMesh NUEVOS sí se detectan al momento por los roots conocidos (jugadores + minions). */
           _aoOcultos.length = 0; _aoSkin.length = 0;
-          scene.traverse(o=>{
-            if(!o.visible) return;
-            if((o.isMesh || o.isSprite) && _esTransp(o.material)){ o.visible = false; _aoOcultos.push(o); }
-            else if(o.isSkinnedMesh){ o.visible = false; _aoSkin.push(o); }   // ►AO-TPOSE: los animados van en la 2ª pasada
-          });
+          if(((ssaoPass._scanK = (ssaoPass._scanK|0) + 1) % 12) === 1 || !ssaoPass._aoTr){
+            const tr = ssaoPass._aoTr = [], sk = ssaoPass._aoSk = [];
+            scene.traverse(o=>{ if((o.isMesh || o.isSprite) && _esTransp(o.material)) tr.push(o); else if(o.isSkinnedMesh) sk.push(o); });
+          }
+          for(const o of ssaoPass._aoTr){ if(o.visible && o.parent){ o.visible = false; _aoOcultos.push(o); } }
+          for(const o of ssaoPass._aoSk){ if(o.visible && !o.__aoMat){ o.visible = false; _aoSkin.push(o); } }
         }
         _roAO(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha);
         if(esNormales){
@@ -2852,7 +2858,7 @@ try {
            vacío en el shader). El material plano DEBE tener skinning para los SkinnedMesh (GLB),
            si no se renderizan en pose-T desalineada (era el bug del "outline solo en el arma"). */
         const _silCache = this._silCache || (this._silCache = {});
-        const _swapped = [];
+        const _swapped = this._swapped || (this._swapped = []); _swapped.length = 0;   // ►PERF-SIL: array reutilizado
         if(typeof players !== 'undefined') for(const p of players){
           const root = p && p.gfx && p.gfx.root; if(!root || !root.visible || p.gfx._ljOff) continue;   // ►LUZCONSTANTE: sin el gate _ljOff pagaríamos traverse+swap de 6 rigs por frame en el menú
           const hex = (typeof classColor==='function') ? classColor(p) : (p.color||0xffffff);
@@ -2869,6 +2875,7 @@ try {
           const stCol = 0x07090f;   // ►MINMARK: contorno de TINTA para los enemigos (antes: color del mapa)
           for(const o of _minSil){
             if(!o.material || o.material.depthWrite === false) continue;
+            { const r = o.userData._silRoot; if(r ? !r.parent : !o.parent) continue; }   // ►PERF-SIL: instancias del pool fuera de escena: ni swap ni restore
             const key = 'min' + (o.isSkinnedMesh ? '_s' : '');
             let sm = _silCache[key];
             if(!sm){ sm = new THREE.MeshBasicMaterial({ fog:false, transparent:true, opacity:0.62, skinning: !!o.isSkinnedMesh }); _silCache[key]=sm; }
@@ -2876,7 +2883,8 @@ try {
             _swapped.push(o, o.material); o.material = sm;
           }
         }
-        const _pcHex = renderer.getClearColor(new THREE.Color()).getHex ? renderer.getClearColor(new THREE.Color()).getHex() : 0x000000, _pcA = renderer.getClearAlpha();
+        const _pcC = this._pcC || (this._pcC = new THREE.Color());
+        const _pcHex = renderer.getClearColor(_pcC).getHex ? renderer.getClearColor(_pcC).getHex() : 0x000000, _pcA = renderer.getClearAlpha();   // ►PERF-SIL: sin 2 Color nuevos por frame
         const _bg = scene.background; scene.background = null;   // ►CLAVE: si no, el fondo de la escena rellena charDepthRT con alpha=1 en TODO → la silueta no se distingue del vacío → contorno invisible
         renderer.setClearColor(0x000000, 0);                  // fondo transparente → alpha 0 fuera de los personajes
         renderer.setRenderTarget(charDepthRT);
@@ -2978,7 +2986,8 @@ try {
       inkPass.enabled = true;
       composer.addPass(inkPass);
     }
-    if(THREE.BokehPass){   // DoF real (basado en profundidad): enfoca la acción, desenfoca el resto
+    const DOF_PASS_ON = false;   // ►PERF-MEM: ningún tier lleva dof:true → no se construye (eran 2 render targets a resolución completa muertos)
+    if(THREE.BokehPass && DOF_PASS_ON){   // DoF real (basado en profundidad): enfoca la acción, desenfoca el resto
       bokehPass = new THREE.BokehPass(scene, camera, { focus: 24, aperture: DOF.aperture, maxblur: DOF.maxblur, width: innerWidth, height: innerHeight });
       composer.addPass(bokehPass);
     }
@@ -3377,7 +3386,7 @@ function perfTick(ftMs){
   if(perfWarm < 60){ perfWarm++; }                                  // calienta antes de tocar nada
   else if(effName){
     const cap = TIERS[effName].drsMax;
-    if(ftAvg > 24 && curRatio > PIXEL_FLOOR+0.001){                  // PICO fuerte (p.ej. al alejar): baja en grande YA, sin esperar la histéresis
+    if(ftAvg > 24 && curRatio > PIXEL_FLOOR+0.001 && drsCool<=0){    // PICO fuerte (p.ej. al alejar): baja en grande, pero UNA vez por cooldown — ►PERF-DRS: cada paso recrea 3 render targets + 2 DepthTexture; sin esto se repetía cada frame mientras iba lento
       applyRenderScale(Math.max(PIXEL_FLOOR, curRatio-0.2)); drsCool=18;
     }
     else if(drsCool>0){ drsCool--; }                                // histéresis: no más de un cambio cada ~30 frames
@@ -3390,8 +3399,42 @@ function perfTick(ftMs){
       else if(autoGood>360 && autoIdx<2){ autoIdx++; autoGood=0; applyTier(); }              // ~6s holgado → sube
     }
   }
+  perfSample(ftMs);                                                 // ►PERF (?perf): muestra el frame ANTES del reset
   renderer.info.reset();                                            // cierra el conteo del frame (tras leerlo)
 }
+/* =====================================================================
+   ►PERF (auditoría 22/08): informe de rendimiento para medir EN LA MÁQUINA DE TONI (el headless
+   renderiza por software). Se activa con ?perf en la URL: overlay arriba-izq + una línea en consola
+   cada 5 s; F8 copia el último informe al portapapeles. Mide frame p50/p95/max (ms), draw calls,
+   triángulos, programas, texturas/geometrías, ratio DRS, entidades y memoria JS.
+   ===================================================================== */
+const PERF_ON = /[?&]perf\b/.test(location.search);
+const _pf = { ring:new Float32Array(600), i:0, n:0, lastT:0, calls:0, tris:0, k:0, report:'' };
+function perfSample(ftMs){
+  if(!PERF_ON) return;
+  if(isFinite(ftMs) && ftMs > 0){ _pf.ring[_pf.i] = ftMs; _pf.i = (_pf.i+1) % _pf.ring.length; if(_pf.n < _pf.ring.length) _pf.n++; }
+  const ri = renderer.info.render; _pf.calls += ri.calls; _pf.tris += ri.triangles; _pf.k++;
+  const now = performance.now();
+  if(now - _pf.lastT < 5000) return;
+  _pf.lastT = now;
+  const a = Array.from(_pf.ring.subarray(0, _pf.n)).sort((x,y)=>x-y);
+  const q = f => a.length ? a[Math.min(a.length-1, Math.floor(a.length*f))] : 0;
+  const mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576) + ' MB' : 'n/a';
+  const nMin = (typeof minions!=='undefined') ? minions.length : 0, nPart = (typeof parts!=='undefined') ? parts.length : 0;
+  const occ = (typeof occluders!=='undefined') ? occluders.length : 0, sil = (typeof _minSil!=='undefined') ? _minSil.length : 0;
+  const s = '[perf] STAGE ' + (typeof STAGE!=='undefined'?STAGE:'?') + ' · frame p50 ' + q(.5).toFixed(1) + ' / p95 ' + q(.95).toFixed(1) + ' / max ' + (a.length?a[a.length-1].toFixed(0):0) + ' ms'
+    + ' · calls ' + Math.round(_pf.calls/Math.max(1,_pf.k)) + ' · tris ' + Math.round(_pf.tris/Math.max(1,_pf.k)/1000) + 'k'
+    + ' · progs ' + renderer.info.programs.length + ' · tex ' + renderer.info.memory.textures + ' · geo ' + renderer.info.memory.geometries
+    + ' · ratio ' + (typeof curRatio!=='undefined' ? curRatio.toFixed(2) : '?') + ' · minions ' + nMin + ' · parts ' + nPart + ' · occ ' + occ + ' · sil ' + sil
+    + ' · heap ' + mem + ' · ' + innerWidth + 'x' + innerHeight + '@' + devicePixelRatio;
+  _pf.calls = 0; _pf.tris = 0; _pf.k = 0;
+  _pf.report += s + '\n';
+  console.log('%c' + s, 'background:#1a1a2e;color:#9fe8ff;padding:2px 6px');
+  let el = document.getElementById('perfOverlay');
+  if(!el){ el = document.createElement('div'); el.id = 'perfOverlay'; el.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9998;font:12px/1.35 Consolas,monospace;color:#9fe8ff;background:rgba(10,12,24,.82);padding:6px 9px;border-radius:6px;white-space:pre;pointer-events:none;max-width:60vw'; document.body.appendChild(el); }
+  el.textContent = s.replace('[perf] ', '') + '\nF8 = copiar informe';
+}
+if(PERF_ON) addEventListener('keydown', e=>{ if(e.code==='F8'){ const txt = (typeof _LT!=='undefined' ? '[carga] ' + _LT.map(x=>x[0]+' '+Math.round(x[1]-_LT0)+'ms').join(' · ') + '\n' : '') + _pf.report; try{ navigator.clipboard.writeText(txt); }catch(err){} console.log(txt); if(typeof showBanner==='function') showBanner('INFORME COPIADO', 1); } });
 
 
 /* ►PERF/►SOLOALTA: antes se restauraba aquí la CALIDAD guardada en otra sesión. Mientras solo exista
@@ -3602,7 +3645,13 @@ const M = {
 /* CAMPO MULTI-TONO: textura de rejilla randomizada (varios tonos de una paleta) tipo
    campo irregular. Se aplica a un material compartido -> toda la superficie con detalle
    y SIN coste extra (1 sola textura compartida). */
+const _fieldTexCache = new Map();   // ►PERF-MEM: una textura por paleta+repeat (se regeneraban 4-6 por cada cambio de stage y nunca se liberaban)
 function makeFieldTexture(palette, repeat=1/24){
+  const _k = palette.join('|') + '@' + repeat;
+  if(_fieldTexCache.has(_k)) return _fieldTexCache.get(_k);
+  const tex = _makeFieldTexture(palette, repeat); _fieldTexCache.set(_k, tex); return tex;
+}
+function _makeFieldTexture(palette, repeat){
   const cells = 16, px = 256, cs = px/cells;
   const cv = document.createElement('canvas'); cv.width = cv.height = px;
   const ctx = cv.getContext('2d');
@@ -3703,7 +3752,7 @@ function updateFireLights(t){
   if(n){ px/=n; pz/=n; } else { px = camera.position.x; pz = camera.position.z; }
   for(const f of _fires){ const wx = (f.g.parent ? f.g.parent.position.x : 0) + f.lx; f._wx = wx;
     f._d = (wx-px)*(wx-px) + (f.lz-pz)*(f.lz-pz); }
-  _fires.sort((a,b)=>a._d-b._d);
+  for(let i=0, K=Math.min(_fireLights.length, _fires.length); i<K; i++){ let b=i; for(let j=i+1;j<_fires.length;j++) if(_fires[j]._d < _fires[b]._d) b=j; if(b!==i){ const tmp=_fires[i]; _fires[i]=_fires[b]; _fires[b]=tmp; } }   // ►PERF-FIRE: las 3 más cercanas sin ordenar todo (ni closure) cada frame
   const flick = 1 + Math.sin(t*7.0)*0.22 + Math.sin(t*15.0+1.3)*0.10;
   for(let i=0;i<_fireLights.length;i++){
     const fl = _fireLights[i], f = _fires[i];
@@ -6285,7 +6334,8 @@ function updateCharMixers(dt){
         target = (k==='run') ? wRun : (k==='idle') ? 1-wRun : 0;
       } else target = (k===key) ? 1 : 0;
       const w = acts[k].getEffectiveWeight();
-      acts[k].setEffectiveWeight(THREE.MathUtils.clamp(w + (target-w)*blend, 0, 1));
+      const nw = Math.min(1, w + (target-w)*blend), ww = (nw < 1e-3) ? 0 : nw;   // ►PERF-MIX: a peso ~0 se deja en 0 y se DESACTIVA (si no, r128 interpola TODOS los clips de TODOS los rigs cada frame)
+      acts[k].setEffectiveWeight(ww); acts[k].enabled = (ww > 0);
     }
     /* PELO DORADO al lanzar E (rayo) o R (definitiva) — estilo Super Saiyan */
     const ssj = !!(p.beam || p.ult);
@@ -7263,7 +7313,9 @@ const kit = {
   },
   _pick(key){
     if(this.buf[key]) return key;
-    const vars = KIT_KEYS.filter(k=> k.startsWith(key + '_') && /_\d$/.test(k) && this.buf[k]);
+    if(!this._vars) this._vars = {};
+    let vars = this._vars[key];
+    if(!vars || vars.length !== vars._n){ vars = KIT_KEYS.filter(k=> k.startsWith(key + '_') && /_\d$/.test(k) && this.buf[k]); vars._n = vars.length; if(this.ready() >= KIT_KEYS.length - this._fail) this._vars[key] = vars; }   // ►PERF-ALLOC: memo por clave (era filter+regex por cada sonido)
     if(!vars.length) return null;
     let k = vars[(Math.random()*vars.length)|0];
     if(vars.length > 1 && k === this._last[key]) k = vars[(vars.indexOf(k)+1) % vars.length];
@@ -10735,7 +10787,7 @@ function gobUpdate(mn, dt){
   g.token=tok;
   if(g.acts.walk) g.acts.walk.timeScale = THREE.MathUtils.clamp(sp/cfg.walkRef, 0.5, 2.5);   // ►anti foot-slide
   const blend = Math.min(1, dt*10);
-  for(const k in g.acts){ const tgt=(k===tok)?1:0; const w=g.acts[k].getEffectiveWeight(); g.acts[k].setEffectiveWeight(THREE.MathUtils.clamp(w+(tgt-w)*blend,0,1)); }
+  for(const k in g.acts){ const tgt=(k===tok)?1:0; const a=g.acts[k]; const w=a.getEffectiveWeight(); const nw=Math.min(1, w+(tgt-w)*blend), ww=(nw<1e-3)?0:nw; a.setEffectiveWeight(ww); a.enabled=(ww>0); }   // ►PERF-MIX: clips a 0 apagados
   g.mixer.update(dt);
 }
 function gobClearAll(){ for(const mn of minions) if(mn._gob) gobRemove(mn); }   // al reiniciar partida → todos al pool
@@ -11284,6 +11336,7 @@ function minionJump(mn, v){
   if(mn.onGround){ mn.vel.y = v||JUMP; mn.onGround=false; mn.airJump=1; mn.jumpCD=.4; sfx.jump(); }
   else if(mn.airJump>0){ mn.vel.y = v||DJUMP; mn.airJump=0; mn.jumpCD=.4; }
 }
+const _mnTo = new THREE.Vector3();   // ►PERF-ALLOC: scratch de updateMinion
 function updateMinion(mn, dt){
   mn.hitstun=Math.max(0,mn.hitstun-dt); mn.invuln=Math.max(0,mn.invuln-dt);
   mn.hitCD=Math.max(0,mn.hitCD-dt); mn.cd=Math.max(0,mn.cd-dt); mn.jumpCD=Math.max(0,mn.jumpCD-dt);
@@ -11329,7 +11382,7 @@ function updateMinion(mn, dt){
     }
     wantMove = true;
   } else if(mn.hitstun<=0 && mn.atkPhase==='none' && tgt){
-    const to=new THREE.Vector3(tgt.pos.x-mn.pos.x,0,tgt.pos.z-mn.pos.z); const dist=to.length();
+    const to=_mnTo.set(tgt.pos.x-mn.pos.x,0,tgt.pos.z-mn.pos.z); const dist=to.length();   // ►PERF-ALLOC: scratch (era un Vector3 nuevo por minion y frame)
     if(dist>.001) to.multiplyScalar(1/dist);
     mn.yaw = Math.atan2(to.x, to.z);
     const spd = mn.type==='shooter'?4.2 : mn.type==='large'?2.3 : 3.6;   // tirador algo más lento (menos pesado)
@@ -16007,8 +16060,8 @@ function resetBossFight(){
   if(typeof endDeathCine==='function') endDeathCine();   // ►DEATHCINE: nunca dejes la escena congelada al reiniciar la pelea
   BOSSFIGHT._addsSpawned=false; BOSSFIGHT.addMinions=null;
   if(BOSSFIGHT.addBars) for(const b of BOSSFIGHT.addBars) b.wrap.style.display='none';   // ►ICEADD: oculta las 2 barras de los colosos (persisten en el DOM, se reusan)
-  if(BOSSFIGHT.arena){ scene.remove(BOSSFIGHT.arena); BOSSFIGHT.arena=null; }
-  if(BOSSFIGHT.ring){ scene.remove(BOSSFIGHT.ring.g); BOSSFIGHT.ring=null; }
+  if(BOSSFIGHT.arena){ scene.remove(BOSSFIGHT.arena); disposeTree(BOSSFIGHT.arena); BOSSFIGHT.arena=null; }   // ►PERF-MEM: ~100 geometrías por combate de jefe
+  if(BOSSFIGHT.ring){ scene.remove(BOSSFIGHT.ring.g); disposeTree(BOSSFIGHT.ring.g); BOSSFIGHT.ring=null; }
   clearTrophy();                                                                // ►TROFEOS: el cubo muere con la arena (el ganador ya se guardó en stageAdvance)
   removeEntryPortal();                                                          // ►PORTAL-BOSS: portal de entrada + su cuenta atrás fuera
   for(const p of players){ p._bossArena = false; p._bossLanded = false; p._portalOut = false; }   // ►DGOLEM: resetea también el latch de "pisó la arena" · ►PORTALOUT: descongela   // nadie queda "en la arena del cielo"
@@ -18374,6 +18427,7 @@ const _loosePlats = [], _qPlats = [];
 const _looseBins = new Map(); const _LBIN = 24;   // ►PIRSOLID: cubetas en X para las plataformas sueltas
 let _looseLen = -1, _looseDirty = false;          // _looseDirty: algo suelto se ha movido (barcos del canal)
 let _aabbN = 0;                        // contador de tests por frame (lo resetea perfTick; para medir A/B)
+let _qGen = 0;   // ►PERF-PLAT: sello por consulta (sustituye al indexOf O(n²) de abajo)
 function _platCandidates(x0, x1){
   if(!_platIdxOn || (typeof _segP0 !== 'undefined' && _segP0 > 0) ||
      typeof BELT === 'undefined' || !BELT.segs || !BELT.segs.length) return platforms;
@@ -18393,15 +18447,15 @@ function _platCandidates(x0, x1){
     }
   }
   const M = 1.0;                       // holgura > radio máximo de consulta (R=0.32 de collideWalls, m=0.4 de overAnyPlatform)
-  _qPlats.length = 0;
+  _qPlats.length = 0; const gen = ++_qGen;
   for(const sg of BELT.segs){
-    if(sg.qMinX === undefined){ for(const pl of sg.plats) _qPlats.push(pl); continue; }   // sin bounds aún (antes del 1er updateBelt): candidato siempre
-    if(x1 >= sg.qMinX - M && x0 <= sg.qMaxX + M) for(const pl of sg.plats) _qPlats.push(pl);
+    if(sg.qMinX === undefined){ for(const pl of sg.plats){ pl._qStamp = gen; _qPlats.push(pl); } continue; }   // sin bounds aún (antes del 1er updateBelt): candidato siempre
+    if(x1 >= sg.qMinX - M && x0 <= sg.qMaxX + M) for(const pl of sg.plats){ pl._qStamp = gen; _qPlats.push(pl); }
   }
   const b0 = Math.floor((x0-M)/_LBIN), b1 = Math.floor((x1+M)/_LBIN);
   for(let b=b0; b<=b1; b++){
     const a = _looseBins.get(b); if(!a) continue;
-    for(const pl of a) if(x1 >= pl.minX - M && x0 <= pl.maxX + M && _qPlats.indexOf(pl) < 0) _qPlats.push(pl);
+    for(const pl of a) if(x1 >= pl.minX - M && x0 <= pl.maxX + M && pl._qStamp !== gen){ pl._qStamp = gen; _qPlats.push(pl); }   // ►PERF-PLAT: sello O(1) (era indexOf sobre ~500 en el mar pirata)
   }
   return _qPlats;
 }
@@ -23011,14 +23065,29 @@ function _occBuildCand(){
     _occCandRoots.add(root);
   }
   _occCand.length = 0;
-  for(const o of occluders) if(_occCandRoots.has(o.userData._occRoot)) _occCand.push(o);
+  for(const root of _occCandRoots){ const ms = root.userData._occMeshes; if(ms) for(const m of ms) _occCand.push(m); }   // ►PERF-OCC: O(candidatos), no O(todos los oclusores) a 30 Hz
   return _occCand;
+}
+/* ►PERF-MEM: libera la GPU de un subárbol que se va a tirar. Geometrías: solo las NO compartidas (los clones
+   de getModel llevan userData.shared en su raíz y comparten geometría con la plantilla). Materiales: solo los
+   clones propios de registerOccluder (_occClone); el resto son compartidos (M.*, mat()) y disponerlos solo
+   provocaría recompilaciones. Texturas: nunca (todas compartidas). */
+function disposeTree(root){
+  if(!root) return;
+  const walk = (o, shared)=>{
+    shared = shared || !!(o.userData && o.userData.shared);
+    if(o.geometry && !shared && !o.isInstancedMesh){ try{ o.geometry.dispose(); }catch(e){} }
+    if(o.material){ const ms = Array.isArray(o.material) ? o.material : [o.material]; for(const m of ms){ if(m && m.userData && m.userData._occClone){ try{ m.dispose(); }catch(e){} } } }
+    for(const c of o.children) walk(c, shared);
+  };
+  walk(root, false);
 }
 function registerOccluder(root, seg){              // registra un OBJETO entero: clona materiales y agrupa sus mallas
   if(!root || root.userData._occ) return;
   const meshes = [];
   root.traverse(o=>{ if(o.isMesh && o.material){
-    o.material = Array.isArray(o.material) ? o.material.map(m=>m.clone()) : o.material.clone();   // clon propio → se funde sin tocar a otros que compartan material
+    const _cl = m=>{ const c = m.clone(); c.userData._occClone = true; return c; };
+    o.material = Array.isArray(o.material) ? o.material.map(_cl) : _cl(o.material);   // clon propio → se funde sin tocar a otros que compartan material · ►PERF-MEM: marcado para poder liberarlo
     o.userData._occRoot = root; meshes.push(o); occluders.push(o);
   }});
   if(!meshes.length) return;
@@ -23153,6 +23222,7 @@ function updateBouncers(dt){                          // ahora: HOGUERAS que QUE
        TODA la cinta (también las hundidas en niebla u ocultas): ~600 part/s → saturaban el tope
        (PART_MAX=460) = ~430 draw-calls fijos de cubitos invisibles + robaban partículas al combate. */
     const _fd = (bx-_cpx)*(bx-_cpx) + (bz-_cpz)*(bz-_cpz);
+    if(_fd > 120*120) continue;   // ►PERF-BNC: a más de 120 u de la cámara nadie puede estar encima: ni llamas ni bucles de jugadores/minions
     if(b.kind!=='cactus' && b.kind!=='taiko' && _fd < 3600 && (!b.mesh.parent || b.mesh.parent.visible) && Math.random()<0.85){ const a=Math.random()*6.283, rr=Math.random()*b.r*0.5;
       burst(_fxV.set(bx+Math.cos(a)*rr, by+0.25+Math.random()*0.5, bz+Math.sin(a)*rr), Math.random()<.5?0xff6a1a:0xffc23a, 1, 1, 4.5, .55); }
     /* ►TAIKO (JAPÓN): el parche NO daña — LANZA al cielo con un BOOM a quien cae encima */
@@ -26452,6 +26522,7 @@ function rebuildBelt(){
   if(!BELT.on) return;
   for(const seg of BELT.segs){
     scene.remove(seg.group);
+    disposeTree(seg.group);   // ►PERF-MEM: geometrías propias + materiales clonados del segmento fuera de la GPU (antes se filtraban en cada salto de mundo)
   }
   BELT.segs.length = 0;
   platforms.length = 0; pads.length = 0; drifters.length = 0; bouncers.length = 0;
@@ -26501,7 +26572,7 @@ function rebuildBelt(){
     _applySegX(seg);
     BELT.segs.push(seg);
   }
-  for(const c of cloudOccluders) registerOccluder(c);
+  for(const c of cloudOccluders){ if(c.userData._occ){ c.userData._occ = false; c.userData._occMeshes = null; } registerOccluder(c); }   // ►PERF-MEM FIX: con _occ ya a true el registro era un no-op desde el 2º stage (las nubes dejaban de fundirse)
   if(S2_SCENERY.group) S2_SCENERY.group.visible = S2_SCENERY.on && S2_DECOR_ON;   // respeta deco OFF tras un rebuild
   updateBelt(0);                     // ►R6b: pasada de wrap+visibilidad YA (sin esto, 1 frame mostraba los segmentos lejanos antes del primer tick → pop)
   if(renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
@@ -26698,6 +26769,7 @@ function updateWeather(dt){
   const pos = WEATHER.geo.attributes.position.array, vel = WEATHER.vel, c = WEATHER.count;
   const cx = camera.position.x, cz = camera.position.z, cy = camera.position.y;
   const topY = cy + WEATHER.box.h*0.55, botY = cy - WEATHER.box.h*0.45;
+  if(((WEATHER._tk = (WEATHER._tk|0) + 1) & 1) === 0){ dt *= 2;   // ►PERF-RAIN: 2.200 gotas en JS → a 30 Hz con paso doble (invisible a la vista; mitad de coste)
   for(let i=0;i<c;i++){
     const o = i*6, d = vel[i]*dt;
     let y1 = pos[o+1]-d, y2 = pos[o+4]-d;
@@ -26709,7 +26781,7 @@ function updateWeather(dt){
     }
     pos[o+1]=y1; pos[o+4]=y2;
   }
-  WEATHER.geo.attributes.position.needsUpdate = true;
+  WEATHER.geo.attributes.position.needsUpdate = true; dt *= 0.5; }
   // RELÁMPAGO: fogonazo breve y SUTIL (no debe cegar) cada bastantes segundos
   WEATHER.flashCD -= dt;
   if(WEATHER.flashCD <= 0 && WEATHER.flash <= 0){ WEATHER.flash = 0.12; WEATHER.flashCD = 8 + Math.random()*14; }
@@ -39608,6 +39680,7 @@ function refreshSetup(){
        en un contenedor OCULTO — con la regla vieja se estaría renderizando un canvas invisible todo
        el rato. Se pregunta directamente por el carrusel: si no ocupa sitio en pantalla, no se pinta.
        Vale para los tres huéspedes y no hay que tocarlo si mañana aparece un cuarto. */
+    if(typeof running!=='undefined' && running && !demo){ _cpAcc = 0; return; }   // ►PERF-RAF: en partida ni getClientRects (forzaba layout cada frame)
     const _cp = document.getElementById('charPicker');
     if(!_cp || _cp.getClientRects().length===0){ _cpAcc = 0; return; }
     _cpAcc += raw;
@@ -41431,7 +41504,10 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   }
   function tick(now){
     requestAnimationFrame(tick);
-    reacquire();
+    /* ►PERF-RAF: en partida no hay menú que adquirir — reacquire() hacía 17 querySelector + getComputedStyle por frame */
+    if(typeof running!=='undefined' && running && !demo){
+      if(activeC && !visible(activeC)){ activeC = null; activeId = ''; clearFocus(); }
+    } else reacquire();
     if(!activeC){ var s0 = readPads(); if(s0.start && !pv.start && window.openPause && window.pausePosible && pausePosible()) openPause(); pv = s0; return; }   // en partida no leemos el mando para menús… salvo Start → ►PAUSA
     var s = readPads();
     var dir  = s.up?'up':s.down?'down':s.left?'left':s.right?'right':null;
