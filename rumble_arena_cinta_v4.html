@@ -568,6 +568,8 @@ window.addEventListener('load', function(){
   #pauseOverlay .pauseBtns .btn, #pauseOverlay .pauseBtns .navBtn { width:100%; box-sizing:border-box; font-size:18px; padding:12px 18px; }
   #pauseOverlay .navBtn.quit { border-color:rgba(255,94,94,.55); color:#ffb3b3; }
   #pauseConfirm { display:none; }
+  .camRow { display:flex; gap:8px; justify-content:center; }   /* ►CAMFIJA: selector CERCA/LEJOS (opciones + pausa) */
+  .camRow .dBtn { flex:1; }
   #pauseOverlay.confirm #pauseMain { display:none; } #pauseOverlay.confirm #pauseConfirm { display:block; }
   #pauseConfirm .q { font-size:20px; font-weight:900; margin:4px 0 16px; }
   #pauseConfirm .row { display:flex; gap:12px; justify-content:center; }
@@ -1888,6 +1890,13 @@ window.addEventListener('load', function(){
       <h3>DIFICULTAD DE LA CPU</h3>
       <div id="optDiffSlot"><!-- aquí se muda #diffRow --></div>
     </div>
+    <div class="optBlock">
+      <h3>CÁMARA</h3>
+      <div id="camRow" class="camRow" title="Dos cámaras fijas: se puede girar alrededor (, . / ratón / stick derecho), no hacer zoom">
+        <button type="button" class="dBtn on" data-cam="0">📷 CERCA</button>
+        <button type="button" class="dBtn" data-cam="1">📷 LEJOS</button>
+      </div>
+    </div>
     <div class="optBlock" style="margin-bottom:0">
       <h3>SONIDO</h3>
       <div id="optSound"><button type="button" class="dBtn on" id="optMusic">🔊 Música y efectos</button></div>
@@ -1977,6 +1986,7 @@ window.addEventListener('load', function(){
       <div class="pauseBtns">
         <button class="btn" id="pauseResume">REANUDAR ▶</button>
         <button class="navBtn" id="pauseCtl">🎮 VER CONTROLES</button>
+        <div class="camRow" id="pauseCamRow"><button type="button" class="dBtn on" data-cam="0">📷 CERCA</button><button type="button" class="dBtn" data-cam="1">📷 LEJOS</button></div>
         <button class="navBtn quit" id="pauseQuit">✖ ABANDONAR</button>
       </div>
       <div id="pauseOnline">Partida ONLINE: el juego no se detiene mientras estás aquí.</div>
@@ -7843,6 +7853,13 @@ function setAiLevel(lv, persist){
    alguien empiece por el nivel más duro sin saber siquiera cómo funciona la cinta.
    ⚠️ VA AQUÍ, DESPUÉS de AI_DIFF: es un IIFE (se ejecuta al cargar) y arriba, junto al selector de
    calidad, reventaba con ReferenceError — AI_DIFF es `const` y aún no estaba inicializada. */
+/* ►CAMFIJA: los botones CERCA/LEJOS de opciones y de la pausa (delegación: sobreviven a cualquier re-render) */
+document.addEventListener('click', e=>{
+  const b = e.target && e.target.closest && e.target.closest('[data-cam]'); if(!b) return;
+  e.stopPropagation(); setCamPreset(+b.dataset.cam);
+  if(typeof showBanner==='function' && typeof running!=='undefined' && running) showBanner(CAM_MODE_NAMES[camMode], 1);
+}, true);
+document.addEventListener('DOMContentLoaded', ()=>{ try{ _camSync(); }catch(e){} });
 (function difficultyUI(){
   const row = document.getElementById('diffRow'); if(!row) return;
   const btns = row.querySelectorAll('.dBtn');
@@ -22608,17 +22625,31 @@ function updateFighter(p, dt){
 }
 
 /* ---------- cámara ---------- */
-let camZoom = 1;                                   // RUEDA del ratón = zoom in/out
-let camMode = 0;                                   // 0 SEGUIMIENTO (Fall Guys) · 1 GENERAL (estilo Smash, encuadra a todos)
+/* ►CAMFIJA (Toni 22/08): DOS cámaras FIJAS — CERCA y LEJOS — que sustituyen a SEGUIMIENTO/GENERAL. Solo se
+   puede ROTAR alrededor del jugador (, . / ratón / stick dcho X); NO hay zoom (rueda, stick dcho Y y
+   cruceta abajo ya no hacen nada). camZoom queda clavado a 1 (lo leen DEATHCINE y otros). */
+const camZoom = 1;
+let camMode = 0;                                   // 0 CERCA · 1 LEJOS (►CAMFIJA)
+const CAM_PRESETS = [
+  { back: 9.0, height: 5.4, look: 1.4 },           // CERCA: picado ~31°, el luchador (2 u) ocupa ~1/3 de la altura; se ve la plataforma bajo los pies
+  { back:19.5, height:11.5, look: 1.8 },           // LEJOS: picado ~30°, ~45 u de ancho visibles (media calle de 84 u): rivales y cápsulas alrededor
+];
+function setCamPreset(i, persist){
+  i = (i === 1) ? 1 : 0;
+  camMode = i;
+  if(persist !== false){ try{ saveBump(s=>{ s.camPreset = i; }); }catch(e){} }
+  _camSync();
+}
+function _camSync(){ try{ document.querySelectorAll('[data-cam]').forEach(b=> b.classList.toggle('on', +b.dataset.cam === camMode)); }catch(e){} }
+try{ camMode = (saveGet().camPreset === 1) ? 1 : 0; }catch(e){}
 let camOrbit = 0;                                  // rotación lateral (rad) con , y .
 let camHeadingYaw = Math.PI;                       // rumbo BASE FIJO del seguimiento (no auto-rota); la rotación la pone el jugador con camOrbit. PI = arranca desde el LADO OPUESTO del escenario (izquierda↔derecha invertidas respecto al rumbo 0)
 let camRotL = false, camRotR = false;
 let _padCamPrevL = false, _padCamPrevR = false;   // flanco de la cruceta para cambiar de modo de cámara (1 vez por pulsación)
-const CAM_MODE_NAMES = ['CÁMARA: SEGUIMIENTO','CÁMARA: GENERAL'];   // solo 2 modos: Fall Guys (seguimiento) y Smash (general)
-addEventListener('wheel', e=>{ if(!running) return;   // en el menú/pantallas: deja hacer scroll con la rueda
-  camZoom = THREE.MathUtils.clamp(camZoom*(e.deltaY>0?1.08:0.92), 0.55, 2.2); e.preventDefault(); }, { passive:false });
+const CAM_MODE_NAMES = ['CÁMARA: CERCA','CÁMARA: LEJOS'];   // ►CAMFIJA: dos presets fijos
+addEventListener('wheel', e=>{ if(!running) return; e.preventDefault(); }, { passive:false });   // ►CAMFIJA: sin zoom (solo evita que la página haga scroll en partida)
 addEventListener('keydown', e=>{
-  if(e.code==='KeyC'){ camMode = (camMode+1) % CAM_MODE_NAMES.length; showBanner(CAM_MODE_NAMES[camMode]); }   // C alterna los 2 modos
+  if(e.code==='KeyC'){ setCamPreset((camMode+1) % CAM_MODE_NAMES.length); showBanner(CAM_MODE_NAMES[camMode]); }   // C alterna CERCA/LEJOS
   else if(e.code==='Comma')  camRotL = true;       // girar cámara a la izquierda
   else if(e.code==='Period') camRotR = true;       // girar a la derecha
 });
@@ -23103,9 +23134,7 @@ function updateCamera(dt){
   if(camRotR) camOrbit += 1.9*dt;
   if(navigator.getGamepads){ const gps=navigator.getGamepads();
     for(const gp of gps){ if(!gp) continue;
-      const rx=gp.axes[2]||0; if(Math.abs(rx)>0.18) camOrbit += rx*2.4*dt;                 // ↔ girar la cámara
-      const ry=gp.axes[3]||0; if(Math.abs(ry)>0.20)                                          // ↕ zoom: adelante = acerca, atrás = aleja
-        camZoom = THREE.MathUtils.clamp(camZoom*Math.exp((ry>0?1:-1)*0.9*Math.abs(ry)*dt), 0.55, 2.2);
+      const rx=gp.axes[2]||0; if(Math.abs(rx)>0.18) camOrbit += rx*2.4*dt;                 // ↔ girar la cámara (►CAMFIJA: el eje ↕ ya no hace zoom)
       break; } }
   /* CRUCETA del mando (cámara compartida): izq/der = cambia el modo de cámara · arriba/abajo = zoom in/out */
   if(running && navigator.getGamepads){ const gps=navigator.getGamepads();
@@ -23114,12 +23143,10 @@ function updateCamera(dt){
       const pr=(i)=> !!(gp.buttons[i] && gp.buttons[i].pressed);
       dL=dL||pr(14); dR=dR||pr(15); dU=dU||pr(12); dD=dD||pr(13); }
     const NM = CAM_MODE_NAMES.length;
-    if(dR && !_padCamPrevR){ camMode=(camMode+1)%NM;      showBanner(CAM_MODE_NAMES[camMode]); }   // derecha → siguiente modo
-    if(dL && !_padCamPrevL){ camMode=(camMode+NM-1)%NM;   showBanner(CAM_MODE_NAMES[camMode]); }   // izquierda → modo anterior
+    if(dR && !_padCamPrevR){ setCamPreset((camMode+1)%NM);      showBanner(CAM_MODE_NAMES[camMode]); }   // derecha → siguiente preset
+    if(dL && !_padCamPrevL){ setCamPreset((camMode+NM-1)%NM);   showBanner(CAM_MODE_NAMES[camMode]); }   // izquierda → preset anterior
     _padCamPrevR=dR; _padCamPrevL=dL;
-    const zr=0.9;                                                                            // velocidad de zoom (independiente de FPS)
-    /* cruceta ARRIBA liberada para CURAR (readInput 'heal'); el zoom-IN sigue en stick derecho + rueda */
-    if(dD) camZoom = THREE.MathUtils.clamp(camZoom*Math.exp( zr*dt), 0.55, 2.2);             // abajo → zoom OUT (aleja)
+    /* ►CAMFIJA: cruceta abajo ya no hace zoom; arriba sigue liberada para CURAR (readInput 'heal') */
   }
   if(camOrbit >  Math.PI) camOrbit -= Math.PI*2;        // mantén el ángulo acotado (vuelta completa)
   if(camOrbit < -Math.PI) camOrbit += Math.PI*2;
@@ -23131,49 +23158,22 @@ function updateCamera(dt){
     look.copy(cineTarget.pos); look.y += 1.4;
     desired.set(look.x*.55, look.y + 3.4, look.z*.55 + 8.5);
     spT = 13; spP = 11;   // rápidos para compensar el slow-mo
-  } else if(camMode===1){
-    /* MODO 1 — GENERAL: encuadra a todos los vivos (cámara original) */
-    const alive = players.filter(q=>!q.dead); if(!alive.length) alive.push(P1);
-    let cx=0,cz=0,my=0,minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
-    for(const q of alive){ cx+=q.pos.x; cz+=q.pos.z; my=Math.max(my,q.pos.y);
-      minx=Math.min(minx,q.pos.x); maxx=Math.max(maxx,q.pos.x); minz=Math.min(minz,q.pos.z); maxz=Math.max(maxz,q.pos.z); }
-    cx/=alive.length; cz/=alive.length;
-    const spread = Math.max(maxx-minx, maxz-minz);
-    let back = THREE.MathUtils.clamp(15 + spread*.7, 18, 52) * camZoom;
-    let height = THREE.MathUtils.clamp(10 + spread*.4, 11, 30) * camZoom;
-    /* ►S10ZEROG: en gravedad cero los jugadores vuelan MUY alto → la cámara se aleja y sube más para no perderlos */
-    if(STAGE===10){ back = THREE.MathUtils.clamp(22 + spread*.7, 26, 95)*camZoom; height = THREE.MathUtils.clamp(16 + spread*.4, 18, 75)*camZoom; }
-    /* ►S2BOSS: el suelo del combate está a y=0 en el juego normal, pero a BOSS_ARENA_Y (=120) en la
-       arena flotante del jefe. El heurístico my*.5 (mitad de la altura de salto) asumía suelo≈0 → en la
-       arena del cielo la mira caía a ~61 (60u POR DEBAJO de la acción) y el modo GENERAL no encuadraba
-       nada. Anclamos el my*.5 al suelo real del combate. */
-    let baseY = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none') ? BOSS_ARENA_Y : 0;
-    let _lift = (STAGE===10) ? ((my-baseY)*0.9 + 2) : Math.max(1.5, (my-baseY)*.5+1);   // ►S10ZEROG: sigue la altura casi 1:1 (vuelos altos)
-    /* ►CUADRIMANIA: en una TORRE el suelo no está en y=0 — está donde estén los vivos, y además se
-       desparraman en VERTICAL, que es la dimensión que `spread` (sólo XZ) no mira. Sin esto la mira
-       se queda en el suelo del mundo y la cámara no encuadra nada, igual que pasaba en la arena del
-       cielo del jefe. Se sigue al que va MÁS BAJO (es quien está a punto de perder). */
-    if(STAGE===13){
-      let miny=1e9, maxy=-1e9;
-      for(const q of alive){ miny=Math.min(miny,q.pos.y); maxy=Math.max(maxy,q.pos.y); }
-      baseY = miny; _lift = Math.max(2, (maxy-miny)*0.5 + 2);
-      const vspread = Math.max(spread, (maxy-miny)*1.25);
-      back   = THREE.MathUtils.clamp(18 + vspread*.7, 20, 62) * camZoom;
-      height = THREE.MathUtils.clamp(9  + vspread*.35, 10, 34) * camZoom;
-    }
-    look.set(cx, baseY + _lift, cz);
-    if(camZoom<1 && !P1.dead) look.lerp(_camTmp.set(P1.pos.x, look.y, P1.pos.z), Math.min(1,(1-camZoom)/0.45));
-    desired.set(look.x*.55, look.y + height, look.z*.55 + back);
   } else {
+    /* ►CAMFIJA — CERCA / LEJOS: detrás y por encima del jugador con rumbo FIJO (camHeadingYaw; la
+       orientación la pone el jugador con la órbita manual), a una distancia FIJA por preset. Lo que sí
+       se adapta es el MUNDO: gravedad cero (S10) y la torre (S13) necesitan más aire, y un jefe grande
+       en LEJOS un poco más. */
     const me = _camMe();
-    /* SOLO SEGUIMIENTO: la cámara mantiene un rumbo FIJO (NO auto-rota con el movimiento).
-       La orientación la decide SIEMPRE el jugador con la órbita manual (, / . y stick derecho → camOrbit). */
     const yaw = camHeadingYaw;
     const fwd = _camFwd.set(Math.sin(yaw), 0, Math.cos(yaw));
-    /* MODO 0 — SEGUIMIENTO (Fall Guys): detrás y por encima del jugador, picado ~30°, distancia amplia
-       por defecto. Órbita manual (, / . y stick derecho) + zoom (rueda / stick) se aplican más abajo. */
-    const back = 12.0*camZoom, height = 7.3*camZoom;
-    look.copy(me.pos); look.y += 1.5;
+    const P = CAM_PRESETS[camMode] || CAM_PRESETS[0];
+    let back = P.back, height = P.height, lookUp = P.look;
+    if(STAGE===10){ back *= 1.35; height *= 1.35; }                       // ►S10ZEROG: vuelos altos
+    if(STAGE===13){ back *= 1.25; height *= 1.25; lookUp += 1.6; }        // ►CUADRIMANIA: la acción va en vertical
+    if(camMode===1 && typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase!=='none'){
+      try{ const sp = (typeof activeBossSpec==='function') ? activeBossSpec() : null; const sm = (sp && sp.sizeMul) || 1; if(sm > 1.5){ back *= 1.2; height *= 1.2; } }catch(e){}
+    }
+    look.copy(me.pos); look.y += lookUp;
     desired.copy(me.pos).addScaledVector(fwd, -back); desired.y += height;
     spT = 6.5; spP = 5.5;   // suavizado MEDIO: ni lento ni brusco
   }
