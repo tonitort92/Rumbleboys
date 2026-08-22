@@ -2057,7 +2057,7 @@ window.addEventListener('load', function(){
 <!-- ►INTERSTAGE: telón de fundido a negro (compartido por todas las transiciones) -->
 <div id="fadeVeil"></div>
 
-<script>window._LT0 = performance.now();</script><!-- ►LOADTIME: el reloj arranca ANTES de los 72 <script src> (121 MB de JS): antes se medía solo lo que venía después -->
+<script>window._LT0 = performance.now();</script><!-- ►LOADTIME: el reloj arranca ANTES de los 72 scripts de assets (121 MB de JS): antes se medía solo lo que venía después -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- postprocesado (bloom) — versiones globales r128 -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
@@ -3711,6 +3711,61 @@ M.woodD.map = makeFieldTexture(['#ffffff','#dadada','#bcbcbc','#ededed'], 1/4); 
 /* paleta de verdes para los BULTOS (vertex-colors mottled como el suelo) + material compartido */
 const _GREENS = ['#6fcf6a','#55ab52','#7ed87a','#62bf5e','#86dd7f','#4f9e4c','#74d36e'].map(h=>new THREE.Color(h));
 const _bumpMat = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:true, roughness:.9, metalness:.02 });
+/* =====================================================================
+   ►SUELOTEST (Toni 22/08): prueba de SUELO BONITO en UNA sola plataforma verde del mundo 1 (la primera
+   grande de cada reconstrucción). Tres capas, todas sin geometría fina (las briznas daban aliasing y
+   ralentizaban): (1) relieve por MAPA DE NORMALES procedural (terrones mullidos, 512², tileable, cero
+   triángulos extra), (2) TERRONES GORDOS (pocos domos grandes y redondeados, con el mismo normal map),
+   (3) VIENTO en las matas con flores de esa plataforma (balanceo en el vertex shader, un uniform de
+   tiempo). SUELO_TEST=false lo apaga entero. Si convence, se extiende por stage.
+   ===================================================================== */
+const SUELO_TEST = true;
+let _sueloB = null;                       // caja (local al segmento) de la plataforma de prueba → sus matas llevan viento
+const _windU = { value: 0 };              // tiempo del viento (lo avanza updateBoundaryWalls, que corre en cada drawScene)
+let _sueloNrm = null, _sueloMat = null, _sueloBumpMat = null; const _windMats = new Map();
+function sueloNormalTex(){
+  if(_sueloNrm) return _sueloNrm;
+  const N = 512, h = new Float32Array(N*N);
+  const blob = (cx, cy, r, amp)=>{ const r2 = r*r; for(let y=-r;y<=r;y++) for(let x=-r;x<=r;x++){ const d2 = x*x+y*y; if(d2>r2) continue;
+      const k = 1 - d2/r2; const v = amp * k*k*(3-2*k); const px=((cx+x)%N+N)%N, py=((cy+y)%N+N)%N; h[py*N+px] += v; } };
+  let s = 7; const rnd = ()=>{ s = (s*16807) % 2147483647; return s/2147483647; };   // determinista: misma textura en cada carga
+  for(let i=0;i<150;i++) blob((rnd()*N)|0, (rnd()*N)|0, 14 + (rnd()*30)|0, 0.55 + rnd()*0.7);   // terrones mullidos
+  for(let i=0;i<900;i++) blob((rnd()*N)|0, (rnd()*N)|0, 3 + (rnd()*5)|0, (rnd()<.5?-1:1)*(0.08 + rnd()*0.16));   // grano fino (hierba aplastada)
+  const cv = document.createElement('canvas'); cv.width = cv.height = N; const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(N, N), d = img.data, K = 2.2;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const hl = h[y*N + ((x-1+N)%N)], hr = h[y*N + ((x+1)%N)], hu = h[((y-1+N)%N)*N + x], hd = h[((y+1)%N)*N + x];
+    let nx = (hl-hr)*K, ny = (hd-hu)*K, nz = 1; const il = 1/Math.hypot(nx,ny,nz); nx*=il; ny*=il; nz*=il;
+    const o = (y*N+x)*4; d[o] = (nx*0.5+0.5)*255; d[o+1] = (ny*0.5+0.5)*255; d[o+2] = (nz*0.5+0.5)*255; d[o+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  _sueloNrm = t; return t;
+}
+function sueloTestMat(){
+  if(_sueloMat) return _sueloMat;
+  const m = M.grass.clone(); m.normalMap = sueloNormalTex(); m.normalMap.repeat.set(0.16, 0.16); m.normalScale.set(2.0, 2.0); m.roughness = 0.96; m.metalness = 0;
+  m.customProgramCacheKey = ()=> 'suelotest';
+  _sueloMat = m; return m;
+}
+function sueloBumpMat(){
+  if(_sueloBumpMat) return _sueloBumpMat;
+  const m = _bumpMat.clone(); m.flatShading = false; m.normalMap = sueloNormalTex(); m.normalScale.set(0.9, 0.9); m.roughness = .95; m.customProgramCacheKey = ()=> 'suelobump';
+  _sueloBumpMat = m; return m;
+}
+/* viento: balanceo de los vértices altos de la mata (amplitud ∝ altura local), sin tocar la base */
+function sueloWindify(root){
+  root.traverse(o=>{ if(!o.isMesh || !o.material) return;
+    const arr = Array.isArray(o.material) ? o.material : [o.material];
+    const out = arr.map(m0=>{ let m = _windMats.get(m0); if(m) return m;
+      m = m0.clone(); m.customProgramCacheKey = ()=> 'suelowind';
+      m.onBeforeCompile = sh=>{ sh.uniforms.uWind = _windU;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float hh = max(0.0, position.y); float ph = uWind*1.9 + position.x*1.3 + position.z*0.9; transformed.x += (sin(ph) * 0.05 + sin(ph*2.3 + 1.1) * 0.02) * hh; transformed.z += cos(ph*0.8) * 0.03 * hh; }'); };
+      _windMats.set(m0, m); return m; });
+    o.material = Array.isArray(o.material) ? out : out[0];
+  });
+}
 /* tonos de madera para los puentes (cada listón un tono → vetas/franjas de color a lo largo) */
 const _WOODS = [0xc59a62, 0xb88a52, 0xa9763f, 0xd2a872, 0x9a7448, 0xbe8f55].map(c=>mat(c));
 const _WOODCOL = [0xc59a62, 0xb88a52, 0xa9763f, 0xd2a872, 0x9a7448, 0xbe8f55].map(c=>new THREE.Color(c));
@@ -3921,21 +3976,21 @@ function aoMesh(geo, mat){ applyBakedAO(geo); return new THREE.Mesh(geo, aoVaria
 /* BULTOS suaves: alguna loma muy aplanada en el césped para que el suelo no sea 100% plano (orgánico).
    Solo VISUAL — la colisión sigue siendo la cara plana topY. */
 function addBumps(g, sx, sz, topY, grassMat, cx, cz){
-  return;   // ►BUMPS ELIMINADOS: el suelo queda plano (sin lomas). (Borra este return para reactivarlos.)
+  if(!(g && g.userData && g.userData._sueloTest)) return;   // ►BUMPS ELIMINADOS en general; ►SUELOTEST: TERRONES GORDOS solo en la plataforma de prueba
   if(Math.min(sx,sz) < 3.0) return;                 // solo donde hay sitio
   const area = sx*sz;
-  const n = Math.min(6, 2 + Math.round(area/45) + (Math.random()<.5?1:0));   // MÁS lomas, ∝ área (2-6)
+  const n = Math.min(12, 5 + Math.round(area/30));   // ►SUELOTEST: más terrones, ∝ área
   const surf = topY - 0.45;                          // cara superior del césped
   for(let i=0;i<n;i++){
-    const lx=(Math.random()-.5)*sx*0.55, lz=(Math.random()-.5)*sz*0.55;
+    const lx=(Math.random()-.5)*sx*0.7, lz=(Math.random()-.5)*sz*0.7;
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.9)) continue;   // no metas lomas pegadas a un muro
-    const r = 1.5 + Math.random()*2.3, fy = 0.2 + Math.random()*0.16;       // domo ancho y aplanado
-    const cap = 0.35 + Math.random()*0.6;            // cuánto SOBRESALE (terreno irregular visible)
-    const geo = new THREE.SphereGeometry(r, 10, 7);
+    const r = 0.8 + Math.random()*0.9, fy = 0.42 + Math.random()*0.16;      // ►SUELOTEST: domos GORDOS y redondeados (antes anchos y chafados)
+    const cap = 0.30 + Math.random()*0.28;           // cuánto SOBRESALE
+    const geo = new THREE.SphereGeometry(r, 12, 9);
     const pa = geo.attributes.position, col = new Float32Array(pa.count*3);   // matices de color como el suelo
     for(let v=0; v<pa.count; v++){ const c=_GREENS[(Math.random()*_GREENS.length)|0]; col[v*3]=c.r; col[v*3+1]=c.g; col[v*3+2]=c.b; }
     geo.setAttribute('color', new THREE.BufferAttribute(col,3));
-    const m = new THREE.Mesh(geo, _bumpMat);         // material compartido (vertexColors)
+    const m = new THREE.Mesh(geo, (g.userData && g.userData._sueloTest) ? sueloBumpMat() : _bumpMat);   // ►SUELOTEST: con normal map
     m.scale.y = fy;
     m.position.set(lx, surf + cap - r*fy, lz);
     m.castShadow = m.receiveShadow = true; g.add(m);
@@ -3944,12 +3999,17 @@ function addBumps(g, sx, sz, topY, grassMat, cx, cz){
 function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   if(!_CAP && !_ISLAND) return;
   const g = new THREE.Group();
+  if(SUELO_TEST && STAGE===1 && !addFloorBlock._done && grassMat===M.grass && sx>=9 && sz>=9){   // ►SUELOTEST: solo esta
+    addFloorBlock._done = true; grassMat = sueloTestMat(); g.userData._sueloTest = true;
+    _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
+  }
   const dirt = aoMesh(organicSlabGeo(Math.max(1, sx-0.6), Math.max(1, sz-0.6), 4.15, 1.7, 0.34, 0.18), M.dirt);   // tierra alargada SOLO por debajo: la cima se queda bajo el césped (topY-0.35), el fondo baja
   dirt.position.y = topY - 4.5; dirt.castShadow = dirt.receiveShadow = true; g.add(dirt);
   const lip = aoMesh(organicSlabGeo(sx+0.2, sz+0.2, 0.26, 2.0, 0.34, 0.16), M.grassD);
   lip.position.y = topY - 0.95; lip.castShadow = true; g.add(lip);
   const grass = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), grassMat);
   grass.position.y = topY - 0.7; grass.castShadow = grass.receiveShadow = true; g.add(grass);
+  if(g.userData._sueloTest) addBumps(g, sx, sz, topY, grassMat, cx, cz);   // ►SUELOTEST: terrones gordos, aquí (el trabajo diferido los omitía)
   _grassJobs.push({ g, sx, sz, topY, cx, cz, grassMat });  // césped+lomas diferidos (tras los muros)
   const nst = Math.round((sx+sz)/8);
   for(let i=0;i<nst;i++){
@@ -8724,6 +8784,7 @@ function scatterGrassPatches(startIdx){
       m.scale.setScalar(f);
       m.position.set(x, pl.topY + baseHalfH*f - 0.04, z);     // apoyado en la superficie (ligeramente hundido)
       m.rotation.y = Math.random()*Math.PI*2;
+      if(_sueloB && STAGE===1 && x>_sueloB.x0 && x<_sueloB.x1 && z>_sueloB.z0 && z<_sueloB.z1) sueloWindify(m);   // ►SUELOTEST: viento solo en las matas de la plataforma de prueba
       scene.add(m);                                            // dentro de buildSegment → viaja con la cinta
       _propSpots.push({ x, z, r:Math.max(hx,hz)*0.7 });        // su propia huella → no se solapan entre sí
     }
@@ -10532,8 +10593,14 @@ function _gobFbxLoad(type){
     const w = _gobBuildInst(type); precalentarObjeto(w.root, 'goblin ' + type); _gobPool[type].push(w);
   });
 }
-(function gobLoad(){
-  for(const type in GOBLIN_KINDS){
+/* ►LAZY (auditoría 22/08): antes se parseaban las ~20 pieles (~19 MB de GLB/FBX) al arrancar, fueran del
+   stage que fueran. Ahora al arrancar solo la base (small/shooter/large) y el resto lo pide
+   ensureStageAssets(stage) bajo la pantalla de carga (o gobAttach si algo lo reclama antes). */
+const _gobLoaded = {};
+function gobLoadKinds(kinds){
+  for(const type of kinds){
+    if(_gobLoaded[type] || !GOBLIN_KINDS[type]) continue;
+    _gobLoaded[type] = true;
     if(GOBLIN_KINDS[type].fbx){ _gobFbxLoad(type); continue; }   // ►S8ROBOT: piel de FBX sueltos (no GLB)
     const glbVar = GOBLIN_KINDS[type].glb;
     if(!window[glbVar] || !THREE.GLTFLoader) continue;
@@ -10563,7 +10630,26 @@ function _gobFbxLoad(type){
       }, err=>{ console.warn('[goblin] parse '+t, err); }); })(type);
     }catch(e){ console.warn('[goblin] load '+type, e); }
   }
-})();
+}
+gobLoadKinds(['small','shooter','large']);   // la horda base de todos los stages
+/* qué pieles y qué jefes necesita cada stage (lo demás no se toca hasta entrar) */
+const STAGE_ASSETS = {
+  3:  { gob:['villager','ninja','sensei'] },
+  4:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem'] },
+  5:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem','midgolem','smallgolem'] },
+  7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
+  8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
+  11: { gob:['westbad','westgun','westcow'] },
+  12: { gob:['skeleton','skelshooter','skelknight'] },
+};
+const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
+function ensureStageAssets(st){
+  const a = STAGE_ASSETS[st]; if(!a) return;
+  const t0 = performance.now();
+  if(a.gob) gobLoadKinds(a.gob);
+  if(a.boss) for(const k of a.boss){ try{ if(BOSS_LOADERS[k]) BOSS_LOADERS[k](); }catch(e){ console.warn('[lazy] jefe ' + k, e); } }
+  const ms = performance.now() - t0; if(ms > 5) console.log('[lazy] stage ' + st + ': ' + Math.round(ms) + ' ms de carga perezosa');
+}
 /* ►SKELMINIONS: cuelga el arma por defecto del minion en su MALLA clonada, reutilizando el MISMO
    encaje que en los personajes: el ARCO de la arquera (GLB Synty) en la mano IZQ vía _hangProp
    (anclado a la palma, como attachBow), y la ESPADA estándar del item (buildHandWeapon) en la mano
@@ -10708,6 +10794,7 @@ function _gobBuildInst(type){                             // crea UNA instancia 
   return { root, mixer, acts, mats:(cfg.noTint ? null : mats), baseScale:(sz.y>0.001 ? cfg.h/sz.y : 1), baseYmin:box.min.y, weapon, armed };   // ►WESTERN: null (no []) — gobAttach comprueba if(inst.mats)
 }
 function gobAttach(mn){
+  if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobLoaded[mn.skin]) gobLoadKinds([mn.skin]);   // ►LAZY: red de seguridad (se vestirá cuando termine de parsear)
   const kin = (mn.skin && GOBLIN_KINDS[mn.skin] && _gobTpl[mn.skin]) ? mn.skin : mn.type;   // ►F3: piel visual (esqueleto/golem) con el comportamiento del type base; si su GLB no cargó → piel base
   const cfg = GOBLIN_KINDS[kin]; if(!cfg) return;
   const tpl = _gobTpl[kin]; if(!tpl || mn._gob || _gobLive[kin] >= cfg.max) return;
@@ -11170,6 +11257,8 @@ function spawnMinion(){
      pieles esqueleto → salen ESQUELETOS AZULES CONGELADOS junto a los goblins azules. Si la piel
      esqueleto está al tope de su pool, cae al goblin recoloreado (evita caja sin textura). */
   let skin = null;
+  if(typeof ensureStageAssets==='function' && !spawnMinion._lazyDone){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }   // ►LAZY: por si se entró sin pasar por la pantalla de carga (F9, ?stage=)
+  if(spawnMinion._lazyDone !== STAGE){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }
   if((STAGE===4 || STAGE===5 || STAGE===7) && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
@@ -11852,7 +11941,8 @@ function activeBossSpec(){ return STAGE_BOSSES[STAGE] || null; }
 /* ►G3 · STAGE 5: si el stage tiene una CADENA de jefes (chain), devuelve el sub-spec del gólem ACTIVO
    (BOSSFIGHT.golemIdx). En cualquier otro stage devuelve el spec normal → cero impacto fuera del S5. */
 function curGolem(){ const s=STAGE_BOSSES[STAGE]; return (s && s.chain) ? (s.chain[BOSSFIGHT.golemIdx||0] || s.chain[0]) : s; }
-function activeBossTpl(){ const g=curGolem(); if(g && g.tpl){ const t=g.tpl(); if(t) return t; }   // ►G3: plantilla del gólem activo (grande=BOSS_TPLS[4], mediano/pequeño=BOSS_TPLS_S5); cae al golem por defecto hasta que cargue
+function activeBossTpl(){ try{ if(typeof ensureStageAssets==='function') ensureStageAssets(STAGE); }catch(e){}   // ►LAZY: por si se llegó al jefe sin pantalla de carga
+  const g=curGolem(); if(g && g.tpl){ const t=g.tpl(); if(t) return t; }   // ►G3: plantilla del gólem activo (grande=BOSS_TPLS[4], mediano/pequeño=BOSS_TPLS_S5); cae al golem por defecto hasta que cargue
   return BOSS_TPLS[STAGE] || _bossTpl; }
 /* ►G3: el GÓLEM 1 del stage 5 es un clon del gólem del desierto — se copian sus patrones/ataques DESPUÉS
    de crear STAGE_BOSSES (referenciarlos dentro del literal daría TDZ por auto-referencia, ver nota S2). */
@@ -11966,7 +12056,7 @@ function _dgolemBakeWhenReady(m){
 /* ►DGOLEM · STAGE 4: monta la plantilla FBX del Gólem del Desierto → BOSS_TPLS[4] (misma forma que _bossTpl,
    pero por-stage). Copia fina de bossLoad(): 7 clips propios (idle/run/jump/atk1..4), donante = 'idle'
    (Neutral Idle, único con malla), y RAMPA ARENISCA sobre la textura del RockGolem para casar con el desierto. */
-(function dgolemLoad(){
+function dgolemLoad(){ if(BOSS_TPLS[4]) return;   // ►LAZY: lo invoca ensureStageAssets(4/5)
   if(!window.DGOLEM_FBX_B64 || !THREE.FBXLoader){ console.warn('[dgolem] sin DGOLEM_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','run','jump','atk1','atk2','atk3','atk4'];
@@ -12009,7 +12099,8 @@ function _dgolemBakeWhenReady(m){
     } } });
   BOSS_TPLS[4] = { root:meshSrc, clips, baseScale, baseY: -box2.min.y*baseScale };
   console.log('[dgolem] stage4 listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
-})();
+}
+BOSS_LOADERS.dgolem = dgolemLoad;
 
 /* ►G3 · STAGE 5: monta las plantillas FBX de los gólems MEDIANO y PEQUEÑO (misma receta que dgolemLoad:
    donante = 'idle', stripRootMotion, escala a BOSS_TARGET_H — el sizeMul del sub-spec lo aplica bossSpawnInst).
@@ -12040,16 +12131,16 @@ function _s5GolemLoad(tag, b64dict, clipNames, dest, tintHex){
   dest.tpl = { root:meshSrc, clips, baseScale, baseY:-box.min.y*baseScale };
   console.log('['+tag+'] listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
 }
-(function midgolemLoad(){ const d={}; _s5GolemLoad('midgolem', window.MIDGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3','atk4','melee'], d, 0xffa020);
-  if(d.tpl) BOSS_TPLS_S5.mid = d.tpl; })();
-(function smallgolemLoad(){ const d={}; _s5GolemLoad('smallgolem', window.SMALLGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3'], d, 0xff5030);
-  if(d.tpl) BOSS_TPLS_S5.small = d.tpl; })();
+BOSS_LOADERS.midgolem = function midgolemLoad(){ if(BOSS_TPLS_S5.mid) return; const d={}; _s5GolemLoad('midgolem', window.MIDGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3','atk4','melee'], d, 0xffa020);
+  if(d.tpl) BOSS_TPLS_S5.mid = d.tpl; };   // ►LAZY: stage 5
+BOSS_LOADERS.smallgolem = function smallgolemLoad(){ if(BOSS_TPLS_S5.small) return; const d={}; _s5GolemLoad('smallgolem', window.SMALLGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3'], d, 0xff5030);
+  if(d.tpl) BOSS_TPLS_S5.small = d.tpl; };
 
 /* ►ICEBOSS · STAGE 7: monta la plantilla FBX del Coloso Vikingo de Hielo → BOSS_TPLS[7] (misma forma que _bossTpl,
    por-stage). Copia fina de dgolemLoad(): 11 clips propios (idle/run/jump/laying/kipup/death + atk1..5 de gran espada),
    donante = 'idle' (Neutral Idle, con malla), y NADA de rampa de textura — el look ESCARCHA lo pone spec.tint por
    instancia (bossSpawnInst). El rig es Mixamo (setFromObject mide bien, como el gólem → SIN rawGeo). */
-(function icevikLoad(){
+function icevikLoad(){ if(BOSS_TPLS[7]) return;   // ►LAZY: lo invoca ensureStageAssets(7)
   if(!window.ICEVIK_FBX_B64 || !THREE.FBXLoader){ console.warn('[iceboss] sin ICEVIK_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','run','jump','laying','kipup','death','atk1','atk2','atk3','atk4','atk5'];
@@ -12090,13 +12181,14 @@ function _s5GolemLoad(tag, b64dict, clipNames, dest, tintHex){
   } });
   BOSS_TPLS[7] = { root:meshSrc, clips, baseScale, baseY: -box2.min.y*baseScale };
   console.log('[iceboss] stage7 listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
-})();
+}
+BOSS_LOADERS.icevik = icevikLoad;
 
 /* ►ROBOTBOSS · STAGE 8: monta la plantilla FBX del Robot de la Forja → BOSS_TPLS[8] (misma forma que _bossTpl,
    por-stage). Copia fina de icevikLoad(): 14 clips propios (idle general + capo=ginga base + run + point1/point3/charge
    = 3 láseres de dedo + 7 patadas de capoeira + death), donante = 'idle' (con malla). El look METÁLICO lo da el material
    (metalness alta) + spec.tint por instancia (bossSpawnInst). El rig es Mixamo → setFromObject mide bien, SIN rawGeo. */
-(function robotLoad(){
+function robotLoad(){ if(BOSS_TPLS[8]) return;   // ►LAZY: lo invoca ensureStageAssets(8)
   if(!window.ROBOT_FBX_B64 || !THREE.FBXLoader){ console.warn('[robotboss] sin ROBOT_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','capo','run','point1','point3','charge','mma','meiafrente','meiacompasso','legsweep','kick','chapa','queshada','death','deathrun','deathback'];   // ►ROBOTDEATH: +deathrun (Running Tired) + deathback (Death From The Back) = secuencia de muerte en 2 tiempos
@@ -12137,7 +12229,8 @@ function _s5GolemLoad(tag, b64dict, clipNames, dest, tintHex){
   } });
   BOSS_TPLS[8] = { root:meshSrc, clips, baseScale, baseY: -box2.min.y*baseScale };
   console.log('[robotboss] stage8 listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
-})();
+}
+BOSS_LOADERS.robot = robotLoad;
 
 /* ================= ►S4LIGHT · LUZ de la ARENA del GÓLEM (Stage 4) =================
    Dos problemas que arreglaba a la vez:
@@ -23964,6 +24057,7 @@ function wallHit(p, sign){
 const _boundaryWalls = [];
 const WALL_SPAN = 56;   // ►MUROVENTANA · ►AJUSTA: largo (u) del tramo de cristal visible alrededor de la cámara (la cinta mide 104)
 function updateBoundaryWalls(){
+  _windU.value = performance.now() * 0.001;   // ►SUELOTEST: reloj del viento de las matas
   for(const g of _boundaryWalls){
     const w = g.userData._win; if(!w || !g.visible) continue;
     const half = WALL_SPAN/2;
@@ -26520,6 +26614,7 @@ function enableS2Scenery(on){
 /* ---- reconstrucción de la cinta (mismo motor que buildBelt, con el tema actual) ---- */
 function rebuildBelt(){
   if(!BELT.on) return;
+  addFloorBlock._done = false; _sueloB = null;   // ►SUELOTEST: la plataforma de prueba se vuelve a elegir en cada cinta
   for(const seg of BELT.segs){
     scene.remove(seg.group);
     disposeTree(seg.group);   // ►PERF-MEM: geometrías propias + materiales clonados del segmento fuera de la GPU (antes se filtraban en cada salto de mundo)
@@ -38762,6 +38857,7 @@ function saltoConCarga(avanzar, titulo){
   requestAnimationFrame(()=>{
     if(gen !== _ldGen) return;                                   // abortada (ESC → menú) antes de montar: no se monta nada
     try{ avanzar(); }catch(e){ console.warn('[carga] salto', e); }
+    try{ ensureStageAssets(STAGE); }catch(e){ console.warn('[lazy]', e); }   // ►LAZY: jefes FBX y pieles del stage, parseados AQUÍ (tapado por la carga), no al arrancar
     const t = document.getElementById('ldTitle'); if(t && !titulo) t.textContent = ldTitulo();
     if(window.DESC && DESC.on || window.TUBO && TUBO.on || gameOver){ loadScreenHide(null); return; }   // módulo con presentación propia / fin de run
     esperarListo(()=> loadScreenHide(()=>{ stageIntroGo(); }));
