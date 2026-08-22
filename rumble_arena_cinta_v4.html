@@ -532,8 +532,9 @@ window.addEventListener('load', function(){
               transition:transform .12s; }
   #musicBtn:hover { transform:scale(1.12); }
   #count321 { position:absolute; top:38%; left:50%; transform:translate(-50%,-50%);
-    font-size:150px; font-weight:900; pointer-events:none; opacity:0; z-index:30;
-    text-shadow:0 0 44px currentColor, 0 6px 0 rgba(0,0,0,.4); }
+    font-size:170px; font-weight:900; font-style:italic; letter-spacing:4px; pointer-events:none; opacity:0; z-index:30;
+    color:#fff; -webkit-text-stroke:4px #000; paint-order:stroke fill;   /* ►CUENTA (Toni 22/08): blanco, cursiva y contorno negro, como los rótulos del menú */
+    text-shadow:0 6px 0 rgba(0,0,0,.55), 0 0 30px rgba(0,0,0,.35); }
   #count321.pop { animation: c321 .95s ease-out; }
   @keyframes c321 {
     0%   { opacity:0; transform:translate(-50%,-50%) scale(2.3); }
@@ -2384,8 +2385,23 @@ function _rimChunk(){
   return _rimSrcOrig + '\n' + [
     'float rimF = 1.0 - saturate(dot(geometry.normal, geometry.viewDir));',
     'rimF = pow(rimF, '+g(R.power)+');',
-    'reflectedLight.indirectDiffuse += rimF * '+g(R.strength)+' * vec3('+g(c.r)+', '+g(c.g)+', '+g(c.b)+');'
+    'reflectedLight.indirectDiffuse += rimF * '+g(R.strength)+' * vec3('+g(c.r)+', '+g(c.g)+', '+g(c.b)+');',
+    /* ►MINMARK (opción C): luz de borde ROJA solo en los materiales marcados con el define MIN_RIM (minions) */
+    '#ifdef MIN_RIM',
+    'reflectedLight.indirectDiffuse += pow(1.0 - saturate(dot(geometry.normal, geometry.viewDir)), 2.4) * 0.55 * vec3(1.0, 0.30, 0.12);',
+    '#endif'
   ].join('\n');
+}
+const MIN_RIM_ON = true;   // ►MINMARK · ►AJUSTA: luz de borde roja en los minions (opción C)
+function markMinionRim(root){
+  if(!MIN_RIM_ON || !root) return;
+  root.traverse(o=>{ if(!o.isMesh || !o.material) return;
+    const arr = Array.isArray(o.material) ? o.material : [o.material];
+    for(const m of arr){ if(!m || m.userData._minRim) continue; m.userData._minRim = true;
+      m.defines = Object.assign({}, m.defines || {}, { MIN_RIM: 1 });
+      const ck = m.customProgramCacheKey; m.customProgramCacheKey = ()=> 'minrim' + (ck ? ck.call(m) : '');
+      m.needsUpdate = true; }
+  });
 }
 function applyRimLight(live){
   if(!_rimOK) return;
@@ -2652,7 +2668,7 @@ const _minSil = [];
    mueve). Fuera de la capa pierde las cuatro cosas de golpe y hasta recibe la tinta del mundo,
    como el decorado. keepRing=true conserva el trato antiguo — lo usa el ÉLITE/brute, que es un
    EVENTO y debe cantar. MIN_SIL_RING=true restaura el ►MINSIL de antes para TODA la masa. */
-const MIN_SIL_RING = false;   // ►AJUSTA: true = masa con anillo + saturación de personaje (modo 1/08)
+const MIN_SIL_RING = true;    // ►MINMARK (Toni 22/08): la masa vuelve al pase de silueta, pero con contorno NEGRO (tinta), distinto del de color de los jugadores
 function registerMinionSil(root, keepRing){
   if(!root || !(keepRing || MIN_SIL_RING)) return;
   root.traverse(o=>{ if(o.isMesh){ o.layers.enable(OUTLINE_LAYER); _minSil.push(o); } });
@@ -2850,7 +2866,7 @@ try {
            shader los distingue de los jugadores (alfa 1) y les dibuja el anillo CORTO (sutil).
            Los del pool fuera de escena no se dibujan aunque se les cambie el material (inofensivo). */
         if(typeof _minSil !== 'undefined' && _minSil.length && typeof VISUAL !== 'undefined' && (!VISUAL.minOutline || VISUAL.minOutline.on !== false)){
-          const stCol = (typeof portalPalette === 'function') ? portalPalette()[1] : 0x35ff6a;
+          const stCol = 0x07090f;   // ►MINMARK: contorno de TINTA para los enemigos (antes: color del mapa)
           for(const o of _minSil){
             if(!o.material || o.material.depthWrite === false) continue;
             const key = 'min' + (o.isSkinnedMesh ? '_s' : '');
@@ -4474,8 +4490,9 @@ const FLOWER_MATS = [ mat(0xff6f91,{emissive:0xff6f91,emissiveIntensity:.22}),
 const _grassJobs = [];
 function flushGrass(){
   if(STAGE>=2){ _grassJobs.length = 0; return; }   // STAGE 2/3: sin matas de césped del prado (la cobertura la da la vegetación temática)
-  for(const j of _grassJobs){ dressTop(j.g, j.sx, j.sz, j.topY, j.cx, j.cz);
-  if(j.grassMat) addBumps(j.g, j.sx, j.sz, j.topY, j.grassMat, j.cx, j.cz); } _grassJobs.length = 0; }
+  /* ►SINBRIZNAS (Toni 22/08: "el césped fino molesta, no se ve bien"): fuera el tapiz de briznas (dressTop);
+     quedan los bultos verdes del suelo y las matas con flores (grasspatch) que ponen el volumen. */
+  for(const j of _grassJobs){ if(j.grassMat) addBumps(j.g, j.sx, j.sz, j.topY, j.grassMat, j.cx, j.cz); } _grassJobs.length = 0; }
 function dressTop(g, sx, sz, topY, cx, cz){
   const pieces = getGrassPieces();
   if(!pieces || !pieces.length) return;
@@ -7485,7 +7502,7 @@ function clearCues(){
 }
 function showCount(n, color){
   count321.textContent = n;
-  count321.style.color = color;
+  count321.style.color = '#fff';   // ►CUENTA: siempre blanco con contorno negro (el color por número se retiró)
   count321.classList.remove('pop'); void count321.offsetWidth;
   count321.classList.add('pop');
 }
@@ -10242,7 +10259,36 @@ const MPARTS = [
   { geo:_MGEO.leg,  mat:MIN_DARK_MAT, off:[.18,.25,0],    rot:'aLegR' },
 ];
 let minstMeshes = null;
+/* ►MINMARK (Toni 22/08): MARCADOR DE ENEMIGO universal — vale para cualquier modelo/tinte de stage. Un
+   disco oscuro de contacto + un aro fino rojo-naranja ("color enemigo" fijo) bajo CADA minion, instanciados
+   (2 draw calls para toda la horda). Siguen la posición de los pies; renderMinionInstances los recoloca. */
+const MIN_MARK_ON = true;
+const MIN_MARK_COL = 0xff5a2a;
+let _minDiscIM = null, _minRingIM = null;
+const _mmM = new THREE.Matrix4(), _mmQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI/2), _mmP = new THREE.Vector3(), _mmS = new THREE.Vector3();
+function _minMarkInit(){
+  if(_minDiscIM || !MIN_MARK_ON) return;
+  const dm = new THREE.MeshBasicMaterial({ color:0x05070c, transparent:true, opacity:.42, depthWrite:false, fog:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+  const rm = new THREE.MeshBasicMaterial({ color:MIN_MARK_COL, transparent:true, opacity:.95, depthWrite:false, fog:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
+  _minDiscIM = new THREE.InstancedMesh(new THREE.CircleGeometry(.56, 22), dm, MINION_CAP);
+  _minRingIM = new THREE.InstancedMesh(new THREE.RingGeometry(.56, .70, 26), rm, MINION_CAP);
+  for(const im of [_minDiscIM, _minRingIM]){ im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.renderOrder = 2; scene.add(im); }
+}
+function _minMarkUpdate(n){
+  if(!_minDiscIM) return;
+  for(let i=0;i<n;i++){
+    const mn = minions[i];
+    if(mn.dead || mn._levi){ _minDiscIM.setMatrixAt(i, _GOB_ZERO); _minRingIM.setMatrixAt(i, _GOB_ZERO); continue; }
+    const s = Math.max(.7, (mn.scale||1) * (mn._boss ? 1.6 : mn.type==='large' ? 0.85 : 1.0));
+    _mmP.set(mn.pos.x, mn.pos.y + .05, mn.pos.z); _mmS.set(s, s, 1);
+    _mmM.compose(_mmP, _mmQ, _mmS);
+    _minDiscIM.setMatrixAt(i, _mmM); _minRingIM.setMatrixAt(i, _mmM);
+  }
+  _minDiscIM.count = n; _minRingIM.count = n; _minDiscIM.instanceMatrix.needsUpdate = true; _minRingIM.instanceMatrix.needsUpdate = true;
+}
 function initMinionInstances(){
+  _minMarkInit();
+  if(typeof markMinionRim==='function'){ for(const p of MPARTS){ markMinionRim({ traverse:(fn)=> fn({ isMesh:true, material:p.mat }) }); } }   // ►MINMARK: las cajas también
   minstMeshes = MPARTS.map(p=>{
     const im = new THREE.InstancedMesh(p.geo, p.mat, MINION_CAP);
     im.count = 0; im.frustumCulled = false;                  // matrices a mano → sin culling del batch entero
@@ -10277,6 +10323,7 @@ function renderMinionInstances(){
     }
   }
   for(let pi=0; pi<minstMeshes.length; pi++){ const im=minstMeshes[pi]; im.count=n; im.instanceMatrix.needsUpdate=true; }
+  _minMarkUpdate(n);   // ►MINMARK: disco + aro bajo cada minion
 }
 initMinionInstances();
 /* ===== MINION GOBLIN (Synty, instanciado): si goblin_minion.js cargó, sustituye las cajas por las
@@ -10591,6 +10638,7 @@ function _gobBuildInst(type){                             // crea UNA instancia 
      por un bug del export → GLTFLoader los marca transparent=true, depthWrite=false; una SkinnedMesh de dos
      caras sin depth-write pinta caras delante/detrás desordenadas ("bloques raros / cara rara"). La horda
      NUNCA necesita alfa: fuerza OPACO todo el minion (idempotente para los Synty/goblins ya opacos). */
+  if(typeof markMinionRim==='function') markMinionRim(root);   // ►MINMARK: luz de borde roja (opción C)
   root.traverse(o=>{ if(!o.isMesh || !o.material) return;
     const arr = Array.isArray(o.material) ? o.material : [o.material];
     for(const m of arr){ if(m.transparent){ m.transparent = false; m.depthWrite = true; m.needsUpdate = true; } }
