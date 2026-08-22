@@ -6930,6 +6930,56 @@ function _streak(from, out, len, color){
   parts.push({ m, life:.13+Math.random()*.08, v:m._v.set(0,0,0), fade:true, pool:boltPool });
   scene.add(m);
 }
+/* ►JUICE · CHISPAZO DE IMPACTO (Toni 22/08: "golpes más gustosos"): 3 planos alargados ("slash") orientados
+   a la dirección del golpe, aditivos, que nacen a escala 0, crecen en ~70 ms y se apagan en ~120 ms. Van en
+   UN InstancedMesh (1 draw call, sin mallas nuevas); el fundido se hace oscureciendo instanceColor (en
+   aditivo, negro = invisible). */
+const SPARK_MAX = 36;
+let _sparkIM = null; const _sparks = []; const _spkPool = [];
+const _spkM = new THREE.Matrix4(), _spkQ = new THREE.Quaternion(), _spkQ2 = new THREE.Quaternion(), _spkS = new THREE.Vector3(), _spkC = new THREE.Color(), _spkZ = new THREE.Vector3(0,0,1), _spkAx = new THREE.Vector3();
+function _sparkInit(){
+  if(_sparkIM) return;
+  const g = new THREE.PlaneGeometry(1, 1);
+  const m = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide, fog:false });
+  _sparkIM = new THREE.InstancedMesh(g, m, SPARK_MAX);
+  _sparkIM.count = 0; _sparkIM.frustumCulled = false;
+  _sparkIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for(let i=0;i<SPARK_MAX;i++){ _sparkIM.setColorAt(i, _spkC.setHex(0)); }
+  scene.add(_sparkIM);
+}
+function hitSpark(pos, dir, color, size){
+  _sparkInit();
+  size = size || 1;
+  const d = _spkAx.copy(dir || _spkZ); if(d.lengthSq() < 1e-4) d.set(0,0,1); d.normalize();
+  for(let k=0;k<3;k++){
+    if(_sparks.length >= SPARK_MAX) break;
+    const s = _spkPool.pop() || { pos:new THREE.Vector3(), q:new THREE.Quaternion(), col:new THREE.Color() };
+    s.pos.copy(pos); s.col.set(k===0 ? 0xffffff : color);
+    /* el plano nace mirando +Z → se encara al golpe y se gira al azar alrededor de ese eje */
+    _spkQ.setFromUnitVectors(_spkZ, d); _spkQ2.setFromAxisAngle(d, Math.random()*Math.PI*2);
+    s.q.copy(_spkQ2).multiply(_spkQ);
+    s.len = (1.6 + Math.random()*1.2) * size; s.wid = (.18 + Math.random()*.12) * size;
+    s.t = 0; s.life = .16 + Math.random()*.06;
+    _sparks.push(s);
+  }
+}
+function _sparkTick(dt){
+  if(!_sparkIM || !_sparks.length){ if(_sparkIM) _sparkIM.count = 0; return; }
+  let n = 0;
+  for(let i=_sparks.length-1;i>=0;i--){
+    const s = _sparks[i]; s.t += dt;
+    if(s.t >= s.life){ _sparks.splice(i,1); _spkPool.push(s); continue; }
+    const u = s.t / s.life;
+    const grow = Math.min(1, s.t / .07), fade = 1 - Math.max(0, (u - .4) / .6);
+    _spkS.set(s.wid * (1 - u*.6), s.len * grow, 1);
+    _spkM.compose(s.pos, s.q, _spkS);
+    _sparkIM.setMatrixAt(n, _spkM);
+    _spkC.copy(s.col).multiplyScalar(fade);
+    _sparkIM.setColorAt(n, _spkC);
+    n++;
+  }
+  _sparkIM.count = n; _sparkIM.instanceMatrix.needsUpdate = true; if(_sparkIM.instanceColor) _sparkIM.instanceColor.needsUpdate = true;
+}
 function impactFX(pos, vic, f, color){
   const I = VISUAL.impact;
   if(!I.on || f <= 0.28) return;                       // golpes flojos: se quedan exactamente como estaban
@@ -7100,6 +7150,7 @@ function pixelate(p, bp, nMax){
 }
 
 function updateParts(dt){
+  _sparkTick(dt);   // ►JUICE: chispazos de impacto (instanciados)
   for(let i=parts.length-1;i>=0;i--){
     const p = parts[i];
     p.life -= dt;
@@ -9145,6 +9196,7 @@ function killItem(i){
 function giveItem(p, it){
   p.sc.items++; p._xpBuf = (p._xpBuf||0) + 15;
   p._oneShot = 'pickup'; p._oneShotT = 0.5;                 // humanoide: animación de recoger
+  try{ const c0 = p.pos.clone().add(new THREE.Vector3(0,1,0)); burst(c0, p.color, 8, 5, 4, .7); ring(c0, 0xffffff, 10, .3); jiggle(p, 8); hitSpark(c0, new THREE.Vector3(0,1,0), p.color, .8); }catch(e){}   // ►JUICE: recoger se ve
 
   if(it.cat==='rainbow'){ p.sc.boosts++; p.rainbowT = RAINBOW_DUR; showCombo(p, '¡ARCOÍRIS x5!'); sfx.chaos(); }
   else if(it.cat==='passive'){
@@ -10958,8 +11010,24 @@ function killMinion(mn){
   if(mn.dead || mn._boss) return;   // el JEFE NUNCA se elimina por esta vía (instakill de AoE/definitiva): solo muere por su VIDA en updateBoss. Si no, su minion se quita de minions[] y su IA se congela → jefe "buggeado" girando sin daño
   mn.dead = true;
   const c = mn.pos.clone().add(new THREE.Vector3(0,.8*mn.scale,0));
-  burst(c, 0x26262b, 16, 7, 6, 1.1); burst(c, 0xff2222, 10, 6, 5, .9); ring(c, 0xff3030, 16, .4);
-  sfx.ko();
+  /* ►JUICE (Toni 22/08): destruir tiene que sentirse — cubos del color del bicho + rojo, onda del color del
+     jugador, chispazo, sacudida y "+20" en el sitio; el asesino se congela un instante (►HITSTOP2) y las
+     rachas de kills seguidas se anuncian. */
+  const k = mn.lastHitBy && !mn.lastHitBy.dead ? mn.lastHitBy : null;
+  let bodyCol = 0x26262b;
+  try{ if(mn._gob && mn._gob.mats && mn._gob.mats.length) bodyCol = mn._gob.mats[0].color.getHex(); }catch(e){}
+  burst(c, bodyCol, 20, 8, 7, 1.15); burst(c, 0xff2222, 12, 7, 6, .9); burst(c, 0xfff2c8, 6, 6, 5, .7);
+  ring(c, k ? k.color : 0xff3030, 20, .45);
+  hitSpark(c, mn.vel && mn.vel.lengthSq()>.1 ? mn.vel : new THREE.Vector3(0,1,0), k ? k.color : 0xff8050, 1.4);
+  shake = Math.max(shake, .28); fovKick = Math.max(fovKick, .35);
+  if(k){
+    localHitstop(k, null, .07);
+    popKill(c, '+20', k.color);
+    const now = (typeof t!=='undefined') ? t : 0;
+    k._rachaN = (now - (k._rachaT||-9) < 1.2) ? (k._rachaN||0) + 1 : 1; k._rachaT = now;
+    if(k._rachaN >= 3 && k._rachaN % 1 === 0){ showCombo(k, '¡RACHA x' + k._rachaN + '!'); if(k._rachaN === 3 || k._rachaN === 5 || k._rachaN === 8) sfx.combo(); }
+  }
+  sfx.minionDie();
   // render instanciado: no hay malla por-minion que quitar/disponer; updateMinions lo saca de minions[]
 }
 function killMproj(i){ const s=mprojs[i]; scene.remove(s.m);
@@ -11237,7 +11305,9 @@ function updateMinions(dt){
     }
   }
   for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn._levi){ continue; }   // ►LEVIATAN: la punta dorada de una pata es una entidad dañable, pero la mueve su tentáculo (updateLeviathan), no una IA
-      if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; } updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
+      if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; }
+      if(mn.hitstopT>0){ mn.hitstopT -= dt; gobAttach(mn); gobUpdate(mn, 0); continue; }   // ►HITSTOP2: el minion golpeado se congela unos frames (sim + mixer), como el jugador
+      updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
   renderMinionInstances();               // re-empaqueta las matrices instanciadas de los vivos en [0,n)
   updateMprojs(dt);
 }
@@ -15825,10 +15895,14 @@ function hitMinions(p){
     const massK = mn.type==='small'?1.3 : mn.type==='large'?.65 : 1;
     const kb = (7 + mn.damage*.18) * kbMul(p) * kbk * massK;
     mn.vel.set(dir.x*kb, up, dir.z*kb); mn.hitstun=Math.max(mn.hitstun,.3); mn.onGround=false;
-    burst(mc, 0xff5050, 10, 6, 4, .9); ring(mc, 0xffffff, 12, .3);
+    /* ►JUICE: chispazo encarado al golpe + chispas en cono + onda; ►HITSTOP2: congela SOLO al que pega y al
+       minion golpeado (antes hitstopGlobal congelaba la partida entera en cada toque de enjambre) */
+    hitSpark(mc, dir, 0xffb070, .9 + (p.comboStage||0)*.15);
+    burstDir(mc, 0xff5050, 8, dir, 7, .6, 1.2, .8); ring(mc, 0xffffff, 12, .3);
     addPower(p, dmg*.5);
-    hitstopGlobal=Math.max(hitstopGlobal,.04); shake=Math.max(shake,.2);
-    sfx.hit(mn.damage);
+    localHitstop(p, null, .05 + Math.min(.05, dmg*.002)); mn.hitstopT = Math.max(mn.hitstopT||0, .07);
+    shake=Math.max(shake,.22); camKick(dir.x, dir.z, .25);
+    sfx.minionHit(mn.damage);
   }
 }
 
@@ -18014,6 +18088,19 @@ const _xpPool = [], _xpV = new THREE.Vector3();
 (function(){ const c = document.getElementById('xpPops'); if(!c) return;
   for(let i=0;i<16;i++){ const d=document.createElement('div'); d.className='xppop'; c.appendChild(d); _xpPool.push(d); } })();
 let _xpIdx = 0;
+/* ►JUICE: "+20" INMEDIATO en el sitio donde cae el minion (la recompensa se ve donde pasa, no 0,45 s
+   después sobre el jugador). Usa el mismo pool de .xppop; el total diferido de popXP sigue igual. */
+function popKill(pos, txt, color){
+  if(!_xpPool.length) return;
+  _xpV.copy(pos); _xpV.y += 1.2; _xpV.project(camera);
+  if(_xpV.z > 1) return;
+  const x = (_xpV.x*.5+.5)*innerWidth, y = (-_xpV.y*.5+.5)*innerHeight;
+  const d = _xpPool[_xpIdx]; _xpIdx = (_xpIdx+1) % _xpPool.length;
+  d.textContent = txt;
+  d.style.color = '#'+((color!=null?color:0xffffff).toString(16).padStart(6,'0'));
+  d.style.left = x+'px'; d.style.top = y+'px';
+  d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
+}
 function popXP(p, n){
   if(!_xpPool.length) return;
   _xpV.copy(p.pos); _xpV.y += 1.8; _xpV.project(camera);
@@ -19548,13 +19635,19 @@ function resolveHit(att, vic){
   });
   if(s===3 && dmg>0) addPower(att, 14);    // ►ONDA: cerrar el combo también paga en barra de definitiva
 
-  localHitstop(att, vic, .06 + s*.035 + (punish?.08:0) + Math.min(.05, vic.damage*.0003));
-  shake = Math.min(1.1, .22 + s*.16 + (punish?.35:0) + vic.damage*.003); camKick(dir.x, dir.z, .5 + s*.3 + (punish?.4:0));
-  if(s===3 || punish){ ring(vc, punish?0xfff0a8:0xffffff, 20, .45); fovKick = Math.max(fovKick, 1); }
+  /* ►HITSTOP2 (Toni 22/08): hitstop POR JUGADOR y más gustoso — .07/.11/.15/.19 (+castigo, +daño acumulado);
+     la víctima se queda un 30 % más que el pegador (estilo Smash), el resto de la partida sigue. */
+  { const hs = .07 + s*.04 + (punish?.10:0) + Math.min(.06, vic.damage*.0004); localHitstop(att, null, hs*.8); localHitstop(null, vic, hs*1.1); }
+  shake = Math.min(1.1, .22 + s*.16 + (punish?.35:0) + vic.damage*.003); camKick(dir.x, dir.z, .6 + s*.35 + (punish?.4:0));
+  /* ►JUICE: TODOS los golpes del combo llevan onda, punch de cámara y chispazo (antes solo el 4º/castigo) */
+  ring(vc, (s===3 || punish) ? (punish?0xfff0a8:0xffffff) : vic.color, 14 + s*6 + (punish?6:0), .32 + s*.04);
+  fovKick = Math.max(fovKick, [.25,.4,.6,1.0][Math.min(3,s)] + (punish?.4:0));
+  hitSpark(vc, dir, 0xffffff, 1 + s*.25 + (punish?.5:0));
+  if(s>=2 || punish){ canvas.style.filter = 'brightness(1.12)'; flashT = Math.max(flashT, .06); }   // destello de pantalla de 60 ms en los golpes gordos
   burst(vc, vic.color, 10+s*4+(punish?12:0), 5+s*2+vic.damage*.04, 4+s);
   burst(vc, 0xffffff, 4+s*2, 4, 3, .7);
-  jiggle(vic, 14 + s*5 + (punish?12:0));
-  sfx.hit(vic.damage + s*15 + (punish?40:0));
+  jiggle(vic, (14 + s*5 + (punish?12:0)) * 1.3);
+  sfx.hit(vic.damage + s*15 + (punish?40:0), s, punish);
   if(s===3 || punish) smashFX(vc, vic);
   /* ARCO de barrido espectacular del martillazo: estela de partículas en abanico frente al atacante */
   { const ya=att.yaw, span=1.5+s*0.25, rr=1.6+s*0.35;
@@ -21747,6 +21840,7 @@ function updateFighter(p, dt){
       wantDash = false;                                     // el dash se consume rodando
       sfx.dash(); jiggle(p, 9);
       ring(p.pos.clone().add(new THREE.Vector3(0,.12,0)), 0xffffff, 11, .3);
+      try{ const dv = new THREE.Vector3(-p.vel.x, 0, -p.vel.z); if(dv.lengthSq() > 1){ dv.normalize(); for(let k=0;k<3;k++) _streak(p.pos.clone().add(new THREE.Vector3((k-1)*.35, .5 + k*.3, 0)), dv, 1.3 + k*.3, 0xffffff); } }catch(e){}   // ►JUICE: estelas
       if(!p.isAI) showCombo(p, '¡RODADA!');                 // confirma que el timing ha entrado
     }
   }
