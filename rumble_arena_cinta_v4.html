@@ -7221,6 +7221,58 @@ function master(){
   comp.connect(g); g.connect(ctx.destination);
   _master = comp; return _master;
 }
+/* =====================================================================
+   ►SFXKIT (Toni 22/08: "cambiaría toda la UX Sound"): sampler de MUESTRAS (sfx/kit/*.ogg, Kenney CC0 —
+   ver sfx/kit/LICENSE.txt) por el MISMO bus maestro que el sintetizador (compresor "glue"). Decodifica
+   perezoso tras el primer gesto (startMenuAudio) y bajo la pantalla de carga. Cada clave puede tener
+   variantes (hit_1..3) que se rotan sin repetir; pitch aleatorio ±6 %; 25 ms de cooldown por clave y
+   tope de 10 voces. Si una muestra falta, play() devuelve false y el sintetizador de siempre hace de
+   red (las funciones viejas se guardan en _syn). Las claves de UI suenan también en el menú (demo).
+   ===================================================================== */
+const KIT_KEYS = ['ui_hover','ui_click','ui_back','ui_confirm','ui_error','ui_open','ui_close','ui_select','ui_switch',
+  'hit_1','hit_2','hit_3','hit_heavy_1','hit_heavy_2','hit_punish','minion_hit_1','minion_hit_2','minion_die_1','minion_die_2','minion_die_3',
+  'ko','fallout','crack','glass','pickup','powerup','heal','weapon','chaos','jump','djump','dash','land','cap_land','cap_in','combo','deny'];
+const kit = {
+  buf:{}, _loading:false, _fail:0, _vox:0, _last:{}, _lastT:{},
+  ready(){ return Object.keys(this.buf).length; },
+  load(){
+    if(this._loading) return; this._loading = true;
+    let ctx; try{ ctx = audio(); }catch(e){ return; }
+    for(const k of KIT_KEYS){
+      fetch('sfx/kit/' + k + '.ogg').then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(ab=> new Promise((res,rej)=> ctx.decodeAudioData(ab, res, rej)))
+        .then(b=>{ this.buf[k] = b; }).catch(()=>{ this._fail++; });
+    }
+  },
+  _pick(key){
+    if(this.buf[key]) return key;
+    const vars = KIT_KEYS.filter(k=> k.startsWith(key + '_') && /_\d$/.test(k) && this.buf[k]);
+    if(!vars.length) return null;
+    let k = vars[(Math.random()*vars.length)|0];
+    if(vars.length > 1 && k === this._last[key]) k = vars[(vars.indexOf(k)+1) % vars.length];
+    this._last[key] = k; return k;
+  },
+  play(key, vol, o){
+    o = o || {};
+    if(!o.ui && demo) return false;
+    if(typeof musicOn!=='undefined' && !musicOn) return false;
+    const k = this._pick(key); if(!k) return false;
+    const now = performance.now();
+    if(now - (this._lastT[key]||0) < 25) return true;         // ya ha sonado este mismo instante
+    if(this._vox >= 10) return true;
+    this._lastT[key] = now;
+    try{
+      const ctx = audio(); if(ctx.state==='suspended') ctx.resume();
+      const s = ctx.createBufferSource(); s.buffer = this.buf[k];
+      s.playbackRate.value = (o.rate || 1) * (1 + (Math.random()-.5)*.12);
+      const g = ctx.createGain(); g.gain.value = Math.min(1.5, vol==null ? 1 : vol);
+      s.connect(g); g.connect(master());
+      this._vox++; s.onended = ()=>{ this._vox = Math.max(0, this._vox-1); };
+      s.start();
+      return true;
+    }catch(e){ return false; }
+  }
+};
 function tone(freq, dur, type='square', vol=.18, slide=0){
   if(demo) return;                          // modo atracción (menú): sin SFX de combate, solo música
   const ctx = audio(); if(ctx.state==='suspended') ctx.resume();
@@ -7312,6 +7364,65 @@ const sfx = {
   weaponGet:()=>{ noiseHit(.12,.06); tone(200,.1,'square',.15,140); tone(360,.13,'square',.1,200); },          // amartillar/listo
   fallout  :()=>{ tone(620,.55,'sawtooth',.18,-500); tone(300,.6,'square',.08,-220); noiseHit(.12,.4); },      // caída al vacío
 };
+/* ►SFXKIT: las claves que pasan a MUESTRAS (el sintetizador queda de red en _syn y, en los golpes gordos,
+   como capa de peso por debajo). Mezcla: UI −8 dB respecto a golpes; hit_heavy solo en el 4º/castigo
+   para que cerrar el combo "suene a premio". */
+const _syn = Object.assign({}, sfx);
+sfx.jump   = ()=>{ if(!kit.play('jump', .45)) _syn.jump(); };
+sfx.djump  = ()=>{ if(!kit.play('djump', .5)) _syn.djump(); };
+sfx.dash   = ()=>{ if(!kit.play('dash', .5, {rate:1.25})) _syn.dash(); };
+sfx.land   = (i)=>{ if(!kit.play('land', .25 + .5*(i||0), {rate:.9})) _syn.land(i); };
+sfx.hit    = (dmg, s, punish)=>{
+  const key = punish ? 'hit_punish' : ((s>=3) ? 'hit_heavy' : 'hit');
+  const vol = .75 + Math.min(.45, (dmg||0)*.004);
+  if(!kit.play(key, vol, {rate: 1 - (s||0)*.06})) _syn.hit(dmg);
+  if(s>=3 || punish) kit.play('crack', .5);                       // capa de "crujido" en el remate
+};
+sfx.minionHit = (dmg)=>{ if(!kit.play('minion_hit', .5, {rate:1.1})) _syn.chip(); };
+sfx.minionDie = ()=>{ if(!kit.play('minion_die', .75)) _syn.ko(); kit.play('glass', .18, {rate:1.4}); };
+sfx.ko     = ()=>{ kit.play('ko', 1); _syn.ko(); };               // muestra + sub sintetizado = KO con peso
+sfx.fallout= ()=>{ if(!kit.play('fallout', .7)) _syn.fallout(); };
+sfx.boost  = ()=>{ if(!kit.play('powerup', .6)) _syn.boost(); };
+sfx.passive= ()=>{ if(!kit.play('pickup', .6)) _syn.passive(); };
+sfx.heal   = ()=>{ if(!kit.play('heal', .6)) _syn.heal(); };
+sfx.weaponGet = ()=>{ if(!kit.play('weapon', .6)) _syn.weaponGet(); };
+sfx.chaos  = ()=>{ kit.play('chaos', .5); _syn.chaos(); };
+sfx.capIn  = ()=>{ if(!kit.play('cap_in', .35, {rate:.8})) _syn.capIn(); };
+sfx.capLand= ()=>{ if(!kit.play('cap_land', .5)) _syn.capLand(); };
+sfx.deny   = ()=>{ if(!kit.play('deny', .5)) _syn.deny(); };
+sfx.combo  = ()=>{ kit.play('combo', .55, {rate:1.2}); };
+sfx.cap    = ()=>{ if(!kit.play('ui_click', .4, {ui:true})) _syn.cap(); };
+/* sonidos de INTERFAZ (suenan también en la home/demo) */
+sfx.ui = {
+  hover:  ()=> kit.play('ui_hover',   .22, {ui:true}),
+  click:  ()=> kit.play('ui_click',   .4,  {ui:true}),
+  back:   ()=> kit.play('ui_back',    .4,  {ui:true}),
+  confirm:()=> kit.play('ui_confirm', .5,  {ui:true}),
+  open:   ()=> kit.play('ui_open',    .4,  {ui:true}),
+  close:  ()=> kit.play('ui_close',   .4,  {ui:true}),
+  error:  ()=> kit.play('ui_error',   .45, {ui:true}),
+  select: ()=> kit.play('ui_select',  .35, {ui:true}),
+};
+/* delegación global: hover/click sobre cualquier control de los menús (captura → llega antes que
+   cualquier stopPropagation). El clic que dispara ►UINAV con Enter/A también pasa por aquí. */
+(function uiSounds(){
+  const SEL = 'button, .hdNode, .hsItem, .dBtn, .qBtn, .perkCard, .hdRb, .cpArrow, .hdModeBtn, .opt, .hdLink, a.btn';
+  let lastHover = null, lastHoverT = 0;
+  document.addEventListener('pointerover', e=>{
+    const el = e.target && e.target.closest && e.target.closest(SEL); if(!el || el === lastHover) return;
+    lastHover = el; const now = performance.now(); if(now - lastHoverT < 60) return; lastHoverT = now;
+    if(el.disabled || el.classList.contains('locked')) return;
+    sfx.ui.hover();
+  }, true);
+  document.addEventListener('click', e=>{
+    const el = e.target && e.target.closest && e.target.closest(SEL); if(!el) return;
+    if(el.dataset && el.dataset.nosnd) return;
+    if(el.disabled || el.classList.contains('locked')){ sfx.ui.error(); return; }
+    if(el.classList.contains('modalClose') || /^(pauseQuitNo|setupClose|netClose|cpusBack|charBack|msBack)$/.test(el.id)) sfx.ui.back();
+    else if(/^(pauseQuitYes|startGameBtn|perkContinue|lbContinue|restartBtn)$/.test(el.id)) sfx.ui.confirm();
+    else sfx.ui.click();
+  }, true);
+})();
 
 /* ---------- música y voces ---------- */
 /* data-URI de varios MB como src de <audio> falla en navegadores reales:
@@ -7414,6 +7525,7 @@ function primeMusic(){
   } catch(e){}
 }
 function startMenuAudio(){
+  try{ kit.load(); }catch(e){}   // ►SFXKIT: decodifica las muestras con el primer gesto (el AudioContext ya puede arrancar)
   if(_menuAudioStarted || !musicOn || !music) return;
   _menuAudioStarted = true;
   try { const c = audio(); if(c.state==='suspended') c.resume(); } catch(e){}
@@ -38491,6 +38603,7 @@ function loadScreenHide(cb, inmediato){
 function esperarListo(cb){
   const gen = _ldGen, t0 = performance.now();
   let dren = 0; try{ while(procesarDiferidos()) dren++; }catch(e){}
+  try{ kit.load(); }catch(e){}   // ►SFXKIT: por si el kit aún no se había decodificado
   try{ warmupGPU(true); }catch(e){ console.warn('[carga] warmupGPU', e); }
   try{ warmupLigero('carga'); }catch(e){}
   try{ warmupReveal('carga'); }catch(e){}
@@ -39897,7 +40010,7 @@ function openPause(){
   try{ if(typeof music!=='undefined' && music) music.volume = .2; }catch(e){}
   try{ if(document.pointerLockElement===canvas) document.exitPointerLock(); }catch(e){}
   ov.style.display = 'flex';
-  try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){}
+  try{ if(typeof sfx!=='undefined' && sfx.ui) sfx.ui.open(); }catch(e){}
 }
 function closePause(reanudar){
   const ov = document.getElementById('pauseOverlay'); if(ov){ ov.style.display = 'none'; ov.classList.remove('confirm'); }
@@ -41157,9 +41270,11 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
     }
   }
   function setFocus(el){
+    var changed = (focusEl !== el) && !!focusEl && !!el;   /* ►SFXKIT: solo al MOVER el foco (no al adquirirlo por primera vez) */
     if(focusEl && focusEl!==el) focusEl.classList.remove('uinav-focus');
     focusEl = el||null;
     if(!focusEl) return;
+    if(changed && window.sfx && sfx.ui) try{ sfx.ui.hover(); }catch(e){}
     ensureFocusable(focusEl);
     focusEl.classList.add('uinav-focus');
     try{ focusEl.focus({preventScroll:false}); }catch(e){ try{ focusEl.focus(); }catch(e2){} }
@@ -41214,6 +41329,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   }
   function back(){
     if(!activeC) return;
+    if(window.sfx && sfx.ui) try{ sfx.ui.back(); }catch(e){}   /* ►SFXKIT */
     if((activeC.id==='pauseOverlay' || activeC.id==='moveSheet') && window.pauseBack){ pauseBack(); return; }   /* ►PAUSA: B = atrás dentro de la pausa / su chuleta */
     var b = activeC.querySelector('.modalClose');
     if(b && visible(b)){ b.click(); return; }

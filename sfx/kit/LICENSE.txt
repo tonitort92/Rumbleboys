@@ -1,0 +1,5 @@
+Sonidos de este directorio: Kenney (https://kenney.nl), licencia Creative Commons CC0 (dominio publico).
+Packs: Interface Sounds, UI Audio, Impact Sounds, Digital Audio.
+  https://kenney.nl/assets/interface-sounds   https://kenney.nl/assets/ui-audio
+  https://kenney.nl/assets/impact-sounds      https://kenney.nl/assets/digital-audio
+Renombrados con nombres semanticos para RUMBLEBOYS (sfx/kit/*.ogg). Sin atribucion requerida.
