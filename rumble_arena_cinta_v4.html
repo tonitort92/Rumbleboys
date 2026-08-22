@@ -3744,9 +3744,59 @@ function sueloNormalTex(){
 }
 function sueloTestMat(){
   if(_sueloMat) return _sueloMat;
-  const m = M.grass.clone(); m.normalMap = sueloNormalTex(); m.normalMap.repeat.set(0.16, 0.16); m.normalScale.set(2.0, 2.0); m.roughness = 0.96; m.metalness = 0;
+  const m = M.grass.clone(); m.normalMap = sueloNormalTex(); m.normalMap.repeat.set(0.22, 0.22); m.normalScale.set(0.55, 0.55);   // SUAVE: césped aplastado, no cráteres (Toni 22/08) m.roughness = 0.96; m.metalness = 0;
   m.customProgramCacheKey = ()=> 'suelotest';
   _sueloMat = m; return m;
+}
+/* ►SUELOTEST · MATAS LOW-POLY (Toni 22/08, referencia "Low Poly Stylized Grass Assets"): césped de HOJAS ANCHAS
+   facetadas (3 tramos por hoja, 6 tris), en tres alturas (corta/media/larga), degradado de color base→punta,
+   7-12 hojas por mata y TODAS las matas de la plataforma fusionadas en UNA malla (1 draw call). Hojas de
+   ≥0,18 u de ancho = sin aliasing (las briznas finas de antes eran el problema). Viento en el vertex shader. */
+let _sueloGrassMat = null;
+function sueloGrassMat(){
+  if(_sueloGrassMat) return _sueloGrassMat;
+  const m = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:true, side:THREE.DoubleSide, roughness:.92, metalness:0 });
+  m.customProgramCacheKey = ()=> 'suelograss';
+  m.onBeforeCompile = sh=>{ sh.uniforms.uWind = _windU;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float hh = max(0.0, position.y); float ph = uWind*1.7 + position.x*0.35 + position.z*0.3; transformed.x += (sin(ph)*0.09 + sin(ph*2.7+0.7)*0.035) * hh * hh; transformed.z += cos(ph*0.9+1.3)*0.05 * hh * hh; }'); };
+  _sueloGrassMat = m; return m;
+}
+function sueloGrassClumps(g, sx, sz, topY, cx, cz){
+  const pos = [], col = [], surf = topY - 0.45;
+  const cA = new THREE.Color(0x2e7d2c), cB = new THREE.Color(0x7fd04a), cT = new THREE.Color(), cBase = new THREE.Color();   // base oscura → punta clara
+  const push = (p, c)=>{ pos.push(p.x, p.y, p.z); col.push(c.r, c.g, c.b); };
+  const q = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const nC = Math.min(160, Math.round(sx*sz/4.5));
+  for(let i=0;i<nC;i++){
+    const lx = (Math.random()-.5)*sx*0.86, lz = (Math.random()-.5)*sz*0.86;
+    if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.6)) continue;
+    const kind = Math.random(); const H = kind < .35 ? .55 : kind < .8 ? .85 : 1.2;   // corta / media / larga
+    const nB = 8 + (Math.random()*7)|0, hueJ = (Math.random()-.5)*.05;
+    cBase.copy(cA).offsetHSL(hueJ, 0, (Math.random()-.5)*.06);
+    for(let b=0;b<nB;b++){
+      const a = (b/nB)*Math.PI*2 + Math.random()*.6, lean = .3 + Math.random()*.45, h = H*(.75+Math.random()*.5), w = .2 + Math.random()*.16;
+      const dx = Math.cos(a), dz = Math.sin(a), r0 = .05 + Math.random()*.12;
+      const px = lx + dx*r0, pz = lz + dz*r0;
+      const SEG = 3; let prevL = null, prevR = null;
+      for(let sgi=0; sgi<=SEG; sgi++){
+        const t = sgi/SEG, hy = h*t, out = lean*h*t*t, ww = w*(1 - t*0.85);   // curva hacia fuera, se afila hacia la punta
+        const bx = px + dx*out, bz = pz + dz*out;
+        const tx = -dz*ww, tz = dx*ww;   // ancho perpendicular a la dirección de caída
+        const lft = new THREE.Vector3(bx - tx, surf + hy, bz - tz), rgt = new THREE.Vector3(bx + tx, surf + hy, bz + tz);
+        cT.copy(cBase).lerp(cB, Math.pow(t, 1.3));
+        if(prevL){ push(prevL, cT.clone().lerp(cBase, .3)); push(prevR, cT.clone().lerp(cBase, .3)); push(rgt, cT); push(prevL, cT.clone().lerp(cBase, .3)); push(rgt, cT); push(lft, cT); }
+        prevL = lft; prevR = rgt;
+      }
+    }
+  }
+  if(!pos.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, sueloGrassMat()); m.castShadow = false; m.receiveShadow = true; m.userData.noOcc = true;
+  g.add(m);
 }
 function sueloBumpMat(){
   if(_sueloBumpMat) return _sueloBumpMat;
@@ -3979,13 +4029,13 @@ function addBumps(g, sx, sz, topY, grassMat, cx, cz){
   if(!(g && g.userData && g.userData._sueloTest)) return;   // ►BUMPS ELIMINADOS en general; ►SUELOTEST: TERRONES GORDOS solo en la plataforma de prueba
   if(Math.min(sx,sz) < 3.0) return;                 // solo donde hay sitio
   const area = sx*sz;
-  const n = Math.min(12, 5 + Math.round(area/30));   // ►SUELOTEST: más terrones, ∝ área
+  const n = Math.min(6, 3 + Math.round(area/90));   // ►SUELOTEST: pocos terrones (el protagonista es el césped)
   const surf = topY - 0.45;                          // cara superior del césped
   for(let i=0;i<n;i++){
     const lx=(Math.random()-.5)*sx*0.7, lz=(Math.random()-.5)*sz*0.7;
     if(cx!=null && _inWall(cx+lx, cz+lz, topY, 0.9)) continue;   // no metas lomas pegadas a un muro
-    const r = 0.8 + Math.random()*0.9, fy = 0.42 + Math.random()*0.16;      // ►SUELOTEST: domos GORDOS y redondeados (antes anchos y chafados)
-    const cap = 0.30 + Math.random()*0.28;           // cuánto SOBRESALE
+    const r = 1.2 + Math.random()*1.2, fy = 0.28 + Math.random()*0.12;      // ►SUELOTEST: lomas anchas y suaves
+    const cap = 0.18 + Math.random()*0.18;           // cuánto SOBRESALE
     const geo = new THREE.SphereGeometry(r, 12, 9);
     const pa = geo.attributes.position, col = new Float32Array(pa.count*3);   // matices de color como el suelo
     for(let v=0; v<pa.count; v++){ const c=_GREENS[(Math.random()*_GREENS.length)|0]; col[v*3]=c.r; col[v*3+1]=c.g; col[v*3+2]=c.b; }
@@ -4009,7 +4059,7 @@ function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   lip.position.y = topY - 0.95; lip.castShadow = true; g.add(lip);
   const grass = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), grassMat);
   grass.position.y = topY - 0.7; grass.castShadow = grass.receiveShadow = true; g.add(grass);
-  if(g.userData._sueloTest) addBumps(g, sx, sz, topY, grassMat, cx, cz);   // ►SUELOTEST: terrones gordos, aquí (el trabajo diferido los omitía)
+  if(g.userData._sueloTest){ addBumps(g, sx, sz, topY, grassMat, cx, cz); sueloGrassClumps(g, sx, sz, topY, cx, cz); }   // ►SUELOTEST: terrones + matas low-poly de hojas anchas
   _grassJobs.push({ g, sx, sz, topY, cx, cz, grassMat });  // césped+lomas diferidos (tras los muros)
   const nst = Math.round((sx+sz)/8);
   for(let i=0;i<nst;i++){
