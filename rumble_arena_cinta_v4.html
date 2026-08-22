@@ -2734,6 +2734,15 @@ try {
       const _aoOcultos = [];
       const _esTransp = m => { if(!m) return false; const a = Array.isArray(m)?m:[m];
         for(const x of a){ if(x && (x.transparent || x.depthWrite===false)) return true; } return false; };
+      /* ►AO-TPOSE (Toni 22/08: "desde las sombras de contacto, bosses y minions tienen un cuerpo invisible
+         en T detrás"): el pase de NORMALES del SSAO pinta TODO con UN material de sobreescritura
+         (MeshNormalMaterial sin `skinning`), y en r128 un SkinnedMesh sin skinning en el material se
+         dibuja en su POSE DE BIND = la T. El AO oscurecía alrededor de ese fantasma en T, no del cuerpo
+         animado. Arreglo: los SkinnedMesh se apartan del render con override y se pintan DESPUÉS en el
+         mismo buffer de normales (sin limpiar, compartiendo profundidad) con un MeshNormalMaterial CON
+         skinning, filtrando por una capa propia (AO_SKIN_LAYER) para no recorrer la escena dos veces. */
+      const AO_SKIN_LAYER = 5;
+      const _aoSkin = [], _aoSkinMat = new THREE.MeshNormalMaterial({ skinning:true, blending:THREE.NoBlending });
       const _roAO = ssaoPass.renderOverride.bind(ssaoPass);
       ssaoPass.renderOverride = function(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha){
         const esNormales = overrideMaterial === ssaoPass.normalMaterial;
@@ -2741,11 +2750,27 @@ try {
           /* matrices de proyección FRESCAS (el fovKick de los golpes cambia el FOV cada pocos frames) */
           try{ ssaoPass.ssaoMaterial.uniforms['cameraProjectionMatrix'].value.copy(camera.projectionMatrix);
                ssaoPass.ssaoMaterial.uniforms['cameraInverseProjectionMatrix'].value.copy(camera.projectionMatrixInverse); }catch(e){}
-          _aoOcultos.length = 0;
-          scene.traverse(o=>{ if(o.visible && (o.isMesh || o.isSprite) && _esTransp(o.material)){ o.visible = false; _aoOcultos.push(o); } });
+          _aoOcultos.length = 0; _aoSkin.length = 0;
+          scene.traverse(o=>{
+            if(!o.visible) return;
+            if((o.isMesh || o.isSprite) && _esTransp(o.material)){ o.visible = false; _aoOcultos.push(o); }
+            else if(o.isSkinnedMesh){ o.visible = false; _aoSkin.push(o); }   // ►AO-TPOSE: los animados van en la 2ª pasada
+          });
         }
         _roAO(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha);
-        if(esNormales){ for(const o of _aoOcultos) o.visible = true; _aoOcultos.length = 0; }
+        if(esNormales){
+          if(_aoSkin.length){
+            for(const o of _aoSkin){ o.visible = true; o.layers.enable(AO_SKIN_LAYER); o.__aoMat = o.material; o.material = _aoSkinMat; }
+            const prevOv = scene.overrideMaterial, prevMask = camera.layers.mask, prevAC = renderer.autoClear, prevRT = renderer.getRenderTarget();
+            scene.overrideMaterial = null; camera.layers.set(AO_SKIN_LAYER); renderer.autoClear = false;
+            renderer.setRenderTarget(renderTarget);
+            renderer.render(scene, camera);                      // normales de los SkinnedMesh en su pose REAL, sobre el mismo buffer/profundidad
+            renderer.setRenderTarget(prevRT); renderer.autoClear = prevAC; camera.layers.mask = prevMask; scene.overrideMaterial = prevOv;
+            for(const o of _aoSkin){ o.material = o.__aoMat; o.__aoMat = null; o.layers.disable(AO_SKIN_LAYER); }
+            _aoSkin.length = 0;
+          }
+          for(const o of _aoOcultos) o.visible = true; _aoOcultos.length = 0;
+        }
       };
       composer.addPass(ssaoPass);
     }
