@@ -7535,6 +7535,113 @@ const kit = {
     }catch(e){ return false; }
   }
 };
+/* =====================================================================
+   ►SFXSEM (Toni 23/08: "que el sonido sea semántico con lo que ocurre"): cada EVENTO del juego tiene su
+   sonido elegido por MATERIAL (carne/hueso/metal/piedra/blando) y MAGNITUD (ligero/medio/pesado), no por
+   botón. `file` = muestra actual (sfx/kit/alt/*.ogg), `alt` = alternativas para el tablero ?sfx, `vol` y
+   `rate` (tono aleatorio). Toni elige de oído en ?sfx; sus elecciones viven en localStorage('sfxMap') y el
+   botón COPIAR da el JSON para fijarlas aquí.
+   ===================================================================== */
+const SFX_EVENTS = {
+  /* ---- menú: por intención ---- */
+  ui_hover:   { d:'Mover el foco por el menú',          file:'rollover2',          alt:['rollover1','rollover3','rollover6','click_003','select_002','scroll_001'], vol:.18, rate:[.97,1.03] },
+  ui_click:   { d:'Pulsar un botón / elegir',           file:'click_002',          alt:['click_001','click_004','click1','click3','switch_002','select_005','select_008'], vol:.4, rate:[.98,1.02] },
+  ui_confirm: { d:'Confirmar (jugar, sí, continuar)',   file:'confirmation_002',   alt:['confirmation_001','confirmation_003','confirmation_004','maximize_002','powerUp3','pluck_002'], vol:.5, rate:[1,1] },
+  ui_back:    { d:'Atrás / cancelar',                   file:'back_002',           alt:['back_001','back_003','back_004','minimize_002','minimize_003','close_003'], vol:.4, rate:[1,1] },
+  ui_open:    { d:'Abrir una ficha / pausa',            file:'open_002',           alt:['open_001','open_003','open_004','maximize_001','maximize_003','drop_001'], vol:.4, rate:[1,1] },
+  ui_close:   { d:'Cerrar una ficha',                   file:'close_002',          alt:['close_001','close_004','minimize_001','drop_003'], vol:.4, rate:[1,1] },
+  ui_error:   { d:'No se puede (bloqueado, sin saldo)', file:'error_004',          alt:['error_001','error_003','error_006','error_008','question_001','lowDown'], vol:.45, rate:[1,1] },
+  /* ---- golpes: por material de la VÍCTIMA y peso del golpe ---- */
+  hit_flesh_light:{ d:'Golpe ligero a un luchador',      file:'impactPunch_medium_000', alt:['impactPunch_medium_001','impactPunch_medium_003','impactGeneric_light_000','impactGeneric_light_002','impactSoft_medium_000'], vol:.7, rate:[1.02,1.12] },
+  hit_flesh_mid:  { d:'Golpe medio a un luchador',       file:'impactPunch_medium_002', alt:['impactPunch_medium_004','impactPunch_heavy_000','impactSoft_heavy_001','impactGeneric_light_004'], vol:.85, rate:[.96,1.04] },
+  hit_flesh_heavy:{ d:'Remate del combo / golpazo',      file:'impactPunch_heavy_001',  alt:['impactPunch_heavy_002','impactPunch_heavy_003','impactPunch_heavy_004','impactSoft_heavy_002','impactPlate_heavy_000'], vol:1, rate:[.9,.98] },
+  hit_punish:     { d:'Golpe de castigo tras parry',     file:'impactMetal_heavy_002',  alt:['impactPlate_heavy_001','impactBell_heavy_000','impactBell_heavy_001','impactPunch_heavy_004','impactMining_001'], vol:1, rate:[.9,1] },
+  hit_bone:       { d:'Golpe a esqueleto (hueso)',       file:'impactWood_medium_000',  alt:['impactWood_light_001','impactWood_medium_002','impactWood_heavy_000','impactMining_000','impactTin_medium_000'], vol:.7, rate:[1,1.1] },
+  hit_metal:      { d:'Golpe a robot / armadura',        file:'impactMetal_medium_000', alt:['impactMetal_light_001','impactMetal_medium_002','impactMetal_heavy_000','impactTin_medium_001','impactPlate_light_000'], vol:.7, rate:[.95,1.05] },
+  hit_stone:      { d:'Golpe a gólem / piedra',          file:'impactPlate_medium_001', alt:['impactPlate_heavy_002','impactMining_002','impactPlate_medium_000','impactBell_heavy_000'], vol:.8, rate:[.85,.95] },
+  hit_soft:       { d:'Golpe a goblin / bicho blando',   file:'impactSoft_medium_001',  alt:['impactSoft_medium_000','impactSoft_medium_002','impactGeneric_light_001','impactGeneric_light_003','impactPunch_medium_000'], vol:.55, rate:[1.05,1.2] },
+  /* ---- destruir minions: por tipo ---- */
+  die_soft:   { d:'Goblin destruido',                   file:'impactSoft_heavy_000',   alt:['impactSoft_heavy_002','impactPunch_heavy_000','impactGeneric_light_004','spaceTrash1','lowRandom'], vol:.8, rate:[.9,1.05] },
+  die_bone:   { d:'Esqueleto desarmado',                file:'impactWood_heavy_001',   alt:['impactWood_heavy_000','impactWood_heavy_002','impactMining_001','glass_002','impactTin_medium_000'], vol:.8, rate:[.95,1.1] },
+  die_metal:  { d:'Robot / armadura chatarra',          file:'impactMetal_heavy_001',  alt:['impactMetal_heavy_000','impactPlate_heavy_002','impactTin_medium_001','spaceTrash2','glass_003'], vol:.8, rate:[.9,1.05] },
+  die_stone:  { d:'Gólem hecho pedazos',                file:'impactPlate_heavy_002',  alt:['impactMining_002','impactPlate_heavy_000','impactBell_heavy_001','lowThreeTone'], vol:.9, rate:[.8,.95] },
+  /* ---- luchadores ---- */
+  ko:         { d:'Luchador eliminado (KO)',            file:'impactPlate_heavy_001',  alt:['impactBell_heavy_000','impactMetal_heavy_002','impactPunch_heavy_004','lowDown','phaserDown2'], vol:1, rate:[.9,1] },
+  fallout:    { d:'Caída al vacío',                     file:'lowDown',                alt:['phaserDown1','phaserDown2','highDown','lowThreeTone','spaceTrash1'], vol:.7, rate:[.95,1.05] },
+  jump:       { d:'Saltar',                             file:'phaseJump1',             alt:['phaseJump2','phaseJump3','highUp','pepSound1','footstep_grass_000','click5'], vol:.45, rate:[.95,1.05] },
+  djump:      { d:'Doble salto',                        file:'phaseJump3',             alt:['phaseJump2','phaserUp2','highUp','pepSound2','powerUp5'], vol:.5, rate:[1.05,1.15] },
+  dash:       { d:'Dash / rodada',                      file:'highUp',                 alt:['phaserUp1','phaserUp3','laser1','footstep_concrete_001','spaceTrash1'], vol:.5, rate:[1.2,1.3] },
+  land_soft:  { d:'Aterrizaje suave',                   file:'footstep_grass_001',     alt:['footstep_grass_000','footstep_grass_002','footstep_concrete_000','impactGeneric_light_000'], vol:.35, rate:[.9,1] },
+  land_hard:  { d:'Aterrizaje fuerte',                  file:'footstep_concrete_002',  alt:['impactSoft_heavy_001','impactPunch_medium_001','footstep_wood_001','impactGeneric_light_002'], vol:.7, rate:[.85,.95] },
+  /* ---- recoger: por objeto ---- */
+  pick_heart: { d:'Corazón (cura)',                     file:'powerUp11',              alt:['powerUp8','powerUp6','powerUp12','pluck_002','pepSound3'], vol:.6, rate:[1,1] },
+  pick_power: { d:'Cápsula de mejora',                  file:'powerUp2',               alt:['powerUp1','powerUp4','powerUp7','powerUp9','powerUp10'], vol:.6, rate:[1,1] },
+  pick_weapon:{ d:'Arma recogida',                      file:'switch12',               alt:['switch7','switch9','switch_003','click_005','impactMetal_light_000'], vol:.6, rate:[1,1] },
+  pick_rainbow:{ d:'Arcoíris ×5',                       file:'phaserUp4',              alt:['phaserUp5','phaserUp7','powerUp10','powerUp12','laser3'], vol:.5, rate:[1,1] },
+  pick_passive:{ d:'Pasivo (imán, minas…)',             file:'powerUp8',               alt:['powerUp3','powerUp6','pepSound2','pluck_001'], vol:.6, rate:[1,1] },
+  cap_in:     { d:'Cápsula que cae del cielo',          file:'pluck_001',              alt:['pluck_002','drop_002','pepSound1','laser2'], vol:.35, rate:[.8,.9] },
+  cap_land:   { d:'Cápsula que toca el suelo',          file:'drop_002',               alt:['drop_001','drop_004','footstep_wood_000','impactGeneric_light_001'], vol:.5, rate:[1,1] },
+  combo:      { d:'Racha / combo',                      file:'bong_001',               alt:['powerUp5','pepSound3','confirmation_003','phaserUp6'], vol:.55, rate:[1.15,1.25] },
+  deny:       { d:'Acción denegada en partida',         file:'glitch_002',             alt:['error_002','error_005','question_002','lowRandom'], vol:.5, rate:[1,1] },
+};
+/* lo que Toni haya elegido en el tablero manda sobre la tabla */
+try{ const ov = JSON.parse(localStorage.getItem('sfxMap')||'{}'); for(const k in ov) if(SFX_EVENTS[k] && typeof ov[k]==='string') SFX_EVENTS[k].file = ov[k]; }catch(e){}
+const _altBuf = {}, _altLoading = {};
+function altLoad(file, cb){
+  if(_altBuf[file]){ if(cb) cb(_altBuf[file]); return; }
+  if(_altLoading[file]){ if(cb) _altLoading[file].push(cb); return; }
+  _altLoading[file] = cb ? [cb] : [];
+  let ctx; try{ ctx = audio(); }catch(e){ return; }
+  fetch('sfx/kit/alt/' + file + '.ogg').then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(ab=> new Promise((res,rej)=> ctx.decodeAudioData(ab, res, rej)))
+    .then(b=>{ _altBuf[file] = b; const cbs = _altLoading[file] || []; delete _altLoading[file]; for(const f of cbs) f(b); })
+    .catch(()=>{ delete _altLoading[file]; _altBuf[file] = null; });
+}
+function altPrefetchAll(){ for(const k in SFX_EVENTS) altLoad(SFX_EVENTS[k].file); }
+let _evLastT = {}, _evVox = 0;
+/* reproduce un EVENTO semántico; ui:true suena también en la home. Devuelve false si (aún) no hay muestra. */
+function sfxEv(ev, o){
+  const E = SFX_EVENTS[ev]; if(!E) return false; o = o || {};
+  if(!o.ui && demo) return false;
+  if(typeof musicOn!=='undefined' && !musicOn) return false;
+  const b = _altBuf[E.file]; if(!b){ altLoad(E.file); return false; }
+  const now = performance.now(); if(now - (_evLastT[ev]||0) < 25) return true; _evLastT[ev] = now;
+  if(_evVox >= 12) return true;
+  try{
+    const ctx = audio(); if(ctx.state==='suspended') ctx.resume();
+    const src = ctx.createBufferSource(); src.buffer = b;
+    const r = E.rate || [1,1]; src.playbackRate.value = (r[0] + Math.random()*(r[1]-r[0])) * (o.rate || 1);
+    const g = ctx.createGain(); g.gain.value = Math.min(1.5, (E.vol==null?1:E.vol) * (o.vol==null?1:o.vol));
+    src.connect(g); g.connect(master()); _evVox++; src.onended = ()=>{ _evVox = Math.max(0,_evVox-1); }; src.start();
+    return true;
+  }catch(e){ return false; }
+}
+/* material de la víctima → familia de golpe/muerte */
+function sfxMatOf(t){
+  if(!t) return 'flesh';
+  if(t._charKey) return t._charKey==='knight' ? 'metal' : 'flesh';
+  const k = String(t._gobType || t.skin || t.type || '');
+  if(/skel/.test(k)) return 'bone';
+  if(/robot|s7knight|drone/.test(k)) return 'metal';
+  if(/golem|boss|brute|sensei/.test(k)) return 'stone';
+  return 'soft';
+}
+/* ---- TABLERO ?sfx: cada evento con ▶ y alternativas; guarda en localStorage y copia el JSON ---- */
+if(/[?&]sfx\b/.test(location.search)) addEventListener('DOMContentLoaded', ()=>{
+  const box = document.createElement('div'); box.id = 'sfxBoard';
+  box.style.cssText = 'position:fixed;right:10px;top:10px;bottom:10px;width:560px;z-index:9999;overflow:auto;background:rgba(8,10,22,.96);color:#dfe8ff;font:12px/1.4 Consolas,monospace;padding:10px 12px;border:1px solid rgba(255,255,255,.2);border-radius:10px';
+  let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><b style="font-size:14px">TABLERO DE SONIDO</b><button id="sfxCopy">COPIAR JSON</button><button id="sfxReset">RESET</button><span id="sfxMsg" style="opacity:.7"></span></div>';
+  for(const k in SFX_EVENTS){ const E = SFX_EVENTS[k]; const opts = [E.file].concat(E.alt.filter(a=>a!==E.file));
+    h += '<div style="display:grid;grid-template-columns:28px 1fr 190px;gap:6px;align-items:center;padding:4px 0;border-top:1px solid rgba(255,255,255,.08)"><button data-play="'+k+'">▶</button><div><b>'+k+'</b><br><span style="opacity:.7">'+E.d+'</span></div><select data-ev="'+k+'">'+opts.map(o=>'<option value="'+o+'"'+(o===E.file?' selected':'')+'>'+o+'</option>').join('')+'</select></div>'; }
+  box.innerHTML = h; document.body.appendChild(box);
+  const save = ()=>{ const m = {}; for(const k in SFX_EVENTS) m[k] = SFX_EVENTS[k].file; localStorage.setItem('sfxMap', JSON.stringify(m)); return m; };
+  box.addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; e.stopPropagation();
+    if(b.dataset.play){ const k = b.dataset.play; if(!sfxEv(k, {ui:true})) altLoad(SFX_EVENTS[k].file, ()=> sfxEv(k, {ui:true})); }
+    else if(b.id==='sfxCopy'){ const m = save(); const txt = JSON.stringify(m, null, 1); try{ navigator.clipboard.writeText(txt); }catch(err){} console.log(txt); document.getElementById('sfxMsg').textContent = 'copiado'; }
+    else if(b.id==='sfxReset'){ localStorage.removeItem('sfxMap'); location.reload(); } }, true);
+  box.addEventListener('change', e=>{ const sel = e.target.closest('select'); if(!sel) return; const k = sel.dataset.ev; SFX_EVENTS[k].file = sel.value; save(); altLoad(sel.value, ()=> sfxEv(k, {ui:true})); });
+  ['pointerdown','keydown','click'].forEach(ev=> box.addEventListener(ev, e=> e.stopPropagation()));   // que el tablero no dispare sonidos del juego ni descarte la portada
+});
 function tone(freq, dur, type='square', vol=.18, slide=0){
   if(demo) return;                          // modo atracción (menú): sin SFX de combate, solo música
   const ctx = audio(); if(ctx.state==='suspended') ctx.resume();
@@ -7630,40 +7737,42 @@ const sfx = {
    como capa de peso por debajo). Mezcla: UI −8 dB respecto a golpes; hit_heavy solo en el 4º/castigo
    para que cerrar el combo "suene a premio". */
 const _syn = Object.assign({}, sfx);
-sfx.jump   = ()=>{ if(!kit.play('jump', .45)) _syn.jump(); };
-sfx.djump  = ()=>{ if(!kit.play('djump', .5)) _syn.djump(); };
-sfx.dash   = ()=>{ if(!kit.play('dash', .5, {rate:1.25})) _syn.dash(); };
-sfx.land   = (i)=>{ if(!kit.play('land', .25 + .5*(i||0), {rate:.9})) _syn.land(i); };
-sfx.hit    = (dmg, s, punish)=>{
-  const key = punish ? 'hit_punish' : ((s>=3) ? 'hit_heavy' : 'hit');
-  const vol = .75 + Math.min(.45, (dmg||0)*.004);
-  if(!kit.play(key, vol, {rate: 1 - (s||0)*.06})) _syn.hit(dmg);
-  if(s>=3 || punish) kit.play('crack', .5);                       // capa de "crujido" en el remate
+/* ►SFXSEM: cada acción del juego dispara su EVENTO semántico (ver SFX_EVENTS); si la muestra aún no está
+   decodificada suena el sintetizador de siempre para no dejar el hueco mudo. */
+sfx.jump   = ()=>{ if(!sfxEv('jump')) _syn.jump(); };
+sfx.djump  = ()=>{ if(!sfxEv('djump')) _syn.djump(); };
+sfx.dash   = ()=>{ if(!sfxEv('dash')) _syn.dash(); };
+sfx.land   = (i)=>{ if(!sfxEv((i||0) > .5 ? 'land_hard' : 'land_soft', {vol:.6 + .6*(i||0)})) _syn.land(i); };
+sfx.hit    = (dmg, s, punish, vic)=>{
+  const mat = sfxMatOf(vic);
+  let ev = punish ? 'hit_punish' : mat==='bone' ? 'hit_bone' : mat==='metal' ? 'hit_metal' : mat==='stone' ? 'hit_stone' : mat==='soft' ? 'hit_soft' : ((s>=3) ? 'hit_flesh_heavy' : (s>=1 ? 'hit_flesh_mid' : 'hit_flesh_light'));
+  if(!sfxEv(ev, {vol: .85 + Math.min(.35, (dmg||0)*.003)})) _syn.hit(dmg);
+  if(s>=3 || punish) kit.play('crack', .45);                      // capa de peso en el remate
 };
-sfx.minionHit = (dmg)=>{ if(!kit.play('minion_hit', .5, {rate:1.1})) _syn.chip(); };
-sfx.minionDie = ()=>{ if(!kit.play('minion_die', .75)) _syn.ko(); kit.play('glass', .18, {rate:1.4}); };
-sfx.ko     = ()=>{ kit.play('ko', 1); _syn.ko(); };               // muestra + sub sintetizado = KO con peso
-sfx.fallout= ()=>{ if(!kit.play('fallout', .7)) _syn.fallout(); };
-sfx.boost  = ()=>{ if(!kit.play('powerup', .6)) _syn.boost(); };
-sfx.passive= ()=>{ if(!kit.play('pickup', .6)) _syn.passive(); };
-sfx.heal   = ()=>{ if(!kit.play('heal', .6)) _syn.heal(); };
-sfx.weaponGet = ()=>{ if(!kit.play('weapon', .6)) _syn.weaponGet(); };
-sfx.chaos  = ()=>{ kit.play('chaos', .5); _syn.chaos(); };
-sfx.capIn  = ()=>{ if(!kit.play('cap_in', .35, {rate:.8})) _syn.capIn(); };
-sfx.capLand= ()=>{ if(!kit.play('cap_land', .5)) _syn.capLand(); };
-sfx.deny   = ()=>{ if(!kit.play('deny', .5)) _syn.deny(); };
-sfx.combo  = ()=>{ kit.play('combo', .55, {rate:1.2}); };
-sfx.cap    = ()=>{ if(!kit.play('ui_click', .4, {ui:true})) _syn.cap(); };
+sfx.minionHit = (dmg, mn)=>{ const mat = sfxMatOf(mn); if(!sfxEv(mat==='bone' ? 'hit_bone' : mat==='metal' ? 'hit_metal' : mat==='stone' ? 'hit_stone' : 'hit_soft')) _syn.chip(); };
+sfx.minionDie = (mn)=>{ const mat = sfxMatOf(mn); if(!sfxEv(mat==='bone' ? 'die_bone' : mat==='metal' ? 'die_metal' : mat==='stone' ? 'die_stone' : 'die_soft')) _syn.ko(); };
+sfx.ko     = ()=>{ sfxEv('ko'); _syn.ko(); };                      // muestra + sub sintetizado = KO con peso
+sfx.fallout= ()=>{ if(!sfxEv('fallout')) _syn.fallout(); };
+sfx.boost  = ()=>{ if(!sfxEv('pick_power')) _syn.boost(); };
+sfx.passive= ()=>{ if(!sfxEv('pick_passive')) _syn.passive(); };
+sfx.heal   = ()=>{ if(!sfxEv('pick_heart')) _syn.heal(); };
+sfx.weaponGet = ()=>{ if(!sfxEv('pick_weapon')) _syn.weaponGet(); };
+sfx.chaos  = ()=>{ sfxEv('pick_rainbow'); _syn.chaos(); };
+sfx.capIn  = ()=>{ if(!sfxEv('cap_in')) _syn.capIn(); };
+sfx.capLand= ()=>{ if(!sfxEv('cap_land')) _syn.capLand(); };
+sfx.deny   = ()=>{ if(!sfxEv('deny')) _syn.deny(); };
+sfx.combo  = ()=>{ sfxEv('combo'); };
+sfx.cap    = ()=>{ if(!sfxEv('ui_click', {ui:true})) _syn.cap(); };
 /* sonidos de INTERFAZ (suenan también en la home/demo) */
 sfx.ui = {
-  hover:  ()=> kit.play('ui_hover',   .22, {ui:true}),
-  click:  ()=> kit.play('ui_click',   .4,  {ui:true}),
-  back:   ()=> kit.play('ui_back',    .4,  {ui:true}),
-  confirm:()=> kit.play('ui_confirm', .5,  {ui:true}),
-  open:   ()=> kit.play('ui_open',    .4,  {ui:true}),
-  close:  ()=> kit.play('ui_close',   .4,  {ui:true}),
-  error:  ()=> kit.play('ui_error',   .45, {ui:true}),
-  select: ()=> kit.play('ui_select',  .35, {ui:true}),
+  hover:  ()=> sfxEv('ui_hover',   {ui:true}),
+  click:  ()=> sfxEv('ui_click',   {ui:true}),
+  back:   ()=> sfxEv('ui_back',    {ui:true}),
+  confirm:()=> sfxEv('ui_confirm', {ui:true}),
+  open:   ()=> sfxEv('ui_open',    {ui:true}),
+  close:  ()=> sfxEv('ui_close',   {ui:true}),
+  error:  ()=> sfxEv('ui_error',   {ui:true}),
+  select: ()=> sfxEv('ui_hover',   {ui:true}),
 };
 /* delegación global: hover/click sobre cualquier control de los menús (captura → llega antes que
    cualquier stopPropagation). El clic que dispara ►UINAV con Enter/A también pasa por aquí. */
@@ -7787,7 +7896,7 @@ function primeMusic(){
   } catch(e){}
 }
 function startMenuAudio(){
-  try{ kit.load(); }catch(e){}   // ►SFXKIT: decodifica las muestras con el primer gesto (el AudioContext ya puede arrancar)
+  try{ kit.load(); altPrefetchAll(); }catch(e){}   // ►SFXKIT/►SFXSEM: decodifica las muestras con el primer gesto (el AudioContext ya puede arrancar)
   if(_menuAudioStarted || !musicOn || !music) return;
   _menuAudioStarted = true;
   try { const c = audio(); if(c.state==='suspended') c.resume(); } catch(e){}
@@ -11463,7 +11572,7 @@ function killMinion(mn){
     k._rachaN = (now - (k._rachaT||-9) < 1.2) ? (k._rachaN||0) + 1 : 1; k._rachaT = now;
     if(k._rachaN >= 3 && k._rachaN % 1 === 0){ showCombo(k, '¡RACHA x' + k._rachaN + '!'); if(k._rachaN === 3 || k._rachaN === 5 || k._rachaN === 8) sfx.combo(); }
   }
-  sfx.minionDie();
+  sfx.minionDie(mn);   // ►SFXSEM: muerte por tipo
   // render instanciado: no hay malla por-minion que quitar/disponer; updateMinions lo saca de minions[]
 }
 function killMproj(i){ const s=mprojs[i]; scene.remove(s.m);
@@ -16344,7 +16453,7 @@ function hitMinions(p){
     addPower(p, dmg*.5);
     localHitstop(p, null, .05 + Math.min(.05, dmg*.002)); mn.hitstopT = Math.max(mn.hitstopT||0, .07);
     shake=Math.max(shake,.22); camKick(dir.x, dir.z, .25);
-    sfx.minionHit(mn.damage);
+    sfx.minionHit(mn.damage, mn);   // ►SFXSEM: por material del minion
   }
 }
 
@@ -20094,7 +20203,7 @@ function resolveHit(att, vic){
   burst(vc, vic.color, 10+s*4+(punish?12:0), 5+s*2+vic.damage*.04, 4+s);
   burst(vc, 0xffffff, 4+s*2, 4, 3, .7);
   jiggle(vic, (14 + s*5 + (punish?12:0)) * 1.3);
-  sfx.hit(vic.damage + s*15 + (punish?40:0), s, punish);
+  sfx.hit(vic.damage + s*15 + (punish?40:0), s, punish, vic);   // ►SFXSEM: el material de la víctima elige la muestra
   if(s===3 || punish) smashFX(vc, vic);
   /* ARCO de barrido espectacular del martillazo: estela de partículas en abanico frente al atacante */
   { const ya=att.yaw, span=1.5+s*0.25, rr=1.6+s*0.35;
