@@ -1,0 +1,4 @@
+oga_*.ogg   : "RPG Sound Pack" (artisticdude, CC0) y "Fantasy Sound Effects Library" (Little Robot Sound Factory, CC-BY 3.0 - atribuir) - opengameart.org
+hit_*.ogg   : "37 hits/punches" (Independent.nu / Johannes Pinter, CC0) - opengameart.org
+resto       : Kenney (CC0) - ver ../LICENSE.txt
+Convertidos a OGG (libvorbis q5) para la web.
