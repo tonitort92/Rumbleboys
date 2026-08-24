@@ -5746,6 +5746,7 @@ function updateHud(dt){
    ARRANQUE
    ===================================================================== */
 function start(seed){
+  try{ if(window.showMiniObjective) showMiniObjective('QUEDA EL PRIMERO EN PUNTOS Y GANA EL TROFEO'); }catch(e){}   // ►OBJTXT (Toni 24/08)
   if(DESC.scene){
     /* ►NO DISPONER LO COMPARTIDO.
        SkeletonUtils.clone() COMPARTE geometría y texturas con la plantilla de

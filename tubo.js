@@ -2642,6 +2642,7 @@ function updateAudio(dt){
    ARRANQUE Y BUCLE
    ===================================================================== */
 function start(seed){
+  try{ if(window.showMiniObjective) showMiniObjective('SÉ EL PRIMERO EN PUNTOS Y GANA EL TROFEO'); }catch(e){}   // ►OBJTXT (Toni 24/08)
   if(TUBO.scene){
     /* ►NO DISPONER LO COMPARTIDO: los clones de SkeletonUtils comparten
        geometría y texturas con `_charTpls`; disponerlas al reiniciar se lleva

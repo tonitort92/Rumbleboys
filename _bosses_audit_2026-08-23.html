@@ -1,0 +1,172 @@
+<title>Auditoría de Jefes RUMBLEBOYS</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titan+One&family=Nunito:ital,wght@0,400;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#F3F5F9; --paper:#FFFFFF; --ink:#1B2134; --ink2:#4A5470; --line:#D6DBE6;
+  --acc:#C2368C; --acc-soft:#F7E3EF; --amber:#D99A1E; --amber-soft:#FBF1DA; --ok:#2E9E6B; --ok-soft:#DFF3E9; --crit:#D8453C; --crit-soft:#FBE1DE;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,monospace; --body:'Nunito',system-ui,sans-serif; --disp:'Titan One','Nunito',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111523; --paper:#1A1F30; --ink:#ECEFF6; --ink2:#A5AEC6; --line:#2C3349;
+  --acc:#E45CAC; --acc-soft:#3A1F33; --amber:#E8B03A; --amber-soft:#3B3018; --ok:#4CC08A; --ok-soft:#173A2A; --crit:#F06A62; --crit-soft:#42201E; }}
+:root[data-theme="dark"]{
+  --bg:#111523; --paper:#1A1F30; --ink:#ECEFF6; --ink2:#A5AEC6; --line:#2C3349;
+  --acc:#E45CAC; --acc-soft:#3A1F33; --amber:#E8B03A; --amber-soft:#3B3018; --ok:#4CC08A; --ok-soft:#173A2A; --crit:#F06A62; --crit-soft:#42201E; }
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+h1{font-family:var(--disp);font-weight:400;font-size:clamp(30px,5vw,46px);line-height:1.05;margin:0 0 6px;letter-spacing:.5px;text-wrap:balance}
+h1 span{color:var(--acc)}
+.lede{color:var(--ink2);max-width:68ch;margin:0 0 28px}
+h2{font-family:var(--disp);font-weight:400;font-size:24px;margin:48px 0 14px;letter-spacing:.3px}
+h3{font-size:17px;font-weight:800;margin:0 0 4px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.num,th.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.04em;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--amber-soft);color:var(--amber)} .p-crit{background:var(--crit-soft);color:var(--crit)} .p-acc{background:var(--acc-soft);color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.card .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.kv{display:grid;grid-template-columns:84px 1fr;gap:4px 12px;font-size:14.5px}
+.kv b{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);font-weight:600;padding-top:3px}
+.kv p{margin:0}
+.cost{font-family:var(--mono);font-size:12.5px;color:var(--ink2)}
+.callout{background:var(--acc-soft);border-left:4px solid var(--acc);padding:14px 18px;border-radius:0 12px 12px 0;max-width:72ch}
+.callout p{margin:0 0 6px}.callout p:last-child{margin:0}
+ul{padding-left:20px;margin:6px 0}li{margin:3px 0}
+code{font-family:var(--mono);font-size:.88em;background:var(--bg);padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+.prio{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.prio .card{gap:6px}
+.prio .n{font-family:var(--disp);font-size:28px;color:var(--acc);line-height:1}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">RUMBLEBOYS v1000 · rumble_arena_cinta_v4.html · 23/08/2026</div>
+  <h1>Auditoría de <span>Jefes</span></h1>
+  <p class="lede">Qué hay hoy en cada uno de los 12 mundos, qué falla de verdad y qué propongo construir con lo que ya existe en el juego (modelos, animaciones y el sistema <code>STAGE_BOSSES</code>). Nada de aquí requiere assets nuevos salvo que se indique.</p>
+
+  <div class="callout">
+    <p><b>Lo esencial en tres líneas.</b> Solo <b>6 de 12</b> mundos tienen jefe propio; el 1, 6, 9 y 11 repiten el mismo gólem verde con la misma arena cuadrada y el mismo ciclo de ataques. El sistema de jefes es mejor que los jefes: ataques por datos, fases, guardia rota, cadenas y escoltas ya funcionan — se está infrautilizando. Los dos mejores combates (Pirámide y Fábrica) marcan el listón; el resto se arregla con especificaciones, no con motor.</p>
+  </div>
+
+  <h2>Tablero</h2>
+  <div class="tablewrap"><table>
+    <tr><th class="num">Mundo</th><th>Jefe hoy</th><th>Identidad</th><th>Problema principal</th><th>Estado</th></tr>
+    <tr><td class="num">1 Prado</td><td>Gólem base (fallback)</td><td>Ninguna: ciclo genérico</td><td>Primer jefe del juego sin tutorial de sus mecánicas (saltar la carga, romper guardia)</td><td><span class="pill p-warn">Genérico</span></td></tr>
+    <tr><td class="num">2 Jungla</td><td>Gólem morado ×1.35 + 3–5 brutes</td><td>Reskin con escolta</td><td>Es el jefe 1 con stats; la horda de mini-jefes hace el combate caótico, no distinto</td><td><span class="pill p-warn">Reskin</span></td></tr>
+    <tr><td class="num">3 Japón</td><td>Samurái (GLB propio, katana)</td><td>Alta: 6 golpes + huracán + shuriken + salto a plataforma</td><td>Cadencia ×1.9 con ventanas de 0,46–0,64 s: castiga a las clases lentas; el suelo-trampa ya lo cubre</td><td><span class="pill p-ok">Bueno</span></td></tr>
+    <tr><td class="num">4 Desierto</td><td>Gólem del desierto (FBX)</td><td>Media: tanque, arena que hunde, viento</td><td><code>physTake 0.5</code> → bárbaro/caballero tardan el doble; daño 22–30 con KB 3–5 = te mata a golpes secos</td><td><span class="pill p-warn">Desbalance</span></td></tr>
+    <tr><td class="num">5 Pirámide</td><td>Cadena de 3 gólems</td><td>Muy alta: tanque → mago a distancia → veloz</td><td>Ninguno serio. Es la referencia del juego</td><td><span class="pill p-ok">Referencia</span></td></tr>
+    <tr><td class="num">6 Pozo</td><td>Gólem base (fallback)</td><td>Ninguna</td><td>Mismo combate que el 1 a mitad de campaña</td><td><span class="pill p-crit">Vacío</span></td></tr>
+    <tr><td class="num">7 Hielo</td><td>Vikingo (FBX, martillo)</td><td>Alta: pesado, arena rompible</td><td>A 25 % de vida salen <b>2 copias con vida completa</b> = ×3 de vida al final, con límite de 2:30 → riesgo real de timeout</td><td><span class="pill p-crit">Pico de dificultad</span></td></tr>
+    <tr><td class="num">8 Fábrica</td><td>Robot capoeira (16 clips)</td><td>Muy alta: 7 patadas, láser, sobrecarga</td><td>Sobrecarga hace 55 (más que cualquier otro ataque); ciclo de 22 patrones sin fases</td><td><span class="pill p-ok">Bueno</span></td></tr>
+    <tr><td class="num">9 Cielo</td><td>Gólem base (fallback)</td><td>Ninguna</td><td>Mundo aéreo con jefe terrestre genérico; además salta la tienda</td><td><span class="pill p-crit">Vacío</span></td></tr>
+    <tr><td class="num">10 Arcoíris</td><td>Oleadas ×3 (niveles 2-8) + gólem base al final</td><td>Media: oleadas recicladas</td><td>El nivel 10 está <b>reservado sin jefe</b>; el final de campaña es el jefe genérico del prado</td><td><span class="pill p-crit">Final sin jefe</span></td></tr>
+    <tr><td class="num">11 Western</td><td>Gólem base (fallback)</td><td>Ninguna</td><td>Hay modelos western (westbad/westgun/westcow) sin usar en jefes</td><td><span class="pill p-crit">Vacío</span></td></tr>
+    <tr><td class="num">12 Pirata</td><td>Leviatán (8 patas, sistema propio)</td><td>Muy alta: único, fase de furia</td><td>Fuera del marco: sin guardia rota ni poise, multiplicadores de llegada no aplican (<code>BOSSFIGHT.boss</code> nulo)</td><td><span class="pill p-ok">Único</span></td></tr>
+  </table></div>
+
+  <h2>Qué funciona del sistema (y hay que explotar)</h2>
+  <div class="grid">
+    <div class="card"><h3>Ataques por datos</h3><p><code>attackDefs</code>: windup, recover, radio, daño, KB, lanzamiento, sangrado, solo-suelo, embestida. Un jefe nuevo melee son 20 líneas de spec.</p></div>
+    <div class="card"><h3>Guardia rota</h3><p>Poise 18 % de vida, rotura 3,2 s con daño ×2,4 y banner. Es la mecánica más satisfactoria y <b>ningún jefe la enseña</b>.</p></div>
+    <div class="card"><h3>Cadenas y escoltas</h3><p><code>chain[]</code> (Pirámide), <code>bruteHorde</code> (Jungla), <code>spawnBossAdd</code> (Hielo), <code>horde</code> por vida. Todo reutilizable por spec.</p></div>
+    <div class="card"><h3>Especiales listos</h3><p>Huracán, shuriken, salto a plataforma, láser simple/triple, sobrecarga, rayo continuo, torbellino, frenesí, kite. Bastan tintes y patrones nuevos.</p></div>
+  </div>
+
+  <h2>Problemas transversales</h2>
+  <div class="grid">
+    <div class="card"><div class="hd"><h3>Sin fases</h3><span class="pill p-crit">Diseño</span></div><p>Salvo Hielo (copias) y Leviatán (furia), ningún jefe cambia de comportamiento con la vida. El combate de 2 minutos es el mismo minuto repetido.</p><p class="cost">Arreglo de motor: campo <code>patterns2</code> (y opcional <code>attackDefs2</code>) que entra al 50 % de vida, con banner. ~30 líneas en <code>updateBoss</code>.</p></div>
+    <div class="card"><div class="hd"><h3>Telegrafiado desigual</h3><span class="pill p-warn">Legibilidad</span></div><p>Ventanas de 0,34 s (gólem veloz) a 1,3 s (vikingo). El anillo magenta de aviso es igual para un golpe de 12 y uno de 32.</p><p class="cost">Estándar: anillo por nivel de daño (amarillo &lt;16 / naranja &lt;24 / rojo ≥24) y windup mínimo 0,45 s. Solo datos + 1 color en <code>melee</code>.</p></div>
+    <div class="card"><div class="hd"><h3>Vida vs. reloj</h3><span class="pill p-warn">Balance</span></div><p>Vida escala con llegadas (+55 %/jugador) y con el mejor jugador (<code>bossPowerHpMul</code>), pero el límite son 2:30 fijos. Con 4 jugadores y Hielo ×3 no salen los números.</p><p class="cost">Límite = 150 s × (1 + 0,25·(llegadas−1)), y las copias de Hielo con 60 % de vida.</p></div>
+    <div class="card"><div class="hd"><h3>Tope de daño por frame</h3><span class="pill p-ok">Mantener</span></div><p><code>BOSS_HIT_CAP_FRAC 0.14</code> garantiza ≥7 golpes. Bien. Pero con guardia rota (×2,4) puede comerse el bonus: excluir el estado <code>broken</code> del tope o subirlo a 0,25 ahí.</p></div>
+  </div>
+
+  <h2>Jefes nuevos con assets existentes</h2>
+  <p class="lede">Ordenados por relación valor/coste. "Coste" es estimación honesta de trabajo en el HTML: spec (datos), patrón (lógica corta reutilizando estados) o sistema (estado nuevo en <code>updateBoss</code>).</p>
+  <div class="grid">
+    <div class="card">
+      <div class="hd"><h3>1 · Coloso del Prado — el jefe tutorial</h3><span class="pill p-acc">Spec</span></div>
+      <div class="kv">
+        <b>Assets</b><p>Gólem base (ya cargado).</p>
+        <b>Identidad</b><p>Lento y legible. Enseña las tres reglas: saltar la carga, golpear tras el pisotón, romper la guardia.</p>
+        <b>Fase 1</b><p><code>run, jumps, charge, run, spin</code> a cadencia ×0,8, sin <code>ulti</code>. Poise al 12 % para que la guardia se rompa seguro una vez.</p>
+        <b>Fase 2 (50 %)</b><p>Entra <code>ulti</code> (orbes) y <code>charge</code> doble. Banner "¡SE ENFURECE!".</p>
+        <b>Coste</b><p class="cost">1 h. Solo <code>STAGE_BOSSES[1]</code> + <code>patterns2</code>.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>6 · El Brujo del Pozo</h3><span class="pill p-acc">Spec + arena</span></div>
+      <div class="kv">
+        <b>Assets</b><p>Gólem mediano de la Pirámide (<code>midgolem_anims.js</code>) en solitario, tinte verde-veneno.</p>
+        <b>Identidad</b><p>Jefe a distancia: <code>kite</code> + <code>bolt</code>/<code>burst</code>/<code>magebeam</code>. En un pozo (arena de disco con paredes) el rayo continuo que gira obliga a usar los saltos múltiples.</p>
+        <b>Fase 2</b><p>Al 50 %: el rayo dura 2,6 s y el pozo sube 2 hileras de pinchos (reutilizar trampas de Pirámide, <code>PYTRAP_TUNE</code>).</p>
+        <b>Coste</b><p class="cost">2 h. Spec copiando 5b + arena <code>'pyramid'</code> con paleta propia.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>11 · El Capataz del Cañón</h3><span class="pill p-acc">Spec + patrón</span></div>
+      <div class="kv">
+        <b>Assets</b><p>Brute (<code>bruteAttach</code>) reescalado ×1.6 con piel <code>westbad</code>; escolta de 3 <code>westgun</code>.</p>
+        <b>Identidad</b><p>Duelo: <code>laser1</code> reskineado como disparo de revólver (bala amarilla, 0,6 s de apuntado con línea), <code>charge</code> como embestida de toro. Escolta via <code>bruteHorde</code> con <code>escort:3, cap:3</code>.</p>
+        <b>Fase 2</b><p>Al 40 %: "¡A CUBIERTO!" — <code>laser3</code> (tres disparos) y las mesetas del western caen en los bordes (ya hay <code>_floorMovers</code>).</p>
+        <b>Coste</b><p class="cost">3 h. El disparo es <code>laseraim</code> con otro color y sonido; lo nuevo es la piel.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>9 · La Nodriza del Cielo</h3><span class="pill p-warn">Sistema</span></div>
+      <div class="kv">
+        <b>Assets</b><p>Dron de la Fábrica (<code>drone_model.js</code>) ×3 de tamaño + drones normales como adds.</p>
+        <b>Identidad</b><p>Único jefe volador: vive en <code>perch</code> (el estado de salto a plataforma ya existe) y baja solo para <code>slam</code>. Mientras está arriba, <code>laser3</code> y lluvia de drones; solo es vulnerable los 2 s de <code>rec</code> tras el slam (como las patas del Leviatán).</p>
+        <b>Riesgo</b><p>Hay que añadir un estado <code>hover</code> (desplazamiento aéreo sin física de suelo). Es la única propuesta con motor nuevo.</p>
+        <b>Coste</b><p class="cost">1 día. Vale la pena: el mundo 9 es el único que pide verticalidad y hoy salta la tienda además.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>10 · El Rey de la Vía — final de campaña</h3><span class="pill p-acc">Spec (cadena)</span></div>
+      <div class="kv">
+        <b>Assets</b><p>Cadena de 2: Robot de capoeira (dorado) → Samurái (rojo furia). Ambos cargados.</p>
+        <b>Identidad</b><p>Recapitulación: el final enfrenta a los dos mejores jefes con sus patrones más agresivos y guardia rota con ventana corta (2 s). Paleta arcoíris y portal coronación ya existen.</p>
+        <b>Por qué</b><p>Ocupa el hueco "reservado" del nivel 10 sin un asset nuevo y hace que el final sea el combate más memorable, no el más genérico.</p>
+        <b>Coste</b><p class="cost">2 h. <code>chain</code> igual que Pirámide; <code>_bossGolemSwap</code> ya soporta plantillas distintas.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>2 · Jungla — de reskin a jefe</h3><span class="pill p-acc">Spec</span></div>
+      <div class="kv">
+        <b>Cambio</b><p>Quitar el multiplicador plano y darle mecánica: escolta <code>escort:2, cap:2</code> y al 50 % <code>barbr</code> (frenesí ya existe) que dura 5 s. El suelo con huecos ya es su identidad: que <code>jumps</code> caiga siempre cerca de un hueco (usar <code>arenaBruteSpot</code> invertido).</p>
+        <b>Coste</b><p class="cost">1 h.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Ajustes a los jefes que ya son buenos</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Jefe</th><th>Cambio</th><th>Motivo</th><th class="num">Coste</th></tr>
+    <tr><td>4 Desierto</td><td><code>physTake 0.5→0.7</code>; con guardia rota <code>physTake 1.0</code>. KB de los golpes 3–5 → 6–8.</td><td>Hoy las clases melee tardan el doble y los golpes de 28–30 sin empuje encadenan sin escape</td><td class="num">10 min</td></tr>
+    <tr><td>7 Hielo</td><td>Copias con <b>60 %</b> de vida y poise compartido; aparecen a 35 % y no a 25 %.</td><td>Evitar el ×3 de vida en los últimos 40 s del reloj</td><td class="num">15 min</td></tr>
+    <tr><td>8 Fábrica</td><td>Sobrecarga 55→42 y el anillo de aviso a 2,2 s (hoy 2,7 s de 3,0). Fase 2 al 50 %: patrón corto <code>laser3, chargelaser, meiacompasso</code>.</td><td>Es el único ataque que mata de uno con 40 %; dar 0,8 s de lectura</td><td class="num">15 min</td></tr>
+    <tr><td>3 Japón</td><td>Cadencia ×1.9→×1.6 en 1ª fase, ×1.9 desde 50 %.</td><td>Que el ritmo suba, no que empiece al máximo</td><td class="num">5 min</td></tr>
+    <tr><td>12 Pirata</td><td>Leer <code>aggr/cadence</code> de llegadas en <code>_leviArmAttack</code>; ventana <code>exposed</code> 1,5→2,0 s en 1ª ronda.</td><td>Hoy con 4 jugadores pega igual que con 1 y la ventana es justa para clases lentas</td><td class="num">20 min</td></tr>
+    <tr><td>Todos</td><td>Borrar el comentario obsoleto de <code>spawnStageBoss</code>; el tinte del robot "a afinar" → fijar.</td><td>Deuda de documentación que confunde a la siguiente sesión</td><td class="num">5 min</td></tr>
+  </table></div>
+
+  <h2>Orden de ejecución propuesto</h2>
+  <div class="prio">
+    <div class="card"><div class="n">1</div><h3>Motor mínimo</h3><p><code>patterns2</code> al 50 %, anillo por nivel de daño, reloj escalado. Desbloquea todo lo demás.</p><p class="cost">~2 h</p></div>
+    <div class="card"><div class="n">2</div><h3>Rellenar huecos</h3><p>Mundos 1, 6, 11 y final del 10 con specs (4 jefes nuevos, 0 assets).</p><p class="cost">~1 día</p></div>
+    <div class="card"><div class="n">3</div><h3>Balance</h3><p>Desierto, Hielo, Fábrica, Japón, Pirata según tabla. Medir con 1 y 4 jugadores en headless.</p><p class="cost">~2 h + pruebas</p></div>
+    <div class="card"><div class="n">4</div><h3>La Nodriza (9)</h3><p>Único con motor nuevo. Solo cuando 1–3 estén validados en juego.</p><p class="cost">~1 día</p></div>
+  </div>
+
+  <h2>Cómo validar</h2>
+  <ul>
+    <li>Cada jefe se prueba en headless con 1 y 4 jugadores: tiempo hasta matar, nº de guardias rotas, muertes del jugador. Objetivo: 60–100 s con 1 jugador, ≥1 guardia rota, ≤2 muertes.</li>
+    <li>Todo ataque ≥24 de daño debe tener windup ≥0,6 s y anillo rojo; comprobar leyendo <code>attackDefs</code> con un script.</li>
+    <li>Ningún jefe supera el reloj con 4 jugadores en 5 partidas seguidas.</li>
+  </ul>
+</div>

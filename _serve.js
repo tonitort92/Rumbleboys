@@ -5,7 +5,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const ROOT = __dirname, PORT = 8181;
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript',
   '.css':'text/css', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif',
-  '.svg':'image/svg+xml', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg',
+  '.svg':'image/svg+xml', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg', '.woff2':'font/woff2', '.woff':'font/woff',
   '.mp4':'video/mp4', '.webm':'video/webm',                                        // ►CHARUI: vídeos de ataque del selector
   '.glb':'model/gltf-binary', '.gltf':'model/gltf+json', '.fbx':'application/octet-stream',
   '.obj':'text/plain', '.mtl':'text/plain', '.json':'application/json', '.ico':'image/x-icon', '.txt':'text/plain' };
