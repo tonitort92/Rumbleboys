@@ -11,7 +11,8 @@
 <script>
 (function(){
   if(navigator.webdriver || location.protocol!=='file:') return;   // headless/tests + servidor local (http): NO recargar (el servidor ya va no-cache; el reload solo hace falta en file://)
-  var bust=function(){ location.replace(location.href.replace(/[?#].*$/,'') + '?_cb=' + Date.now()); };
+  // ►TODO (25/08): la recarga CONSERVA las banderas de la URL (?todo, ?explorar, ?sfx…): antes las tiraba y solo quedaba _cb
+  var bust=function(){ var q=location.search.slice(1).split('&').filter(function(p){ return p && p.indexOf('_cb=')!==0; }); q.push('_cb='+Date.now()); location.replace(location.href.replace(/[?#].*$/,'') + '?' + q.join('&')); };
   try{
     // Toggle en sessionStorage: cada carga "normal" (abrir / F5) genera un timestamp NUEVO y recarga UNA vez
     // → siempre lees del disco; la recarga marcada pasa de largo (sin bucle).
@@ -3628,6 +3629,10 @@ function _saveBlank(){
            bosses:{}, cls:{}, lastRun:null, unlocks:[], trophies:{}, marks:{} };
 }
 let _SAVE = null;                                  // caché en memoria (única fuente de verdad en caliente)
+/* ►TODO (Toni 25/08: "acceso a todos los mundos para ver resultados"): con ?todo en la URL el guardado se lee con
+   bestStage al FINAL de la campaña → la home descubre todos los mundos. Solo EN MEMORIA: saveCommit no escribe
+   mientras la bandera está puesta, así el guardado real (récords, trofeos) queda intacto. */
+const SAVE_TODO = /[?&]todo(=|&|$)/.test(location.search);
 function saveGet(){
   if(_SAVE) return _SAVE;
   try{
@@ -3637,9 +3642,12 @@ function saveGet(){
        entendemos. Es preferible perder récords a corromper la partida de alguien. */
     _SAVE = (o && o.v === SAVE_V) ? Object.assign(_saveBlank(), o) : _saveBlank();
   }catch(e){ console.warn('[save] no se pudo leer', e); _SAVE = _saveBlank(); }
+  if(SAVE_TODO){ let L; try{ L = CAMPAIGN_STAGES; }catch(e){ L = [1,2,3,11,4,5,12,7,8,10]; }   // (const definida más abajo: si aún no existe, la lista literal)
+    _SAVE.bestStage = Math.max(_SAVE.bestStage||0, L.length); }
   return _SAVE;
 }
 function saveCommit(){
+  if(SAVE_TODO) return;                            // ►TODO: modo revisión, nunca se persiste
   try{ localStorage.setItem(SAVE_KEY, JSON.stringify(saveGet())); }
   catch(e){ console.warn('[save] no se pudo escribir', e); }   // sin storage: seguimos en memoria
 }
