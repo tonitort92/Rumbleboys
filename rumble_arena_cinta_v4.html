@@ -111,13 +111,18 @@ window.addEventListener('load', function(){
      "estrellas fugaces de distintos colores pasando a diferentes tiempos y diferentes distancias".
      La DISTANCIA es lo que da la profundidad: las cercanas son grandes, rápidas, opacas y de sonido grave;
      las lejanas, pequeñas, lentas, tenues y agudas. La capa va POR ENCIMA de #introSeq (9998); el #splash ya
-     está en display:none. Cada fugaz es una gota alargada con CONTORNO negro (cartoon) y una chispa en la
-     cabeza; viaja por el eje que le marca el giro del padre (translateX dentro de un wrapper rotado).
+     está en display:none. Cada fugaz es la MISMA raya fina con cola del cielo de la home 2 (.tiShoot), en el
+     color de su clase; viaja por el eje que le marca el giro del padre (translateX dentro de un wrapper rotado).
      El fogonazo blanco del BAM tapa el corte y la portada entra por debajo. ---------- */
   #shotFX { position:fixed; inset:0; z-index:9999; pointer-events:none; display:none; overflow:hidden; }
   #shotFX.on { display:block; }
-  .shotHit { position:absolute; transform-origin:50% 50%; }   /* punto de SALIDA + ángulo; el viaje va en el <svg> */
-  .shotHit > svg { display:block; width:100%; height:auto; opacity:0;
+  .shotHit { position:absolute; transform-origin:50% 50%; }   /* punto de SALIDA + ángulo; el viaje va en el hijo */
+  /* ►FUGACES v2 (Toni 25/08: "que se vean como las estrellas fugaces del fondo de la home 2"): fuera la gota
+     cartoon con contorno negro y la chispa de 4 puntas. La fugaz de la entrada es AHORA la MISMA raya fina con
+     cola que cruza el cielo de la home 2 (.tiShoot) — mismo degradado y misma proporción 65:1 entre largo y
+     grosor. Lo único suyo es el COLOR de la clase y la ESCALA, que la pone la distancia. */
+  .shotHit > .shotRay { display:block; width:100%; height:var(--h,2px); border-radius:var(--h,2px); opacity:0;
+                   background:linear-gradient(90deg, transparent, var(--c2) 70%, rgba(255,255,255,.95));   /* ►FUGACES v2.1: espejado con el de la del fondo — la cabeza blanca, delante */
                    animation:shotGo var(--dur,.7s) cubic-bezier(.32,.05,.62,1) forwards; }
   @keyframes shotGo {   /* translateX se aplica en el eje YA rotado del padre → vuela en su dirección */
     0%   { transform:translateX(0)            scaleX(.7); opacity:0; }
@@ -816,12 +821,15 @@ window.addEventListener('load', function(){
   .tiConst polyline { fill:none; stroke:rgba(150,200,255,.28); stroke-width:1; }
   .tiConst circle { fill:#cfe6ff; }
   /* ►CIELO v7: estrellas fugaces (raya con cola que cruza y se apaga) y polvo estelar en deriva */
-  .tiShoot { position:absolute; width:130px; height:2px; pointer-events:none; border-radius:2px;
-    background:linear-gradient(90deg, rgba(255,255,255,.95), rgba(190,225,255,.5) 30%, transparent);
+  /* ►FUGACES v2 (Toni 25/08): la fugaz del fondo es AHORA LA PLANTILLA — la entrada (#shotFX) usa esta
+     misma receta. Todo lo que la define sale a variables para que la DISTANCIA pueda moverlo: largo, grosor,
+     recorrido, duración y opacidad. Los valores por defecto son EXACTAMENTE los de antes. */
+  .tiShoot { position:absolute; width:var(--w,130px); height:var(--h,2px); pointer-events:none; border-radius:var(--h,2px);
+    background:linear-gradient(90deg, transparent, var(--c2,rgba(190,225,255,.5)) 70%, rgba(255,255,255,.95));   /* ►FUGACES v2.1 (Toni 25/08: "va con la cabeza arriba y la cola abajo"): la fugaz viaja hacia su borde DERECHO, así que el blanco va AHÍ — cabeza delante, cola detrás */
     transform-origin:left center;
-    animation:tiShootA 1.1s ease-out forwards; }
+    animation:tiShootA var(--dur,1.1s) ease-out forwards; }
   @keyframes tiShootA { 0%{ opacity:0; transform:rotate(var(--a,35deg)) translateX(0); }
-    8%{ opacity:1; } 100%{ opacity:0; transform:rotate(var(--a,35deg)) translateX(46vw); } }
+    8%{ opacity:var(--op,1); } 100%{ opacity:0; transform:rotate(var(--a,35deg)) translateX(var(--tx,46vw)); } }
   .tiDust { position:absolute; border-radius:50%; background:#cfe0ff; filter:blur(1px);
     animation:tiDrift var(--dd,26s) ease-in-out var(--dp,0s) infinite; }
   @keyframes tiDrift { 0%,100%{ transform:translate(0,0); }
@@ -1616,14 +1624,30 @@ window.addEventListener('load', function(){
       frag.appendChild(m2);
     }
     host.appendChild(frag);
-    /* estrella fugaz: una cada 6-12 s, posición y ángulo al azar; se retira al apagarse */
+    /* estrella fugaz: una cada 6-12 s, posición y ángulo al azar; se retira al apagarse.
+       ►FUGACES v2 (Toni 25/08): cada una tiene ahora su DISTANCIA — k: 0 = lejos, 1 = cerca — igual que las de
+       la entrada: cerca es larga, gruesa, rápida y opaca; lejos, corta, fina, lenta y tenue. Y SUENA al pasar:
+       hasta ahora cruzaban MUDAS. Es el mismo evento que las de la entrada (star_fall, cambiable de oído en
+       ?sfx) con el volumen y el tono atados a esa misma distancia. */
     (function shoot(){
       setTimeout(function(){
+        var k = Math.random();                                      // ►AJUSTA: la distancia manda en todo lo de abajo
         var e = document.createElement('i'); e.className = 'tiShoot';
         e.style.left = (5 + Math.random()*70).toFixed(1)+'%';
         e.style.top  = (4 + Math.random()*40).toFixed(1)+'%';
-        e.style.setProperty('--a', (20 + Math.random()*35).toFixed(0)+'deg');
+        e.style.setProperty('--a',   (20 + Math.random()*35).toFixed(0)+'deg');
+        e.style.setProperty('--w',   (95 + k*80).toFixed(0)+'px');   // largo    lejos  95px · cerca 175px
+        e.style.setProperty('--h',   (1.4 + k*1.3).toFixed(1)+'px'); // grosor   lejos 1.4px · cerca 2.7px
+        e.style.setProperty('--dur', (1.35 - k*0.45).toFixed(2)+'s');// lo que tarda en cruzar
+        e.style.setProperty('--op',  (0.5 + k*0.5).toFixed(2));      // lejos se intuye, cerca se ve
+        e.style.setProperty('--tx',  (34 + k*22).toFixed(0)+'vw');   // cuánto recorre
         host.appendChild(e);
+        /* el silbido SOLO en la PANTALLA 2 (ti.sky). Antes de eso el cielo está tapado por el splash, los
+           logos o la portada: se oiría pasar algo que no se ve. sfxEv ya se calla solo si el sonido está
+           apagado, y si la muestra aún no está decodificada la pide y la siguiente fugaz ya suena. */
+        if(ti.classList.contains('sky')){
+          try{ if(typeof sfxEv === 'function') sfxEv('star_fall', { ui:true, vol:0.25 + k*0.55, rate:1.34 - k*0.34 }); }catch(e2){}   // ►AJUSTA: volumen y tono del paso
+        }
         setTimeout(function(){ e.remove(); }, 1400);
         shoot();
       }, 6000 + Math.random()*6000);
@@ -6945,7 +6969,7 @@ const SHOTS = [
   { c:'#6fa8ff', x: 20, y:24, r: -6, d: 76, w:30, dur: 690, at: 620, op:.95 },   // azul, cerca y casi plana
   { c:'#ffffff', x: -6, y:16, r: 18, d: 96, w:42, dur: 600, at: 770, op:1   },   // blanca: la más cercana, cruza entera y se lleva el BAM
 ];
-let _shotEl = null, _shotId = 0;
+let _shotEl = null;
 function shotLayer(){
   if(_shotEl && _shotEl.isConnected) return _shotEl;
   const d = document.createElement('div'); d.id = 'shotFX'; d.innerHTML = '<div id="shotBam"></div>';
@@ -6959,17 +6983,15 @@ function shotClear(force){
   if(!force && b && b.classList.contains('go')){ _shotEl.querySelectorAll('.shotHit').forEach(n=> n.remove()); return; }
   _shotEl.classList.remove('on'); _shotEl.innerHTML = '<div id="shotBam"></div>';
 }
-/* la fugaz: gota alargada (cola afilada → cabeza redonda) con contorno negro cartoon, brillo blanco dentro,
-   halo de su color y una chispa de cuatro puntas clavada en la cabeza */
-function shotBody(c, id){
-  return '<svg viewBox="0 0 560 110" style="filter:drop-shadow(0 0 18px ' + c + ')">' +
-    '<defs><radialGradient id="hg' + id + '" cx=".86" cy=".5" r=".42"><stop offset="0" stop-color="' + c + '" stop-opacity=".5"/>' +
-    '<stop offset="1" stop-color="' + c + '" stop-opacity="0"/></radialGradient></defs>' +
-    '<rect x="0" y="0" width="560" height="110" fill="url(#hg' + id + ')"/>' +
-    '<path d="M6 55 C 200 49, 330 35, 466 29 C 510 29, 534 40, 534 55 C 534 70, 510 81, 466 81 C 330 75, 200 61, 6 55 Z" fill="' + c + '" stroke="#0b0d14" stroke-width="7" stroke-linejoin="round"/>' +
-    '<path d="M120 55 C 250 51, 350 43, 450 41 C 480 41, 496 47, 496 55 C 496 63, 480 69, 450 69 C 350 67, 250 59, 120 55 Z" fill="#fff" opacity=".7"/>' +
-    '<g transform="translate(435,0) scale(.367)"><path d="M150 4 C 163 106, 194 137, 296 150 C 194 163, 163 194, 150 296 C 137 194, 106 163, 4 150 C 106 137, 137 106, 150 4 Z" fill="#fff" opacity=".95"/></g>' +
-  '</svg>';
+/* la fugaz de la entrada es LA MISMA raya fina con cola que cruza el cielo de la home 2: el degradado y la
+   proporción largo/grosor viven en el CSS (.shotHit > .shotRay), y lo único que pone JS es el color de la clase
+   y la escala de su distancia. Se acabó la gota con contorno negro y la chispa de cuatro puntas. */
+/* #rrggbb → rgba(r,g,b,a): el degradado necesita el color de la clase CON alfa — el sitio donde la fugaz del
+   fondo pone su rgba(190,225,255,.5) — y en SHOTS los colores están en hex. */
+function _shotRgba(hex, a){
+  var h = String(hex).replace('#',''); if(h.length===3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var n = parseInt(h,16);
+  return 'rgba(' + ((n>>16)&255) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a + ')';
 }
 
 /* el sonido del paso: silbido `star_fall` (►SFXSEM, cambiable de oído en ?sfx) con el volumen y el tono atados a
@@ -6987,8 +7009,10 @@ function shotOne(i){
   const d = document.createElement('div'); d.className = 'shotHit';
   d.style.cssText = 'left:' + S.x + '%; top:' + S.y + '%; width:' + S.w + 'vw;'
                   + 'transform:translate(-50%,-50%) rotate(' + S.r + 'deg);'
-                  + '--d:' + S.d + 'vw; --dur:' + S.dur + 'ms; --op:' + S.op + ';';
-  d.innerHTML = shotBody(S.c, ++_shotId);
+                  + '--d:' + S.d + 'vw; --dur:' + S.dur + 'ms; --op:' + S.op + ';'
+                  + '--h:max(2px,' + (S.w/65).toFixed(2) + 'vw);'    // ►FUGACES v2: la proporción 65:1 (130×2) de la fugaz del fondo
+                  + '--c2:' + _shotRgba(S.c, .5) + ';';              // su color entra a media cola; la cabeza sigue blanca
+  d.innerHTML = '<i class="shotRay"></i>';
   L.appendChild(d);
   setTimeout(()=>{ try{ d.remove(); }catch(e){} }, S.dur + 200);
   shotSfx(S);
