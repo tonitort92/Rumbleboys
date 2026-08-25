@@ -3994,7 +3994,7 @@ let _carpetGeo = null, _carpetMat = null;
    jungla (S2_GREENS) · 3 = magenta oscuro a juego con el suelo sakura de Japón (SJ_PINKS). ►AJUSTA aquí. */
 const CARPET_TINT = {
   1: { h:0.26, hv:0.03, s:0.60, sv:0.20, l:0.50, lv:0.16 },
-  2: { h:0.31, hv:0.03, s:0.50, sv:0.12, l:0.17, lv:0.07 },   // ►FELPUDO25b (Toni 25/08): verde de SELVA, bastante más oscuro que el prado
+  2: { h:0.30, hv:0.02, s:0.80, sv:0.10, l:0.22, lv:0.06 },   // ►FELPUDO25c (Toni 25/08): verde de SELVA. OJO: el mundo 2 lleva relleno alto (hemi .75 + ambiente .34, exposición .80) y MULTIPLICA el albedo ~5x — medido con raycast sobre los píxeles más claros. Por eso estos números parecen negros y en pantalla son verde oscuro.
   3: { h:0.91, hv:0.03, s:0.58, sv:0.15, l:0.42, lv:0.14 },
 };
 /* ►FELPUDO25 (Toni 25/08): el felpudo de JUNGLA y JAPÓN solo cubre las plataformas BAJAS (plazas, suelo, decks
@@ -4003,7 +4003,8 @@ const CARPET_TINT = {
    degradado verde del prado × magenta salía marrón sucio. ►AJUSTA aquí. */
 const CARPET_MAXY  = { 2: 1.5, 3: 1.5 };                                          // topY máximo con felpudo (1 = todas)
 const CARPET_KINDS = { 2: { moss:1, earth:1 }, 3: { sakura:1, moss:1, earth:1 } };   // acabados de losa que lo llevan
-const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x0c1e0d, 0x2c561b], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta
+const CARPET_MATTE = { 2:1 };           // ►FELPUDO25d: mundos con follaje MATE (sin brillo especular; ver sueloCarpetMat)
+const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x0d2a12, 0x255c22], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta
 /* ►FELPUDO25b: OJO al calibrar estos verdes — el color de vértice va sin convertir a lineal, así que en pantalla
    sale MÁS CLARO y lavado que el hex escrito (el 0x4f8a2e de la jungla se veía como el verde claro del prado).
    Por eso los números del mundo 2 parecen casi negros aquí: en pantalla son el verde de selva que se pedía. */
@@ -4035,13 +4036,21 @@ function sueloCarpetGeo(){
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm,3));
   _carpetGeo = g; _carpetGeos[STAGE] = g; return g;
 }
+const _carpetMats = {};
 function sueloCarpetMat(){
+  _carpetMat = _carpetMats[CARPET_MATTE[STAGE] ? 'matte' : 'std'] || null;
   if(_carpetMat) return _carpetMat;
-  const m = new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:false, side:THREE.DoubleSide, roughness:.9, metalness:0 });
-  m.customProgramCacheKey = ()=> 'suelocarpet';
+  /* ►FELPUDO25d (Toni 25/08: "el follaje SIGUE claro"): medido: con el albedo casi negro, lo que se veía pálido
+     ya no era el color sino el BRILLO ESPECULAR blanco del MeshStandardMaterial (F0 .04) — con el relleno alto
+     del mundo 2 ese brillo pesa más que el difuso y la hoja sale blanco-menta. Lambert no tiene especular: la
+     hoja se queda del verde que se le pinte. El prado (mundo 1) conserva el material de siempre. */
+  const m = CARPET_MATTE[STAGE]
+    ? new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:false, side:THREE.DoubleSide, roughness:.9, metalness:0 });
+  m.customProgramCacheKey = ()=> 'suelocarpet' + (CARPET_MATTE[STAGE] ? 'M' : '');
   m.onBeforeCompile = sh=>{ sh.uniforms.uWind = _windU; sh.uniforms.uPush = _pushU;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', "#include <common>\nuniform float uWind; uniform vec4 uPush[8];").replace('#include <begin_vertex>', "#include <begin_vertex>\n{ vec3 ipos = (modelMatrix * instanceMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vec3 rgt = normalize(instanceMatrix[0].xyz); vec3 fwd = normalize(instanceMatrix[2].xyz); float hh = clamp(position.y / 0.5, 0.0, 1.0); vec2 off = vec2(0.0); float flat_ = 0.0;\nfor(int i=0;i<8;i++){ vec4 p = uPush[i]; if(p.w <= 0.0) continue; vec2 d = ipos.xz - p.xz; float l = length(d); if(l < p.w){ float k = 1.0 - l/p.w; off += (d / max(l, 0.05)) * k * 0.5; flat_ = max(flat_, k); } }\nfloat ph = uWind*1.6 + ipos.x*0.5 + ipos.z*0.4; off += vec2(sin(ph)*0.05 + sin(ph*2.3+0.9)*0.02, cos(ph*0.8)*0.03);\nvec3 o3 = vec3(off.x, 0.0, off.y); vec2 loc = vec2(dot(o3, rgt), dot(o3, fwd)); float k2 = hh*hh; transformed.x += loc.x * k2; transformed.z += loc.y * k2; transformed.y -= (length(off) * 0.35 + flat_ * 0.6) * hh * 0.5; }"); };
-  _carpetMat = m; return m;
+  _carpetMat = m; _carpetMats[CARPET_MATTE[STAGE] ? 'matte' : 'std'] = m; return m;
 }
 function sueloCarpet(g, sx, sz, topY, cx, cz){
   const n = Math.min(3800, Math.round(sx*sz*6)); if(n < 8) return;   // ~6 matas/u2 (Toni: sin huecos), tope 3.800 por plataforma; el LOD recorta im.count en las lejanas
@@ -4352,7 +4361,7 @@ const _surfCaps = [];
 /* ►SURFCAP25: acabados de losa que NO llevan capa — hielo (patina, se ve el hielo), chapa/vía de la fábrica y el arcoíris, roca/piedra */
 function surfCapKindOK(kind){ return !(kind==='ice' || kind==='metal' || kind==='rainbow' || kind==='stone' || kind==='rock' || kind==='rocky'); }
 function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
-  const pw = Math.max(48, Math.min(128, Math.round(sx*7))), ph = Math.max(48, Math.min(128, Math.round(sz*7)));
+  const pw = Math.max(64, Math.min(192, Math.round(sx*10))), ph = Math.max(64, Math.min(192, Math.round(sz*10)));   // ►SURFCAP25c: +resolución (el canto redondeado se veía a escalones)
   const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const c2 = cv.getContext('2d');
   /* ►SURFCAP25b (Toni 25/08): la capa RESPETA la forma REAL de la tapa — elipse en los blobs y RECTÁNGULO
      REDONDEADO en las losas (antes un cuadrado: las esquinas colgaban sobre el canto biselado) — y ya NO cubre
@@ -4365,8 +4374,8 @@ function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
     c2.lineTo(pw, ph-ry); c2.ellipse(pw-rx, ph-ry, rx, ry, 0, 0, Math.PI/2);
     c2.lineTo(rx, ph); c2.ellipse(rx, ph-ry, rx, ry, 0, Math.PI/2, Math.PI);
     c2.lineTo(0, ry); c2.ellipse(rx, ry, rx, ry, 0, Math.PI, Math.PI*1.5); c2.closePath(); };
-  c2.fillStyle = cfg.base; shape(); c2.fill();
-  c2.save(); shape(); c2.clip();                              // TODO lo que sigue (motas y polvo) queda dentro de la tapa
+  c2.fillStyle = cfg.base; c2.fillRect(0, 0, pw, ph);         // se pinta ENTERO y al final se recorta con máscara suave (ver abajo)
+  c2.save();
   c2.fillStyle = cfg.tint;                                    // motas suaves para que no sea un llano perfecto
   for(let i=0;i<Math.round(pw*ph/160);i++){ c2.globalAlpha = .12 + Math.random()*.2; const r = 2+Math.random()*5; c2.beginPath(); c2.arc(Math.random()*pw, Math.random()*ph, r, 0, 7); c2.fill(); }
   c2.globalAlpha = 1;
@@ -4388,6 +4397,12 @@ function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
     c2.globalCompositeOperation = 'source-over';
   }
   c2.restore();
+  /* ►SURFCAP25c (Toni 25/08: "la arenisca se PIXELA en los cantos redondeados"): el recorte iba con clip(),
+     que en canvas NO es antialiasado → escalones en la curva. Recortar al final con destination-in sobre una
+     figura RELLENADA sí lo es: el canto sale limpio aunque la textura sea pequeña. */
+  c2.globalCompositeOperation = 'destination-in';
+  c2.fillStyle = '#fff'; shape(); c2.fill();
+  c2.globalCompositeOperation = 'source-over';
   const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   if(THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;   // ►SURFCAP25b: el canvas está en sRGB — sin esto three lo trata como LINEAL y la arenisca oscura salía crema pálido
   const m = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(1, sx-0.35), Math.max(1, sz-0.35)),
@@ -25372,8 +25387,8 @@ const DECOR_DEFS2 = {
 
 /* paletas de BOSQUE (se aplican como sRGB en stage 2 → el hex se ve tal cual, WYSIWYG).
    Verdes profundos desaturados con musgo/oliva (NO el verde lima del prado). */
-const S2_GREENS  = ['#2e4e21','#2b4920','#315123','#29471e','#2f4f23','#334f26','#2c4c21'];   /* ►JUNGLA25 (Toni 25/08): 38% MÁS OSCURO (factor 0.62 sobre los originales) que el prado — el verde de antes leía igual de claro que el mundo 1; ►AJUSTA: el factor era 0.84 sobre #4a7d36 y compañía */   // ►ESCULPIR: musgo ORGÁNICO — rango de valor ESTRECHO y saturación contenida (el neón '#66b84a' vs '#3d8a2c' creaba el damero)
-const S2_GREENSD = ['#243f19','#213b18','#26421c','#203917','#25401b','#233d19'];   /* ►JUNGLA25: labio a juego con el top oscurecido */
+const S2_GREENS  = ['#213818','#1f3517','#233a19','#1e3316','#223919','#25391b','#203718'];   /* ►JUNGLA25 (Toni 25/08): 38% MÁS OSCURO (factor 0.62 sobre los originales) que el prado — el verde de antes leía igual de claro que el mundo 1; ►AJUSTA: el factor era 0.84 sobre #4a7d36 y compañía */   // ►ESCULPIR: musgo ORGÁNICO — rango de valor ESTRECHO y saturación contenida (el neón '#66b84a' vs '#3d8a2c' creaba el damero)
+const S2_GREENSD = ['#1a2d12','#182a11','#1b3014','#172911','#1b2e13','#192c12'];   /* ►JUNGLA25: labio a juego con el top oscurecido */
 const S2_BROWNS  = ['#6a4a2e','#5a3f26','#755334','#4f3722','#7d5b38','#5e4228'];   // barro de jungla húmedo (más rico/claro)
 const S2_STONE   = ['#565e54','#4e564c','#606a5c','#454d43','#5a6356','#505a4e'];   // piedra gris-verde clara
 
@@ -25839,9 +25854,11 @@ const _S2_CLUMP_BROWNS = [[0.353,0.247,0.157],[0.271,0.184,0.110],[0.424,0.310,0
 const _S2_CANOPY_PALS = (()=>{
   const mk = hexes => hexes.map(([h,k])=>{ const c = new THREE.Color(h).multiplyScalar(k).convertSRGBToLinear(); return [c.r, c.g, c.b]; });
   return {
-    moss:  mk([['#4a7d36',0.66],['#4f8339',0.74],['#527f3e',0.82],['#457634',0.70]]),
-    earth: mk([['#4f8236',0.66],['#568a3c',0.74],['#578e3e',0.82],['#48792f',0.70]]),
-    rock:  mk([['#3f7a44',0.66],['#468248',0.74],['#498750',0.82],['#386f3c',0.70]]),
+    /* ►JUNGLA25c: factores a ~0.45 de los de antes (0.66/0.74/0.82/0.70). Medido: con los viejos, la hoja
+       salía a 159 de verde en pantalla — verde CLARO. ►AJUSTA aquí si se quiere aclarar la selva. */
+    moss:  mk([['#2f7a1e',0.34],['#358a22',0.38],['#3a8f28',0.42],['#2b7018',0.36]]),
+    earth: mk([['#347f1c',0.34],['#3a8a24',0.38],['#3f9128',0.42],['#2e7418',0.36]]),
+    rock:  mk([['#288042',0.34],['#2d8a46',0.38],['#31904c',0.42],['#237437',0.36]]),
   };
 })();
 let _s2CanopyPal = 'moss';   // lo fija cada builder junto a _s2VegProfile
@@ -26103,7 +26120,11 @@ let _s2VegProfile = 'med';
    color del asset (el mismo verde claro que el prado). El merge ya teñía por instancia (mul), así que basta
    multiplicar ese tono por mundo. Medido A/B en la misma sesión: tocar S2_GREENS o _S2_CANOPY_PALS apenas movía
    la imagen; esto sí. ►AJUSTA aquí (1 = color del asset). */
-const S2_VEG_DARK = { s2_fern:0.58, s2_grasswispy:0.58, s2_tallgrass:0.58, s2_clover:0.60, s2_grass2:0.58, s2_flowers:0.80, s2_mushroom:0.90 };
+const S2_VEG_DARK = { s2_flowers:0.80, s2_mushroom:0.90 };                       // escalar: lo que NO es hoja (mantiene su color)
+/* TINTE de las HOJAS: verde de selva oscuro. Va como [r,g,b] al merge, así que sirve igual a las plantas con
+   color de vértice (lo multiplica) y a las que no lo tienen (antes salían GRIS CLARO). ►AJUSTA aquí. */
+const S2_VEG_TINT = { s2_fern:[0.035,0.170,0.030], s2_grasswispy:[0.040,0.175,0.035], s2_tallgrass:[0.035,0.165,0.030],
+                      s2_clover:[0.045,0.180,0.040], s2_grass2:[0.035,0.170,0.030] };
 function scatterModelDecorStage2(startIdx){
   if(!S2_DECOR_ON) return;                       // deco OFF → solo el blockout jugable
   if(!_modelAvailable()) return;
@@ -26128,7 +26149,8 @@ function scatterModelDecorStage2(startIdx){
       const f = sMin + Math.random()*(sMax-sMin); m.scale.setScalar(f);
       m.position.set(x, pl.topY + (m.userData.halfH||0)*f - 0.05, z);
       m.rotation.y = Math.random()*Math.PI*2;
-      merger.add(m, (0.85 + Math.random()*0.3) * (S2_VEG_DARK[key] || 1));   // ►CAMP: tono por instancia dentro del merge · ►JUNGLA25: el sotobosque verde, MÁS OSCURO que el del prado
+      const _j = 0.85 + Math.random()*0.3, _t = S2_VEG_TINT[key];               // ►CAMP: tono por instancia dentro del merge
+      merger.add(m, _t ? [_t[0]*_j, _t[1]*_j, _t[2]*_j] : _j * (S2_VEG_DARK[key] || 1));   // ►JUNGLA25b: las HOJAS con tinte verde selva; el resto, tono gris de siempre
       if(footprint) _propSpots.push({ x, z, r:footprint*f });
     }
   };
@@ -26315,18 +26337,23 @@ function _s2MeshMerger(){
   };
   return {
     add(m, mul){
+      /* ►JUNGLA25b (Toni 25/08: "el follaje sigue siendo CLARO"): mul puede ser un número (tono gris, como
+         siempre) o un TINTE [r,g,b]. Era la causa real del follaje pálido: las plantas SIN color de vértice
+         caían en el else y se pintaban de GRIS puro (k,k,k) — por muy bajo que fuese el factor salía gris
+         claro, nunca verde. Con tinte, esas plantas se pintan del verde de selva que toca. */
       const i0 = PA.length;
       m.updateMatrixWorld(true);
       m.traverse(o=>{ if(o.isMesh && o.geometry && o.geometry.attributes.position){
         const p = o.geometry.attributes.position.array, nn = o.geometry.attributes.normal.array;
         const cc = o.geometry.attributes.color ? o.geometry.attributes.color.array : null, vc = p.length/3;
-        const k = (mul!=null) ? mul : 1;
+        const _A = Array.isArray(mul), kr = _A ? mul[0] : (mul!=null?mul:1), kg = _A ? mul[1] : kr, kb = _A ? mul[2] : kr;
+        const k = kr;
         _nm.getNormalMatrix(o.matrixWorld);
         for(let v=0;v<vc;v++){
           _v.set(p[v*3],p[v*3+1],p[v*3+2]).applyMatrix4(o.matrixWorld); PA.push(_v.x,_v.y,_v.z);
           _v.set(nn[v*3],nn[v*3+1],nn[v*3+2]).applyMatrix3(_nm).normalize(); NA.push(_v.x,_v.y,_v.z);
-          if(cc){ CA.push(Math.min(1,cc[v*3]*k), Math.min(1,cc[v*3+1]*k), Math.min(1,cc[v*3+2]*k)); }
-          else  { CA.push(k, k, k); }
+          if(cc){ CA.push(Math.min(1,cc[v*3]*kr), Math.min(1,cc[v*3+1]*kg), Math.min(1,cc[v*3+2]*kb)); }
+          else  { CA.push(kr, kg, kb); }
         }
       }});
       marks.push({ x:m.position.x, z:m.position.z, i0, i1:PA.length });
@@ -26895,8 +26922,8 @@ function _buildS2Mats(){
   /* ►RONDA4: TODOS los tops son CÉSPED verde (esencia de la captura buena del usuario: nada de
      superficies pisables marrones ni grises). La identidad del bioma queda en el TONO de verde
      + el lip/base (tierra marrón · roca gris), como en sus refs 2D (top verde, talud marrón). */
-  const GREEN_WARM = ['#315121','#2d4b1d','#355625','#2a471b','#335223','#2e4d1e','#365826'];   // bioma tierra: verde cálido — ►JUNGLA25: 0.62 del original (era '#4f8236'...), medido con raycast: ESTE es el suelo que se ve en la mayoría de plazas
-  const GREEN_COOL = ['#274c2a','#234525','#2b512d','#203f1d','#294e2b','#254827','#2d5432'];   // bioma roca: verde frío — ►JUNGLA25: 0.62 del original, a juego con GREEN_WARM y S2_GREENS
+  const GREEN_WARM = ['#233a18','#203615','#263e1b','#1e3313','#253b19','#213716','#273f1b'];   // bioma tierra: verde cálido — ►JUNGLA25: 0.62 del original (era '#4f8236'...), medido con raycast: ESTE es el suelo que se ve en la mayoría de plazas
+  const GREEN_COOL = ['#1c371e','#19321b','#1f3a20','#172d15','#1e381f','#1b341c','#203c24'];   // bioma roca: verde frío — ►JUNGLA25: 0.62 del original, a juego con GREEN_WARM y S2_GREENS
   S2MATS = {
     moss:  { top:_s2mat(S2_GREENS),       lip:_s2mat(S2_GREENSD,1/16), base:_s2mat(BROWNB,1/12) },
     earth: { top:_s2mat(GREEN_WARM),      lip:_s2mat(EARTHD,1/16),     base:_s2mat(BROWNB,1/12) },
