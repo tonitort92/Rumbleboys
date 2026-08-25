@@ -4336,6 +4336,8 @@ const SURF_CAPS = {   // config por mundo · ►AJUSTA colores/espesor aquí
   11: { base:'#8a5a38', tint:'#774a2c', edge:'rgba(46,26,12,.6)',    alpha:.9,  lift:.035 },   // ARENISCA fina oscura rojiza (western, integra con el cañón)
 };
 const _surfCaps = [];
+/* ►SURFCAP25: acabados de losa que NO llevan capa — hielo (patina, se ve el hielo), chapa/vía de la fábrica y el arcoíris, roca/piedra */
+function surfCapKindOK(kind){ return !(kind==='ice' || kind==='metal' || kind==='rainbow' || kind==='stone' || kind==='rock' || kind==='rocky'); }
 function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
   const pw = Math.max(48, Math.min(128, Math.round(sx*7))), ph = Math.max(48, Math.min(128, Math.round(sz*7)));
   const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const c2 = cv.getContext('2d');
@@ -26884,6 +26886,7 @@ function s2Floor(cx, cz, sx, sz, topY=0, kind='moss'){
     g.userData._sueloTest = true; sueloCarpet(g, sx, sz, topY, cx, cz);
     if(!_sueloB) _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
   }
+  if(SURF_CAPS[STAGE] && sx>=4 && sz>=4 && surfCapKindOK(kind)) surfCapAdd(g, sx, sz, topY, SURF_CAPS[STAGE], false);   // ►SURFCAP25 (Toni 25/08): la capa de nieve/arena/arenisca también en las losas RECTANGULARES (antes solo en los blobs → el pueblo western y la plaza del desierto salían con la tesela pelada)
   return g;
 }
 /* colina/meseta de Stage 2 (espejo de addHill, SIN bultos ni matas) */
@@ -29896,6 +29899,7 @@ function s3DuneHill(cx, cz, rx, rz, topY, kind='rose'){
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: colina blob pisable = oclusor; guard la respeta si es el suelo más bajo
   const _rec = { minX:cx-rx, maxX:cx+rx, minZ:cz-rz, maxZ:cz+rz, topY, baseY:0, solid:true, blob:true, sand:true, _pours:pours };
   platforms.push(_rec); _rec._group = g;
+  if(SURF_CAPS[STAGE] && rx>=1.6 && rz>=1.6 && surfCapKindOK(kind)) surfCapAdd(g, rx*1.92, rz*1.92, topY, SURF_CAPS[STAGE], true);   // ►SURFCAP25: también en las MESAS (cima blob)
   return g;
 }
 
