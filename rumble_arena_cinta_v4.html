@@ -40233,7 +40233,7 @@ function refreshSetup(){
     if(tpl){
       const i0 = Math.max(0, CLASS_PICK.findIndex(c=>c[0]===k)), a0 = ringAngle(i0);
       const root = new THREE.Group();   // el HUECO del corro: en su punto del círculo, mirando hacia fuera
-      root.position.set(Math.sin(a0)*RING_R, 0, Math.cos(a0)*RING_R); root.rotation.y = a0; root.userData.base = a0;
+      root.position.set(Math.sin(a0)*RING_R, 0, Math.cos(a0)*RING_R); root.rotation.y = a0; root.userData.base = a0;   // ►DECARA: el ángulo del círculo manda en la POSICIÓN; el yaw lo reescribe el bucle cada frame para mirar al usuario
       const model = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(tpl.scene) : tpl.scene;
       const fit = CHAR_FITS[k] || {};
       model.updateMatrixWorld(true);
@@ -40245,7 +40245,12 @@ function refreshSetup(){
          se girase el modelo con su origen descentrado, el muñeco orbitaría alrededor de la peana. */
       const piv = new THREE.Group();
       model.position.set(-(box.min.x + box.max.x)/2 * s, -box.min.y * s, -(box.min.z + box.max.z)/2 * s);   // centrado en x/z, pies en y=0
-      piv.rotation.y = CHAR_YAW + (fit.yaw||0) + (RICH_CFG[k] ? Math.PI : 0);   // chars Mixamo (samurái/barbarian) miran a +Z (juego); en el preview gíralos para arrancar de cara
+      /* ►DECARA (Toni 25/08): aquí había un "+ (RICH_CFG[k] ? Math.PI : 0)". Venía de cuando el preview
+         era UN personaje suelto; con el ►CORRO el giro del círculo ya lo pone el hueco, y esa media vuelta
+         de más dejaba a los SEIS (las seis clases están en RICH_CFG y las seis traen yaw:0 en CHAR_FITS)
+         mirando al centro — el elegido de espaldas y los demás mirándose entre ellos. Los modelos Mixamo
+         miran a +Z, que es justo hacia la cámara: sin sumar nada, salen de cara. */
+      piv.rotation.y = CHAR_YAW + (fit.yaw||0);
       piv.add(model);
       model.traverse(o=>{ if(o.isMesh){ o.frustumCulled = false; o.castShadow = false;
         if(BRAND_HUE[k]!=null){   // mismo RECOLOR DE MARCA que en partida (textura recoloreada, reusa la cache)
@@ -40934,11 +40939,25 @@ function refreshSetup(){
     if(_cpAcc < 1/30) return;
     const dt = Math.min(.05, _cpAcc); _cpAcc = 0;
     for(const m of pMixers) m.update(dt);   // ►CORRO: los seis animan su idle
-    if(ring){ let d = ringTarget - ring.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ring.rotation.y += d * Math.min(1, dt*5); }   // ►CORRO: el círculo gira (camino corto) hasta poner delante al elegido
+    let ringYaw = 0, ringLlego = true;
+    if(ring){ let d = ringTarget - ring.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); ring.rotation.y += d * Math.min(1, dt*5);   // ►CORRO: el círculo gira (camino corto) hasta poner delante al elegido
+      ringYaw = ring.rotation.y;
+      let e = ringTarget - ringYaw; ringLlego = Math.abs(Math.atan2(Math.sin(e), Math.cos(e))) < 0.03; }   // ►AJUSTA: margen para dar el corro por LLEGADO
     for(const key in slots){ const sl = slots[key], want = (key === frontKey) ? 0 : 1, cur0 = (sl.userData.dimT == null) ? want : sl.userData.dimT;
       const nt = cur0 + (want - cur0) * Math.min(1, dt*4); if(Math.abs(nt - cur0) > 1e-4 || sl.userData.dimT == null){ sl.userData.dimT = nt; applyDim(sl, nt); }
-      /* el ELEGIDO gira como un torno; los demas vuelven a su orientacion base y se quedan quietos */
-      if(key === frontKey) sl.rotation.y += dt*0.7; else { let d2 = sl.userData.base - sl.rotation.y; d2 = Math.atan2(Math.sin(d2), Math.cos(d2)); sl.rotation.y += d2 * Math.min(1, dt*5); } }   // ►CORRO · PENUMBRA + TORNO
+      /* ►DECARA (Toni 25/08): "que miren hacia el usuario ANTES de empezar a rotar". Cada hueco COMPENSA el
+         giro del círculo (yaw local = -ring.rotation.y → yaw en mundo = 0 = hacia la cámara), así que el
+         círculo solo los DESPLAZA y ninguno se da la vuelta ni se queda mirando al de al lado. El TORNO del
+         elegido es un contador aparte que arranca de CERO al serlo y no corre hasta que el corro ha llegado:
+         primero te mira, y entonces empieza a girar. Antes el yaw era el ángulo del círculo (userData.base). */
+      if(key === frontKey){
+        if(sl.userData.spinT == null) sl.userData.spinT = 0;
+        if(ringLlego) sl.userData.spinT += dt*0.7;                                     // ►AJUSTA: velocidad del torno (rad/s)
+        sl.rotation.y = -ringYaw + sl.userData.spinT;
+      } else {
+        sl.userData.spinT = 0;                                                          // deja de ser el elegido → el torno vuelve a cero
+        let d2 = (-ringYaw) - sl.rotation.y; d2 = Math.atan2(Math.sin(d2), Math.cos(d2)); sl.rotation.y += d2 * Math.min(1, dt*5);
+      } }   // ►CORRO · PENUMBRA + TORNO
     pr.render(pScene, pCam);
   })(last);
 })();
