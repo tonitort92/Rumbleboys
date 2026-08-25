@@ -3962,15 +3962,26 @@ let _carpetGeo = null, _carpetMat = null;
    jungla (S2_GREENS) · 3 = magenta oscuro a juego con el suelo sakura de Japón (SJ_PINKS). ►AJUSTA aquí. */
 const CARPET_TINT = {
   1: { h:0.26, hv:0.03, s:0.60, sv:0.20, l:0.50, lv:0.16 },
-  2: { h:0.30, hv:0.03, s:0.42, sv:0.14, l:0.26, lv:0.10 },
-  3: { h:0.90, hv:0.03, s:0.55, sv:0.15, l:0.36, lv:0.12 },
+  2: { h:0.31, hv:0.03, s:0.45, sv:0.12, l:0.27, lv:0.09 },
+  3: { h:0.91, hv:0.03, s:0.58, sv:0.15, l:0.42, lv:0.14 },
 };
+/* ►FELPUDO25 (Toni 25/08): el felpudo de JUNGLA y JAPÓN solo cubre las plataformas BAJAS (plazas, suelo, decks
+   hundidos): repisas, knolls y lunas altas conservan su acabado original. Además el DEGRADADO de la hoja
+   (base→punta) es por mundo: la mata se tiñe multiplicando su color de vértice por el tinte de instancia, y el
+   degradado verde del prado × magenta salía marrón sucio. ►AJUSTA aquí. */
+const CARPET_MAXY  = { 2: 1.5, 3: 1.5 };                                          // topY máximo con felpudo (1 = todas)
+const CARPET_KINDS = { 2: { moss:1, earth:1 }, 3: { sakura:1, moss:1, earth:1 } };   // acabados de losa que lo llevan
+const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x17381a, 0x4f8a2e], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta
+function carpetOK(topY, kind){ const my = CARPET_MAXY[STAGE]; if(my==null) return true; const K = CARPET_KINDS[STAGE]; return topY <= my && (!K || !kind || !!K[kind]); }
+const _carpetGeos = {};
 function sueloCarpetGeo(){
+  _carpetGeo = _carpetGeos[STAGE] || null;   // ►FELPUDO25: una geometría por mundo (degradado propio)
   if(_carpetGeo) return _carpetGeo;
+  const GR = CARPET_GRAD[STAGE] || CARPET_GRAD[1];
   /* MATA de 8 hojas curvas (ref. hexaquo "full-geometry grass"): cada hoja 2 tramos (4 tris), nace en el centro y se
      curva hacia fuera; ancho 0,12-0,18 u en la base, alto hasta CARPET_H. Normales "de cilindro" (hacia arriba/fuera)
      para que se ilumine suave como un colchón y no como cuchillas. Degradado base oscura → punta amarillo-verde. */
-  const H = CARPET_H, pos = [], col = [], nrm = [], c0 = new THREE.Color(0x2f7a22), c1 = new THREE.Color(0xc6e35a), ct = new THREE.Color();
+  const H = CARPET_H, pos = [], col = [], nrm = [], c0 = new THREE.Color(GR[0]), c1 = new THREE.Color(GR[1]), ct = new THREE.Color();
   let seed = 11; const rnd = ()=>{ seed = (seed*16807) % 2147483647; return seed/2147483647; };
   const V = (x,y,z,t,nx,nz)=>{ pos.push(x,y,z); ct.copy(c0).lerp(c1, t*t); col.push(ct.r,ct.g,ct.b); const l = Math.hypot(nx, 1.2, nz); nrm.push(nx/l, 1.2/l, nz/l); };
   const NB = 6;   // 6 hojas x 4 tris = 24 tris por mata (hay miles en pantalla)
@@ -3987,7 +3998,7 @@ function sueloCarpetGeo(){
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm,3));
-  _carpetGeo = g; return g;
+  _carpetGeo = g; _carpetGeos[STAGE] = g; return g;
 }
 function sueloCarpetMat(){
   if(_carpetMat) return _carpetMat;
@@ -4348,7 +4359,7 @@ function surfCapUpdate(){
 function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
   if(!_CAP && !_ISLAND) return;
   const g = new THREE.Group();
-  if(SUELO_TEST && (STAGE===1 || STAGE===2 || STAGE===3) && grassMat===M.grass && sx>=4 && sz>=4){   // ►FELPUDO23 (Toni 23/08): el felpudo también en JUNGLA y JAPÓN, con tono de cada mundo (ver CARPET_TINT)
+  if(SUELO_TEST && (STAGE===1 || STAGE===2 || STAGE===3) && grassMat===M.grass && sx>=4 && sz>=4 && carpetOK(topY)){   // ►FELPUDO23 (Toni 23/08): el felpudo también en JUNGLA y JAPÓN, con tono de cada mundo (ver CARPET_TINT)
     grassMat = sueloTestMat(); g.userData._sueloTest = true;
     if(!_sueloB) _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
   }
@@ -26845,7 +26856,7 @@ function s2Floor(cx, cz, sx, sz, topY=0, kind='moss'){
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: suelo pisable = oclusor (se funde si tapa), respetado por el guard cuando es el nivel más bajo
   const _rec = { minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2, topY, baseY: topY-4.5, solid:true, sand:(STAGE===4)||undefined };   // ►S4: losas = arena (hundimiento), sin blob (sin arrastre)
   platforms.push(_rec); _rec._group = g;
-  if(SUELO_TEST && STAGE===2 && (kind==='moss'||kind==='earth') && sx>=4 && sz>=4){   // ►FELPUDO23b: el felpudo REAL de la jungla (la cinta no pasa por addFloorBlock)
+  if(SUELO_TEST && (STAGE===2 || STAGE===3) && sx>=4 && sz>=4 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: el felpudo REAL de la jungla y las losas bajas de Japón (la cinta no pasa por addFloorBlock)
     g.userData._sueloTest = true; sueloCarpet(g, sx, sz, topY, cx, cz);
     if(!_sueloB) _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
   }
@@ -27687,7 +27698,7 @@ function enableS2Scenery(on){
 /* ---- reconstrucción de la cinta (mismo motor que buildBelt, con el tema actual) ---- */
 function rebuildBelt(){
   if(!BELT.on) return;
-  addFloorBlock._done = false; _sueloB = null; _surfCaps.length = 0;   // ►SUELOTEST/►SURFCAP: se re-crean con cada cinta
+  addFloorBlock._done = false; _sueloB = null; _carpets.length = 0; _surfCaps.length = 0;   /* ►FELPUDO25: _carpets no se vaciaba nunca → crecía con cada cambio de mundo (LOD sobre mallas muertas) */   // ►SUELOTEST/►SURFCAP: se re-crean con cada cinta
   for(const seg of BELT.segs){
     scene.remove(seg.group);
     disposeTree(seg.group);   // ►PERF-MEM: geometrías propias + materiales clonados del segmento fuera de la GPU (antes se filtraban en cada salto de mundo)
@@ -28360,7 +28371,7 @@ function sjMoon(cx, cz, r, topY, rot, kind){
      que no hace falta contabilidad extra. Adiós al 17 % de tapa visible que no se podía pisar. */
   platforms.push({ minX:B.minX, maxX:B.maxX, minZ:B.minZ, maxZ:B.maxZ,
                    topY, baseY:topY-4.4, solid:true, blob:true, _group:g });
-  if(SUELO_TEST && STAGE===3 && r>=2.2){   // ►FELPUDO23b: felpudo sakura en las losas lunares (lado = cuadrado inscrito, nada cuelga del disco)
+  if(SUELO_TEST && STAGE===3 && r>=2.2 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: solo lunas BAJAS · felpudo sakura en las losas lunares (lado = cuadrado inscrito, nada cuelga del disco)
     g.userData._sueloTest = true; sueloCarpet(g, r*1.3, r*1.3, topY, cx, cz);
     if(!_sueloB) _sueloB = { x0:cx-r, x1:cx+r, z0:cz-r, z1:cz+r };
   }
