@@ -5,6 +5,12 @@
    Parámetros nuevos del JSON de cámara: rx/rz (radios de la elipse global, def. 22/19) y cx
    (centro desplazado en x, p.ej. el saloon del western vive en x≈-14). Elipses prietas (rx≈9-15)
    = modo "trozo"; ojo: matan la losa principal de los mundos de losa gigante (desierto, japón). */
+/* CÁMARAS USADAS (para rehacer o retocar sin volver a tantear):
+     mundo 1 PRADO   {"px":24,"py":22,"pz":24,"tx":0,"ty":2,"tz":-3,"fov":30}   (elipse por defecto)
+     mundo 2 JUNGLA  {"px":54,"py":48,"pz":54,"tx":0,"ty":3,"tz":4,"fov":30,"rx":32,"rz":26,"cx":0,"cz":4}
+   La jungla es un segmento LARGO (67 u) y plano, no un racimo de plataformas: sin ampliar la elipse
+   salía media plaza recortada, y con rx<30 se pierden las plataformas flotantes del fondo (que son
+   nivel de verdad, no puentes huérfanos — comprobado con un render crudo sin filtros). */
 const fs = require('fs');
 const CAM = JSON.parse(process.argv[2] || '{"px":24,"py":22,"pz":24,"tx":0,"ty":2,"tz":-3,"fov":30}');
 const OUT = process.argv[3] || (__dirname + '\\isla1.png');
@@ -52,12 +58,21 @@ const ev=async e=>{ const r=await send('Runtime.evaluate',{expression:e,returnBy
          PLATAFORMA ENTERA, no por píxel, y la silueta queda orgánica */
       if(central && central.group){
         const bb = new THREE.Box3(), ctr = new THREE.Vector3();
-        const RX = 27, RZ = 24, CZ = -3;   // ELIPSE de selección: isla ovalada orgánica, no rectángulo cortado
+        /* ELIPSE de selección: isla ovalada orgánica, no rectángulo cortado. Parametrizable desde el
+           JSON (rx1/rz1/cx1/cz1; si no, cae en rx/rz/cx/cz globales y por último en 27/24/0/-3):
+           el mundo 2 mide 67 de largo y con la elipse fija de 27 se quedaba media plaza fuera. */
+        const RX = ${CAM.rx1||CAM.rx||27}, RZ = ${CAM.rz1||CAM.rz||24},
+              CZ = ${CAM.cz1!=null?CAM.cz1:(CAM.cz!=null?CAM.cz:-3)}, CX = ${CAM.cx1!=null?CAM.cx1:(CAM.cx||0)};
         const vivos = [];
         for(const ch of [...central.group.children]){
           if(!ch.visible) continue;
           try{ bb.setFromObject(ch); bb.getCenter(ctr); }catch(e){ continue; }
-          const ex = ctr.x/RX, ez = (ctr.z-CZ)/RZ;
+          const _szc = bb.getSize(new THREE.Vector3());
+          /* GIGANTES fuera YA (mega-suelo, fronda de copas del mundo 2): el filtro global de abajo
+             los tumba igual, pero si llegan vivos hasta aquí hacen de APOYO para todos y el test de
+             soporte deja de tumbar nada — con la fronda de 60x41 del mundo 2, cero huérfanos detectados. */
+          if(_szc.x > 55 || _szc.z > 55) continue;
+          const ex = (ctr.x-CX)/RX, ez = (ctr.z-CZ)/RZ;
           if(ex*ex + ez*ez > 1){ ch.visible = false; continue; }   // plataforma ENTERA dentro o fuera
           vivos.push({ ch, b: bb.clone() });
         }
@@ -65,7 +80,7 @@ const ev=async e=>{ const r=await send('Runtime.evaluate',{expression:e,returnBy
            huérfano (su torre cruzaba el límite y se fue) → fuera. Los puentes de verdad apoyan
            los extremos en plataformas visibles y pasan. */
         for(const v of vivos){
-          if(v.b.min.y <= 2.5) continue;
+          if(v.b.min.y <= ${CAM.sup!=null?CAM.sup:2.5}) continue;   // sup: altura a partir de la cual se exige apoyo
           let apoyado = false;
           for(const o of vivos){ if(o===v) continue;
             if(o.b.min.y >= v.b.min.y - 0.5) continue;
