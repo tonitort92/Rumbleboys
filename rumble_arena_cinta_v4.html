@@ -12117,7 +12117,7 @@ const STAGE_ASSETS = {
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
-  12: { gob:['pirskel','pircapt','pirbeard'] },   // ►PIRMIX (Toni 26/08): la tripulación pasa a ser los TRES modelos propios. Fuera `pirgunner`/`pirbrute` (rig SKEL + ropa procedural) y fuera también `skelshooter`/`skelknight`: con tres siluetas piratas propias, meter además los esqueletos genéricos del desierto sólo emborronaba la lectura del mundo
+  12: { gob:['pirskel','pircapt','pirbeard','skelshooter','skelknight'] },   // ►PIRVAR (Toni 26/08): vuelven el ARQUERO y el CABALLERO del desierto para dar variedad y fuego a distancia   // ►PIRMIX (Toni 26/08): la tripulación pasa a ser los TRES modelos propios. Fuera `pirgunner`/`pirbrute` (rig SKEL + ropa procedural) y fuera también `skelshooter`/`skelknight`: con tres siluetas piratas propias, meter además los esqueletos genéricos del desierto sólo emborronaba la lectura del mundo
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
 function ensureStageAssets(st){
@@ -12372,9 +12372,11 @@ function gobAttach(mn){
          de seguridad por si alguna vez cae ahí un goblin verde. Los ojos rojos NO se pintan aquí:
          estos dos goblins ya los traen en el atlas, así que basta un rescoldo emisivo tenue (el
          plan-B de esferitas de carcherAttach es para mallas SIN materiales de ojo). */
-      else if(STAGE===2){ const rojo = (kin==='gobshaman'||kin==='gobwarrior');
-                          c = (rojo && m._s2rojo) || m._s2col || m._s1col || m.color;
-                          if(rojo) emi = 0x1a0404; }
+      /* ►M2RASO (Toni 26/08): el rojo deja de ser cosa de dos pieles y pasa a ser la LEY DEL MUNDO.
+         Entra el goblin RASO del mundo 1 (kind `small`, GOBLIN1, melee) recoloreado, así que la
+         condición ya no puede enumerar pieles: en la jungla corrupta va TODO en rojo, venga la malla
+         de donde venga. Sigue habiendo respaldo (_s2col/_s1col) por si algún día falta el tinte. */
+      else if(STAGE===2){ c = m._s2rojo || m._s2col || m._s1col || m.color; emi = 0x1a0404; }
       else              { c = m._s1col||m.color; }
       m.color.copy(c);
       if(m.emissive) m.emissive.setHex(emi);                                    // glow por-stage (negro = sin brillo; se reafirma en cada attach → el pool no arrastra tinte)
@@ -12819,12 +12821,23 @@ function spawnMinion(){
       /* `!demo` por lo mismo que el camino élite de arriba (►RONDA6d: el mini-jefe no sale en la
          home/demo); allí se queda en chamanes, que es enjambre de fondo y no espectáculo. */
       if(!demo && _bossTpl && _bruteLive < BRUTE_MINI_MAX){ spawnBrute(minionDropSpot() || dropSpot(), true, BRUTE_MINI_K); return; }
-      type = 'shooter';                                   // demo, sin plantilla del jefe aún, o tope de brutes → que salga un chamán, no un goblin
+      /* ►M2RASO (Toni 26/08: "a veces son demasiados los que pegan de lejos"). Aquí estaba la causa:
+         la ranura del PEQUEÑO —el 65 % de las tiradas— no tenía piel propia y se desviaba a `shooter`,
+         o sea al chamán, que con ese type DISPARA. Entre eso y su propia ranura, el chamán se comía
+         dos de cada tres minions y la jungla era casi todo fuego a distancia.
+         Ahora el pequeño sale como GOBLIN RASO del mundo 1 (kind `small` = GOBLIN1, melee de
+         verdad), recoloreado de rojo como el resto del mundo. `skin` se queda a null a propósito:
+         gobAttach usa `mn.type` como kin cuando no hay piel, que es justo el goblin base.
+         Efecto en el reparto: los de tiro bajan del ~87 % al 22 % de la tirada. */
+      skin = null;                                        // goblin RASO; el type se queda en 'small' (14 de vida, melee)
+    } else {
+      /* shooter → CHAMÁN · large → GUERRERO. El `else` es nuevo (►M2RASO): antes este bloque corría
+         SIEMPRE y le habría vuelto a poner piel de chamán al pequeño, deshaciendo lo de arriba. */
+      const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
+      const k = pref.find(x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max);
+      if(!k) return;                                      // las dos pieles al tope → hueco antes que romper la paleta
+      skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
     }
-    const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
-    const k = pref.find(x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max);
-    if(!k) return;                                        // pieles nuevas al tope → hueco, NUNCA goblin verde
-    skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: hay que casarlo con la piel que ha salido
   }
   if((STAGE===4 || STAGE===5 || STAGE===7) && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
@@ -12846,17 +12859,29 @@ function spawnMinion(){
      Sin respaldo a goblin verde, como en el mundo 2: si el pool de su ranura estuviera lleno se
      prueban las otras dos pieles piratas, y si tampoco, esa tirada no saca a nadie. Con los `max`
      sumando 28 sobre un tope de 22 en maxMinions() no debería pasar nunca. */
+  /* ►PIRVAR (Toni 26/08: "añade también esqueletos que disparan de lejos y los grandes del desierto,
+     así hay variedad y proporción de todos"). Vuelven a la rotación el ARQUERO (skelshooter, arco) y
+     el CABALLERO (skelknight, espada) del desierto, a cara o cruz con el pirata de su misma ranura.
+     Con esto el mar pirata tiene CINCO siluetas y, sobre todo, recupera fuego a distancia: el
+     capitán era el único que disparaba y ahora comparte ranura con el arquero.
+       small   → esqueleto soldado (melee, sin pareja: no hay esqueleto pequeño del desierto en el 12)
+       shooter → capitán pata de palo | ARQUERO esqueleto
+       large   → Barbanegra          | CABALLERO esqueleto */
   if(STAGE===12){
-    const PIR = { small:'pirskel', shooter:'pircapt', large:'pirbeard' };
+    const PIR = { small:['pirskel'], shooter:['pircapt','skelshooter'], large:['pirbeard','skelknight'] };
     const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
-    let k = libre(PIR[type]) ? PIR[type] : null;
-    if(!k){                                                    // su ranura al tope → cualquiera de las otras dos antes que un goblin
-      const otro = ['pirskel','pircapt','pirbeard'].filter(x => x!==PIR[type]).find(libre);
+    let par = PIR[type].slice();
+    if(par.length > 1 && Math.random() < 0.5) par.reverse();    // cara o cruz: ni el pirata ni el esqueleto mandan
+    let k = par.find(libre) || null;
+    if(!k){                                                    // su ranura al tope → cualquier otra piel del mundo antes que un goblin
+      const todas = ['pirskel','pircapt','pirbeard','skelshooter','skelknight'].filter(x => !PIR[type].includes(x));
+      const otro = todas.find(libre);
       if(otro){ k = otro;
-        type = (k==='pirbeard') ? 'large' : (k==='pircapt') ? 'shooter' : 'small';   // el type manda vida/daño: casarlo con la piel que sale
+        type = (k==='pirbeard'||k==='skelknight') ? 'large'
+             : (k==='pircapt' ||k==='skelshooter') ? 'shooter' : 'small';   // el type manda vida/daño: casarlo con la piel que sale
       }
     }
-    if(!k) return;                                             // los tres llenos → hueco, NUNCA goblin verde en un barco
+    if(!k) return;                                             // todas llenas → hueco, NUNCA goblin verde en un barco
     skin = k;
   }
   /* ►ORIENTALS: en S3 (Japón, jardín sakura) la horda mezcla ~50/50 goblins + minions orientales (textura
@@ -29193,11 +29218,17 @@ function _sjMoonBox(cx, cz, r, rot){
   if(rot===-Math.PI/2 || rot===Math.PI*1.5) return { minX:cx, maxX:cx+r, minZ:cz-r, maxZ:cz+r };
   return                           { minX:cx-r,  maxX:cx+r,  minZ:cz,    maxZ:cz+r };   // rot 0
 }
-/* ►S3CUAD: cuadrado de esquina apenas matada (12 % del semieje corto, tope 0,45) — ni caja pelada
-   ni disco. El redondeo es lo bastante pequeño para que el tablón del puente apoye en recto. */
+/* ►S3CUAD: cuadrado, no elipse — el puente colgante necesita arista recta donde apoyar.
+   ►S3CANTO (Toni 26/08: "hay cantos que no son redondeados o muy poco"): el redondeo era del 12 %
+   del semilado con tope 0,45, o sea ~0,18 en las losas pequeñas — prácticamente a escuadra, y
+   cantaba al lado del resto del juego, que usa 1,9 fijo en `organicSlabGeo`. En una tapa de semilado
+   2,5 ese 1,9 es el 76 % del semilado: ESA es la proporción a la que hay que parecerse, no un valor
+   absoluto (1,9 clavado se comería enteras las tapas de 1,5). Así que el radio pasa a ser
+   proporcional al semilado CORTO, con el mismo 1,9 de tope que el resto.
+   Los lados rectos siguen siendo largos, que es lo que el puente necesita. */
 function _sjMoonShape(rx, rz, inset){
   const a = Math.max(0.2, rx-(inset||0)), b = Math.max(0.2, rz-(inset||0));
-  const k = Math.min(0.45, Math.min(a, b)*0.12);
+  const k = Math.min(1.9, Math.min(a, b)*0.62);
   const s = new THREE.Shape();
   s.moveTo(-a+k, -b);
   s.lineTo( a-k, -b); s.quadraticCurveTo( a, -b,  a, -b+k);
@@ -29913,7 +29944,7 @@ function sjDeck(cx, y, cz, sx, sz, kind){
      ahí se nota poco, porque son losas grandes; pero el deck de Japón mide 6,5×4 y 1,9 se come casi
      la mitad de su eje corto: quedaba con forma de pastilla y era lo más redondo que seguía habiendo
      en el 2º nivel. Proporcional al lado CORTO, con el 1,9 de tope: no puede volver a pasar. */
-  const m = aoMesh(organicSlabGeo(sx, sz, 0.5, Math.min(1.9, Math.min(sx, sz)*0.14), 0.38, 0.2), MK.top);
+  const m = aoMesh(organicSlabGeo(sx, sz, 0.5, Math.min(1.9, Math.min(sx, sz)*0.34), 0.38, 0.2), MK.top);
   m.position.set(cx, y+0.2-0.7, cz);   // top de la geo a +0.7 sobre la malla → cara pisable FLUSH a topY (y+0.2)
   m.castShadow = m.receiveShadow = true; m.userData.noOcc = true; scene.add(m);
   platforms.push({ minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2, topY:y+0.2, baseY:y-0.3, float:true, step:0.12 });
@@ -29959,7 +29990,7 @@ const S3N = {
 };
 let _s3nGeo = null;   // UNA geometría compartida por todas las losas: son todas del mismo lado
 function _s3nPadGeo(){
-  if(!_s3nGeo) _s3nGeo = organicSlabGeo(S3N.SIDE, S3N.SIDE, 0.5, 0.30, 0.14, 0.08);   // radio 0,30: cuadrada de verdad (sjDeck usa 1,9 porque su losa mide 6,5)
+  if(!_s3nGeo) _s3nGeo = organicSlabGeo(S3N.SIDE, S3N.SIDE, 0.5, 0.44, 0.14, 0.08);   // ►S3CANTO: 0,30 -> 0,44 (42 % del semilado, la proporcion del resto del juego); mas redondo la volveria un disco de 2,1
   return _s3nGeo;
 }
 function _s3nBlocked(cx, cz, y, hw){
