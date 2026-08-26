@@ -11741,9 +11741,20 @@ const GOBLIN_KINDS = {
      · El capitán NO lleva weapon:'flintlock'. Esa rama arma LAS DOS manos (_buildFlintlock, una por
        lado) y aquí sobra: dispara con su propio clip SHOOTING y ya tiene su arma en la malla.
      · fbxWorldBox por lo mismo que el robotm: en un rig Mixamo de FBX la caja LOCAL miente.
-     · Los `max` suman 28 > el tope 22 de maxMinions() → el mundo 12 no cae nunca al goblin verde. */
+     · Los `max` suman 34 > el tope 22 de maxMinions() → el mundo 12 no cae nunca al goblin verde.
+     · ►PIRPOOL: el `max` del PEQUEÑO no basta con que sume: tiene que cubrir SU RANURA a horda llena.
+       Con el tope en 22 y la tirada 65/22/13 se esperan ~14,3 pequeños vivos, así que un pool de 12
+       satura y los que no caben salen convertidos en capitán/Barbanegra — la composición DERIVA justo
+       al revés de lo que dice la tirada. Medido llenando la horda 300 veces (esto NO se ve contando
+       tiradas sueltas, hay que llenar hasta el tope y contar allí):
+           max 12 -> 53,8/32,8/13,4  (89 % de hordas con el pool lleno)
+           max 14 -> 60,4/26,2/13,4  (67 %)
+           max 16 -> 63,9/22,3/13,7  (30 %)
+           max 18 -> 65,6/21,3/13,1  ( 6 %)  <- objetivo 65/22/13
+           max 20 -> 65,7/21,4/12,9  ( 2 %)  sin ganancia
+       De 18 en adelante es plano, así que 18. El aviso original es de rumbleboys-alfa-bd. */
   pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
-              h:1.80, walkRef:3.0, max:12, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee)
+              h:1.80, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee) · ►PIRPOOL: 12→18
   pircapt:  { fbx:'PIRCAPT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
               h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
   pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
