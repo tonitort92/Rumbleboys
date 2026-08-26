@@ -2269,6 +2269,9 @@ window.addEventListener('load', function(){
 <script src="goblin1_model.js?v=2"></script>  <!-- GOBLIN 1 animado (rig Mixamo) para el minion PEQUEÑO 'small'; en base64; opcional -->
 <script src="goblinshaman_anims.js?v=1"></script>  <!-- ►M2HORDA: Goblin CHAMÁN (Synty, rig Mixamo) — minion 'shooter' MELEE del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
 <script src="goblinwarrior_anims.js?v=1"></script> <!-- ►M2HORDA: Goblin GUERRERO (Synty sin hombrera, rig Mixamo) — minion 'large' del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
+<script src="pirate_skeleton_anims.js?v=1"></script>  <!-- ►PIRMIX: Esqueleto soldado (Synty, rig Mixamo) — minion 'small' del mundo 12 -->
+<script src="pirate_captain_anims.js?v=1"></script>   <!-- ►PIRMIX: Capitán pata de palo — minion 'shooter' del mundo 12, con clip SHOOTING propio -->
+<script src="pirate_blackbeard_anims.js?v=1"></script><!-- ►PIRMIX: Barbanegra — minion 'large' del mundo 12 -->
 <script src="samboss_model.js?v=1"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
 <script src="samboss_death.js?v=1"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
 <script src="boss_anims.js?v=1"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
@@ -11728,6 +11731,23 @@ const GOBLIN_KINDS = {
                 h:1.85, walkRef:2.6, max:16, shadow:false, jitter:false, shootAtk:false },   // ►M2HORDA: chamán (shooter MELEE)
   gobwarrior: { fbx:'GOBWARRIOR_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
                 h:3.6,  walkRef:2.3, max:8,  shadow:true,  jitter:false, shootAtk:false },   // ►M2HORDA: guerrero (large)
+  /* ►PIRMIX (Toni 26/08) · LA TRIPULACIÓN DEL MUNDO 12, ahora con modelos y clips PROPIOS.
+     Sustituyen a `pirgunner`/`pirbrute`, que eran el rig SKEL con ropa procedural (`dress`) porque
+     entonces no había nada mejor. Sus fichas y sus *_gear.js se quedan donde están, solo salen de la
+     rotación del stage 12: funcionan y una decisión de arte es reversible.
+     Estos tres van por `fbx`/`fbxClips` (_gobFbxLoad) y NO por `glb`+`dress`: traen su propio
+     idle/walk/attack/jump de Mixamo.
+     · noTint: son piratas de verdad con su atlas Synty — el mar no los re-tiñe de nada.
+     · El capitán NO lleva weapon:'flintlock'. Esa rama arma LAS DOS manos (_buildFlintlock, una por
+       lado) y aquí sobra: dispara con su propio clip SHOOTING y ya tiene su arma en la malla.
+     · fbxWorldBox por lo mismo que el robotm: en un rig Mixamo de FBX la caja LOCAL miente.
+     · Los `max` suman 28 > el tope 22 de maxMinions() → el mundo 12 no cae nunca al goblin verde. */
+  pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+              h:1.80, walkRef:3.0, max:12, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee)
+  pircapt:  { fbx:'PIRCAPT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+              h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
+  pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+              h:3.40, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false },   // ►PIRMIX: Barbanegra (large, melee)
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
@@ -11827,7 +11847,7 @@ const STAGE_ASSETS = {
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
-  12: { gob:['pirgunner','pirbrute','skelshooter','skelknight'] },   // ►PIRCREW (Toni 26/08): fuera `skeleton` y `skelpirate` — la tripulación es PISTOLERO + BRUTO (los dos reusan SKEL_GLB_B64, así que no cargan un modelo nuevo)
+  12: { gob:['pirskel','pircapt','pirbeard'] },   // ►PIRMIX (Toni 26/08): la tripulación pasa a ser los TRES modelos propios. Fuera `pirgunner`/`pirbrute` (rig SKEL + ropa procedural) y fuera también `skelshooter`/`skelknight`: con tres siluetas piratas propias, meter además los esqueletos genéricos del desierto sólo emborronaba la lectura del mundo
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
 function ensureStageAssets(st){
@@ -12540,31 +12560,34 @@ function spawnMinion(){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
   }
-  /* ►PIRCREW (Toni 26/08) · STAGE 12: la tripulación pasa a ser PIRATA de verdad. Antes eran
-     esqueletos (`skelpirate` de grumete, `skeleton` de respaldo) y un 35 % de goblins verdes; ahora
-     los dos piratas nuevos entran en rotación con el arquero y el caballero esqueleto, y el goblin
-     verde deja de pisar el mar salvo que se llenen TODOS los pools a la vez.
+  /* ►PIRMIX (Toni 26/08) · STAGE 12: la tripulación pasa a ser los TRES modelos propios, uno por
+     ranura y sin mezcla. Sustituye al reparto de ►PIRCREW (pistolero/bruto sobre el rig SKEL con ropa
+     procedural, alternando a cara o cruz con el arquero y el caballero esqueleto).
 
-     LA RANURA `small` NO TIENE PIEL PIRATA — `pirgunner` es tirador (1,75) y `pirbrute` un grandullón
-     (3,4): ninguno es un pequeño. Como el mundo 2 con su chamán, la tirada `small` SUBE a `shooter`
-     en vez de caer al goblin. Consecuencia asumida (decisión de Toni): el 87 % de la horda pasa a ser
-     de tiro, así que el mar pirata reparte mucho más plomo a distancia que antes. Si eso se pasa de
-     frenada, la palanca es esta línea: devolver parte de los `small` a `large`.
+       small   -> ESQUELETO SOLDADO (melee)
+       shooter -> CAPITÁN PATA DE PALO (tiene clip SHOOTING propio)
+       large   -> BARBANEGRA (melee)
 
-     Piel pirata o esqueleto a cara o cruz, y si el pool que toca está lleno se prueba el otro rol
-     antes de rendirse (mejor un bruto de más que un goblin verde en un barco). */
+     SE CAE la línea `if(type==='small') type='shooter'` de ►PIRCREW. La puso porque no había piel
+     pirata pequeña, y arrastraba DOS efectos: el 87 % de la horda pasaba a ser de tiro y —el que no
+     se ve— minionHP DOBLABA la vida del 65 % de la horda (14 de small contra 30 de shooter). Ahora
+     que el esqueleto ocupa el hueco de pequeño, revierten las dos cosas de golpe.
+
+     Sin respaldo a goblin verde, como en el mundo 2: si el pool de su ranura estuviera lleno se
+     prueban las otras dos pieles piratas, y si tampoco, esa tirada no saca a nadie. Con los `max`
+     sumando 28 sobre un tope de 22 en maxMinions() no debería pasar nunca. */
   if(STAGE===12){
-    if(type==='small') type = 'shooter';                       // ►PIRCREW: sin piel pequeña pirata, el pequeño sube a tirador
-    const duo = t => (t==='large') ? ['pirbrute','skelknight'] : ['pirgunner','skelshooter'];
+    const PIR = { small:'pirskel', shooter:'pircapt', large:'pirbeard' };
     const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
-    let orden = duo(type); if(Math.random() < 0.5) orden = [orden[1], orden[0]];   // cara o cruz: ni el pirata ni el esqueleto mandan
-    let k = orden.find(libre);
-    if(!k){                                                    // los dos de su rol al tope → prueba el OTRO rol
-      const otro = duo(type==='large' ? 'shooter' : 'large');
-      k = otro.find(libre);
-      if(k) type = (k==='pirbrute' || k==='skelknight') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
+    let k = libre(PIR[type]) ? PIR[type] : null;
+    if(!k){                                                    // su ranura al tope → cualquiera de las otras dos antes que un goblin
+      const otro = ['pirskel','pircapt','pirbeard'].filter(x => x!==PIR[type]).find(libre);
+      if(otro){ k = otro;
+        type = (k==='pirbeard') ? 'large' : (k==='pircapt') ? 'shooter' : 'small';   // el type manda vida/daño: casarlo con la piel que sale
+      }
     }
-    if(k) skin = k;                                            // si TODO está lleno, skin=null y cae al goblin (último recurso, no debería verse)
+    if(!k) return;                                             // los tres llenos → hueco, NUNCA goblin verde en un barco
+    skin = k;
   }
   /* ►ORIENTALS: en S3 (Japón, jardín sakura) la horda mezcla ~50/50 goblins + minions orientales (textura
      natural), con el mismo type/comportamiento: small→aldeano · shooter→ninja (lanza) · large→sensei (melee).
