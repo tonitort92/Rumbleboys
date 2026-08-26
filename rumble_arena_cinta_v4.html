@@ -409,6 +409,31 @@ window.addEventListener('load', function(){
     30%{ transform:translate(7px,-4px); } 45%{ transform:translate(-5px,-3px); }
     60%{ transform:translate(5px,3px); } 78%{ transform:translate(-3px,2px); } }
   .gStampShake { animation:gStampShake .34s ease-out; }
+  /* ►STAGESTAMP (Toni 26/08): al empezar la partida, el NOMBRE DEL MUNDO se estampa como la nota del
+     tablero — mismo lenguaje de sello de goma (slam + anillo + sacudida), pero en BLANCO con outline
+     negro grueso, que es lo que pidió. Clases PROPIAS y no `.gradeStamp` reutilizada: aquella vive en
+     el tablero final, mide 300px porque estampa UNA letra, y aquí hay que meter palabras como
+     CUADRIMANÍA sin que se salgan.
+     z-index 43 A PROPÓSITO: el cartel de aviso (#stageCaution) está en 44, así que el pop-up cae
+     ENCIMA del sello — el orden que pidió Toni (primero PUM, luego el aviso por encima). */
+  #stageStamp { position:fixed; left:50%; top:42%; z-index:43; pointer-events:none;
+    font-weight:900; font-style:italic; letter-spacing:-1px; line-height:.9; white-space:nowrap;
+    font-size:clamp(38px, 8.4vw, 132px); max-width:94vw;
+    color:#fff; -webkit-text-stroke:9px #0a0d16; paint-order:stroke fill;
+    text-shadow:0 6px 0 rgba(0,0,0,.45);
+    filter:drop-shadow(0 16px 36px rgba(0,0,0,.65));
+    transform:translate(-50%,-50%) scale(3) rotate(-13deg); opacity:0; }
+  #stageStamp.slam { animation:gStampSlam .5s cubic-bezier(.15,1.35,.35,1) forwards; }
+  #stageStamp.fade { animation:gStampFade .5s ease forwards; }
+  #stageStampRing { position:fixed; left:50%; top:42%; z-index:42; pointer-events:none;
+    width:44px; height:44px; border-radius:50%; border:7px solid rgba(255,255,255,.85);
+    transform:translate(-50%,-50%) scale(.2); opacity:0; }
+  #stageStampRing.burst { animation:gStampRingKF .62s ease-out forwards; }
+  /* el outline de 9px se come las letras en pantallas pequeñas: se afina con el cuerpo */
+  @media (max-width:760px){ #stageStamp { -webkit-text-stroke-width:6px; } }
+  @media (prefers-reduced-motion: reduce){
+    #stageStamp.slam { animation:none; opacity:1; transform:translate(-50%,-50%) rotate(-13deg); }
+    #stageStampRing.burst { animation:none; } }
   /* leaderboard rebrandeado */
   .lb { width:100%; border-collapse:separate; border-spacing:0 4px; font-size:14px; }
   .lb th { font-size:10px; font-weight:900; letter-spacing:1.3px; text-transform:uppercase; color:#9fe8ff; opacity:.8; padding:0 9px 4px; text-align:right; white-space:nowrap; }
@@ -685,7 +710,10 @@ window.addEventListener('load', function(){
     transition:opacity .45s ease, transform .45s cubic-bezier(.2,1.7,.35,1);
   }
   #stageCaution.show { opacity:1; transform:translate(-50%,-50%) scale(1); animation:cauPulse 1s ease-in-out infinite; }
-  #stageCaution .cauIco { font-size:64px; line-height:1; filter:drop-shadow(0 3px 6px rgba(0,0,0,.55)); }
+  /* ►CAUFIT: el ⚠ tenía caja de 64px con line-height 1, pero el glifo se dibuja bastante más pequeño
+     que su caja → quedaba un agujero de aire entre el icono y el titular que se leía como una línea
+     en blanco. Caja ajustada al glifo (line-height .78) y algo menor. */
+  #stageCaution .cauIco { font-size:48px; line-height:.78; filter:drop-shadow(0 3px 6px rgba(0,0,0,.55)); }
   #stageCaution .cauTxt { color:#ffe14a; font-size:clamp(26px,4.6vw,52px); font-weight:900; font-style:italic;
     letter-spacing:2px; text-transform:uppercase; text-align:center; line-height:1.08;
     text-shadow:0 4px 0 rgba(0,0,0,.5), 0 0 24px rgba(255,212,0,.5); }
@@ -693,6 +721,12 @@ window.addEventListener('load', function(){
     letter-spacing:1.5px; text-transform:uppercase; text-align:center; text-shadow:0 3px 0 rgba(0,0,0,.55); }
   #stageCaution .cauObj:empty { display:none; }
   #stageCaution .cauIco:empty { display:none; }
+  /* ►CAUFIT (Toni 26/08: "hay espacio superior en algunos, como un salto de línea innecesario").
+     Era esto: de los TRES hijos del cartel, `.cauIco` y `.cauObj` ya se ocultaban vacíos y `.cauTxt`
+     NO. En los mundos sin aviso propio (1, 6 y 9 no tienen entrada en STAGE_CAUTION) el <b> se
+     quedaba vacío pero seguía ocupando su línea —hasta 52px de font-size— más los 10px de `gap` del
+     flex: de ahí el hueco de arriba, y solo "en algunos", que es justo los que no tienen aviso. */
+  #stageCaution .cauTxt:empty { display:none; }
   @keyframes cauPulse { 0%,100%{ box-shadow:0 18px 60px rgba(0,0,0,.7), 0 0 30px rgba(255,212,0,.35); }
     50%{ box-shadow:0 18px 60px rgba(0,0,0,.7), 0 0 56px rgba(255,212,0,.7); } }
   @media (prefers-reduced-motion: reduce){ #stageCaution.show { animation:none; } }
@@ -1475,6 +1509,10 @@ window.addEventListener('load', function(){
   <div id="count321"></div>
   <div id="banner"></div>
   <!-- ►STAGECAUTION: aviso de peligro del stage, visible durante la cinemática de presentación -->
+  <!-- ►STAGESTAMP: el nombre del mundo, estampado al empezar la partida. Va ANTES del cartel de aviso
+       en el DOM y con z-index menor: el pop-up tiene que caer por encima del sello. -->
+  <div id="stageStampRing" aria-hidden="true"></div>
+  <div id="stageStamp" aria-hidden="true"></div>
   <div id="stageCaution" aria-live="polite"><span class="cauIco">⚠</span><b class="cauTxt"></b><i class="cauObj"></i></div>
   <div id="comboTag"></div>
   <div id="moveSheet"><div class="msCard" id="moveSheetCard"></div></div>
@@ -9003,6 +9041,31 @@ const STAGE_CAUTION = {
 let _cautionTimer = null;
 const STAGE_CAUTION_MS = 5600;   // ►OBJTXT (Toni 24/08): tiempo visible — antes 3400, no daba tiempo a leer
 const STAGE_OBJETIVO = 'OBJETIVO: QUEDA EL PRIMERO EN PUNTOS, VENCE AL JEFE Y GANA EL TROFEO';   // ►OBJTXT: se muestra en todos los mundos de campaña
+/* ►STAGESTAMP (Toni 26/08) · el NOMBRE DEL MUNDO se estampa al empezar la partida, como la nota del
+   tablero final: "PRADO" ¡PUM!. Nombre CORTO (STAGE_TAG) y no el largo de _STAGE_NAMES — un sello es
+   una palabra, no "WESTERN · MESETAS DEL CAÑÓN".
+   El sello NO se encadena a la voz ni al reloj de la presentación a propósito: es lo primero que ve
+   el jugador al levantarse la carga, y con musicOn apagado la voz ni suena (stageIntroGo se corta
+   antes). Colgarlo de ahí lo haría desaparecer justo para quien juega sin sonido. */
+let _stampTimer = 0, _cauDelay = 0;
+function showStageStamp(){
+  const el = document.getElementById('stageStamp'); if(!el || demo) return;
+  const rg = document.getElementById('stageStampRing');
+  const nom = (typeof STAGE_TAG!=='undefined' && STAGE_TAG[STAGE])
+           || (typeof _STAGE_NAMES!=='undefined' && _STAGE_NAMES[STAGE]) || ('MUNDO ' + STAGE);
+  el.textContent = nom;                       // ES → ►I18N lo traduce como al resto de rótulos
+  if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
+  /* reinicio de animación: quitar la clase no basta si el nodo no se reflowea entre medias
+     (dos stages seguidos = misma animación, el navegador no la vuelve a disparar) */
+  el.classList.remove('slam','fade'); void el.offsetWidth; el.classList.add('slam');
+  if(rg){ rg.classList.remove('burst'); void rg.offsetWidth; rg.classList.add('burst'); }
+  _stampTimer = setTimeout(()=>{ el.classList.remove('slam'); el.classList.add('fade'); _stampTimer = 0; }, 1900);
+}
+function hideStageStamp(){
+  const el = document.getElementById('stageStamp'); if(el) el.classList.remove('slam','fade');
+  const rg = document.getElementById('stageStampRing'); if(rg) rg.classList.remove('burst');
+  if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
+}
 function showStageCaution(){
   const el = document.getElementById('stageCaution'); if(!el) return;
   if(_cautionTimer){ clearTimeout(_cautionTimer); _cautionTimer = null; }
@@ -9028,6 +9091,11 @@ window.showMiniObjective = showMiniObjective;
 function hideStageCaution(){
   const el = document.getElementById('stageCaution'); if(el) el.classList.remove('show');
   if(_cautionTimer){ clearTimeout(_cautionTimer); _cautionTimer = null; }
+  /* ►STAGESTAMP: el aviso ahora entra con 620 ms de retraso, así que cerrar la presentación tiene que
+     matar TAMBIÉN ese temporizador — si no, un ESC → menú justo en esa ventana hacía aparecer el
+     cartel sobre el menú. Y el sello se va con él. */
+  if(_cauDelay){ clearTimeout(_cauDelay); _cauDelay = 0; }
+  hideStageStamp();
 }
 function narrateStageStart(){
   /* ►CARGA (22/08): PREPARAR la presentación. Si hay pantalla de carga delante, el reloj queda en
@@ -9065,7 +9133,11 @@ function stageIntroGo(){
   _siPending = false; stageIntroHold = false;
   _siT0 = performance.now(); _siLastCount = -1;
   if(_siBannerTxt){ showBanner(_siBannerTxt, _siBannerT || 2.6); _siBannerTxt = ''; }
-  showStageCaution();            // ►STAGECAUTION: aviso de peligro visible durante la presentación
+  /* ►STAGESTAMP: primero PUM el nombre del mundo, y el aviso entra ENCIMA cuando el sello ya ha
+     aterrizado (el slam dura .5 s). Antes el cartel salía a la vez que se retiraba la carga. */
+  showStageStamp();
+  if(_cauDelay){ clearTimeout(_cauDelay); _cauDelay = 0; }
+  _cauDelay = setTimeout(()=>{ _cauDelay = 0; showStageCaution(); }, 620);
   if(!musicOn || demo) return;   // mismos frenos que narrate()
   try{
     voiceStart.onended = null;
@@ -40571,7 +40643,7 @@ const LD_TIPS = [
   ['⚠️','Lee el aviso amarillo de cada mundo: dice qué te va a matar ahí.'],
 ];
 let _ldGen = 0, _ldShownAt = 0, _ldTipTimer = 0, _ldTipI = 0;
-const LD_MIN_MS = 5000;   // ►CARGA24: 5 s obligatorios — que dé tiempo a leer mundo, objetivo y consejo
+const LD_MIN_MS = 7000;   // ►CARGA24: obligatorios — que dé tiempo a leer mundo, objetivo y consejo · ►STAGESTAMP (Toni 26/08): 5000 → 7000. Bajo esta pantalla corre esperarListo() (drena diferidos + warmup de GPU, tope 4 s), así que los 2 s extra también le dan aire al parseo de los FBX de stage
 function loadScreenOn(){ const el = document.getElementById('loadScreen'); return !!el && el.classList.contains('on'); }
 function _ldTipsRender(){
   const box = document.getElementById('ldTips'); if(!box) return;
