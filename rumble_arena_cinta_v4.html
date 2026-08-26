@@ -2215,6 +2215,7 @@ window.addEventListener('load', function(){
 <script src="stage3_models.js?v=2"></script>
 <script src="stage4_models.js?v=1"></script>
 <script src="stage5_models.js?v=1"></script>   <!-- STAGE 5: tesoro, vasijas, sarcofagos, pilares, losetas (OBJ+MTL plano, como los demas packs) -->
+<script src="egypt_embalmer_model.js?v=1"></script>   <!-- ►EMBALM · STAGE 4: embalsamador egipcio — estructura TRANSITABLE (muros con collide + cubierta pisable); OBJ+atlas, va DESPUÉS de models.js -->
 <script src="stage6_models.js?v=1"></script> <!-- STAGE 7: props de nieve (pinos/árboles secos/iglú/cristales/muñeco/trineo/picos) OBJ color-plano (s6_*) — generado por build_stage6_assets.js --> <!-- STAGE 5: losa-parche (rejilla) + cepo (circuito) --> <!-- STAGE 4: props de desierto (cactus/palmeras/rocas/alfombras) OBJ color-plano en GAME_MODELS (s3_*) — generado por build_stage3_assets.js -->
 <script src="stage7_models.js?v=1"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
 <script src="stage2_ruins_models.js?v=1"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
@@ -30509,7 +30510,94 @@ const DECOR_DEFS3 = {
   s3_boulder:      { key:'s3_boulder',      size:1.7 },   // peñasco orgánico
   s3_bloom:        { key:'s3_bloom',        size:1.0 },   // flor de desierto (acento de color)
   s3_datepalm:     { key:'s3_datepalm',     size:6.0 },   // palmera datilera (silueta extra)
+  /* ►EMBALM: NO es un prop de adorno — es una ESTRUCTURA TRANSITABLE. No la coloca addPropS3 sino
+     s3Embalmer(), que además de la malla registra sus muros y su cubierta en `platforms`. 7.6 la deja
+     en 7.35 × 7.60 de planta y 5.66 de alto, con la cubierta a 3.27 → un personaje (2.0) pasa por
+     debajo de sobra. ►AJUSTA el tamaño aquí: EMBALM_DECK_F y las cajas van en fracciones, así que
+     todo escala solo. */
+  s3_embalmer:     { key:'s3_embalmer',     size:7.6 },
 };
+/* ►EMBALM · medidas del modelo, HORNEADAS del propio OBJ (no las toques a ojo: salen de medir la
+   malla en Blender y si cambia el asset hay que volver a medirlas).
+   · EMBALM_DECK_F: altura de la cubierta pisable / alto total. Es la superficie mirando ARRIBA de
+     mayor área con diferencia (1.04 frente a 0.41 de la siguiente) = el balcón del edificio.
+   · EMBALM_WALLS: huella de los MUROS bajo la cubierta, en fracciones de la planta (-0.5..0.5),
+     sacada rasterizando SOLO las caras verticales de la malla en una rejilla 10×10 y fusionando.
+     Derivarlas del arte y no a ojo es lo que garantiza que el hueco del patio caiga donde de verdad
+     hay hueco. Se filtran las de 1 celda: son tabiques interiores de 0.7u que solo enganchan al
+     jugador y engordan los bucles de AABB. */
+const EMBALM_DECK_F = 0.5769;
+const EMBALM_WALLS = [[-0.5,-0.3,0.4,-0.2],[-0.5,-0.2,-0.3,0.1],[-0.2,-0.2,0.0,0.5],[0.3,-0.2,0.4,0.5],
+                      [0.0,-0.1,0.2,0.1],[-0.3,0.0,-0.2,0.1],[0.2,0.0,0.3,0.1],[-0.4,0.1,-0.3,0.2],
+                      [0.1,0.2,0.2,0.3],[0.4,0.2,0.5,0.4],[0.1,0.4,0.2,0.5]];
+/* ►EMBALM (Toni 26/08) · EMBALSAMADOR EGIPCIO — la primera estructura TRANSITABLE del desierto.
+   No es un prop: registra COLISIÓN propia en `platforms` para que se pueda subir por arriba y pasar
+   por el hueco de abajo (el "patio").
+
+   Cómo sale eso con el motor que ya hay, sin tocar la física:
+     · MUROS  → cajas con baseY = suelo. collideWalls frena SIEMPRE contra ellas ("los muros a ras de
+                suelo SIEMPRE frenan", dice su propio comentario).
+     · CUBIERTA → una caja con topY = la cubierta y baseY MUY por encima del suelo. Ahí collideWalls
+                aplica su regla de voladizo (`p.pos.y + 1.5 <= pl.baseY` → ni la mira; y `wasIn &&
+                pl.baseY > 0.5` → paso vertical libre), así que por debajo se pasa; y groundAt, que es
+                un test BARRIDO (solo aterrizas si venías de arriba), te planta encima si saltas a ella.
+                O sea: techo por debajo, suelo por encima. Es lo mismo que ya hacen la cubierta del
+                barco pirata y el balcón de la atalaya.
+
+   El YAW va en múltiplos de 90° A PROPÓSITO: las cajas de `platforms` son AABB y no rotan. Con un
+   ángulo libre la colisión se despegaría del edificio (y eso no se ve venir hasta que te chocas con
+   aire). Cuatro orientaciones dan variedad de sobra.
+
+   Devuelve la Y de la cubierta (por si se quiere colocar algo encima), o null si el sitio no vale. */
+function s3Embalmer(x, z, topY, yawIdx){
+  if(!S4_DECOR_ON) return null;
+  if(typeof _inWall==='function' && _inWall(x, z, topY)) return null;
+  const m = getModel('s3_embalmer', DECOR_DEFS3); if(!m) return null;
+  const _b = new THREE.Box3().setFromObject(m), _s = new THREE.Vector3(); _b.getSize(_s);
+  const H = _s.y;
+  const k = (yawIdx==null ? (Math.random()*4)|0 : yawIdx) & 3;
+  const hx = (k&1) ? _s.z/2 : _s.x/2;                     // girado 90° el ancho y el fondo se cambian
+  const hz = (k&1) ? _s.x/2 : _s.z/2;
+  /* Ni flotando ni asomando del borde (misma comprobación que s2Watchtower/s3Watchtower, con la
+     huella REAL). Si el sitio no da, se declina en silencio: mejor sin edificio que un edificio
+     colgando de una plataforma. */
+  let gy = null;
+  for(const off of [[0,0],[hx*0.85,0],[-hx*0.85,0],[0,hz*0.85],[0,-hz*0.85],
+                    [hx*0.6,hz*0.6],[-hx*0.6,hz*0.6],[hx*0.6,-hz*0.6],[-hx*0.6,-hz*0.6]]){
+    const gg = platformTopAt(x+off[0], z+off[1]);
+    if(gg===null || Math.abs(gg-topY) > 0.65) return null;
+    if(gy===null || gg > gy) gy = gg;
+  }
+  topY = gy;                                              // se apoya en el punto más alto de su base
+  m.position.set(x, topY + (m.userData.halfH || H/2) - 0.05, z);
+  m.rotation.y = k * Math.PI/2;
+  m.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+  scene.add(m);
+  const deckY = topY + H*EMBALM_DECK_F;
+  /* muros: fracciones de planta -> mundo. Dos conversiones encadenadas:
+       1) el OBJ salió con up_axis Y, o sea que la +Y de Blender (donde se midieron) es la -Z de aquí;
+       2) el yaw de 90°·k: (x,z) -> (z,-x) por vuelta. */
+  let nWall = 0;
+  for(const w of EMBALM_WALLS){
+    if(Math.round((w[2]-w[0])*10) * Math.round((w[3]-w[1])*10) < 2) continue;   // tabiques de 1 celda fuera
+    const pts = [[w[0],-w[1]],[w[2],-w[1]],[w[0],-w[3]],[w[2],-w[3]]].map(([a,b])=>{
+      for(let i=0;i<k;i++){ const t=a; a=b; b=-t; }                              // (x,z) -> (z,-x)
+      return [a,b];
+    });
+    const ax = pts.map(p=>p[0]), az = pts.map(p=>p[1]);
+    platforms.push({ minX:x+Math.min(...ax)*hx*2, maxX:x+Math.max(...ax)*hx*2,
+                     minZ:z+Math.min(...az)*hz*2, maxZ:z+Math.max(...az)*hz*2,
+                     topY:deckY, baseY:topY, solid:true });
+    nWall++;
+  }
+  /* la CUBIERTA. baseY a 0.5 bajo la cima: sobra para que la regla de voladizo se dispare (el suelo
+     está 3.2 más abajo) y el canto no se come al que salta rozando. `step` generoso: subir del muro
+     a la cubierta es un escalón, no un tope. */
+  platforms.push({ minX:x-hx*0.92, maxX:x+hx*0.92, minZ:z-hz*0.92, maxZ:z+hz*0.92,
+                   topY:deckY, baseY:deckY-0.5, solid:true, step:0.55 });
+  if(typeof _propSpots!=='undefined') _propSpots.push({ x, z, r:Math.max(hx,hz)+0.9 });   // que no nazca nada dentro
+  return deckY;
+}
 /* colocador de props S4 (espejo de addPropS2: footprint para paquetes, jitter multitono, halfH) */
 function addPropS3(key, x, z, topY, sc, yaw){
   if(!S4_DECOR_ON) return null;
@@ -31164,6 +31252,10 @@ function buildS3Ruinas(){
   s3Slab(0, 0, 30, 16, 0, 'rose');                                   // explanada de la ruina (respawn)
   s3DuneHill(-9.5, 3.5, 4.5, 3.6, 2.4, 'rose'); s3DuneHill(10, -3.5, 4, 3.4, 2.8, 'rose');   // afloramientos (blob, dentro de la explanada)
   modUpperDeck(0, 20, { sx:18, sz:9, topY:6, kind:'rose' });
+  /* ►EMBALM: el embalsamador en la terraza de la ruina. Va aquí y no en la explanada porque la
+     explanada ES la franja de respawn (z∈[-8,8]) y ahí no se planta nada. Descentrado en x para
+     dejar paso por el lado este de la terraza. */
+  s3Embalmer(-4.5, 20, 6, 1);
   modStairs(9, 9.5, { steps:3, dir:{x:-0.3,z:1}, rise:1.8, run:2.8, y0:1.6 });
   s3Blob(-24, -12, 6, 5, 0.5, 'dune'); s3Blob(24, -12, 6, 5, 0.5, 'dune');
   /* ►S3D: peldaños + corona sobre el afloramiento oeste (ciudadela) */
