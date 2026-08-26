@@ -998,12 +998,30 @@ window.addEventListener('load', function(){
     #hsRight { width:min(440px,94vw); max-height:none; }
   }
   /* ---- las tres fichas nuevas del menú (CONTROLES / OPCIONES / IDIOMA) ---- */
-  #optCard, #langCard { position:relative; box-sizing:border-box; width:min(520px,94vw); max-height:94vh; overflow-y:auto;
+  /* ►MODAL26 (Toni 26/08: "que todos los pop-ups del menú izquierdo tengan el mismo diseño y la misma
+     cruz de cierre en el mismo sitio"): UNA sola ficha para todas las ventanas del rail. Antes cada una
+     traía su propio fondo, padding y sombra — #htCard iba PLANO y con sombra corta mientras el resto
+     llevaban degradado, y el padding iba de 22 a 34 px, que es EXACTAMENTE por qué la ✕ caía a distinta
+     distancia del texto en cada ventana. Ahora solo se diferencian en el ANCHO (y en si el texto va
+     centrado). ►AJUSTA el aspecto de TODAS aquí, en un sitio.
+     OJO con #hdLogCard y #hdShopCard: su CSS se INYECTA en runtime (~18700) y por tanto gana a esta
+     hoja a igualdad de especificidad — allí se les ha quitado todo lo de caja para que manden estas. */
+  #optCard, #langCard, #ctlCard, #guideCard, #trophyCard, #marksCard, #charStatsCard, #htCard,
+  #hdLogCard, #hdShopCard {
+    position:relative; box-sizing:border-box; max-height:94vh; display:flex; flex-direction:column;
     background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14);
-    border-radius:20px; padding:30px 26px 26px; box-shadow:0 24px 70px rgba(0,0,0,.6); text-align:left; text-shadow:none; }
-  #ctlCard { position:relative; box-sizing:border-box; width:min(1300px,96vw); max-height:94vh; overflow-y:auto;
-    background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14);
-    border-radius:20px; padding:26px 22px 22px; box-shadow:0 24px 70px rgba(0,0,0,.6); text-align:center; text-shadow:none; }
+    border-radius:20px; padding:26px 26px 22px; box-shadow:0 24px 70px rgba(0,0,0,.6);
+    text-align:left; text-shadow:none; overflow-y:auto; }
+  /* lo ÚNICO propio de cada una */
+  #optCard, #langCard { width:min(520px,94vw); }
+  /* ►MODAL26 · la ✕ es `absolute` DENTRO de la ficha; si la ficha es la que scrollea, la cruz se va
+     con el contenido (en LOGROS, al tercer logro ya no la veías). En las ventanas con un cuerpo de
+     lista claro el scroll se muda a ese cuerpo y la ficha deja de scrollear → la ✕ se queda clavada.
+     Las que no tienen cuerpo propio (controles, opciones, idioma, tutorial) conservan el scroll de
+     ficha porque su contenido es heterogéneo y cabe de sobra. */
+  #guideCard, #trophyCard, #hdLogCard, #hdShopCard { overflow:visible; }
+  .modalBody { flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 -6px; padding:0 6px; }
+  #ctlCard { width:min(1300px,96vw); text-align:center; }   /* ►MODAL26: el resto lo pone la ficha común */
   #ctlCard h2, #optCard h2, #langCard h2 { margin:0 0 4px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
   #ctlCard .gsub, #optCard .gsub, #langCard .gsub { margin:0 0 14px; font-size:13px; color:#9fb0d6; text-align:center; }
   .optBlock { margin:0 0 20px; }
@@ -1102,9 +1120,7 @@ window.addEventListener('load', function(){
   /* ►GUIDE: ficha de referencia de objetos/mejoras + tienda (lista generada desde los datos del juego) */
   /* la MISMA card para las tres fichas de referencia (objetos, trofeos y marcas): son hermanas y se
      abren desde el mismo sitio, así que abrir una y otra no debe cambiar de lenguaje visual. */
-  #guideCard, #trophyCard, #marksCard, #charStatsCard { position:relative; box-sizing:border-box; width:min(700px,94vw); max-height:94vh; overflow-y:auto;
-    background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14);
-    border-radius:20px; padding:30px 26px 30px; box-shadow:0 24px 70px rgba(0,0,0,.6); text-align:left; text-shadow:none; }
+  #guideCard, #trophyCard, #marksCard, #charStatsCard { width:min(700px,94vw); }   /* ►MODAL26 */
   #guideCard h2, #trophyCard h2, #marksCard h2, #charStatsCard h2 { margin:0 0 4px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
   #guideCard .gsub, #trophyCard .gsub, #marksCard .gsub, #charStatsCard .gsub { margin:0 0 6px; font-size:13px; color:#9fb0d6; text-align:center; }
   .gSecTitle { display:flex; align-items:center; gap:11px; margin:24px 0 12px; font-size:14px; font-weight:900;
@@ -1345,9 +1361,7 @@ window.addEventListener('load', function(){
   #atkDots .adot.on { background:var(--hc,#fff); border-color:#fff; box-shadow:0 0 8px var(--hc,#fff); }
   @media (prefers-reduced-motion: reduce){ #atkVid{ transition:none!important; } }
   /* ---------- ►HOWTO · slideshow tutorial (mismo lenguaje que el de ataques, sin vídeo) ---------- */
-  #htCard { position:relative; box-sizing:border-box; width:min(560px,94vw); max-height:94vh; overflow-y:auto;
-    background:rgba(14,18,38,.96); border:1px solid rgba(255,255,255,.14); border-radius:20px;
-    padding:30px 34px 26px; box-shadow:0 10px 40px rgba(0,0,0,.6); text-align:center; }
+  #htCard { width:min(560px,94vw); text-align:center; }   /* ►MODAL26: era la única con fondo PLANO y sombra corta */
   #htHd { display:flex; flex-direction:column; align-items:center; gap:14px; margin:0 0 16px; }
   /* el número, redondo y con el color del paso (lo fija el JS) — igual que los círculos del roadmap */
   #htNum { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
@@ -1975,7 +1989,7 @@ window.addEventListener('load', function(){
     <button class="modalClose" id="guideClose" aria-label="Cerrar">✕</button>
     <h2>OBJETOS Y MEJORAS</h2>
     <p class="gsub">Todo lo que puedes recoger en la arena y comprar en la tienda</p>
-    <div id="guideBody"></div>
+    <div id="guideBody" class="modalBody"></div>
   </div>
 </div>
 
@@ -2039,7 +2053,7 @@ window.addEventListener('load', function(){
     <button class="modalClose" id="trophyClose" aria-label="Cerrar">✕</button>
     <h2>TROFEOS</h2>
     <p class="gsub">Cada mundo reparte UNO: se lo lleva quien más puntos hizo en él… y sólo si el jefe cae</p>
-    <div id="trophyBody"></div>
+    <div id="trophyBody" class="modalBody"></div>
   </div>
 </div>
 
@@ -3680,12 +3694,12 @@ function coinsAdd(s, n){ if(n > 0) s.monedas = (s.monedas||0) + n; return n; }
 const SHOP_ATTR_STEP = 2.1;   // ►AJUSTA: encarecido por nivel ya comprado (900 → 1.890 → 3.969)
 const SHOP_ATTR_MAX  = 3;     // ►AJUSTA: tope de niveles permanentes por atributo
 const SHOP_ATTR = [
-  { k:'dmg',  ic:'\u2694',  name:'FUERZA',    col:'#ff9a5f', cost:900,  desc:'+12% de da\u00f1o en tus golpes, en TODAS las partidas' },
+  { k:'dmg',  ic:'\u2694',  name:'FUERZA',    col:'#ff9a5f', cost:900,  desc:'+12% de da\u00f1o en tus golpes' },
   { k:'spd',  ic:'\ud83c\udfc3', name:'VELOCIDAD', col:'#5fd0ff', cost:700,  desc:'+8% de velocidad de carrera' },
   { k:'rate', ic:'\ud83d\udca8', name:'CADENCIA',  col:'#8fe0ff', cost:1100, desc:'\u221214% de enfriamiento al atacar' },
   { k:'def',  ic:'\ud83d\udee1', name:'DEFENSA',   col:'#c299ff', cost:1100, desc:'\u221210% del da\u00f1o que recibes' },
   { k:'kb',   ic:'\ud83d\udca5', name:'EMPUJE',    col:'#ffcf5f', cost:800,  desc:'mandas a los rivales m\u00e1s lejos del borde' },
-  { k:'jmp',  ic:'\u2912',  name:'SALTO',     col:'#7affc8', cost:700,  desc:'+7% de impulso de salto (cuenta contra JMP_LV_MAX)' },
+  { k:'jmp',  ic:'\u2912',  name:'SALTO',     col:'#7affc8', cost:700,  desc:'+7% de impulso de salto' },   /* OJO: estos niveles cuentan contra JMP_LV_MAX junto con las capsulas del suelo */
 ];
 function shopAttrLvl(k){ return saveTienda().perm[k] || 0; }
 function shopAttrCost(a){ return Math.round(a.cost * Math.pow(SHOP_ATTR_STEP, shopAttrLvl(a.k))); }
@@ -18702,8 +18716,57 @@ function updatePvpShieldFX(){
     #hdToast.on{ transform:translate(-50%,0); opacity:1; }
     #hdToast b{ color:#ffd84f; }
     /* la ficha de LOGROS */
-    #hdLogCard{ position:relative; box-sizing:border-box; width:min(640px,94vw); max-height:92vh; overflow-y:auto; text-align:left; text-shadow:none;
-      background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14); border-radius:20px; padding:26px 24px 22px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+    /* ►MODAL26: la CAJA (fondo, borde, padding, sombra, scroll) la pone ahora la ficha común de la
+       hoja estática. Aquí queda solo el ancho — y OJO, este bloque se inyecta en runtime y gana a la
+       hoja estática, así que todo lo que se declare aquí pisa a la ficha común. */
+    #hdLogCard{ width:min(640px,94vw); }
+    /* ►TIENDA26 · la ventana de la TIENDA. Vive aquí, y no en un <style> propio inyectado desde su
+       bloque, para que comparta hoja con LOGROS: dos hojas inyectadas compitiendo por las mismas
+       fichas es justo el lío de orden que había. La CAJA la pone la ficha común (►MODAL26). */
+    #hdShopCard{ width:min(940px,94vw); }
+    #hdShopCard h2{ margin:0; font-size:23px; font-weight:900; letter-spacing:1px; color:#fff; }
+    #hdShopCard .gsub{ margin:0 0 14px; font-size:13px; color:#9fb0d6; text-align:center; }
+    #hdShopHd{ display:flex; align-items:baseline; justify-content:center; gap:12px; margin:0 0 4px; padding-right:34px; }
+    #hdShopWallet{ font-weight:900; color:#ffd84f; letter-spacing:1px; font-size:15px; white-space:nowrap; }
+    #hdShopTabs{ display:flex; gap:8px; margin:14px 0; flex-wrap:wrap; justify-content:center; }
+    .hdShopTab{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:#9fb0d6;
+      border-radius:11px; padding:9px 15px; font:inherit; font-size:12px; font-weight:900; letter-spacing:1px; cursor:pointer; }
+    .hdShopTab.on{ background:rgba(255,216,79,.12); border-color:rgba(255,216,79,.45); color:#fff; }
+    .hdShopNote{ font-size:12.5px; color:#8ea6cf; margin:0 0 14px; line-height:1.5; text-align:left; }
+    /* cabecera de PASO: el "1 RANURAS / 2 HABILIDADES" que explica que la compra va en dos tiempos */
+    .hdShopSec{ display:flex; align-items:center; gap:9px; margin:4px 0 9px; font-size:11px; font-weight:900;
+      letter-spacing:1.6px; color:#7f8fb5; }
+    .hdShopSec::after{ content:''; flex:1 1 auto; height:1px; background:rgba(255,255,255,.10); }
+    .hdShopSec b{ color:#ffd84f; font-weight:900; }
+    .hdShopGrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(438px,1fr)); gap:10px; margin:0 0 18px; }
+    .hdShopGrid:last-child{ margin-bottom:0; }
+    /* CARTA: rejilla de 3 columnas con la de acción de ancho FIJO — es lo que alinea todos los
+       botones entre columnas. Con ancho automático cada botón medía lo que su texto — COMPRAR · 4.200
+       contra SIN RANURA LIBRE — y las cartas salían desparejas. */
+    .hdShopIt{ display:grid; grid-template-columns:44px 1fr 136px; gap:11px; align-items:center;
+      padding:12px 13px; border-radius:14px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); }
+    .hdShopIt.got{ border-color:rgba(122,255,200,.30); background:rgba(122,255,200,.055); }
+    .hdShopIt.off{ opacity:.5; }
+    .hdShopIt .ic{ width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-size:23px; background:rgba(10,14,30,.72); }
+    .hdShopIt .tx{ min-width:0; }
+    .hdShopIt .tx b{ display:block; font-size:13px; letter-spacing:1px; color:#fff; }
+    .hdShopIt .tx span{ display:block; font-size:11.5px; color:#9fb0d6; line-height:1.4; margin-top:3px; }
+    /* la píldora de andamio necesita MÁS especificidad que la regla .hdShopIt .tx span, que la
+       pondría en display:block y la estiraría a todo el ancho (parecía un campo de texto roto) */
+    .hdShopIt .tx .hdShopWip{ display:inline-block; width:auto; margin-top:6px; padding:2px 7px; border-radius:6px;
+      font-size:9px; font-weight:900; letter-spacing:.8px; white-space:nowrap;
+      color:#ffb14e; background:rgba(255,177,78,.12); border:1px solid rgba(255,177,78,.3); }
+    .hdShopAct{ display:flex; flex-direction:column; align-items:stretch; gap:7px; }
+    .hdShopAct .hdShopLv{ justify-content:flex-end; }
+    .hdShopLv{ display:flex; gap:3px; }
+    .hdShopLv i{ width:13px; height:5px; border-radius:3px; background:rgba(255,255,255,.16); }
+    .hdShopLv i.on{ background:var(--hc,#ffd84f); }
+    .hdShopBuy{ border:1px solid rgba(255,216,79,.4); background:rgba(255,216,79,.10); color:#ffd84f; border-radius:10px;
+      padding:9px 10px; font:inherit; font-size:11.5px; font-weight:900; letter-spacing:.4px; cursor:pointer;
+      white-space:nowrap; width:100%; text-align:center; }
+    .hdShopBuy:hover:not(:disabled){ background:rgba(255,216,79,.2); color:#fff; }
+    .hdShopBuy:disabled{ cursor:default; border-color:rgba(255,255,255,.12); color:#8b96b5; background:none; }
+    .hdShopBuy.got{ border-color:rgba(122,255,200,.35); color:#7affc8; background:rgba(122,255,200,.08); }
     #hdLogCard h2{ margin:0 0 2px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
     #hdLogCard .gsub{ margin:0 0 16px; font-size:13px; color:#9fb0d6; text-align:center; }
     .hdLog{ display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:12px; border:1px solid rgba(255,255,255,.08); margin-bottom:7px; background:rgba(255,255,255,.03); }
@@ -19190,7 +19253,7 @@ function updatePvpShieldFX(){
     /* la ficha de LOGROS: overlay propio con el contrato de siempre (✕, velo, Esc) */
     const lm = document.createElement('div'); lm.className = 'overlay'; lm.id = 'hdLogModal'; lm.style.display = 'none';
     lm.innerHTML = '<div id="hdLogCard"><button type="button" class="modalClose" id="hdLogClose" aria-label="Cerrar">✕</button>'
-      + '<h2>LOGROS</h2><p class="gsub" id="hdLogSub"></p><div id="hdLogList"></div></div>';
+      + '<h2>LOGROS</h2><p class="gsub" id="hdLogSub"></p><div id="hdLogList" class="modalBody"></div></div>';
     document.body.appendChild(lm);
     const logClose = ()=>{ lm.style.display = 'none'; };
     $('hdLogClose').addEventListener('click', logClose);
@@ -19203,77 +19266,74 @@ function updatePvpShieldFX(){
 
     /* ===================== ►TIENDA26 · LA VENTANA =====================
        Mismo contrato que el modal de LOGROS (overlay + ✕ + velo + Esc) para que no haya dos formas
-       de cerrar cosas en esta pantalla. El CSS se inyecta desde aquí en vez de vivir en el bloque
-       de estilos de la home: así la tienda entera es UN solo trozo que se puede mover o quitar.
+       de cerrar cosas en esta pantalla, y su CSS vive en la MISMA hoja inyectada que el de LOGROS
+       (~18705): tener dos hojas inyectadas peleándose por las mismas fichas era el lío de orden que
+       había. La caja de la ventana la pone la ficha común de ►MODAL26.
        Las tres pestañas son las tres líneas del catálogo; el personaje del que se habla es el que
        esté elegido en el carrusel (`MATCH.cls`), igual que hacen los controles y la ficha. */
-    { const cssT = document.createElement('style');
-      cssT.textContent = '#hdShopCard{ background:linear-gradient(180deg,#141a2e,#0d1120); border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:26px 28px 22px; width:min(940px,94vw); max-height:88vh; overflow:auto; position:relative; }'
-        + '#hdShopCard h2{ margin:0 0 2px; letter-spacing:2px; }'
-        + '#hdShopWallet{ position:absolute; right:64px; top:26px; font-weight:900; color:#ffd84f; letter-spacing:1px; font-size:15px; }'
-        + '#hdShopTabs{ display:flex; gap:8px; margin:14px 0 16px; flex-wrap:wrap; }'
-        + '.hdShopTab{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:#9fb0d6; border-radius:11px; padding:8px 14px; font:inherit; font-size:12px; font-weight:900; letter-spacing:1px; cursor:pointer; }'
-        + '.hdShopTab.on{ background:rgba(255,216,79,.12); border-color:rgba(255,216,79,.45); color:#fff; }'
-        + '#hdShopList{ display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr)); gap:10px; }'
-        + '.hdShopIt{ display:flex; gap:11px; align-items:flex-start; padding:11px 12px; border-radius:13px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); }'
-        + '.hdShopIt .ic{ width:42px; height:42px; border-radius:11px; display:grid; place-items:center; font-size:21px; background:rgba(10,14,30,.7); flex:0 0 auto; }'
-        + '.hdShopIt .tx{ flex:1 1 auto; min-width:0; } .hdShopIt .tx b{ display:block; font-size:13px; letter-spacing:1px; color:#fff; }'
-        + '.hdShopIt .tx span{ display:block; font-size:11.5px; color:#9fb0d6; line-height:1.35; margin-top:2px; }'
-        + '.hdShopIt .lv{ display:flex; gap:3px; margin-top:5px; } .hdShopIt .lv i{ width:13px; height:5px; border-radius:3px; background:rgba(255,255,255,.16); }'
-        + '.hdShopIt .lv i.on{ background:var(--hc,#ffd84f); }'
-        + '.hdShopBuy{ flex:0 0 auto; align-self:center; border:1px solid rgba(255,216,79,.4); background:rgba(255,216,79,.10); color:#ffd84f; border-radius:10px; padding:8px 11px; font:inherit; font-size:12px; font-weight:900; letter-spacing:1px; cursor:pointer; white-space:nowrap; }'
-        + '.hdShopBuy:hover:not(:disabled){ background:rgba(255,216,79,.2); color:#fff; }'
-        + '.hdShopBuy:disabled{ opacity:.4; cursor:default; border-color:rgba(255,255,255,.12); color:#8b96b5; background:none; }'
-        + '.hdShopNote{ font-size:12px; color:#8ea6cf; margin:0 0 12px; line-height:1.45; }'
-        + '.hdShopWip{ color:#ffb14e; font-weight:900; letter-spacing:1px; font-size:11px; }';
-      document.head.appendChild(cssT);
-
+    {
       const sm = document.createElement('div'); sm.className = 'overlay'; sm.id = 'hdShopModal'; sm.style.display = 'none';
       sm.innerHTML = '<div id="hdShopCard"><button type="button" class="modalClose" id="hdShopClose" aria-label="Cerrar">✕</button>'
-        + '<h2>TIENDA</h2><p class="gsub">Las monedas de los logros, los trofeos y las carreras se gastan aquí. Lo que compres es <b>para siempre</b>.</p>'
-        + '<div id="hdShopWallet"></div><div id="hdShopTabs"></div><p class="hdShopNote" id="hdShopNote"></p><div id="hdShopList"></div></div>';
+        + '<div id="hdShopHd"><h2>TIENDA</h2><div id="hdShopWallet"></div></div>'
+        + '<p class="gsub">Las monedas de los logros, los trofeos y las carreras se gastan aquí. Lo que compres es <b>para siempre</b>.</p>'
+        + '<div id="hdShopTabs"></div><div id="hdShopList" class="modalBody"></div></div>';
       document.body.appendChild(sm);
 
       let shopTab = 'attr';
       const TABS = [ ['attr','ATRIBUTOS'], ['super','SUPER R'], ['hab','HABILIDADES'] ];
       const shopChar = ()=> (typeof MATCH!=='undefined' && MATCH.cls) || 'voxelhero';
       const shopCharName = ()=>{ const k = shopChar(), pk = (typeof CLASS_PICK!=='undefined' ? CLASS_PICK : []).find(c => c[0]===k); return pk ? pk[1] : k; };
-      const dots = (lv, max, col)=>{ let h = '<div class="lv" style="--hc:' + col + '">'; for(let i=0;i<max;i++) h += '<i class="' + (i<lv?'on':'') + '"></i>'; return h + '</div>'; };
       const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-      const card = (o)=> '<div class="hdShopIt"><div class="ic">' + o.ic + '</div><div class="tx"><b style="color:' + (o.col||'#fff') + '">' + esc(o.name) + '</b><span>' + esc(o.desc) + '</span>'
-        + (o.dots || '') + (o.wip ? '<span class="hdShopWip">' + o.wip + '</span>' : '') + '</div>'
-        + '<button type="button" class="hdShopBuy" data-kind="' + o.kind + '" data-id="' + o.id + '"' + (o.dis ? ' disabled' : '') + '>' + o.btn + '</button></div>';
+      const eur = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // miles a mano: toLocaleString('es-ES') depende del ICU del navegador y en el Edge headless devolvia 4250
+      const dots = (lv, max, col)=>{ let h = '<div class="hdShopLv" style="--hc:' + col + '">';
+        for(let i=0;i<max;i++) h += '<i class="' + (i<lv?'on':'') + '"></i>'; return h + '</div>'; };
+      /* una CARTA. `got` = ya es tuya (verde) · `off` = existe pero hoy no puedes (atenuada) ·
+         `wip` = píldora de andamio, para que se vea que la compra se guarda pero aún no hace nada. */
+      const card = (o)=> '<div class="hdShopIt' + (o.got?' got':'') + (o.off?' off':'') + '">'
+        + '<div class="ic">' + o.ic + '</div>'
+        + '<div class="tx"><b style="color:' + (o.col||'#fff') + '">' + esc(o.name) + '</b>'
+        + '<span>' + esc(o.desc) + '</span>' + (o.wip ? '<span class="hdShopWip">' + o.wip + '</span>' : '') + '</div>'
+        + '<div class="hdShopAct">' + (o.dots || '')
+        + '<button type="button" class="hdShopBuy' + (o.got?' got':'') + '" data-kind="' + o.kind + '" data-id="' + o.id + '"'
+        + (o.dis ? ' disabled' : '') + '>' + o.btn + '</button></div></div>';
+      const sec = (n, t, extra)=> '<div class="hdShopSec"><b>' + n + '</b> ' + t + (extra ? ' \u00b7 ' + extra : '') + '</div>';
+      const precio = n => 'COMPRAR \u00b7 ' + eur(n) + ' \ud83e\ude99';
 
       function renderShop(){
         const mon = saveGet().monedas || 0, t = saveTienda(), k = shopChar();
-        $('hdShopWallet').innerHTML = '🪙 ' + mon;
+        $('hdShopWallet').innerHTML = '\ud83e\ude99 ' + eur(mon);
         $('hdShopTabs').innerHTML = TABS.map(x => '<button type="button" class="hdShopTab' + (shopTab===x[0]?' on':'') + '" data-tab="' + x[0] + '">' + x[1] + '</button>').join('');
-        const note = $('hdShopNote'), list = $('hdShopList');
         let html = '';
         if(shopTab === 'attr'){
-          note.innerHTML = 'Suben tu personaje en <b>todas</b> las partidas, y se SUMAN a lo que compres en la tienda de entre mundos. Tope de ' + SHOP_ATTR_MAX + ' niveles y el precio se multiplica ×' + SHOP_ATTR_STEP + ' cada vez.';
-          html = SHOP_ATTR.map(a => { const lv = shopAttrLvl(a.k), top = lv >= SHOP_ATTR_MAX, c = shopAttrCost(a);
-            return card({ kind:'attr', id:a.k, ic:a.ic, name:a.name, col:a.col, desc:a.desc, dots:dots(lv, SHOP_ATTR_MAX, a.col),
-                          btn: top ? 'AL MÁXIMO' : (c + ' 🪙'), dis: top || mon < c }); }).join('');
+          html = '<p class="hdShopNote">Suben tu personaje en <b>todas</b> las partidas y se suman a lo que compres en la tienda de entre mundos. Tope de ' + SHOP_ATTR_MAX + ' niveles; cada nivel cuesta \u00d7' + String(SHOP_ATTR_STEP).replace('.', ',') + ' m\u00e1s que el anterior.</p>'
+            + '<div class="hdShopGrid">' + SHOP_ATTR.map(a => { const lv = shopAttrLvl(a.k), top = lv >= SHOP_ATTR_MAX, c = shopAttrCost(a);
+                return card({ kind:'attr', id:a.k, ic:a.ic, name:a.name, col:a.col, desc:a.desc,
+                              dots:dots(lv, SHOP_ATTR_MAX, a.col), got:top,
+                              btn: top ? 'AL M\u00c1XIMO' : precio(c), dis: top || mon < c }); }).join('') + '</div>';
         } else if(shopTab === 'super'){
-          note.innerHTML = 'Megaataques de <b>' + esc(shopCharName()) + '</b>. No gastan tecla nueva: cuando lleves <b>' + SUPER_R_AFTER + ' R</b> gastadas en la partida, tu R se arma y el siguiente disparo es la SUPER. <b>Una vez por partida.</b>';
-          html = superList(k).map(x => { const own = superOwns(k, x.id);
-            return card({ kind:'super', id:x.id, ic:x.ic, name:x.name, col:'#ffb14e', desc:x.desc,
-                          wip:'EFECTO POR IMPLEMENTAR · hoy dispara tu R de siempre',
-                          btn: own ? 'EN PROPIEDAD' : (x.cost + ' 🪙'), dis: own || mon < x.cost }); }).join('');
+          const L = superList(k);
+          html = '<p class="hdShopNote"><b>No gastan tecla nueva.</b> Cuando lleves <b>' + SUPER_R_AFTER + ' R</b> gastadas en la partida, tu R se pone dorada: el siguiente disparo es la SUPER. Una sola vez por partida.</p>'
+            + sec('1', 'MEGAATAQUES DE ' + esc(shopCharName()).toUpperCase())
+            + '<div class="hdShopGrid">' + L.map(x => { const own = superOwns(k, x.id);
+                return card({ kind:'super', id:x.id, ic:x.ic, name:x.name, col:'#ffb14e', desc:x.desc, got:own,
+                              wip:'SIN EFECTO A\u00daN', btn: own ? 'EN PROPIEDAD' : precio(x.cost), dis: own || mon < x.cost }); }).join('') + '</div>';
         } else {
-          const n = t.slots||0, eq = habEquipped(k);
-          note.innerHTML = 'Primero el <b>slot</b>, luego lo que va dentro. Tienes <b>' + n + ' de ' + SHOP_SLOT.length + '</b> — el slot 1 va a la tecla <b>' + SHOP_SLOT[0].key + '</b> y el 2 a la <b>' + SHOP_SLOT[1].key + '</b>. Equipadas en <b>' + esc(shopCharName()) + '</b>: ' + eq.length + '/' + n + '.';
-          html = SHOP_SLOT.map((sl, i) => { const got = n > i, prev = i > 0 && n < i;
-            return card({ kind:'slot', id:String(i), ic:'🔑', name:'SLOT ' + (i+1) + ' · TECLA ' + sl.key, col:'#8fe0ff',
-                          desc:'una ranura más de habilidad (mando: ' + sl.pad + ')',
-                          btn: got ? 'COMPRADO' : (prev ? 'ANTES EL 1' : (sl.cost + ' 🪙')), dis: got || prev || mon < sl.cost }); }).join('')
-               + SHOP_HAB.map(h => { const own = habOwns(k, h.id), full = eq.length >= n;
-            return card({ kind:'hab', id:h.id, ic:h.ic, name:h.name, col:h.col, desc:h.desc,
-                          wip:'EFECTO POR IMPLEMENTAR · hoy la compra solo se guarda',
-                          btn: own ? 'EQUIPADA' : (full ? 'SIN SLOT LIBRE' : (h.cost + ' 🪙')), dis: own || full || mon < h.cost }); }).join('');
+          const n = t.slots || 0, eq = habEquipped(k), libres = n - eq.length;
+          html = '<p class="hdShopNote">Van en dos pasos: <b>primero compras la ranura</b> y luego la habilidad que quieres meter dentro. Cada ranura estrena una tecla.</p>'
+            + sec('1', 'RANURAS', 'tienes ' + n + ' de ' + SHOP_SLOT.length)
+            + '<div class="hdShopGrid">' + SHOP_SLOT.map((sl, i) => { const got = n > i, prev = i > 0 && n < i;
+                return card({ kind:'slot', id:String(i), ic:'\ud83d\udd11', name:'RANURA ' + (i+1) + ' \u00b7 TECLA ' + sl.key, col:'#8fe0ff', got:got, off:prev,
+                              desc: got ? 'lista para equipar una habilidad' : ('una ranura m\u00e1s de habilidad (mando: ' + sl.pad + ')'),
+                              btn: got ? 'COMPRADA' : (prev ? 'ANTES LA 1' : precio(sl.cost)), dis: got || prev || mon < sl.cost }); }).join('') + '</div>'
+            + sec('2', 'HABILIDADES DE ' + esc(shopCharName()).toUpperCase(),
+                  n ? (eq.length + ' equipada' + (eq.length===1?'':'s') + ' \u00b7 ' + libres + ' libre' + (libres===1?'':'s')) : 'necesitas una ranura')
+            + '<div class="hdShopGrid">' + SHOP_HAB.map(h => { const own = habOwns(k, h.id), full = eq.length >= n;
+                return card({ kind:'hab', id:h.id, ic:h.ic, name:h.name, col:h.col, desc:h.desc, got:own, off:!own && full,
+                              wip:'SIN EFECTO A\u00daN',
+                              btn: own ? 'EQUIPADA' : (full ? (n ? 'SIN RANURA LIBRE' : 'COMPRA UNA RANURA') : precio(h.cost)),
+                              dis: own || full || mon < h.cost }); }).join('') + '</div>';
         }
-        list.innerHTML = html;
+        $('hdShopList').innerHTML = html;
         { const co = $('hdCoinN'); if(co) co.textContent = mon; }   // el contador de la home, al día
       }
       window.__hdShopRender = renderShop;
