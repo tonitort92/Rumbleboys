@@ -11728,7 +11728,15 @@ const GOBLIN_KINDS = {
      · El orden de fbxClips vale lo mismo que en el robot: idle PRIMERO (dona la malla y de sus
        materiales sale el tinte) y jump AL FINAL. */
   gobshaman:  { fbx:'GOBSHAMAN_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-                h:1.85, walkRef:2.6, max:16, shadow:false, jitter:false, shootAtk:false },   // ►M2HORDA: chamán (shooter MELEE)
+                h:1.85, walkRef:2.6, max:20, shadow:false, jitter:false, shootAtk:false },   // ►M2HORDA: chamán (shooter MELEE) · ►M2DOSIS: 16→20
+  /* ►M2DOSIS: el chamán recoge TODO lo que no cabe por la puerta del mini-jefe, así que su pool no
+     se dimensiona por su ranura (22 % de la tirada) sino por lo que desborda. Con BRUTE_MINI_MAX en 3
+     acaba siendo ~3/4 de la horda. Medido con 300 llenados:
+         max 16 -> 70,0 % chamán, pool lleno el 65 % de las hordas (y el sobrante deforma al guerrero:
+                   16,3 % cuando le tocan 13)
+         max 18 -> 73,0 %, lleno el 21 %
+         max 20 -> 74,2 %, lleno el  0 %   <- el guerrero vuelve a su 12-13 %
+     De 20 en adelante es plano. */
   gobwarrior: { fbx:'GOBWARRIOR_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
                 h:3.6,  walkRef:2.3, max:8,  shadow:true,  jitter:false, shootAtk:false },   // ►M2HORDA: guerrero (large)
   /* ►PIRMIX (Toni 26/08) · LA TRIPULACIÓN DEL MUNDO 12, ahora con modelos y clips PROPIOS.
@@ -16565,7 +16573,15 @@ const BRUTE_HIT_SCALE = 1.6;     // mn.scale → alcance con que lo golpean (hit
    updateBrute y mn.scale en spawnBrute).
    BRUTE_MINI_MAX: como aquí es horda y no evento, el tope de 1-vivo del camino élite no vale. */
 const BRUTE_MINI_K   = 0.616;    // ►AJUSTA: sube para un mini-jefe más grande en el mundo 2
-const BRUTE_MINI_MAX = 10;       // vivos a la vez en el mundo 2 (la ranura 'small' es ~65% de la horda)
+/* ►M2DOSIS (Toni 26/08: "45 % de mini-jefes es demasiado") · BRUTE_MINI_MAX es, en la práctica, la
+   DOSIS de mini-jefe del mundo 2: como la ranura `small` es el 65 % de la tirada, la puerta está
+   siempre llena y salen exactamente `max` vivos de los 22 del tope → la proporción es max/22.
+   Estaba en 10 (≈45 % de la horda, medido). Toni lo quiere en 2-3 de cada 22, o sea ~10 %: es el
+   enemigo más duro del juego (120 de vida e IA de jefe) y a 10 vivos dejaba de ser un susto para
+   ser la norma. ►AJUSTA aquí la dosis: el número ES la cantidad en pantalla.
+   Lo que NO cabe por esta puerta desborda al CHAMÁN (ver la rama STAGE===2 de spawnMinion), así que
+   bajar esto engorda su ranura — por eso su `max` sube con él. */
+const BRUTE_MINI_MAX = 3;        // vivos a la vez en el mundo 2 ≈ 3/22 de la horda
 const _brutePool = []; let _bruteLive = 0;
 /* ►ELITE: el MINI-JEFE deja de ser exclusivo del Stage 2 y sale en TODOS los mundos como EVENTO de
    media partida. Ya estaba construido para ello (bruteTint tiñe por stage y aquí abajo había peso
