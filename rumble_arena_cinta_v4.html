@@ -12793,7 +12793,14 @@ function updateMinion(mn, dt){
     if(mn.onGround && mn.jumpCD<=0 && !mn._kiting && !(STAGE===12 && !mn._pirRide)){   // ►WESTERN: kiteando NO salta huecos — su velocidad va HACIA ATRÁS y el salto-embiste lo tiraría al vacío · ►PIRHORDA: el de la orilla tampoco salta (se tiraría al mar)
       const mvl=Math.hypot(mn.vel.x,mn.vel.z);
       if(mvl>.5 && !overAnyPlatform(mn.pos.x+mn.vel.x/mvl*3.2, mn.pos.z+mn.vel.z/mvl*3.2)){ minionJump(mn); mn.vel.x*=1.5; mn.vel.z*=1.5; }
-      else if(tgt.pos.y > mn.pos.y+1.6) minionJump(mn);
+      /* ►S3NINJA (Toni 26/08) · en JAPÓN el trepado tiene TECHO. Un minion salta a JUMP=19 (apex
+         5,01), tiene un aéreo (DJUMP 17,8) y corrige en el aire a 3,6 u/s, así que encadenando
+         llega a y≈9: subía entero a la ruta de precisión del 2º nivel y la dejaba sin sentido —
+         las emboscadas de este mundo saltan en el suelo y subir es LA vía de escape que se paga
+         saltando bien. Con el techo te siguen a una repisa baja pero no te suben la ruta.
+         El gate es STAGE===3 y NADA MÁS, a propósito: la horda del mundo 2 y la cubierta del
+         s3Embalmer (topY 9,27, stage 4) dependen de trepar sin límite y no se tocan. */
+      else if(tgt.pos.y > mn.pos.y+1.6 && !(STAGE===3 && tgt.pos.y > mn.pos.y + S3_CLIMB_MAX)) minionJump(mn);
     }
   } else if(mn.atkPhase!=='none'){
     mn.vel.x*=1-6*dt; mn.vel.z*=1-6*dt;
@@ -12949,6 +12956,11 @@ const STAGE_TRANS_DELAY = 1.4;      // ►CAMPAÑA: s entre cruzar el portal (de
 const S2_BELT_MUL = 1.15;           // ►RONDA2: la cinta corre un 15% más rápido en Stage 2 (todo el mapa scrollea más deprisa = más difícil)
 const S3_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 6)
 const S3_BELT_MUL = 1.22;           // ►JAPAN: la cinta en Japón, entre la jungla (1.15) y el desierto (1.28)
+/* ►S3NINJA: cuánto puede TREPAR un minion en Japón detrás de su objetivo (ver updateMinion).
+   4.2 = te sigue a una repisa baja o a un deck, pero no alcanza la ruta de precisión del 2º
+   nivel, que arranca a 3,2 y sube hasta ~7,2. ►►► AJUSTA ◄◄◄ (sube esto y la ruta deja de ser
+   un refugio; bájalo y cualquier bordillo te vuelve intocable). */
+const S3_CLIMB_MAX = 4.2;
 const SW_CHAOS_START = 0;           // ►WEST: re-empieza en 0 como todos
 const SW_BELT_MUL = 1.25;           // ►WEST: el western va entre Japón (1.22) y el desierto (1.28) — es el puente entre los dos biomas
 const S4_CHAOS_START = 0;           // ►CHAOSRESET: re-empieza en 0 como el Stage 1 (antes 6)
@@ -28699,15 +28711,31 @@ function dressTopSakura(g, sx, sz, topY, cx, cz, kind, opts){
    convexa y sin lados planos, un puente engancha venga por donde venga.
    `_sjMoonBox(cx,cz,r,rot)` es la ÚNICA fuente de la caja: la usan la geometría, la colisión y el
    sembrado de pétalos/césped, así que no pueden desincronizarse. */
+/* ►S3CUAD (Toni 26/08: "las elípticas son muy feas, prefiero que todas sean cuadradas para que
+   cojan bien el puente colgante") · DE ELIPSE A CUADRADO. Lo que ganaba la elipse —enganchar el
+   puente viniera por donde viniera— ya no hace falta: los puentes de Japón se tienden al final
+   (_sjFlushBridges) y se anclan por CENTRO de tapa, así que una arista recta les da MÁS apoyo, no
+   menos. Y lo que costaba sí importaba: la elipse inscrita solo cubre πab/4ab = 78,5 % de su propia
+   caja, o sea que una quinta parte de la losa se veía y no se pisaba. El cuadrado pisa su caja
+   entera. La caja NO cambia (sigue mandando _sjMoonBox), así que ninguna pieza se mueve de sitio:
+   lo único que crece es la superficie útil dentro de la misma huella. */
 function _sjMoonBox(cx, cz, r, rot){
   if(rot===Math.PI)         return { minX:cx-r,  maxX:cx+r,  minZ:cz-r,  maxZ:cz   };
   if(rot===Math.PI/2)       return { minX:cx-r,  maxX:cx,    minZ:cz-r,  maxZ:cz+r };
   if(rot===-Math.PI/2 || rot===Math.PI*1.5) return { minX:cx, maxX:cx+r, minZ:cz-r, maxZ:cz+r };
   return                           { minX:cx-r,  maxX:cx+r,  minZ:cz,    maxZ:cz+r };   // rot 0
 }
+/* ►S3CUAD: cuadrado de esquina apenas matada (12 % del semieje corto, tope 0,45) — ni caja pelada
+   ni disco. El redondeo es lo bastante pequeño para que el tablón del puente apoye en recto. */
 function _sjMoonShape(rx, rz, inset){
+  const a = Math.max(0.2, rx-(inset||0)), b = Math.max(0.2, rz-(inset||0));
+  const k = Math.min(0.45, Math.min(a, b)*0.12);
   const s = new THREE.Shape();
-  s.absellipse(0, 0, Math.max(0.2, rx-(inset||0)), Math.max(0.2, rz-(inset||0)), 0, Math.PI*2, false, 0);
+  s.moveTo(-a+k, -b);
+  s.lineTo( a-k, -b); s.quadraticCurveTo( a, -b,  a, -b+k);
+  s.lineTo( a,  b-k); s.quadraticCurveTo( a,  b,  a-k,  b);
+  s.lineTo(-a+k, b);  s.quadraticCurveTo(-a,  b, -a,  b-k);
+  s.lineTo(-a, -b+k); s.quadraticCurveTo(-a, -b, -a+k, -b);
   return s;
 }
 function sjMoon(cx, cz, r, topY, rot, kind){
@@ -28716,11 +28744,13 @@ function sjMoon(cx, cz, r, topY, rot, kind){
   rot = rot||0; kind = kind||'sakura';
   const MK = SJMATS[kind] || SJMATS.sakura;   // ►S3TILES: misma textura de LOSETAS CUADRADAS multitono que el resto (top magenta/rosa · base gris), no _paintFacets (rayas)
   const B  = _sjMoonBox(cx, cz, r, rot);                         // ►S3FIX: la MISMA caja para geometría, colisión y sembrado
-  const ex = (B.maxX-B.minX)*0.5, ez = (B.maxZ-B.minZ)*0.5;      // semiejes de la elipse
-  const ox = (B.minX+B.maxX)*0.5 - cx, oz = (B.minZ+B.maxZ)*0.5 - cz;   // centro de la elipse RELATIVO a (cx,cz)
+  const ex = (B.maxX-B.minX)*0.5, ez = (B.maxZ-B.minZ)*0.5;      // ►S3CUAD: semi-LADOS del cuadrado (antes semiejes de la elipse)
+  const ox = (B.minX+B.maxX)*0.5 - cx, oz = (B.minZ+B.maxZ)*0.5 - cz;   // centro de la tapa RELATIVO a (cx,cz)
   const g = new THREE.Group();
-  const capG  = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, 0),        { depth:0.55, bevelEnabled:false, curveSegments:22 });
-  const bodyG = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, r*0.06),   { depth:3.9,  bevelEnabled:false, curveSegments:22 });
+  /* ►S3CUAD: curveSegments 22→5. Con la elipse eran 22 divisiones de curva; aquí solo redondean
+     cuatro esquinas de 0,45 y a 5 ya no se ve el facetado. */
+  const capG  = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, 0),        { depth:0.55, bevelEnabled:false, curveSegments:5 });
+  const bodyG = new THREE.ExtrudeGeometry(_sjMoonShape(ex, ez, r*0.06),   { depth:3.9,  bevelEnabled:false, curveSegments:5 });
   const cap  = new THREE.Mesh(capG,  MK.top);    // cap = celdas de la superficie (SJ_PINKS/etc.) via _s2mat/makeFieldTexture
   const body = new THREE.Mesh(bodyG, MK.base);   // cuerpo = celdas gris SJ_EARTH (no franjas planas)
   /* la shape se extruye en +z y se tumba con rotation.x=π/2 → su eje local +y pasa a ser -z de mundo */
@@ -28734,15 +28764,22 @@ function sjMoon(cx, cz, r, topY, rot, kind){
      y el origen de `g` es (cx,cz), que con rot≠0 NO es el centro de la pieza. */
   const dressG = new THREE.Group(); dressG.position.set(ox, 0, oz); g.add(dressG);
   dressTopSakura(dressG, ex*2, ez*2, topY, cx+ox, cz+oz, kind,
-    { inside:(lx, lz)=>{ const u=lx/ex, v=lz/ez; return u*u + v*v <= 0.88; } });   // 0.88 ≈ deja libre el canto biselado
+    { inside:(lx, lz)=>Math.abs(lx) <= ex*0.90 && Math.abs(lz) <= ez*0.90 });   // ►S3CUAD: dentro del CUADRADO; el 0,90 deja libre el canto biselado
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: losa lunar pisable = oclusor; guard la respeta si es el suelo más bajo
-  /* ►S3FIX · colisión = UNA plataforma `blob` cuyo AABB es exactamente el de la tapa dibujada.
-     _inBlob deriva la elipse del AABB al vuelo y _applySegX ya scrollea minX/maxX con la cinta, así
-     que no hace falta contabilidad extra. Adiós al 17 % de tapa visible que no se podía pisar. */
+  /* ►S3CUAD · colisión = el AABB PELADO, sin `blob`. Mientras la tapa era una elipse hacía falta
+     marcarla `blob` para que _inBlob recortara el AABB a la elipse inscrita; ahora la tapa ES el
+     AABB, así que el rect puro es la forma exacta y además sale más barato (todos los tests de
+     dentro/fuera —_sjAnchor, sjGrove, _footOnTop, _s4Hop— dejan de pasar por _inBlob).
+     _applySegX ya scrollea minX/maxX con la cinta, así que no hace falta contabilidad extra. */
   platforms.push({ minX:B.minX, maxX:B.maxX, minZ:B.minZ, maxZ:B.maxZ,
-                   topY, baseY:topY-4.4, solid:true, blob:true, _group:g });
-  if(SUELO_TEST && STAGE===3 && r>=2.2 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: solo lunas BAJAS · felpudo sakura en las losas lunares (lado = cuadrado inscrito, nada cuelga del disco)
-    g.userData._sueloTest = true; sueloCarpet(g, r*1.3, r*1.3, topY, cx, cz);
+                   topY, baseY:topY-4.4, solid:true, _group:g });
+  if(SUELO_TEST && STAGE===3 && r>=2.2 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: solo lunas BAJAS
+    /* ►S3CUAD · el felpudo iba colgado de `g` (origen (cx,cz)) y con lado r*1,3 en los DOS ejes,
+       pero la tapa no está centrada en (cx,cz) ni es cuadrada: con rot 0/π la caja es 2r×r y está
+       desplazada r/2 en z, así que media alfombra se sembraba en el aire. Con la tapa elíptica se
+       disimulaba entre el canto; en cuadrado se ve. Va a `dressG`, que YA está en el centro de la
+       tapa, y con el lado de cada eje (0,94 = deja libre el bisel). */
+    g.userData._sueloTest = true; sueloCarpet(dressG, ex*2*0.94, ez*2*0.94, topY, cx+ox, cz+oz);
     if(!_sueloB) _sueloB = { x0:cx-r, x1:cx+r, z0:cz-r, z1:cz+r };
   }
   return g;
@@ -29404,10 +29441,154 @@ function sjWideFloaters(opts){
 function sjDeck(cx, y, cz, sx, sz, kind){
   if(!SJMATS) _buildSJMats();
   const MK = SJMATS[kind] || SJMATS.sakura;   // ►S3TILES: losetas CUADRADAS multitono field-blend (magenta en sakura), IGUAL que el resto de plataformas — antes _facetBox = rayas planas
-  const m = aoMesh(organicSlabGeo(sx, sz, 0.5, 1.9, 0.38, 0.2), MK.top);   // misma losa orgánica (UVs en unidades de mundo → tesela) que el disco/media-lunas
+  /* ►S3CUAD · el 1,9 de radio es la convención de TODAS las losas del juego (s2Floor y compañía) y
+     ahí se nota poco, porque son losas grandes; pero el deck de Japón mide 6,5×4 y 1,9 se come casi
+     la mitad de su eje corto: quedaba con forma de pastilla y era lo más redondo que seguía habiendo
+     en el 2º nivel. Proporcional al lado CORTO, con el 1,9 de tope: no puede volver a pasar. */
+  const m = aoMesh(organicSlabGeo(sx, sz, 0.5, Math.min(1.9, Math.min(sx, sz)*0.14), 0.38, 0.2), MK.top);
   m.position.set(cx, y+0.2-0.7, cz);   // top de la geo a +0.7 sobre la malla → cara pisable FLUSH a topY (y+0.2)
   m.castShadow = m.receiveShadow = true; m.userData.noOcc = true; scene.add(m);
   platforms.push({ minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2, topY:y+0.2, baseY:y-0.3, float:true, step:0.12 });
+}
+/* =====================================================================================
+   ►S3NINJA (Toni 26/08) · EL SEGUNDO NIVEL DE JAPÓN ES UNA RUTA DE PRECISIÓN
+   Antes, arriba había terrazas anchas donde te plantabas cómodo. Las emboscadas de este
+   mundo saltan SIEMPRE en el primer nivel (sjAmbush ancla a topY 0 y 1.0), así que subir
+   era gratis: te libraba de la marea sin pedirte nada. Ahora arriba solo hay losas donde
+   cabe UNA persona, y la vía de escape hay que ganársela saltando bien.
+
+   CALIBRADO CONTRA LA FÍSICA REAL, no a ojo. Simulando el salto con las constantes del
+   juego (GRAV −36, caída ×1.5, JUMP 19, DJUMP 17.8, ACC 24, dt 1/60) y con el detalle que
+   lo decide todo —EN EL AIRE el control es AIRCTL 7.5, no RUN 10.2, así que sales a 10.2 y
+   el aire te frena— el alcance MÁXIMO de un salto simple en plano es 7,41 u (apex 4,86) y
+   el de un doble, 12,4 u (apex 9,11). De ahí sale la escalera de abajo: `void` es hueco
+   REAL de borde a borde, que es lo que de verdad tienes que volar, y cada hueco va emparejado
+   con su subida (subir recorta el alcance: a +3 u ya solo llegas a 6,3).
+
+   El último salto de cada tramo está PUESTO fuera del salto simple a propósito: o lo cierras
+   con doble salto o te caes al primer nivel, que es justo la "recaída" que pidió Toni.
+   ===================================================================================== */
+const S3N = {
+  SIDE: 2.1,          // lado de la losa: cabe UN personaje (el radio del cuerpo es 0.32)
+  Y0:   3.0,          // primera losa del tramo: se alcanza de un salto SIMPLE desde la plaza (apex 4,86)
+  /* [hueco de borde a borde, subida] · el alcance simple con esa subida va en el comentario */
+  STEPS: [ [2.4,  2.4],    // cómodo         (a +2,4 el simple llega a ~6,5)
+           [4.4,  1.8],    // normal         (a +1,8 llega a ~6,7)
+           [6.1,  0.8],    // justo          (a +0,8 llega a ~7,1)
+           [7.1,  0.0],    // AL LÍMITE      (en plano llega a 7,41)
+           [8.9, -1.0] ],  // DOBLE SALTO    (bajando 1 u el simple solo llega a ~7,7)
+  /* qué losa del tramo se mueve y en qué eje (índice de losa → eje). El resto, fijas. */
+  MOVE: { 2:'z', 4:'y' },
+  /* Los PUENTES COLGANTES aún no existen cuando esto corre (sjBridge solo los apunta y
+     _sjFlushBridges los tiende al final del segmento), así que _sjAreaClear no puede verlos:
+     sus pasillos se excluyen a mano. Solo importan los dos que cruzan la altura de la ruta. */
+  NOGO: [ { x0:-11, x1:11, z0:0.5,  z1:3.5,  y0:6.5, y1:9.5 },    // puente ALTO central (±9, z2, y 7,8)
+          { x0:-18, x1:18, z0:10.5, z1:13.5, y0:2.0, y1:4.5 } ],  // puente NORTE (±16, z12, y 3,2)
+  /* carriles: (z, x de arranque, sentido). Esquivan z≈2 y z≈12, que son los dos puentes. */
+  LANES: [ { z:-8, x0:-26, dir: 1 },
+           { z:  6, x0: 26, dir:-1 },
+           { z:-17, x0:-12, dir: 1 } ],
+};
+let _s3nGeo = null;   // UNA geometría compartida por todas las losas: son todas del mismo lado
+function _s3nPadGeo(){
+  if(!_s3nGeo) _s3nGeo = organicSlabGeo(S3N.SIDE, S3N.SIDE, 0.5, 0.30, 0.14, 0.08);   // radio 0,30: cuadrada de verdad (sjDeck usa 1,9 porque su losa mide 6,5)
+  return _s3nGeo;
+}
+function _s3nBlocked(cx, cz, y, hw){
+  for(const n of S3N.NOGO)
+    if(cx+hw > n.x0 && cx-hw < n.x1 && cz+hw > n.z0 && cz-hw < n.z1 && y > n.y0 && y < n.y1) return true;
+  return false;
+}
+/* una losa de la ruta. `mv`: null = fija · {axis:'x'|'z', amp} = patrulla · {axis:'y', amp} = sube-baja.
+   Va en GRUPO y con `float` apuntando al grupo (no `true`, como sjDeck): updateCarpets mueve
+   `pl.float.position`, así que una losa móvil NECESITA que ahí haya un objeto de verdad. */
+function sjNinjaPad(cx, y, cz, kind, mv, tag){
+  if(!SJMATS) _buildSJMats();
+  const MK = SJMATS[kind] || SJMATS.stone;
+  const g = new THREE.Group();
+  const m = aoMesh(_s3nPadGeo(), MK.top);
+  m.position.y = -0.7;                       // igual que sjDeck: la cara pisable queda FLUSH a topY
+  m.castShadow = m.receiveShadow = true; m.userData.noOcc = true;
+  g.add(m); g.position.set(cx, y+0.2, cz); scene.add(g);
+  const h = S3N.SIDE/2;
+  const pl = { minX:cx-h, maxX:cx+h, minZ:cz-h, maxZ:cz+h, topY:y+0.2, baseY:y-0.3,
+               float:g, _floatDY:0.7, step:0.12, _s3ninja:true,
+               _s3lane:(tag?tag.lane:-1), _s3i:(tag?tag.i:-1) };   // carril+orden: sin esto no se puede AUDITAR el salto real (ver nota de sjNinja)
+  if(mv && mv.axis==='y'){
+    /* sube-baja. `_vertMove` es lo que mira _carpetClampVert para recortar el recorrido si
+       tiene otra losa justo encima o debajo en su misma columna. */
+    pl._vertMove = true;
+    pl._bob = { base:y+0.2, amp:mv.amp, w:mv.w||0.55, ph:Math.random()*6.28 };
+    platforms.push(pl);
+    if(typeof _carpetClampVert==='function') _carpetClampVert(pl, platforms);
+    return g;
+  }
+  /* updateCarpets exige `_bob` para LLEGAR al bloque de `_slide` (hace `if(!pl._bob) continue`
+     antes), así que una losa que patrulla en horizontal lleva además el bamboleo mínimo de las
+     alfombras. Sin esto se queda quieta y cuesta media hora entender por qué. */
+  pl._bob = { base:y+0.2, amp:0.10, w:1.1+Math.random()*0.5, ph:Math.random()*6.28 };
+  if(mv){
+    pl._slide = { axis:mv.axis, amp:mv.amp, w:mv.w||0.5, ph:Math.random()*6.28, prev:0 };
+    platforms.push(pl);
+    /* El recorte solo mira lo `solid`/`blob`, y estas losas son one-way: no se ven entre ellas.
+       Por eso la amplitud ya viene acotada por construcción (nunca más de un tercio del hueco
+       que tiene al lado); el clamp añade encima el resto del escenario, que sí es sólido. */
+    if(typeof _carpetClampSlide==='function') _carpetClampSlide(pl);
+    pl._slide.prev = Math.sin(_carpetT*pl._slide.w + pl._slide.ph)*pl._slide.amp;   // sin salto el primer frame
+    return g;
+  }
+  platforms.push(pl);
+  return g;
+}
+/* Siembra los carriles. Corre al FINAL de sjLattice (como sjGrove): ahí ya existen TODAS las
+   plataformas y props de la sala, así que _sjAreaClear/_nearProp deciden con el escenario entero. */
+function sjNinja(opts){
+  opts = opts||{};
+  const KIND = opts.hi || 'sakura', h = S3N.SIDE/2;
+  let puestas = 0;
+  for(let li = 0; li < S3N.LANES.length; li++){
+    const lane = S3N.LANES[li];
+    /* STEPS[k] describe el salto DE la losa k A la k+1 → hay STEPS.length+1 losas. */
+    let x = lane.x0, y = S3N.Y0, zPrev = null;
+    for(let i = 0; i <= S3N.STEPS.length; i++){
+      const st = (i > 0) ? S3N.STEPS[i-1] : null;
+      const D  = st ? (st[0] + S3N.SIDE) : 0;            // distancia de CENTRO a CENTRO que toca este salto
+      if(st) y += st[1];
+      /* Si el sitio está pillado, el carril se APARTA en z. Pero apartarse alarga el salto: la
+         distancia real es la HIPOTENUSA, y con un desvío de 5 u un hueco de 7,1 se convierte en 8,7
+         — o sea, un salto calibrado "al límite del simple" pasaba a ser imposible sin doble salto y
+         la escalera de dificultad dejaba de significar nada. Así que el desvío en z se PAGA
+         acortando el avance en x: dx = √(D² − dz²). La distancia total es la calibrada, siempre. */
+      let cz = null, cx = x;
+      for(const dz of [0, 2.6, -2.6, 5.0, -5.0]){
+        const z = lane.z + dz + (Math.random()-0.5)*1.2;
+        const off = (zPrev===null) ? 0 : (z - zPrev);
+        if(st && Math.abs(off) >= D - 0.3) continue;      // ese desvío ya se come el salto entero
+        const nx = st ? x + lane.dir * Math.sqrt(D*D - off*off) : x;
+        if(Math.abs(nx) > 31) continue;                   // fuera del segmento (67 de largo)
+        if(_s3nBlocked(nx, z, y, h)) continue;            // pasillo de puente colgante
+        if(typeof _sjAreaClear==='function' && !_sjAreaClear(nx, z, h+0.5, h+0.5, y+0.2, 2.0)) continue;
+        if(typeof _nearProp==='function' && _nearProp(nx, z, h+0.6)) continue;
+        cz = z; cx = nx; break;
+      }
+      if(cz===null){                                      // esta losa no cabe: el tramo sigue, pero
+        if(st) x += lane.dir * D;                         // el carril avanza igual (no se amontona)
+        continue;
+      }
+      x = cx; zPrev = cz;
+      /* móvil o fija. La amplitud sale del hueco que tiene DELANTE: se mueve lo bastante para
+         obligarte a esperar el momento, y nunca tanto como para meterse en la losa vecina. */
+      const eje = S3N.MOVE[i];
+      let mv = null;
+      if(eje){
+        const sig = S3N.STEPS[Math.min(i, S3N.STEPS.length-1)][0];
+        mv = (eje==='y') ? { axis:'y', amp:Math.min(1.8, sig/4) } : { axis:eje, amp:Math.min(2.6, sig/3) };
+      }
+      sjNinjaPad(x, y, cz, KIND, mv, { lane:li, i });
+      puestas++;
+    }
+  }
+  return puestas;
 }
 /* ►LATTICE JAPÓN: MUCHAS más plataformas — REPISAS LATERALES pegadas al carril con DOBLE NIVEL
    (una losa encima de otra, como las torres del S2), escalera arriba/abajo/lados, 4 PUENTES COLGANTES
@@ -29663,6 +29844,11 @@ function sjLattice(opts){
      re-armado a 14s y 6 salas en la cinta, saltan a menudo — que es lo pedido. */
   sjAmbush(-8, 3, 0, 9, 8); sjAmbush(8, -3, 0, 9, 8);
   if(!opts.chasm) for(const s of [-1,1]) sjAmbush(s*20.5, 5, 1.0, 7, 6);
+  /* ►S3NINJA: la ruta de precisión del 2º nivel. ANTES de sjGrove a propósito — sjGrove siembra
+     árboles y toriis por la sala y respeta lo que ya existe (_nearPad/_nearProp), así que si va
+     primero se queda con los huecos y luego la ruta no cabe. Manda la ruta, que es jugable; la
+     arboleda es decorado y se acomoda a lo que quede. */
+  sjNinja(opts);
   sjGrove(26, 4);                                            // ►S3FIX2: más arboleda y toriis en TODAS las salas (pedido)
 }
 /* ---------- TEMA + ESCENOGRAFÍA ---------- */
@@ -29820,13 +30006,9 @@ function buildSJTrigo(){
   sjZenGarden(-11, 4.5, 0, 2.0);                            // ►karesansui en la vega (jardín seco)
   /* niveles: lunas altas + 2º nivel sobre el carril (antes alfombras voladoras) + deck bajo */
   sjMoon(-16, 10, 4.4, 3.4, Math.PI, 'sakura'); sjMoon(16, 10, 4.4, 3.4, Math.PI, 'sakura');
-  sjMoon(0, 8, 3.0, 6.4, Math.PI, 'sakura');               // catwalk 2º nivel sobre la vega
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 6 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
   sjMoon(0, -16, 5.2, -4, 0, 'moss');                      // deck BAJO sur (bajo el borde)
-  sjMoon(-8, -14, 2.8, 4.8, Math.PI, 'sakura'); sjMoon(8, -14, 2.8, 4.8, Math.PI, 'sakura');
-  sjMoon(-10, 12, 2.8, 5.2, Math.PI, 'sakura');            // peldaño N (antes alfombra sube-baja)
-  sjMoon(10, -6, 2.8, 7.0, 0, 'sakura');                   // peldaño alto E (antes alfombra deslizante)
   sjMoon(-20, -14, 3.0, 1.8, 0, 'stone'); sjMoon(20, -14, 3.0, 1.8, 0, 'stone');
-  sjMoon(0, 24, 4.0, 5.8, Math.PI, 'sakura');              // luna alta tras el campo de trigo
   s3Slab(0, -22, 8, 5, 1.2, 'sakura');                     // repisa sur sobre el vacío
   /* ►ARBOLEDA MAGENTA densa + bambusal */
   addTree(-25, 4, 1.1); addTree(25, -4, 1.0); addTree(-12, 6, 0.95); addTree(12, 6, 0.9);
@@ -29861,11 +30043,9 @@ function buildSJJardin(){
   /* mirador: media-lunas ESCALONADAS + 2º nivel sobre el carril (antes alfombras) */
   sjMoon(-12, 14, 3.2, 2.0, Math.PI, 'stone');
   sjMoon(0, 30, 5.0, 4.2, Math.PI, 'sakura');              // balcón alto norte
-  sjMoon(14, 14, 2.8, 5.4, Math.PI, 'sakura');             // peldaño NE (antes alfombra)
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 3 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
   sjMoon(16, -13, 3.2, 1.6, 0, 'moss'); sjMoon(-16, -13, 3.2, 2.6, 0, 'stone');
   s3Slab(0, -14, 10, 5, 0.8, 'stone');                     // paseo sur
-  sjMoon(-14, 6, 2.6, 7.0, Math.PI, 'sakura');             // 2º nivel O (antes alfombra deslizante)
-  sjMoon(0, -14, 2.8, 8.4, 0, 'sakura');                   // catwalk alto sobre el paseo (antes alfombra)
   addTree(-6, 21, 1.15); addTree(6, 24, 1.05); addTree(-13, -6, 0.95); addTree(13, 7, 1.0);
   addTree(-11, 6, 1.0); addTree(11, -6, 0.95); addTree(-4, 5, 0.9); addTree(4, -5, 0.9);
   addPad(0, 0);
@@ -29888,10 +30068,8 @@ function buildSJEstanques(){
   sjZenGarden(11, 4.5, 0, 2.0);                            // ►karesansui en la pradera
   /* lunas-PELDAÑO cruzando el vacío norte (stepping stones gigantes) */
   sjMoon(-10, 14, 2.6, 1.2, Math.PI, 'stone'); sjMoon(0, 17, 2.8, 2.4, Math.PI, 'stone'); sjMoon(10, 14, 2.6, 3.6, Math.PI, 'stone');
-  sjMoon(0, 26, 5.4, 4.6, Math.PI, 'sakura');              // isla alta al fondo
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 4 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
   sjMoon(0, -15, 4.8, -4, 0, 'moss');                      // deck bajo sur
-  sjMoon(-16, -10, 2.8, 6.2, 0, 'sakura'); sjMoon(16, 10, 2.8, 6.2, Math.PI, 'sakura');   // 2º nivel (antes alfombras)
-  sjMoon(0, 4, 3.0, 8.0, Math.PI, 'sakura');               // catwalk alto sobre las charcas (antes alfombra rápida)
   addPropSJ('sj_statue', -13, -6, 0, 1.0, 0.6);
   addTree(-26, 4, 1.1); addTree(26, -4, 1.0); addTree(13, 6, 0.85);
   addTree(-26, -4, 1.05); addTree(-13, 6, 0.9); addTree(-4, 6, 0.95); addTree(4, 5, 0.9);
@@ -29918,16 +30096,15 @@ function buildSJPagoda(){
   sjShurikenTurret(-20, 2, 4.4, Math.PI/2, 2.7); sjShurikenTurret(20, 2, 6.4, -Math.PI/2, 2.9);   // ►LANZADERAS cruzadas desde las lunas E/O (fuego sobre la explanada)
   sjZenGarden(11, 5, 0, 1.8);                               // ►karesansui de la explanada
   /* rutas VERTICALES alternativas hacia los tejados altos (antes alfombras) */
-  sjMoon(-14, 12, 3.4, 3.2, Math.PI/2, 'sakura'); sjMoon(14, 12, 3.4, 5.2, 3*Math.PI/2, 'sakura');
-  sjMoon(0, 8, 2.8, 7.6, Math.PI, 'sakura');               // asalto al 3er alero (2º nivel sobre la explanada)
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 4 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
+  sjMoon(-14, 12, 3.4, 3.2, Math.PI/2, 'sakura');
   sjMoon(0, -14, 4.6, -4, 0, 'moss'); sjMoon(-18, -12, 3.0, 1.6, 0, 'stone'); sjMoon(18, -12, 3.0, 1.6, 0, 'stone');
   addTree(-7, 15, 1.15); addTree(7, 15, 1.1); addTree(-11, -6, 0.9);
   addTree(11, -6, 0.95); addTree(-4, 6, 0.9); addTree(4, 6, 0.9); addTree(-26, -2, 1.0); addTree(26, 2, 1.0);
   for(let i=0;i<4;i++) addPropSJ(Math.random()<0.5?'sj_bamboo':'sj_bamboo2', -11+(Math.random()-.5)*4, 5+(Math.random()-.5)*4, 0, 1.1+Math.random()*0.6, Math.random()*6.28);
   addPropSJ('sj_flowers', -5, 6, 0, 1.3, 0); addPropSJ('sj_flower', 5, -6, 0, 1.1, 0); addPropSJ('sj_flowers', 9, 5, 0, 1.25, 0);
   /* ►DENSIDAD: lunas a media altura E/O + asalto al TEJADO SUPERIOR + luna sur */
-  sjMoon(-20, 2, 3.4, 4.4, Math.PI/2, 'moss'); sjMoon(20, 2, 3.4, 6.4, 3*Math.PI/2, 'moss');
-  sjMoon(0, 13, 2.6, 10.8, Math.PI, 'sakura');             // asalto al 5º alero (desde el 4º, 8.8; antes alfombra)
+  sjMoon(-20, 2, 3.4, 4.4, Math.PI/2, 'moss');
   sjMoon(0, -20, 3.6, 0.8, 0, 'stone');
   addPad(0, 0);
   sjWideFloaters();
@@ -29960,15 +30137,13 @@ function buildSJBambu(){
   sjShurikenTurret(13, 3, 0, -Math.PI/2, 2.5);             // ►LANZADERA del bosque (dispara hacia -x)
   /* travesía multinivel del bosque (antes alfombras) */
   sjMoon(-19, 13, 3.6, 3.0, Math.PI/2, 'sakura'); sjMoon(19, 13, 3.6, 3.0, 3*Math.PI/2, 'sakura');
-  sjMoon(0, 19, 4.6, 6.0, Math.PI, 'sakura');              // luna ALTA sobre el claro
-  sjMoon(-8, -14, 2.6, 4.6, Math.PI, 'sakura'); sjMoon(8, -14, 2.6, 4.6, Math.PI, 'sakura');
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 4 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
   sjMoon(0, -16, 4.4, -4, 0, 'stone');                     // deck bajo
   addTree(-43, -4, 1.0); addTree(43, 4, 1.0);
   addTree(-43, 4, 1.05); addTree(43, -4, 1.0); addTree(-5, 5, 0.9); addTree(5, 5, 0.9); addTree(0, -6, 1.0);
   addPropSJ('sj_flowers', -5, -4, 0, 1.3, 0); addPropSJ('sj_flower', 4, 4, 0, 1.1, 0); addPropSJ('sj_flowers', -11, 3, 0, 1.25, 0);
   /* ►DENSIDAD: lunas de media altura entre el claro y la luna alta + 2º nivel + repisas al sur */
   sjMoon(-10, 5, 2.6, 3.2, Math.PI, 'sakura'); sjMoon(10, 5, 2.6, 3.2, Math.PI, 'sakura');
-  sjMoon(0, 12, 2.6, 7.8, Math.PI, 'sakura');              // catwalk 2º nivel (antes alfombra deslizante)
   s3Slab(-20, -14, 7, 5, 1.4, 'sakura'); s3Slab(20, -14, 7, 5, 1.4, 'sakura');
   addPad(0, 0); addPad(-43, 0); addPad(43, 0);
   sjWideFloaters({ chasm:true });   // ►S3FIX3: sin relleno de flancos → el vacio se cruza por las losetas
@@ -29980,7 +30155,7 @@ function buildSJArces(){
   /* BANCALES: terrazas de media-luna subiendo al NE y bajando al SO */
   sjMoon(10, 13, 4.6, 2.2, Math.PI, 'sakura');
   sjMoon(17, 18, 4.0, 4.4, Math.PI, 'sakura');
-  sjMoon(6, 22, 4.4, 6.6, Math.PI, 'sakura');              // terraza alta
+  /* ►S3NINJA (Toni 26/08): fuera el 2º NIVEL de esta sala — 4 losas de y>=4.5 sin puente. Arriba manda ahora sjNinja(), sembrada desde sjLattice: cuadrados de UNA persona, no terrazas. */
   sjMoon(-10, -13, 4.6, -2.0, 0, 'sakura'); sjMoon(-18, -16, 3.8, -4.2, 0, 'stone');   // bancales que BAJAN
   sjMoon(-8, 17, 5.6, 3.0, Math.PI, 'earth');
   addPropSJ('sj_mystic', -8, 18.5, 3.0, 1.35, 0.4);        // el ÁRBOL MÍSTICO (pieza única en su terraza)
@@ -29994,11 +30169,8 @@ function buildSJArces(){
   addTree(26, -3, 1.0); addTree(-6, 5, 0.9); addTree(6, -5, 0.9); addTree(10, 13, 0.95); addTree(-26, -3, 0.95);
   for(let i=0;i<4;i++) addPropSJ(Math.random()<0.5?'sj_bamboo':'sj_bamboo2', -11+(Math.random()-.5)*4, 4+(Math.random()-.5)*4, 0, 1.1+Math.random()*0.6, Math.random()*6.28);
   addPropSJ('sj_flowers', -6, -4, 0, 1.3, 0); addPropSJ('sj_flower', 6, 4, 0, 1.1, 0); addPropSJ('sj_flowers', 12, 3, 0, 1.25, 0);
-  sjMoon(0, -12, 3.0, 7.6, Math.PI, 'sakura');             // catwalk 2º nivel sur (antes alfombra deslizante)
   /* ►DENSIDAD: peldaños intermedios de los bancales + peldaño alto (antes alfombra) */
   sjMoon(17, -13, 3.2, 1.2, 0, 'moss'); sjMoon(0, 13, 3.0, 1.4, Math.PI, 'stone');
-  sjMoon(-17, 11, 3.2, 5.0, Math.PI, 'sakura');            // peldaño hacia la terraza del místico
-  sjMoon(12, 16, 2.6, 8.4, Math.PI, 'sakura');             // peldaño alto junto a la terraza (antes alfombra sube-baja)
   addPad(0, 0);
   sjWideFloaters();
 }
