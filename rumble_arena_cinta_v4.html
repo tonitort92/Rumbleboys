@@ -3631,7 +3631,165 @@ function _saveBlank(){
      Es tu MEJOR nota en cada mundo (la misma que se estampa al cerrar el stage). Mismo truco que
      trophies: sin subir SAVE_V, un guardado viejo se queda con el {} del blanco. */
   return { v:SAVE_V, runs:0, wins:0, bestScore:0, bestGrade:'', bestStage:0,
-           bosses:{}, cls:{}, lastRun:null, unlocks:[], trophies:{}, marks:{} };
+           bosses:{}, cls:{}, lastRun:null, unlocks:[], trophies:{}, marks:{}, tienda:_tiendaBlank() };
+}
+/* ===================================================================
+   ►TIENDA26 (Toni 26/08) · TIENDA PERMANENTE DE LA HOME
+   No confundir con la TIENDA ENTRE STAGES (`RUN_PERKS`, ~línea 21700): aquella se paga con la
+   EXP del run y se borra entera al empezar la partida siguiente (`p.own` a cero). Esta se paga
+   con `s.monedas` — el monedero de los logros — y es PARA SIEMPRE.
+   Las dos SUMAN: bst() pasa a leer los tres carriles (temporal + comprado-run + permanente).
+   Decisión de Toni: suman, pero el permanente tiene tope BAJO (3 niveles) y precio ALTO, para no
+   tirar por tierra el anti-bola-de-nieve de la tienda del run.
+   No sube SAVE_V: saveGet hace Object.assign(_saveBlank(), o), así que un guardado viejo entra sin
+   `tienda` y se queda con este blanco. OJO: esa mezcla es SUPERFICIAL — un guardado con una `tienda`
+   de una versión anterior de esta rama se copia ENTERA tal cual, por eso el único lector es
+   saveTienda(), que rellena lo que falte. Añadir campos aquí es seguro; renombrarlos NO.
+   =================================================================== */
+function _tiendaBlank(){ return { perm:{}, superR:{}, slots:0, hab:{} }; }
+function saveTienda(){
+  const s = saveGet();
+  const t = s.tienda || (s.tienda = _tiendaBlank());
+  if(!t.perm)   t.perm   = {};      // { dmg:0..3, spd, rate, def, kb, jmp } niveles comprados
+  if(!t.superR) t.superR = {};      // { <charKey>: [idSuper, ...] } SUPER R en propiedad
+  if(!t.hab)    t.hab    = {};      // { <charKey>: [idHab, idHab] } habilidades equipadas por slot
+  if(typeof t.slots !== 'number') t.slots = 0;   // 0..2 slots comprados (teclas C y X)
+  return t;
+}
+/* ►TIENDA26 · MONEDAS. Hasta hoy SOLO las daban los logros (`s.monedas`, ~19375): una bolsa
+   FINITA de ~2.500. Con una tienda que gasta, esa bolsa se vacía y no vuelve nunca, así que la
+   tienda dejaría de existir a la segunda tarde. Estas tres fuentes sí son repetibles (decisión
+   de Toni). ►AJUSTA aquí la economía entera. */
+const COIN_SRC = { trofeo:150, marca:80, run:40, runGana:120 };
+function coinsAdd(s, n){ if(n > 0) s.monedas = (s.monedas||0) + n; return n; }
+
+/* ===================== ►TIENDA26 · CATÁLOGO =====================
+   Tres líneas de producto. Hoy SOLO la primera tiene efecto real en la partida; SUPER R y
+   habilidades dejan montados el guardado, el precio, la compra, el gate y el aviso en pantalla,
+   y su efecto es un ANDAMIO declarado (ver superRFire). Era el encargo: "preparamos todo aunque
+   no funcionen todavía".
+   El formato de carta imita al de RUN_PERKS a propósito — {k, ic, name, col, cost, desc} — para
+   que el día que se fusionen las dos tiendas no haya que traducir nada.
+   =============================================================== */
+
+/* --- 1) ATRIBUTOS PERMANENTES (ÚNICA línea con efecto real hoy) ---
+   Tope 3 y precio alto por decisión de Toni: SUMAN a la tienda del run, así que un veterano
+   empieza por delante; 3 niveles es lo que se puede regalar sin romper PERK_INFL/BUYS_PER_STAGE.
+   Los porcentajes NO se escriben aquí: los pone el multiplicador de siempre (spdMul, _dmgBase,
+   defMul…) al leer bst(). Subír algo de aquí sube el nivel, nunca el efecto por nivel. */
+const SHOP_ATTR_STEP = 2.1;   // ►AJUSTA: encarecido por nivel ya comprado (900 → 1.890 → 3.969)
+const SHOP_ATTR_MAX  = 3;     // ►AJUSTA: tope de niveles permanentes por atributo
+const SHOP_ATTR = [
+  { k:'dmg',  ic:'\u2694',  name:'FUERZA',    col:'#ff9a5f', cost:900,  desc:'+12% de da\u00f1o en tus golpes, en TODAS las partidas' },
+  { k:'spd',  ic:'\ud83c\udfc3', name:'VELOCIDAD', col:'#5fd0ff', cost:700,  desc:'+8% de velocidad de carrera' },
+  { k:'rate', ic:'\ud83d\udca8', name:'CADENCIA',  col:'#8fe0ff', cost:1100, desc:'\u221214% de enfriamiento al atacar' },
+  { k:'def',  ic:'\ud83d\udee1', name:'DEFENSA',   col:'#c299ff', cost:1100, desc:'\u221210% del da\u00f1o que recibes' },
+  { k:'kb',   ic:'\ud83d\udca5', name:'EMPUJE',    col:'#ffcf5f', cost:800,  desc:'mandas a los rivales m\u00e1s lejos del borde' },
+  { k:'jmp',  ic:'\u2912',  name:'SALTO',     col:'#7affc8', cost:700,  desc:'+7% de impulso de salto (cuenta contra JMP_LV_MAX)' },
+];
+function shopAttrLvl(k){ return saveTienda().perm[k] || 0; }
+function shopAttrCost(a){ return Math.round(a.cost * Math.pow(SHOP_ATTR_STEP, shopAttrLvl(a.k))); }
+/* vuelca el carril permanente del GUARDADO a la ficha del jugador. Solo al humano: es progresión
+   personal, y una IA con las compras de Toni sería un rival inflado sin motivo. */
+function permApply(p){
+  p.perm = {};
+  if(!p || p.isAI) return;
+  try{ const t = saveTienda().perm; for(const k in t){ if(t[k] > 0) p.perm[k] = t[k]; } }catch(e){}
+}
+
+/* --- 2) SUPER R · dos megaataques por personaje ---
+   Cómo se usa (diseño elegido): NO gasta tecla nueva. Se cuentan las R normales de la partida y a
+   la tercera, si tienes SUPER en propiedad, la R se arma — la siguiente R es la SUPER, una vez y
+   se acabó. Se lee sola en el HUD y no hay que enseñarle nada al jugador. */
+const SUPER_R_AFTER = 3;   // ►AJUSTA: R normales que hay que gastar antes de armar la SUPER
+const SHOP_SUPER = {
+  voxelhero: [ { id:'telurica', ic:'\ud83c\udf0b', name:'FURIA TEL\u00daRICA',   cost:2400, desc:'B\u00c1RBARO \u00b7 el suelo se abre en ondas s\u00edsmicas' },
+               { id:'martillofin', ic:'\ud83d\udd28', name:'MARTILLO DEL FIN', cost:3200, desc:'B\u00c1RBARO \u00b7 un martillazo \u00fanico que atraviesa la arena' } ],
+  samurai:   [ { id:'milcortes', ic:'\u2694', name:'MIL CORTES',        cost:2400, desc:'SAMUR\u00c1I \u00b7 cadena de cortes por toda la plataforma' },
+               { id:'eclipse',   ic:'\ud83c\udf11', name:'FILO DEL ECLIPSE', cost:3200, desc:'SAMUR\u00c1I \u00b7 un solo tajo que parte la pantalla' } ],
+  archer:    [ { id:'lluviafuego', ic:'\ud83d\udd25', name:'LLUVIA DE FUEGO', cost:2400, desc:'ARQUERA \u00b7 la lluvia de flechas prende el suelo' },
+               { id:'juicio',      ic:'\ud83c\udff9', name:'FLECHA DEL JUICIO', cost:3200, desc:'ARQUERA \u00b7 una flecha que no falla y manda al vac\u00edo' } ],
+  link:      [ { id:'cataclismo', ic:'\ud83c\udf00', name:'CATACLISMO ARCANO', cost:2400, desc:'MAGO \u00b7 el rayo arcano barre en abanico' },
+               { id:'singular',   ic:'\u26ab', name:'SINGULARIDAD',      cost:3200, desc:'MAGO \u00b7 agujero que atrae y tritura' } ],
+  knight:    [ { id:'bastion2', ic:'\ud83d\udee1', name:'BASTI\u00d3N IMPERIAL', cost:2400, desc:'CABALLERO \u00b7 el torbellino se vuelve fortaleza' },
+               { id:'carga',    ic:'\ud83c\udfc7', name:'CARGA DE LA ORDEN', cost:3200, desc:'CABALLERO \u00b7 embestida que arrastra a todos' } ],
+  nun:       [ { id:'juiciofinal', ic:'\u2728', name:'JUICIO FINAL', cost:2400, desc:'SACERDOTISA \u00b7 la c\u00fapula castiga y cura a la vez' },
+               { id:'aurora',      ic:'\ud83c\udf05', name:'AURORA',      cost:3200, desc:'SACERDOTISA \u00b7 luz que limpia la arena entera' } ],
+};
+function superList(key){ return SHOP_SUPER[key] || []; }
+function superOwnedIds(key){ const a = saveTienda().superR[key]; return Array.isArray(a) ? a : []; }
+function superOwns(key, id){ return superOwnedIds(key).indexOf(id) >= 0; }
+/* ¿tiene ESTE jugador alguna SUPER comprada para su clase? (devuelve la primera; con las dos
+   compradas hará falta que Toni decida cómo se elige — hoy manda el orden del catálogo) */
+function superRArmed(p){
+  if(!p || p.isAI || !p._charKey) return null;
+  const own = superOwnedIds(p._charKey);
+  if(!own.length) return null;
+  return superList(p._charKey).filter(x => own.indexOf(x.id) >= 0)[0] || null;
+}
+function superRReady(p){ return !!superRArmed(p) && (p._rCount||0) >= SUPER_R_AFTER && !p._superUsed; }
+function superRFire(p){
+  p._superUsed = true;
+  /* ►ANDAMIO DECLARADO: el gate (3 R gastadas), el "una sola vez por partida", el gasto del
+     contador y el aviso del HUD YA son de verdad. El EFECTO todavía es la R de siempre — los 12
+     megaataques están por diseñar. Cuando existan, aquí va el despacho por `superRArmed(p).id`. */
+  return classKit(p).ult(p);
+}
+
+/* --- 3) SLOTS + HABILIDADES ---
+   Primero se compra el SLOT (hasta 2) y luego lo que va dentro. Las teclas están comprobadas
+   libres: de las 26 letras el juego ya usa A D E F H I J K L O Q R S T U V W (más flechas, shift y
+   espacio), así que C y X son de las pocas que quedan y además caen bien bajo la mano izquierda. */
+const SHOP_SLOT = [ { cost:1800, key:'C', pad:'LB' }, { cost:4200, key:'X', pad:'LT' } ];
+const SHOP_HAB = [
+  { id:'dash',   ic:'\ud83d\udca8', name:'R\u00c1FAGA',   col:'#5fd0ff', cost:1200, desc:'impulso corto en la direcci\u00f3n que miras' },
+  { id:'egida',  ic:'\ud83d\udee1', name:'\u00c9GIDA',    col:'#c299ff', cost:1500, desc:'escudo breve que absorbe un golpe' },
+  { id:'bomba',  ic:'\ud83d\udca3', name:'BOMBA',    col:'#ff6a2a', cost:1600, desc:'la sueltas a tus pies y estalla en \u00e1rea' },
+  { id:'garfio', ic:'\ud83e\ude9d', name:'GARFIO',   col:'#ffcf5f', cost:2000, desc:'te tira hacia la plataforma m\u00e1s cercana' },
+  { id:'venda',  ic:'\ud83e\ude79', name:'VENDAJE',  col:'#7affc8', cost:1400, desc:'te curas un poco, con enfriamiento largo' },
+  { id:'senuelo',ic:'\ud83c\udfad', name:'SE\u00d1UELO',  col:'#b06cff', cost:2200, desc:'un clon que distrae a los minions' },
+];
+function habById(id){ return SHOP_HAB.filter(h => h.id === id)[0] || null; }
+function habEquipped(key){ const a = saveTienda().hab[key]; return Array.isArray(a) ? a : []; }
+function habOwns(key, id){ return habEquipped(key).indexOf(id) >= 0; }
+
+/* --- COMPRA · un solo punto de entrada. Devuelve {ok, why} para que la UI cante el motivo. --- */
+function shopBuy(kind, id, charKey){
+  const t = saveTienda(), mon = saveGet().monedas || 0;
+  const pay = n => { if(mon < n) return false; saveBump(s => { s.monedas = (s.monedas||0) - n; }); return true; };
+  if(kind === 'attr'){
+    const a = SHOP_ATTR.filter(x => x.k === id)[0]; if(!a) return { ok:false, why:'no existe' };
+    if(shopAttrLvl(a.k) >= SHOP_ATTR_MAX) return { ok:false, why:'ya est\u00e1 al m\u00e1ximo' };
+    const c = shopAttrCost(a); if(!pay(c)) return { ok:false, why:'te faltan monedas' };
+    saveBump(s => { const tt = saveTienda(); tt.perm[a.k] = (tt.perm[a.k]||0) + 1; });
+    if(typeof P1 !== 'undefined' && P1) permApply(P1);   // si se compra con una partida viva, entra YA
+    return { ok:true, cost:c };
+  }
+  if(kind === 'super'){
+    if(!charKey) return { ok:false, why:'sin personaje' };
+    const x = superList(charKey).filter(v => v.id === id)[0]; if(!x) return { ok:false, why:'no existe' };
+    if(superOwns(charKey, id)) return { ok:false, why:'ya la tienes' };
+    if(!pay(x.cost)) return { ok:false, why:'te faltan monedas' };
+    saveBump(s => { const tt = saveTienda(); (tt.superR[charKey] = superOwnedIds(charKey).slice()).push(id); });
+    return { ok:true, cost:x.cost };
+  }
+  if(kind === 'slot'){
+    const n = t.slots || 0;
+    if(n >= SHOP_SLOT.length) return { ok:false, why:'ya tienes los dos' };
+    if(!pay(SHOP_SLOT[n].cost)) return { ok:false, why:'te faltan monedas' };
+    saveBump(s => { saveTienda().slots = n + 1; });
+    return { ok:true, cost:SHOP_SLOT[n].cost };
+  }
+  if(kind === 'hab'){
+    if(!charKey) return { ok:false, why:'sin personaje' };
+    const h = habById(id); if(!h) return { ok:false, why:'no existe' };
+    if(habOwns(charKey, id)) return { ok:false, why:'ya la tienes' };
+    if(habEquipped(charKey).length >= (t.slots||0)) return { ok:false, why:'sin slots libres' };
+    if(!pay(h.cost)) return { ok:false, why:'te faltan monedas' };
+    saveBump(s => { const tt = saveTienda(); (tt.hab[charKey] = habEquipped(charKey).slice()).push(id); });
+    return { ok:true, cost:h.cost };
+  }
+  return { ok:false, why:'tipo desconocido' };
 }
 let _SAVE = null;                                  // caché en memoria (única fuente de verdad en caliente)
 /* ►TODO (Toni 25/08: "acceso a todos los mundos para ver resultados"): con ?todo en la URL el guardado se lee con
@@ -3694,9 +3852,9 @@ function saveNoteMark(stage, label, pts){
   saveBump(s=>{
     if(!s.marks) s.marks = {};
     const m = s.marks[stage];
-    if(!m){ s.marks[stage] = { g:label, gi, pts:Math.round(pts||0), n:1 }; return; }
+    if(!m){ s.marks[stage] = { g:label, gi, pts:Math.round(pts||0), n:1 }; coinsAdd(s, COIN_SRC.marca); return; }   // ►TIENDA26: primera nota del mundo
     m.n = (m.n||0) + 1;
-    if(gi < m.gi || (gi === m.gi && (pts||0) > (m.pts||0))){ m.g = label; m.gi = gi; m.pts = Math.round(pts||0); }
+    if(gi < m.gi || (gi === m.gi && (pts||0) > (m.pts||0))){ m.g = label; m.gi = gi; m.pts = Math.round(pts||0); coinsAdd(s, COIN_SRC.marca); }   // ►TIENDA26: solo si la MEJORAS (repetir la misma no paga)
   });
   /* ►CHARSTATS: la misma nota, por PERSONAJE: mejor nota del mundo + histórico de veces por nota */
   try{ saveBump(s=>{ const key = (typeof P1!=='undefined' && P1 && P1._charKey) || (typeof MATCH!=='undefined' && MATCH.cls); const c = saveCls(s, key); if(!c) return;
@@ -3710,6 +3868,7 @@ function saveNoteMark(stage, label, pts){
 function saveNoteTrophy(stage){
   if(!_TROPHY_WINNER || typeof P1==='undefined' || _TROPHY_WINNER !== P1) return;
   saveBump(s=>{ if(!s.trophies) s.trophies = {}; s.trophies[stage] = (s.trophies[stage]||0) + 1;
+    coinsAdd(s, COIN_SRC.trofeo);   // ►TIENDA26: el trofeo también paga
     /* ►CHARSTATS (Toni 23/08): trofeos por PERSONAJE y mundo */
     const c = saveCls(s, P1._charKey); if(c){ if(!c.tro) c.tro = {}; c.tro[stage] = (c.tro[stage]||0) + 1; } });
 }
@@ -3729,6 +3888,7 @@ function saveRecordRun(info){
     const s = saveGet();
     s.runs++;
     if(info.won) s.wins++;
+    coinsAdd(s, COIN_SRC.run + (info.won ? COIN_SRC.runGana : 0));   // ►TIENDA26: terminar paga; ganar paga más
     if(info.score > (s.bestScore||0)){ out.record = true; s.bestScore = info.score; s.bestGrade = info.grade||s.bestGrade; }
     const c = saveCls(s, info.charKey);
     if(c){
@@ -5897,7 +6057,8 @@ function makePlayer(color, darker, spawnX, isAI){
     mpow:0, ult:null, _ultHeld:false, out:false, label:'', lastHitBy:null, respDrop:false, kbInput:false, padIndex:-1, atkBuf:0,
     sc:{ dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 },   // bonus = ►INTERSTAGE: ×1.3 de superviviente acumulado
     boost:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 },              // carril TEMPORAL (cápsulas)
-    own:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 },        // ►INTERSTAGE: carril COMPRADO (permanente)
+    own:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 },        // ►INTERSTAGE: carril COMPRADO (permanente DENTRO del run)
+    perm:{},                                                          // ►TIENDA26: carril PERMANENTE de verdad (tienda de la home); lo rellena permApply()
     ownPas:{ spikes:false, elec:false, magnet:false, mines:false },
     beam:null, beamGfx:null,
     spin:null, spinCD:0, spinGfx:null, spinBuf:0,
@@ -9206,7 +9367,11 @@ function clsStat(p, k){ const s = p && p._charKey && CLASS_STATS[p._charKey]; re
    OJO: _PAS_FLAG va INLINE y no derivado de PASSIVE_DEFS — ese const vive ~1400 líneas más abajo
    (trampa de TDZ al evaluar el módulo). */
 const _PAS_FLAG = { spikes:'pasSpikes', elec:'pasElec', magnet:'pasMagnet', mines:'pasMines' };
-function bst(p, k){ return (p.boost[k]||0) + ((p.own && p.own[k])||0); }            // nivel de boost = temporal + comprado
+/* ►TIENDA26: TERCER carril. temporal (cápsulas) + comprado-en-el-run (tienda entre stages) +
+   PERMANENTE (tienda de la home, `p.perm`, viene del guardado). Con `perm` a 0 —cualquier partida
+   que no haya comprado nada— el resultado es idéntico bit a bit al de antes. Igual que con `own`,
+   TODO lector pasa por bst() → cero fontanería nueva aguas abajo. */
+function bst(p, k){ return (p.boost[k]||0) + ((p.own && p.own[k])||0) + ((p.perm && p.perm[k])||0); }
 function hasPas(p, k){ return !!(p[_PAS_FLAG[k]] || (p.ownPas && p.ownPas[k])); }   // ¿tiene el pasivo, por el suelo o comprado?
 
 function spdMul(p){ return Math.min(1.8,  (.55 + chaosLvl*.06) * (1 + .08*bst(p,'spd')) * clsStat(p,'spd') * (p.buffSpdT>0?(p.buffSpdV||1.2):1)); }   // boost de velocidad temporal (cura)
@@ -19001,7 +19166,8 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdModeBtn" data-mode="on"><b>JUGAR ONLINE</b><small>Con amigos por internet: crea o únete a una sala.</small></button>'
       + '</div>'
       + '<div id="hdRail"><div id="hdRailBox">'
-      +   '<button type="button" class="hdRb" data-act="ctl"    data-lbl="CONTROLES"  title="Controles">🎮</button>'
+      +   '<button type="button" class="hdRb" data-act="shop"   data-lbl="TIENDA"     title="Tienda de mejoras">🛒</button>'   /* ►TIENDA26: primero y en grupo propio — es el único del rail que GASTA algo */
+      +   '<button type="button" class="hdRb sep" data-act="ctl" data-lbl="CONTROLES"  title="Controles">🎮</button>'
       +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="CÓMO JUGAR BIEN"   title="Cómo jugar bien">🎓</button>'
       +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS Y MEJORAS"    title="Objetos y mejoras">📦</button>'
       +   '<button type="button" class="hdRb sep" data-act="vit" data-lbl="VITRINA DE TROFEOS"   title="Vitrina de trofeos">🏆</button>'
@@ -19034,6 +19200,97 @@ function updatePvpShieldFX(){
     $('hdUser').addEventListener('click', logOpen);
     $('hdUser').addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); logOpen(); } });
     window.__hdLogOpen = logOpen;
+
+    /* ===================== ►TIENDA26 · LA VENTANA =====================
+       Mismo contrato que el modal de LOGROS (overlay + ✕ + velo + Esc) para que no haya dos formas
+       de cerrar cosas en esta pantalla. El CSS se inyecta desde aquí en vez de vivir en el bloque
+       de estilos de la home: así la tienda entera es UN solo trozo que se puede mover o quitar.
+       Las tres pestañas son las tres líneas del catálogo; el personaje del que se habla es el que
+       esté elegido en el carrusel (`MATCH.cls`), igual que hacen los controles y la ficha. */
+    { const cssT = document.createElement('style');
+      cssT.textContent = '#hdShopCard{ background:linear-gradient(180deg,#141a2e,#0d1120); border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:26px 28px 22px; width:min(940px,94vw); max-height:88vh; overflow:auto; position:relative; }'
+        + '#hdShopCard h2{ margin:0 0 2px; letter-spacing:2px; }'
+        + '#hdShopWallet{ position:absolute; right:64px; top:26px; font-weight:900; color:#ffd84f; letter-spacing:1px; font-size:15px; }'
+        + '#hdShopTabs{ display:flex; gap:8px; margin:14px 0 16px; flex-wrap:wrap; }'
+        + '.hdShopTab{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:#9fb0d6; border-radius:11px; padding:8px 14px; font:inherit; font-size:12px; font-weight:900; letter-spacing:1px; cursor:pointer; }'
+        + '.hdShopTab.on{ background:rgba(255,216,79,.12); border-color:rgba(255,216,79,.45); color:#fff; }'
+        + '#hdShopList{ display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr)); gap:10px; }'
+        + '.hdShopIt{ display:flex; gap:11px; align-items:flex-start; padding:11px 12px; border-radius:13px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); }'
+        + '.hdShopIt .ic{ width:42px; height:42px; border-radius:11px; display:grid; place-items:center; font-size:21px; background:rgba(10,14,30,.7); flex:0 0 auto; }'
+        + '.hdShopIt .tx{ flex:1 1 auto; min-width:0; } .hdShopIt .tx b{ display:block; font-size:13px; letter-spacing:1px; color:#fff; }'
+        + '.hdShopIt .tx span{ display:block; font-size:11.5px; color:#9fb0d6; line-height:1.35; margin-top:2px; }'
+        + '.hdShopIt .lv{ display:flex; gap:3px; margin-top:5px; } .hdShopIt .lv i{ width:13px; height:5px; border-radius:3px; background:rgba(255,255,255,.16); }'
+        + '.hdShopIt .lv i.on{ background:var(--hc,#ffd84f); }'
+        + '.hdShopBuy{ flex:0 0 auto; align-self:center; border:1px solid rgba(255,216,79,.4); background:rgba(255,216,79,.10); color:#ffd84f; border-radius:10px; padding:8px 11px; font:inherit; font-size:12px; font-weight:900; letter-spacing:1px; cursor:pointer; white-space:nowrap; }'
+        + '.hdShopBuy:hover:not(:disabled){ background:rgba(255,216,79,.2); color:#fff; }'
+        + '.hdShopBuy:disabled{ opacity:.4; cursor:default; border-color:rgba(255,255,255,.12); color:#8b96b5; background:none; }'
+        + '.hdShopNote{ font-size:12px; color:#8ea6cf; margin:0 0 12px; line-height:1.45; }'
+        + '.hdShopWip{ color:#ffb14e; font-weight:900; letter-spacing:1px; font-size:11px; }';
+      document.head.appendChild(cssT);
+
+      const sm = document.createElement('div'); sm.className = 'overlay'; sm.id = 'hdShopModal'; sm.style.display = 'none';
+      sm.innerHTML = '<div id="hdShopCard"><button type="button" class="modalClose" id="hdShopClose" aria-label="Cerrar">✕</button>'
+        + '<h2>TIENDA</h2><p class="gsub">Las monedas de los logros, los trofeos y las carreras se gastan aquí. Lo que compres es <b>para siempre</b>.</p>'
+        + '<div id="hdShopWallet"></div><div id="hdShopTabs"></div><p class="hdShopNote" id="hdShopNote"></p><div id="hdShopList"></div></div>';
+      document.body.appendChild(sm);
+
+      let shopTab = 'attr';
+      const TABS = [ ['attr','ATRIBUTOS'], ['super','SUPER R'], ['hab','HABILIDADES'] ];
+      const shopChar = ()=> (typeof MATCH!=='undefined' && MATCH.cls) || 'voxelhero';
+      const shopCharName = ()=>{ const k = shopChar(), pk = (typeof CLASS_PICK!=='undefined' ? CLASS_PICK : []).find(c => c[0]===k); return pk ? pk[1] : k; };
+      const dots = (lv, max, col)=>{ let h = '<div class="lv" style="--hc:' + col + '">'; for(let i=0;i<max;i++) h += '<i class="' + (i<lv?'on':'') + '"></i>'; return h + '</div>'; };
+      const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      const card = (o)=> '<div class="hdShopIt"><div class="ic">' + o.ic + '</div><div class="tx"><b style="color:' + (o.col||'#fff') + '">' + esc(o.name) + '</b><span>' + esc(o.desc) + '</span>'
+        + (o.dots || '') + (o.wip ? '<span class="hdShopWip">' + o.wip + '</span>' : '') + '</div>'
+        + '<button type="button" class="hdShopBuy" data-kind="' + o.kind + '" data-id="' + o.id + '"' + (o.dis ? ' disabled' : '') + '>' + o.btn + '</button></div>';
+
+      function renderShop(){
+        const mon = saveGet().monedas || 0, t = saveTienda(), k = shopChar();
+        $('hdShopWallet').innerHTML = '🪙 ' + mon;
+        $('hdShopTabs').innerHTML = TABS.map(x => '<button type="button" class="hdShopTab' + (shopTab===x[0]?' on':'') + '" data-tab="' + x[0] + '">' + x[1] + '</button>').join('');
+        const note = $('hdShopNote'), list = $('hdShopList');
+        let html = '';
+        if(shopTab === 'attr'){
+          note.innerHTML = 'Suben tu personaje en <b>todas</b> las partidas, y se SUMAN a lo que compres en la tienda de entre mundos. Tope de ' + SHOP_ATTR_MAX + ' niveles y el precio se multiplica ×' + SHOP_ATTR_STEP + ' cada vez.';
+          html = SHOP_ATTR.map(a => { const lv = shopAttrLvl(a.k), top = lv >= SHOP_ATTR_MAX, c = shopAttrCost(a);
+            return card({ kind:'attr', id:a.k, ic:a.ic, name:a.name, col:a.col, desc:a.desc, dots:dots(lv, SHOP_ATTR_MAX, a.col),
+                          btn: top ? 'AL MÁXIMO' : (c + ' 🪙'), dis: top || mon < c }); }).join('');
+        } else if(shopTab === 'super'){
+          note.innerHTML = 'Megaataques de <b>' + esc(shopCharName()) + '</b>. No gastan tecla nueva: cuando lleves <b>' + SUPER_R_AFTER + ' R</b> gastadas en la partida, tu R se arma y el siguiente disparo es la SUPER. <b>Una vez por partida.</b>';
+          html = superList(k).map(x => { const own = superOwns(k, x.id);
+            return card({ kind:'super', id:x.id, ic:x.ic, name:x.name, col:'#ffb14e', desc:x.desc,
+                          wip:'EFECTO POR IMPLEMENTAR · hoy dispara tu R de siempre',
+                          btn: own ? 'EN PROPIEDAD' : (x.cost + ' 🪙'), dis: own || mon < x.cost }); }).join('');
+        } else {
+          const n = t.slots||0, eq = habEquipped(k);
+          note.innerHTML = 'Primero el <b>slot</b>, luego lo que va dentro. Tienes <b>' + n + ' de ' + SHOP_SLOT.length + '</b> — el slot 1 va a la tecla <b>' + SHOP_SLOT[0].key + '</b> y el 2 a la <b>' + SHOP_SLOT[1].key + '</b>. Equipadas en <b>' + esc(shopCharName()) + '</b>: ' + eq.length + '/' + n + '.';
+          html = SHOP_SLOT.map((sl, i) => { const got = n > i, prev = i > 0 && n < i;
+            return card({ kind:'slot', id:String(i), ic:'🔑', name:'SLOT ' + (i+1) + ' · TECLA ' + sl.key, col:'#8fe0ff',
+                          desc:'una ranura más de habilidad (mando: ' + sl.pad + ')',
+                          btn: got ? 'COMPRADO' : (prev ? 'ANTES EL 1' : (sl.cost + ' 🪙')), dis: got || prev || mon < sl.cost }); }).join('')
+               + SHOP_HAB.map(h => { const own = habOwns(k, h.id), full = eq.length >= n;
+            return card({ kind:'hab', id:h.id, ic:h.ic, name:h.name, col:h.col, desc:h.desc,
+                          wip:'EFECTO POR IMPLEMENTAR · hoy la compra solo se guarda',
+                          btn: own ? 'EQUIPADA' : (full ? 'SIN SLOT LIBRE' : (h.cost + ' 🪙')), dis: own || full || mon < h.cost }); }).join('');
+        }
+        list.innerHTML = html;
+        { const co = $('hdCoinN'); if(co) co.textContent = mon; }   // el contador de la home, al día
+      }
+      window.__hdShopRender = renderShop;
+
+      $('hdShopTabs').addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('.hdShopTab'); if(!b) return; shopTab = b.dataset.tab; renderShop(); });
+      $('hdShopList').addEventListener('click', e=>{
+        const b = e.target.closest && e.target.closest('.hdShopBuy'); if(!b || b.disabled) return;
+        const r = shopBuy(b.dataset.kind, b.dataset.id, shopChar());
+        try{ if(r.ok) sfxEv('ui_apply', {ui:true}); }catch(e2){}
+        renderShop();
+      });
+      const shopClose = ()=>{ sm.style.display = 'none'; };
+      $('hdShopClose').addEventListener('click', shopClose);
+      sm.addEventListener('click', e=>{ if(e.target === sm) shopClose(); });
+      addEventListener('keydown', e=>{ if(sm.style.display === 'flex' && e.key === 'Escape'){ shopClose(); e.preventDefault(); } });
+      window.__hdShopOpen = ()=>{ try{ sfxEv('ui_open',{ui:true}); }catch(e){} renderShop(); sm.style.display = 'flex'; sm.scrollTop = 0; };
+    }
 
     /* ►FRAME · el PLANETA de ►ESFERAS (suelo real del stage) para los mundos sin isla capturada: la parada
        central del selector viejo se muda al frame; ESFERAS la encuentra por su clase y lee #isIdx (índice
@@ -19072,6 +19329,7 @@ function updatePvpShieldFX(){
       guide:  ()=>{ const t = $('guideLink'); if(t) t.click(); },
       vit:    ()=>{ const t = $('trophyLink'); if(t) t.click(); },
       log:    ()=>{ if(window.__hdLogOpen) window.__hdLogOpen(); },
+      shop:   ()=>{ if(window.__hdShopOpen) window.__hdShopOpen(); },   // ►TIENDA26
       opts:   ()=>{ const t = $('hsOpts'); if(t) t.click(); },
       lang:   ()=>{ const t = $('hsLang'); if(t) t.click(); },
     };
@@ -20922,7 +21180,17 @@ function classSuper(p){ return classKit(p).sup(p); }
    la CPU no pasa por ahí (tiene su propia rama con aiThink y llama a classF/classUlt directamente),
    así que los rivales seguían usando sus especiales. Se cierra en la PUERTA de cada especial, que es
    el único sitio por el que pasan los dos. */
-function classUlt(p){ if(STAGE===13) return false; const _was = ultActive(p); const r = classKit(p).ult(p); if(!_was && ultActive(p)) narrateAwe(); return r; }   // definitiva lanzada → asombro (raro)
+/* ►SUPERR26: ÚNICO punto por el que pasa la definitiva, así que aquí va todo el gate de la SUPER R.
+   La cuenta sube solo cuando la R SALE de verdad (`!_was && ultActive`), no cuando se pulsa en falso
+   con la barra a medias — si no, aporrear R armaría la SUPER sin gastar nada. */
+function classUlt(p){
+  if(STAGE===13) return false;
+  const _was = ultActive(p);
+  const sup = superRReady(p);
+  const r = sup ? superRFire(p) : classKit(p).ult(p);
+  if(!_was && ultActive(p)){ narrateAwe(); if(!sup) p._rCount = (p._rCount||0) + 1; }
+  return r;
+}
 function classF(p){ if(STAGE===13) return false; return (classKit(p).f||barbSpinF)(p); }   // F única por clase
 function classQ(p){ return (classKit(p).q||barbAxeQ)(p); }    // Q única por clase
 
@@ -40465,6 +40733,8 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: carril COMPRADO a cero (es por RUN)
     p.ownPas = { spikes:false, elec:false, magnet:false, mines:false };
+    permApply(p);                                                    // ►TIENDA26: y el PERMANENTE se vuelve a leer del guardado
+    p._rCount = 0; p._superUsed = false;                             // ►SUPERR26: la cuenta de R y la SUPER son POR PARTIDA
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
     p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;   // ►INTERSTAGE: timers de pasivo (antes se quedaban colgados)
