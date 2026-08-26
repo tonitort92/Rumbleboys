@@ -2243,6 +2243,8 @@ window.addEventListener('load', function(){
 <script src="skelshooter_model.js?v=2"></script>  <!-- ►SKELMINIONS: ESQUELETO SOLDADO mediano (shooter) con arco+flechas -->
 <script src="skelknight_model.js?v=1"></script>  <!-- ►SKELMINIONS: ESQUELETO CABALLERO grande (large) con espada -->
 <script src="skelpirate_gear.js?v=1"></script>  <!-- ►PIRMINION: vestuario pirata (bandana/camiseta/pantalón) colgado de los huesos del esqueleto pequeño — S12 -->
+<script src="pirgunner_gear.js?v=3"></script>  <!-- ►PIRGUNNER: PISTOLERO pirata (shooter S12) — tricornio, parche, chaleco roto y botas sobre el MISMO rig SKEL; las dos pistolas las pone weapon:'flintlock' -->
+<script src="pirbrute_gear.js?v=4"></script>  <!-- ►PIRBRUTE: BRUTO pirata (large S12) — camiseta/pantalón de rayas, ojo amarillo y puños enormes sobre el MISMO rig SKEL, escalado a 3.4 -->
 <script src="viking1_model.js?v=1"></script>  <!-- ►VIKINGS: vikingo de hielo 1 (S7) con hacha -->
 <script src="viking2_model.js?v=1"></script>  <!-- ►VIKINGS: vikingo de hielo 2 (S7) con martillo -->
 <script src="vikaxe_model.js?v=1"></script>  <!-- ►VIKINGS: hacha Prop_Axe_01 del pack Fantasy -->
@@ -2264,6 +2266,8 @@ window.addEventListener('load', function(){
 <script src="goblin3_model.js?v=2"></script>  <!-- GOBLIN 3 animado (rig Mixamo) para el minion GRANDE; usa el MODELO de GOBLIN 2 (swap); opcional -->
 <script src="goblin2_model.js?v=2"></script>  <!-- GOBLIN 2 animado (rig Mixamo) para el minion MEDIANO 'shooter'; usa el MODELO de GOBLIN 3 (swap); opcional -->
 <script src="goblin1_model.js?v=2"></script>  <!-- GOBLIN 1 animado (rig Mixamo) para el minion PEQUEÑO 'small'; en base64; opcional -->
+<script src="goblinshaman_anims.js?v=1"></script>  <!-- ►M2HORDA: Goblin CHAMÁN (Synty, rig Mixamo) — minion 'shooter' MELEE del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
+<script src="goblinwarrior_anims.js?v=1"></script> <!-- ►M2HORDA: Goblin GUERRERO (Synty sin hombrera, rig Mixamo) — minion 'large' del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
 <script src="samboss_model.js?v=1"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
 <script src="samboss_death.js?v=1"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
 <script src="boss_anims.js?v=1"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
@@ -3994,7 +3998,7 @@ let _carpetGeo = null, _carpetMat = null;
    jungla (S2_GREENS) · 3 = magenta oscuro a juego con el suelo sakura de Japón (SJ_PINKS). ►AJUSTA aquí. */
 const CARPET_TINT = {
   1: { h:0.26, hv:0.03, s:0.60, sv:0.20, l:0.50, lv:0.16 },
-  2: { h:0.30, hv:0.02, s:0.80, sv:0.10, l:0.22, lv:0.06 },   // ►FELPUDO25c (Toni 25/08): verde de SELVA. OJO: el mundo 2 lleva relleno alto (hemi .75 + ambiente .34, exposición .80) y MULTIPLICA el albedo ~5x — medido con raycast sobre los píxeles más claros. Por eso estos números parecen negros y en pantalla son verde oscuro.
+  2: { h:0.30, hv:0.00, s:0.00, sv:0.00, l:1.00, lv:0.00 },   /* ►FOLLAJE26 (Toni 26/08): tinte de instancia NEUTRO (blanco). El color del felpudo del mundo 2 sale ENTERO de CARPET_GRAD[2], que ya es el verde del suelo; este HSL (l:0.14) lo multiplicaba y lo dejaba casi negro. El resto de la línea es la calibración vieja: */   /* ►FELPUDO25h (Toni 26/08): el FELPUDO es lo que se oscurece en el mundo 2, NO el suelo. Calibrado midiendo el pixel en pantalla (A/B misma sesion, mascara por diferencia ocultando _carpets): l:0.22+degradado viejo = #1a8315 verde VIVO · x0.45 = #0f360d · x0.50 = #103e0e · x0.55 = #0f440d · ESTE x0.60. ►AJUSTA aqui junto con CARPET_GRAD[2]. */
   3: { h:0.91, hv:0.03, s:0.58, sv:0.15, l:0.42, lv:0.14 },
 };
 /* ►FELPUDO25 (Toni 25/08): el felpudo de JUNGLA y JAPÓN solo cubre las plataformas BAJAS (plazas, suelo, decks
@@ -4004,7 +4008,7 @@ const CARPET_TINT = {
 const CARPET_MAXY  = { 2: 1.5, 3: 1.5 };                                          // topY máximo con felpudo (1 = todas)
 const CARPET_KINDS = { 2: { moss:1, earth:1 }, 3: { sakura:1, moss:1, earth:1 } };   // acabados de losa que lo llevan
 const CARPET_MATTE = { 2:1 };           // ►FELPUDO25d: mundos con follaje MATE (sin brillo especular; ver sueloCarpetMat)
-const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x0d2a12, 0x255c22], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta
+const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x113409, 0x113409], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta — ►FOLLAJE26: el mundo 2 va SIN degradado, de UN solo color: 0x113409 es #4a7d36 (S2_GREENS[0], el verde del césped multitono de la losa) pasado a LINEAL, porque el color de vértice va crudo (ver FELPUDO25b) — en pantalla sale exactamente el tono del suelo
 /* ►FELPUDO25b: OJO al calibrar estos verdes — el color de vértice va sin convertir a lineal, así que en pantalla
    sale MÁS CLARO y lavado que el hex escrito (el 0x4f8a2e de la jungla se veía como el verde claro del prado).
    Por eso los números del mundo 2 parecen casi negros aquí: en pantalla son el verde de selva que se pedía. */
@@ -4353,7 +4357,14 @@ function addBumps(g, sx, sz, topY, grassMat, cx, cz){
 const SURF_CAPS = {   // config por mundo · ►AJUSTA colores/espesor aquí
   7:  { base:'#f8fbff', tint:'#e2ecfa', edge:'rgba(96,126,168,.75)', alpha:1, lift:.06, dust:0.25 },   // NIEVE empacada (brillante; la huella azul-gris es lo que canta) — casi entera: es un manto
   4:  { base:'#eccf8f', tint:'#dfba74', edge:'rgba(146,110,52,.5)',  alpha:.94, lift:.04, dust:0.85 },   // ARENA del desierto — con CLAROS orgánicos (Toni 25/08: "que no sea un manto perfecto")
-  11: { base:'#8a5a38', tint:'#774a2c', edge:'rgba(46,26,12,.6)',    alpha:.9,  lift:.035, dust:1.35 },   // ARENISCA fina oscura rojiza (western) — POLVO: zonas llenas, zonas a medias y calvas
+  11: { base:'#b0794c', tint:'#98643c', edge:'rgba(46,26,12,.6)',    alpha:.9,  lift:.035, dust:1.35 },   // ARENISCA fina rojiza (western) — POLVO: zonas llenas, zonas a medias y calvas
+  /* ►ARENISCA26 (Toni 26/08: "la arenisca es demasiado diferente a su superficie"): base y tint estaban a
+     #8a5a38/#774a2c, un marrón MUCHO más oscuro que la losa que cubren (SW_SANDS, media #d59760) — la capa
+     leía como una mancha sobre la arena en vez de como polvo suyo. Ahora van a MEDIO CAMINO entre lo que
+     había y esa media de la superficie (t=0.5 en sRGB), conservando la relación base/tint de siempre
+     (tint ≈ 0.86/0.82/0.79 × base) para no tocar el moteado. El `edge` sigue siendo el mismo marrón oscuro:
+     es el borde compactado de la huella y con la capa más clara se lee mejor, no peor. ►AJUSTA aquí: subir
+     hacia #d59760 acerca más la capa al suelo, bajar hacia #8a5a38 la devuelve al contraste anterior. */
 };
 /* ►SURFCAP25b: radio de esquina de las losas rectangulares (organicSlabGeo(..., 1.9, ...) en TODAS las tapas) */
 const SURFCAP_ROUND = 1.9;
@@ -4361,19 +4372,24 @@ const _surfCaps = [];
 /* ►SURFCAP25: acabados de losa que NO llevan capa — hielo (patina, se ve el hielo), chapa/vía de la fábrica y el arcoíris, roca/piedra */
 function surfCapKindOK(kind){ return !(kind==='ice' || kind==='metal' || kind==='rainbow' || kind==='stone' || kind==='rock' || kind==='rocky'); }
 function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
-  const pw = Math.max(64, Math.min(192, Math.round(sx*10))), ph = Math.max(64, Math.min(192, Math.round(sz*10)));   // ►SURFCAP25c: +resolución (el canto redondeado se veía a escalones)
+  /* ►SURFCAP25c: +resolución (el canto redondeado se veía a escalones). ►HUELLAS26: el tope de 192 px daba
+     10 px/u en una plataforma de 19 u pero solo 6 px/u en una plaza de 32 — y ahí una huella de 0,64 u cabía en
+     4 px, o sea una mancha. Ahora 12 px/u con tope 320: solo pagan más memoria las plazas GRANDES (una de 32 u
+     pasa de 147 KB a 410 KB de canvas), que son cuatro por cinta; las pequeñas siguen igual. */
+  const pw = Math.max(64, Math.min(320, Math.round(sx*12))), ph = Math.max(64, Math.min(320, Math.round(sz*12)));
   const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph; const c2 = cv.getContext('2d');
   /* ►SURFCAP25b (Toni 25/08): la capa RESPETA la forma REAL de la tapa — elipse en los blobs y RECTÁNGULO
      REDONDEADO en las losas (antes un cuadrado: las esquinas colgaban sobre el canto biselado) — y ya NO cubre
      por igual: la clave "dust" abre CALVAS y zonas a medias, para que sea polvo asimétrico y no una moqueta. */
   const RW = Math.max(1, sx-0.35), RH = Math.max(1, sz-0.35);          // medidas REALES del plano (ver PlaneGeometry abajo)
-  const shape = ()=>{ c2.beginPath();
-    if(ellipse){ c2.ellipse(pw/2, ph/2, pw/2, ph/2, 0, 0, 7); return; }
-    const rx = Math.min(pw/2, (SURFCAP_ROUND/RW)*pw), ry = Math.min(ph/2, (SURFCAP_ROUND/RH)*ph);
-    c2.moveTo(rx, 0); c2.lineTo(pw-rx, 0); c2.ellipse(pw-rx, ry, rx, ry, 0, -Math.PI/2, 0);
-    c2.lineTo(pw, ph-ry); c2.ellipse(pw-rx, ph-ry, rx, ry, 0, 0, Math.PI/2);
-    c2.lineTo(rx, ph); c2.ellipse(rx, ph-ry, rx, ry, 0, Math.PI/2, Math.PI);
-    c2.lineTo(0, ry); c2.ellipse(rx, ry, rx, ry, 0, Math.PI, Math.PI*1.5); c2.closePath(); };
+  const shape = (q)=>{ q = q || 0; c2.beginPath();   /* ►CANTO26: `q` = píxeles que la figura se mete hacia DENTRO (margen para el difuminado) */
+    if(ellipse){ c2.ellipse(pw/2, ph/2, Math.max(1, pw/2-q), Math.max(1, ph/2-q), 0, 0, 7); return; }
+    const rx = Math.max(0, Math.min(pw/2, (SURFCAP_ROUND/RW)*pw) - q), ry = Math.max(0, Math.min(ph/2, (SURFCAP_ROUND/RH)*ph) - q);
+    const x0 = q, x1 = pw-q, y0 = q, y1 = ph-q;
+    c2.moveTo(x0+rx, y0); c2.lineTo(x1-rx, y0); c2.ellipse(x1-rx, y0+ry, rx, ry, 0, -Math.PI/2, 0);
+    c2.lineTo(x1, y1-ry); c2.ellipse(x1-rx, y1-ry, rx, ry, 0, 0, Math.PI/2);
+    c2.lineTo(x0+rx, y1); c2.ellipse(x0+rx, y1-ry, rx, ry, 0, Math.PI/2, Math.PI);
+    c2.lineTo(x0, y0+ry); c2.ellipse(x0+rx, y0+ry, rx, ry, 0, Math.PI, Math.PI*1.5); c2.closePath(); };
   c2.fillStyle = cfg.base; c2.fillRect(0, 0, pw, ph);         // se pinta ENTERO y al final se recorta con máscara suave (ver abajo)
   c2.save();
   c2.fillStyle = cfg.tint;                                    // motas suaves para que no sea un llano perfecto
@@ -4400,8 +4416,16 @@ function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
   /* ►SURFCAP25c (Toni 25/08: "la arenisca se PIXELA en los cantos redondeados"): el recorte iba con clip(),
      que en canvas NO es antialiasado → escalones en la curva. Recortar al final con destination-in sobre una
      figura RELLENADA sí lo es: el canto sale limpio aunque la textura sea pequeña. */
+  /* ►CANTO26 (Toni 26/08: "que no se noten los bordes en las plataformas"): el recorte ya no corta en seco.
+     La figura se mete FADE px hacia dentro y se rellena con blur(FADE/2), así el alfa de la capa cae de 1 a 0
+     en una banda de ~2·FADE y el canto deja de dibujar una línea sobre la losa. FADE va en UNIDADES DE MUNDO
+     (~0.8 u) para que una plataforma grande y una pequeña se desvanezcan igual de rápido, con un tope del
+     28 % del lado corto para que en las tapas minúsculas no se coma la capa entera. ►AJUSTA aquí. */
+  const FADE = Math.max(3, Math.min(Math.round(Math.min(pw, ph) * 0.28), Math.round(0.8 * pw / RW)));
   c2.globalCompositeOperation = 'destination-in';
-  c2.fillStyle = '#fff'; shape(); c2.fill();
+  c2.filter = 'blur(' + (FADE/2) + 'px)';
+  c2.fillStyle = '#fff'; shape(FADE); c2.fill();
+  c2.filter = 'none';
   c2.globalCompositeOperation = 'source-over';
   const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   if(THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;   // ►SURFCAP25b: el canvas está en sRGB — sin esto three lo trata como LINEAL y la arenisca oscura salía crema pálido
@@ -4409,35 +4433,87 @@ function surfCapAdd(g, sx, sz, topY, cfg, ellipse){
     new THREE.MeshStandardMaterial({ map:tex, transparent:true, opacity:cfg.alpha, roughness:1, metalness:0, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1 }));
   m.rotation.x = -Math.PI/2; m.position.set(0, topY + cfg.lift, 0);
   m.receiveShadow = true; m.castShadow = false; g.add(m);
-  _surfCaps.push({ m, cv, c2, tex, sx, sz, edge:cfg.edge });
+  _surfCaps.push({ m, cv, cv0:null, c2, tex, sx, sz, edge:cfg.edge, prints:[], lastPaint:0 });   // ►HUELLAS26: cv0 (copia VIRGEN del polvo, lo que permite BORRAR las huellas) se crea en la PRIMERA pisada — hay ~95 tapas por cinta y casi ninguna se pisa
+}
+/* ►HUELLAS26 (Toni 26/08): el rastro deja de ser un borrón redondo PERMANENTE y pasa a ser una fila de
+   HUELLAS que se rellenan solas a los pocos segundos — vale igual para la ARENA del desierto (4), la NIEVE
+   del mundo vikingo (7) y la ARENISCA del western (11), porque las tres usan esta misma capa.
+   Cómo: cada tapa guarda su canvas VIRGEN (cv0) y una lista de pisadas vivas; mientras haya alguna, el canvas
+   se repinta desde el virgen y encima van las huellas con el alfa que les toca por edad. Sin pisadas vivas no
+   se toca nada, así que una plataforma sin nadie encima cuesta 0 — por eso el desvanecido es viable con 65
+   tapas en pantalla. ►AJUSTA aquí. */
+const SURF_PRINT = {
+  life:   3.6,   // s que vive una huella
+  fade:   1.4,   // s finales en los que se desvanece
+  len:    0.34,  // semieje LARGO de la planta (unidades de mundo)
+  wid:    0.20,  // semieje corto
+  sep:    0.27,  // separación lateral del pie respecto al eje de la marcha (izq/dcha ALTERNOS)
+  stride: 1.00,  // cada cuántas u se estampa el siguiente pie — ►OJO: con 0.58 las huellas se TOCABAN y el
+                 //    rastro salía como una mancha continua. La tapa da ~10 px/u, así que lo que hace que se
+                 //    lean como pisadas no es el detalle del pie (imposible a esa resolución) sino que estén
+                 //    SEPARADAS y alternen lado. Bajar de ~0.85 vuelve a encadenarlas.
+  ink:    0.85,  // opacidad del sello (se multiplica por el alfa que ya trae cfg.edge: nieve .75, arena .5, arenisca .6)
+                 //    ►OJO: la huella se ESTAMPA en el polvo, no lo retira. Se probó lo contrario — hueco por
+                 //    destination-out, como hacía el rastro viejo — y no se ve: destapar la losa deja arena
+                 //    clara sobre arena clara y nieve blanca sobre nieve blanca, o sea nada. La marca oscura
+                 //    del pie sí lee en los tres mundos.
+  max:    26,    // tope de huellas vivas por plataforma
+};
+/* silueta de pie SIMPLE (a ~10 px/u no cabe más detalle): óvalo de planta + círculo de dedos delante */
+function _surfFootPath(c2, u, v, ang, rl, rw){
+  c2.beginPath();
+  c2.ellipse(u, v, rl, rw, ang, 0, 7);
+  const tx = u + Math.cos(ang)*rl*1.02, ty = v + Math.sin(ang)*rl*1.02, tr = Math.max(1, rw*0.72);
+  c2.moveTo(tx + tr, ty); c2.arc(tx, ty, tr, 0, 7);
+}
+function _surfCapRepaint(cap, now){
+  const c2 = cap.c2;
+  c2.globalCompositeOperation = 'copy'; c2.globalAlpha = 1; c2.drawImage(cap.cv0, 0, 0);   // vuelta al polvo virgen
+  for(const p of cap.prints){
+    const a = Math.min(1, (SURF_PRINT.life - (now - p.t)) / SURF_PRINT.fade); if(a <= 0) continue;
+    c2.globalCompositeOperation = 'source-atop';                     // 'source-atop' = solo donde YA hay polvo: la huella nunca se sale de la capa ni de su canto difuminado
+    c2.globalAlpha = SURF_PRINT.ink * a; c2.fillStyle = cap.edge;
+    _surfFootPath(c2, p.u, p.v, p.a, p.rl, p.rw); c2.fill();
+  }
+  c2.globalAlpha = 1; c2.globalCompositeOperation = 'source-over';
+  cap.tex.needsUpdate = true;
 }
 const _scW = new THREE.Vector3();
 function surfCapUpdate(){
   if(!_surfCaps.length) return;
+  const now = performance.now() * 0.001;   // reloj de pared, como el del viento: nadie pasa dt hasta aquí
   const walkers = [];
   for(const p of players){ if(p && !p.dead && p.onGround && p.pos) walkers.push(p); }
   if(typeof minions!=='undefined') for(const mn of minions){ if(mn && !mn.dead && mn.pos && mn.onGround !== false) walkers.push(mn); }
   for(const w of walkers){
     const lp = w._surfLast || (w._surfLast = { x:1e9, z:1e9 });
-    const dx0 = w.pos.x - lp.x, dz0 = w.pos.z - lp.z; if(dx0*dx0 + dz0*dz0 < 0.09) continue;   // pisa cada ~0.3 u
+    const dx0 = w.pos.x - lp.x, dz0 = w.pos.z - lp.z, d2 = dx0*dx0 + dz0*dz0;
+    if(d2 < SURF_PRINT.stride*SURF_PRINT.stride) continue;                                      // aún no ha dado el paso siguiente
+    if(d2 > 25){ lp.x = w.pos.x; lp.z = w.pos.z; continue; }                                    // 1er frame / portal: sin dirección fiable, no se estampa
     for(const cap of _surfCaps){
       cap.m.getWorldPosition(_scW);
       const lx = w.pos.x - _scW.x, lz = w.pos.z - _scW.z;
       if(Math.abs(lx) > cap.sx/2 || Math.abs(lz) > cap.sz/2) continue;
       if(Math.abs(w.pos.y - _scW.y) > 1.6) continue;                                            // otro piso
       lp.x = w.pos.x; lp.z = w.pos.z;
-      const u = (lx/cap.sx + .5) * cap.cv.width, v = (lz/cap.sz + .5) * cap.cv.height;
-      const R = Math.max(3, .55/cap.sx * cap.cv.width * ((w.scale||1)));
-      const c2 = cap.c2;
-      c2.globalCompositeOperation = 'source-atop';                                              // borde compactado (oscuro) alrededor
-      c2.globalAlpha = .55; c2.fillStyle = cap.edge; c2.beginPath(); c2.arc(u, v, R*1.6, 0, 7); c2.fill(); c2.globalAlpha = 1;
-      c2.globalCompositeOperation = 'destination-out';                                          // y el centro se RETIRA (deja ver la superficie dura)
-      const gr = c2.createRadialGradient(u, v, 0, u, v, R); gr.addColorStop(0, 'rgba(0,0,0,.7)'); gr.addColorStop(.7, 'rgba(0,0,0,.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-      c2.fillStyle = gr; c2.beginPath(); c2.arc(u, v, R, 0, 7); c2.fill();
-      c2.globalCompositeOperation = 'source-over';
-      cap.tex.needsUpdate = true;
+      const inv = 1/Math.sqrt(d2), hx = dx0*inv, hz = dz0*inv;                                  // dirección de la marcha
+      const side = (w._surfSide = -(w._surfSide || 1));                                         // pie izquierdo / derecho, alternos
+      const ox = -hz*SURF_PRINT.sep*side, oz = hx*SURF_PRINT.sep*side;
+      const W = cap.cv.width, H = cap.cv.height, ppu = W/cap.sx, ppv = H/cap.sz, pp = (ppu+ppv)/2, sc = (w.scale||1);
+      if(!cap.cv0){ cap.cv0 = document.createElement('canvas'); cap.cv0.width = W; cap.cv0.height = H; cap.cv0.getContext('2d').drawImage(cap.cv, 0, 0); }   // primera pisada: se guarda el polvo virgen
+      cap.prints.push({ u:((lx+ox)/cap.sx + .5)*W, v:((lz+oz)/cap.sz + .5)*H, a:Math.atan2(hz*ppv, hx*ppu),
+                        rl:Math.max(2, SURF_PRINT.len*sc*pp), rw:Math.max(1.2, SURF_PRINT.wid*sc*pp), t:now });
+      if(cap.prints.length > SURF_PRINT.max) cap.prints.shift();
+      cap.lastPaint = 0;                                                                        // que se vea YA, sin esperar al reloj de repintado
       break;                                                                                    // una plataforma por pisada
     }
+  }
+  for(const cap of _surfCaps){                                                                  // desvanecido: solo las tapas con huellas vivas
+    if(!cap.prints.length) continue;
+    if(now - cap.lastPaint < 0.10) continue;                                                    // ~10 Hz: sobra para un fundido de 1,4 s y limita la subida de textura (un canvas puede ser de 320²)
+    cap.lastPaint = now;
+    for(let i=cap.prints.length-1; i>=0; i--) if(now - cap.prints[i].t >= SURF_PRINT.life) cap.prints.splice(i, 1);
+    _surfCapRepaint(cap, now);                                                                  // si acaba de vaciarse, este repintado devuelve la tapa VIRGEN
   }
 }
 function addFloorBlock(cx, cz, sx, sz, topY=0, grassMat=M.grass){
@@ -11588,6 +11664,12 @@ const GOBLIN_KINDS = {
      (small/shooter/large), distinto MODELO. El tinte por stage (_gobBuildInst) las pinta solo. */
   skeleton:    { glb:'SKEL_GLB_B64',   h:1.6,  walkRef:3.0, max:14, shadow:false, jitter:true,  shootAtk:false, weapon:null  },   // ►SKELMINIONS: esqueleto PEQUEÑO (small) — sin arma
   skelpirate:  { glb:'SKEL_GLB_B64',   h:1.6,  walkRef:3.0, max:14, shadow:false, jitter:true,  shootAtk:false, weapon:null, noTint:true, dress:'skelPirateDress' },   // ►PIRMINION: GRUMETE pirata (small S12) — mismo rig SKEL + ropa por huesos; noTint = la ropa conserva sus colores
+  /* ►PIRGUNNER / ►PIRBRUTE (Toni 25/08): los dos piratas nuevos. Como `skelpirate`, REUSAN el glb de otro
+     kind y toda su pinta la pone el `dress` → cero bytes de asset nuevos. De momento NO están en la
+     plantilla de ningún stage (ni en STAGE_ASSETS ni en el mapeo type→skin de spawnMinion): existen y se
+     construyen, pero no salen solos hasta que decidamos a quién sustituyen. */
+  pirgunner:   { glb:'SKEL_GLB_B64',   h:1.75, walkRef:3.0, max:10, shadow:false, jitter:true,  shootAtk:true,  weapon:'flintlock', noTint:true, dress:'pirGunnerDress' },   // ►PIRGUNNER: PISTOLERO pirata (shooter S12) — dispara como los del oeste (ver minionShoot)
+  pirbrute:    { glb:'SKEL_GLB_B64',   h:3.4,  walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false, weapon:null,        noTint:true, dress:'pirBruteDress'  },   // ►PIRBRUTE: BRUTO pirata (large S12) — sin arma, pega con los puños. Rig SKEL escalado a 3.4, NO el SKELKNIGHT: ese trae casco con penacho dentro del hueso Head (caja 77x94x139) y el bruto necesita el cráneo pelado
   skelshooter: { glb:'SKELSH_GLB_B64', h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'bow'  },   // ►SKELMINIONS: esqueleto SOLDADO (mid/shooter) — arco+flechas
   skelknight:  { glb:'SKELKNIGHT_GLB_B64', h:3.4, walkRef:2.3, max:6, shadow:true, jitter:false, shootAtk:false, weapon:'sword' },   // ►SKELMINIONS: esqueleto CABALLERO (big/large) — espada
   /* ►VIKINGS (S7 ártico): 2 vikingos Synty POLYGON (rig Mixamo) un poco MÁS ALTOS que los personajes
@@ -11629,6 +11711,22 @@ const GOBLIN_KINDS = {
                 el mismo tipo 'large'. Medido con los huesos, no con la caja: ver la memoria de
                 SkinnedMesh. Con 3.9 se planta a la altura del goblin grande, que es lo que toca. */
              h:3.9, walkRef:2.3, max:4, shadow:true, jitter:false, shootAtk:false },
+  /* ►M2HORDA (Stage 2, la jungla): las DOS pieles nuevas de su horda propia. Mismo camino que el
+     `robotm` de arriba — FBX Mixamo sueltos montados por _gobFbxLoad, no un GLB — porque es como
+     vienen de Mixamo y no hay motivo para pasarlos por Blender.
+     · El CHAMÁN ocupa la ranura 'shooter' pero con shootAtk:false a propósito (Toni: "no pegará de
+       lejos, pega físicamente"): hereda la vida del tirador (30) y el melee de la horda.
+     · SIN noTint: los queremos ROJO CORRUPTO, el mismo de la arquera de la atalaya (ver _s2rojo en
+       _gobBuildInst y la rama STAGE===2 de gobAttach).
+     · fbxWorldBox por lo mismo que el robot: en un rig Mixamo de FBX la caja LOCAL miente.
+     · `max` holgado a propósito: el mundo 2 NO cae a goblin verde si un pool se llena (ver la rama
+       STAGE===2 de spawnMinion), así que el pool no puede ser el cuello de botella.
+     · El orden de fbxClips vale lo mismo que en el robot: idle PRIMERO (dona la malla y de sus
+       materiales sale el tinte) y jump AL FINAL. */
+  gobshaman:  { fbx:'GOBSHAMAN_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+                h:1.85, walkRef:2.6, max:16, shadow:false, jitter:false, shootAtk:false },   // ►M2HORDA: chamán (shooter MELEE)
+  gobwarrior: { fbx:'GOBWARRIOR_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+                h:3.6,  walkRef:2.3, max:8,  shadow:true,  jitter:false, shootAtk:false },   // ►M2HORDA: guerrero (large)
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
@@ -11721,6 +11819,7 @@ function gobLoadKinds(kinds){
 gobLoadKinds(['small','shooter','large']);   // la horda base de todos los stages
 /* qué pieles y qué jefes necesita cada stage (lo demás no se toca hasta entrar) */
 const STAGE_ASSETS = {
+  2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
   3:  { gob:['villager','ninja','sensei'] },
   4:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem'] },
   5:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem','midgolem','smallgolem'] },
@@ -11789,6 +11888,26 @@ function _gobArmModel(root, weapon){
     }
     return true;
   }
+  /* ►PIRGUNNER: DOS pistolas de chispa, una por mano. Es la ÚNICA rama que arma las dos manos — el resto
+     cuelga un solo prop. El encaje es el mismo del revólver (cañón siguiendo los nudillos) y la izquierda
+     va espejada en Y para que la llave quede hacia fuera en los dos lados. */
+  if(weapon==='flintlock'){
+    const fit = { scale:1.15, pos:{x:0,y:0.02,z:0.04}, rot:{x:-Math.PI/2,y:0,z:0} };
+    for(const side of ['r','l']){
+      const hand = side==='r' ? (find(/^fist\.?r$/i) || find(/right.*hand$/i) || find(/hand.*r$/i) || find(/fist.*r$/i))
+                              : (find(/^fist\.?l$/i) || find(/left.*hand$/i)  || find(/hand.*l$/i) || find(/fist.*l$/i));
+      if(!hand) continue;
+      const m = _buildFlintlock(side==='l');
+      const ws = new THREE.Vector3(); hand.getWorldScale(ws);
+      const handScale = Math.abs(ws.x) || 1;
+      m.scale.setScalar(fit.scale/handScale);   // escala UNIFORME: espejar con escala negativa invertiria las normales, por eso la llave se espeja al construirla
+      m.position.set(fit.pos.x, fit.pos.y, fit.pos.z);
+      m.rotation.set(fit.rot.x, fit.rot.y, fit.rot.z);
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.frustumCulled=false; } });
+      hand.add(m);
+    }
+    return true;
+  }
   return true;
 }
 /* ►WESTERN: revólver low-poly procedural — empuñadura en el ORIGEN, cañón hacia +Z (misma convención
@@ -11810,6 +11929,37 @@ function _buildRevolver(){
   frame.position.set(0,.05,-.02); g.add(frame);
   const grip = new THREE.Mesh(new THREE.BoxGeometry(.04,.12,.055), wood);
   grip.rotation.x = 0.5; grip.position.set(0,-.05,-.045); g.add(grip);
+  return g;
+}
+/* ►PIRGUNNER: PISTOLA DE CHISPA low-poly — mismo molde y misma convención que el revólver (empuñadura en
+   el ORIGEN, cañón hacia +Z) para poder compartir el fit de mano. Cambia la silueta: cañón octogonal más
+   largo y fino, llave con martillo, baqueta por debajo y culata de madera MUY caída (lo que la lee como
+   antigua y no como western). Materiales propios y compartidos por todas las pistolas, como _revMats. */
+let _flintMats = null;
+function _buildFlintlock(mirror){
+  const g = new THREE.Group();
+  if(!_flintMats) _flintMats = {
+    steel: new THREE.MeshStandardMaterial({ color:0x24282f, roughness:.88, metalness:.05, flatShading:true }),   // ►PIRLUZ: acero casi negro, MATE y facetado. Liso y metálico, el cañón espejaba el cielo del S12 y salía como un tubo blanco
+    brass: new THREE.MeshStandardMaterial({ color:0x4a3a1a, roughness:.7,  metalness:.25, flatShading:true }),
+    wood:  new THREE.MeshStandardMaterial({ color:0x331d0e, roughness:.9,  metalness:.02, flatShading:true })
+  };
+  const steel = _flintMats.steel, brass = _flintMats.brass, wood = _flintMats.wood;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.030,.034,.24,8), steel);   // 8 lados = cañón octogonal. MÁS CORTO Y GRUESO que la v1: fino y largo se leía como un palo, no como un arma
+  barrel.rotation.x = Math.PI/2; barrel.position.set(0,.055,.16); g.add(barrel);
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(.038,.055,.26), wood);            // la caja de madera bajo el cañón
+  stock.position.set(0,.028,.10); g.add(stock);
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,.22,5), wood);       // baqueta
+  rod.rotation.x = Math.PI/2; rod.position.set(0,.006,.16); g.add(rod);
+  const lock = new THREE.Mesh(new THREE.BoxGeometry(.042,.05,.075), brass);            // llave (placa lateral)
+  lock.position.set(0,.05,-.01); g.add(lock);
+  const hammer = new THREE.Mesh(new THREE.BoxGeometry(.014,.055,.022), steel);         // martillo/gatillo, echado hacia atrás
+  hammer.rotation.x = -0.55; hammer.position.set(mirror ? -.022 : .022, .085, -.035); g.add(hammer);   // la llave, al lado de FUERA en cada mano
+  const pan = new THREE.Mesh(new THREE.BoxGeometry(.03,.014,.03), brass);              // cazoleta
+  pan.position.set(0,.062,.015); g.add(pan);
+  const butt = new THREE.Mesh(new THREE.BoxGeometry(.036,.13,.05), wood);              // culata MUY caída (0.85 rad contra los 0.5 del revólver)
+  butt.rotation.x = 0.85; butt.position.set(0,-.05,-.06); g.add(butt);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.045), brass);              // remate de latón del pomo
+  cap.rotation.x = 0.85; cap.position.set(0,-.105,-.10); g.add(cap);
   return g;
 }
 function _gobBuildInst(type){                             // crea UNA instancia (clone+mixer); el pool la reutiliza después
@@ -11855,6 +12005,14 @@ function _gobBuildInst(type){                             // crea UNA instancia 
       /* ►JAPAN: CARMESÍ-SAKURA oscuro (oni del jardín — rojo-rosa profundo, ni arena ni lila) */
       const sakuraOni = new THREE.Color().setHSL(0.93, 0.58, THREE.MathUtils.clamp(L*0.55 + 0.10, 0.10, 0.46));
       m._sjcol = oc.clone().lerp(sakuraOni, 0.90);
+      /* ►M2HORDA · ROJO CORRUPTO del mundo 2 — el MISMO de la arquera de la atalaya (carcherTint:
+         body [1.00, 0.30, 0.26]). Ojo: es PLANO a propósito, no derivado de la luminancia como sus
+         vecinos de arriba. La arquera hace exactamente eso (m.color.setRGB sobre todo el cuerpo) y
+         deja que el atlas multiplique encima, que es lo que conserva el detalle de la textura; si lo
+         calculara por luminancia saldría OTRO rojo y los dos no casarían en el mismo frame, que es
+         justo lo que Toni pidió. Solo lo usan las pieles nuevas (chamán/guerrero): los goblins
+         verdes ya no pisan el mundo 2. */
+      m._s2rojo = new THREE.Color(1.00, 0.30, 0.26);
       mats.push(m); return m;
     });
     o.material = wasArr ? out : out[0];
@@ -11917,7 +12075,15 @@ function gobAttach(mn){
       else if(STAGE===11){ c = m._s3col||m._s1col; }                           // ►WEST: los goblins de RELLENO (cuando los 3 pools de vaqueros están al tope) van en tono ARENA, no en verde prado
       else if(STAGE===4){ c = m._s3col||m._s1col; }                            // ►RECOLOR38: arena uniforme (sin elite morado)
       else if(STAGE===3){ c = m._sjcol||m._s1col; emi = 0x14040a; }            // ►JAPAN: oni carmesí-sakura con leve brillo rosado
-      else if(STAGE===2){ c = m._s2col||m._s1col||m.color; }
+      /* ►M2HORDA: en la jungla la horda es ROJO CORRUPTO, el mismo de la arquera de la atalaya. El
+         _s2col marrón se queda para quien lo siga usando (S12 lo referencia arriba), pero en el
+         mundo 2 ya no lo pisa nadie: sus dos pieles son chamán y guerrero. El `else` es puro cinturón
+         de seguridad por si alguna vez cae ahí un goblin verde. Los ojos rojos NO se pintan aquí:
+         estos dos goblins ya los traen en el atlas, así que basta un rescoldo emisivo tenue (el
+         plan-B de esferitas de carcherAttach es para mallas SIN materiales de ojo). */
+      else if(STAGE===2){ const rojo = (kin==='gobshaman'||kin==='gobwarrior');
+                          c = (rojo && m._s2rojo) || m._s2col || m._s1col || m.color;
+                          if(rojo) emi = 0x1a0404; }
       else              { c = m._s1col||m.color; }
       m.color.copy(c);
       if(m.emissive) m.emissive.setHex(emi);                                    // glow por-stage (negro = sin brillo; se reafirma en cada attach → el pool no arrastra tinte)
@@ -12347,6 +12513,28 @@ function spawnMinion(){
   let skin = null;
   if(typeof ensureStageAssets==='function' && !spawnMinion._lazyDone){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }   // ►LAZY: por si se entró sin pasar por la pantalla de carga (F9, ?stage=)
   if(spawnMinion._lazyDone !== STAGE){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }
+  /* ►M2HORDA (Toni 26/08) · STAGE 2 (la jungla) tiene HORDA PROPIA y los goblins verdes NO pisan el
+     mundo 2 — "sin excepción", nada de caer al goblin si un pool se llena, que es lo que hacen S3/S4/
+     S12. Reparto por ranura, respetando la tirada de type de arriba:
+       small   → MINI-JEFE encogido a tamaño de personaje (sale por spawnBrute, otra vía entera)
+       shooter → CHAMÁN, pero MELEE (su ficha lleva shootAtk:false)
+       large   → GUERRERO
+     Si el pool de la piel que toca está lleno se prueba la OTRA piel nueva antes de rendirse; si las
+     dos están al tope, esta tirada no saca a nadie (`return`) en vez de colar un goblin verde. Con
+     los `max` de GOBLIN_KINDS y BRUTE_MINI_MAX no debería pasar nunca, pero el mundo 2 prefiere un
+     hueco a romper su paleta. */
+  if(STAGE===2){
+    if(type==='small'){
+      /* `!demo` por lo mismo que el camino élite de arriba (►RONDA6d: el mini-jefe no sale en la
+         home/demo); allí se queda en chamanes, que es enjambre de fondo y no espectáculo. */
+      if(!demo && _bossTpl && _bruteLive < BRUTE_MINI_MAX){ spawnBrute(minionDropSpot() || dropSpot(), true, BRUTE_MINI_K); return; }
+      type = 'shooter';                                   // demo, sin plantilla del jefe aún, o tope de brutes → que salga un chamán, no un goblin
+    }
+    const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
+    const k = pref.find(x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max);
+    if(!k) return;                                        // pieles nuevas al tope → hueco, NUNCA goblin verde
+    skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: hay que casarlo con la piel que ha salido
+  }
   if((STAGE===4 || STAGE===5 || STAGE===7) && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
@@ -12432,7 +12620,7 @@ const _mprojGeo = new THREE.SphereGeometry(.2,8,6), _mprojPool = [];   // ►PER
 const _mpO = new THREE.Vector3(), _mpD = new THREE.Vector3();
 function minionShoot(mn, tgt){
   const arrow = (mn.skin==='skelshooter');                 // ►SKELMINIONS: el soldado esqueleto dispara FLECHA real con su arco (no la esfera roja del goblin)
-  const gun = !!(mn.skin && GOBLIN_KINDS[mn.skin] && GOBLIN_KINDS[mn.skin].weapon==='gun');   // ►WESTERN: pistolero → BALA trazadora (rápida, cálida) en vez de esfera roja
+  const gun = !!(mn.skin && GOBLIN_KINDS[mn.skin] && /^(gun|flintlock)$/.test(GOBLIN_KINDS[mn.skin].weapon || ''));   // ►WESTERN: pistolero → BALA trazadora (rápida, cálida) en vez de esfera roja   // ►PIRGUNNER: la pistola de chispa hereda TODO el disparo del oeste (bala, fogonazo, altura de boca, sonido)
   const oy = arrow ? 1.35 : gun ? 1.3 : 1.1*mn.scale;      // sale a la altura del arco / del revólver
   const o = _mpO.set(mn.pos.x, mn.pos.y + oy, mn.pos.z);
   const dir = _mpD.set(tgt.pos.x, tgt.pos.y+1, tgt.pos.z).sub(o).normalize();
@@ -12835,7 +13023,13 @@ let _bossTpl = null;   // { root, clips:{name:AnimationClip}, baseScale, baseY }
      TDZ, la trampa conocida del proyecto — encolar ejecutaría YA (menú) y explotaría; (2) aunque no
      explotara, sería trabajo pesado EN LA CARGA, que está desterrado. En _difCola lo drena el bucle
      de reposo del menú a su ritmo (1 tarea/250 ms), después de cargar y nunca en partida. */
-  _difCola.push({ nombre:'precalentar brute (elite)', fn:()=>{
+  /* ►M2HORDA: TRES instancias, no una. Con el mini-jefe convertido en el minion pequeño del mundo 2
+     (~65% de las tiradas) el pool ya no se llena con un evento raro sino con una horda, y cada slot
+     nuevo clona el esqueleto del jefe entero en plena partida. La compilación de shaders se paga una
+     sola vez (la comparten los clones), pero el clone no — así que se dejan tres calientes en el pool
+     y el resto crece solo. Una tarea por instancia: _difCola las drena a 1 cada 250 ms en el menú, que
+     es justo el punto de esta cola. */
+  for(let _bw=0; _bw<3; _bw++) _difCola.push({ nombre:'precalentar brute (elite) '+(_bw+1)+'/3', fn:()=>{
     try{
       const fake = {};
       bruteAttach(fake);
@@ -16298,6 +16492,15 @@ const BRUTE_HP        = 120;     // el minion más DURO del stage, pero lejos de
 const BRUTE_POW       = 0.35;    // multiplicador de DAÑO de todos sus ataques (mucho más débil)
 const BRUTE_SPAWN_CHANCE = 0.05; // ~5% por tirada de spawn (raro), 1 vivo a la vez
 const BRUTE_HIT_SCALE = 1.6;     // mn.scale → alcance con que lo golpean (hitMinions) acorde a su tamaño
+/* ►M2HORDA (Toni 26/08) · el mini-jefe como MINION PEQUEÑO del mundo 2, a tamaño de personaje.
+   BOSS_TARGET_H 5.46 × BRUTE_SCALE_K 0.55 = 3.0 u de mini-jefe normal; queremos ~1.85 (la altura de
+   la ranura 'shooter', un pelo por debajo de CHAR_TARGET_H 2.0) → 1.85/3.0 ≈ 0.616.
+   Sus STATS no se tocan (decisión de Toni): sigue con BRUTE_HP 120 y la IA de jefe entera — es un
+   mini-jefe encogido, no un goblin gordo. Lo único que baja con el tamaño es el ALCANCE (ver RK en
+   updateBrute y mn.scale en spawnBrute).
+   BRUTE_MINI_MAX: como aquí es horda y no evento, el tope de 1-vivo del camino élite no vale. */
+const BRUTE_MINI_K   = 0.616;    // ►AJUSTA: sube para un mini-jefe más grande en el mundo 2
+const BRUTE_MINI_MAX = 10;       // vivos a la vez en el mundo 2 (la ranura 'small' es ~65% de la horda)
 const _brutePool = []; let _bruteLive = 0;
 /* ►ELITE: el MINI-JEFE deja de ser exclusivo del Stage 2 y sale en TODOS los mundos como EVENTO de
    media partida. Ya estaba construido para ello (bruteTint tiñe por stage y aquí abajo había peso
@@ -16358,7 +16561,14 @@ function bruteTint(inst){
       else if(st===7){ tint=new THREE.Color().setHSL(0.56, 0.45, cl(L*0.68+0.30, 0.30, 0.80)); emi=0x0a1a26; }    // azul congelado (hielo)
       else if(st===5){ tint=new THREE.Color().setHSL(0.135, 0.88, cl(L*0.55+0.30, 0.30, 0.74)); emi=0x2a1e00; }   // amarillo corrupto (pirámide)
       else if(st>=3){ tint=new THREE.Color().setHSL(0.78, 0.55, cl(L*0.60+0.05, 0.05, 0.44)); amt=0.95; }         // morado (S3 Japón / S4 desierto)
-      else if(st===2){ tint=new THREE.Color().setHSL(0.77, 0.62, cl(L*0.55+0.10, 0.10, 0.48)); emi=0x180628; amt=0.92; }   // ►S2BOSS: MORADO (los mini-jefes son la familia del jefe morado)
+      /* ►M2HORDA (Toni 26/08): el mundo 2 pasa a ROJO CORRUPTO y el mini-jefe va con él — ahora es el
+         minion PEQUEÑO de esa horda, no un evento suelto, así que tiene que leerse del mismo color que
+         el chamán, el guerrero y la arquera de la atalaya. Alcanza TAMBIÉN a las 3 escoltas de la
+         arena (bruteHorde de STAGE_BOSSES[2]), que salen por aquí: era lo pedido. El jefe grande sigue
+         morado por otro camino (STAGE_BOSSES[2].tint), así que la escolta roja lo recorta bien.
+         PLANO y amt=1: es el mismo truco de carcherTint — el color [1.00,0.30,0.26] tal cual y que el
+         atlas multiplique encima. Derivarlo de la luminancia daría otro rojo y no casarían. */
+      else if(st===2){ tint=new THREE.Color(1.00, 0.30, 0.26); emi=0x1a0404; amt=1.00; }   // ►M2HORDA: ROJO CORRUPTO (era el morado ►S2BOSS)
       else { tint=new THREE.Color().setHSL(0.068, 0.60, cl(L*0.80+0.05, 0.05, 0.50)); amt=0.90; }                // marrón (S1/otros)
       m.color.copy(m._c0).lerp(tint, amt); if(m.emissive) m.emissive.setHex(emi); m.needsUpdate = true;
     }
@@ -16396,12 +16606,18 @@ function bruteStartJump(mn, tgt){
   mn._jx1=tx; mn._jz1=tz;
 }
 function bruteStartCharge(mn, tgt){ mn._cdist=0; mn._cyaw = tgt ? Math.atan2(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) : mn.yaw; mn.yaw=mn._cyaw; }
-function spawnBrute(spot, quiet){   // ►S2BOSS: spot opcional (posición forzada, p.ej. loseta de la arena del jefe) + quiet (FX morados, sin banner por-brute)
+/* ►M2HORDA: `sizeMul` (3er argumento) encoge/agranda ESTA instancia. bruteAttach ya lo soportaba
+   (`_bossTpl.baseScale*BRUTE_SCALE_K*(mn._scaleMul||1)`, comentado como "los acólitos tienen tamaño
+   propio") pero nadie lo rellenaba nunca. Lo usa la horda del mundo 2 con BRUTE_MINI_K para que el
+   mini-jefe salga a tamaño de personaje. Sin argumento = 1 = el mini-jefe de toda la vida.
+   OJO: se fija ANTES de bruteAttach — attach calcula baseScale/baseY leyéndolo. */
+function spawnBrute(spot, quiet, sizeMul){   // ►S2BOSS: spot opcional (posición forzada, p.ej. loseta de la arena del jefe) + quiet (FX morados, sin banner por-brute)
   const sp = spot || minionDropSpot() || dropSpot() || { x:(Math.random()-.5)*16, z:(Math.random()-.5)*8, y0:0 };
   const em = ELITE_MUL[STAGE] || ELITE_MUL_DEF;           // ►ELITE: peso por mundo (antes s3/s6 a pelo aquí)
   const hpMul  = em.hp;
   const powMul = em.pow;
-  const mn = { type:'brute', _brute:true, scale:BRUTE_HIT_SCALE,
+  const szK = sizeMul || 1;
+  const mn = { type:'brute', _brute:true, _scaleMul:szK, scale:BRUTE_HIT_SCALE*szK,   // ►M2HORDA: `scale` = con qué alcance LO golpean a él → también baja con el tamaño
     pos:new THREE.Vector3(sp.x, sp.y0, sp.z), vel:new THREE.Vector3(), yaw:0, onGround:true,
     damage:0, maxHp:BRUTE_HP*hpMul, hitstun:0, invuln:0.5, hitCD:0, dead:false,
     _pow:BRUTE_POW*powMul, _groundY:sp.y0, lastHitBy:null, _lastDmg:0,
@@ -16409,7 +16625,11 @@ function spawnBrute(spot, quiet){   // ►S2BOSS: spot opcional (posición forza
     aHead:0, aArmL:0, aArmR:0, aLegL:0, aLegR:0, bodyRoll:0, bodyLean:0 };
   minions.push(mn); bruteAttach(mn);
   if(mn._binst){ bossAnim('roar', false, mn._binst); }   // rugidito de entrada; la IA pasa a idle en 'wait'
-  burst(mn.pos.clone().add(new THREE.Vector3(0,1,0)), quiet?0x6a2ab0:0x3a2410, 16, 7, 6, 1.2); ring(mn.pos.clone(), quiet?0x9b5bff:0x8a5a2a, 20, .5);   // ►S2BOSS: FX morados en la arena
+  /* ►M2HORDA: en el mundo 2 los FX de aparición van ROJOS. Antes `quiet` (la horda de la arena) los
+     pintaba morados a juego con el jefe; ahora el mundo 2 entero es rojo, así que unas chispas lilas
+     sobre un mini-jefe rojo cantarían. Fuera del stage 2, todo igual que siempre. */
+  const _bfx = (STAGE===2) ? [0xb01818, 0xff4030] : (quiet ? [0x6a2ab0, 0x9b5bff] : [0x3a2410, 0x8a5a2a]);
+  burst(mn.pos.clone().add(new THREE.Vector3(0,1,0)), _bfx[0], 16, 7, 6, 1.2); ring(mn.pos.clone(), _bfx[1], 20, .5);   // ►S2BOSS: FX morados en la arena
   if(!quiet){ showBanner('¡MINI-JEFE!', 1.4); shake=Math.max(shake,.5); }   // ►RONDA6d: mini-jefe SIN ruidos · ►S2BOSS: sin banner por-brute en la horda de arena
   return mn;
 }
@@ -16417,6 +16637,12 @@ function spawnBrute(spot, quiet){   // ►S2BOSS: spot opcional (posición forza
    con suelo real (platformTopAt) + arrastre de cinta, daño ×_pow y rangos/áreas a la mitad. */
 function updateBrute(mn, dt){
   const inst = mn._binst; if(!inst){ bruteAttach(mn); return; }
+  /* ►M2HORDA: los radios de abajo (pisotón, embestida, giro, salto) estaban escritos a pelo para un
+     mini-jefe de 3 u — "radio×0.5" respecto al jefe, dice el comentario original. Desde que el mundo 2
+     lo usa como minion normal (_scaleMul ≈ 0.62 → ~1.85 u) hay que escalarlos con él: si no, pega y
+     aplasta desde bastante más lejos de donde acaba su propia silueta, que es injusto y además ilegible.
+     RK vale 1 exacto para el mini-jefe de siempre → los demás mundos no notan nada. */
+  const RK = mn._scaleMul || 1;
   mn.hitstun=Math.max(0, mn.hitstun-dt);
   mn.hitCD=Math.max(0, (mn.hitCD||0)-dt);
   mn.invuln=Math.max(0, (mn.invuln||0)-dt);
@@ -16466,7 +16692,7 @@ function updateBrute(mn, dt){
       mn.pos.y = groundY + Math.sin(u*Math.PI)*2.4;      // arco MINI (jefe=4.2)
       if(u>=1){
         mn.pos.y=groundY;
-        bossHitPlayers(mn.pos, 3.2, 16*pow, 6, 6, 0, true);   // pisotón MINI (radio×0.5, daño×pow)
+        bossHitPlayers(mn.pos, 3.2*RK, 16*pow, 6, 6, 0, true);   // pisotón MINI (radio×0.5, daño×pow) · ►M2HORDA: ×RK con el tamaño
         shake=Math.max(shake,.55); ring(mn.pos.clone(), 0xff8040, 14, .5); burst(mn.pos.clone(),0x6a4422,12,6,4,1.0);   // ►RONDA6d: sin sfx
         mn.rep++;
         if(mn.rep>=3){ mn.state='wait'; mn.cd=BOSS_PAUSE; mn.stateT=0; }
@@ -16478,7 +16704,7 @@ function updateBrute(mn, dt){
       const sp=13; mn.pos.x += Math.sin(mn._cyaw)*sp*dt; mn.pos.z += Math.cos(mn._cyaw)*sp*dt; mn.pos.y=groundY;
       mn._cdist += sp*dt;
       for(const p of players){ if(p.dead||p.out||p.invuln>0||mn._hitSet.has(p)) continue;
-        if(Math.hypot(p.pos.x-mn.pos.x, p.pos.z-mn.pos.z) < 2.6 && Math.abs(p.pos.y-mn.pos.y)<=BOSS_VERT){ mn._hitSet.add(p); bossHitPlayers(p.pos, 0.1, 22*pow, 8, 6, 0); shake=Math.max(shake,.55); } }   // ►RONDA6d: sin sfx
+        if(Math.hypot(p.pos.x-mn.pos.x, p.pos.z-mn.pos.z) < 2.6*RK && Math.abs(p.pos.y-mn.pos.y)<=BOSS_VERT){ mn._hitSet.add(p); bossHitPlayers(p.pos, 0.1, 22*pow, 8, 6, 0); shake=Math.max(shake,.55); } }   // ►RONDA6d: sin sfx
       if(Math.random()<.5) burst(mn.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffaa55, 2, 3, 2, .7);
       const voidAhead = platformTopAt(mn.pos.x, mn.pos.z)===null;
       if(mn._cdist>=16 || voidAhead){ if(voidAhead){ mn.pos.x=prevX; mn.pos.z=prevZ; } mn.state='wait'; mn.cd=BOSS_PAUSE; mn.stateT=0; }
@@ -16487,7 +16713,7 @@ function updateBrute(mn, dt){
     case 'spin': {
       mn._sub += dt;
       if(mn._sub >= 0.55){ mn._sub=0; mn.rep++;
-        bossHitPlayers(mn.pos, 3.0, 12*pow, 5, 4, 1.2, true);   // giro MINI (radio×0.5, sangrado corto)
+        bossHitPlayers(mn.pos, 3.0*RK, 12*pow, 5, 4, 1.2, true);   // giro MINI (radio×0.5, sangrado corto) · ►M2HORDA: ×RK
         shake=Math.max(shake,.5); ring(mn.pos.clone().add(new THREE.Vector3(0,.6,0)), 0xff5070, 12, .4);   // ►RONDA6d: sin sfx
         if(mn.rep>=3){ mn.state='wait'; mn.cd=BOSS_PAUSE; mn.stateT=0; }
       }
@@ -16505,14 +16731,14 @@ function updateBrute(mn, dt){
       if(tgt){ const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z, d=Math.hypot(dx,dz)||1; mn.pos.x += (dx/d)*sp*dt; mn.pos.z += (dz/d)*sp*dt; }
       mn.pos.y=groundY;
       if(platformTopAt(mn.pos.x, mn.pos.z)===null){ mn.pos.x=prevX; mn.pos.z=prevZ; }   // no corras al vacío
-      const close = tgt && Math.hypot(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) < 3.2;
+      const close = tgt && Math.hypot(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) < 3.2*RK;
       if(mn._runT>=1.4 || close){ mn.state='wait'; mn.cd=BOSS_PAUSE; mn.stateT=0; }
       break;
     }
     case 'jump': {
       airborne=true; mn._sub += dt;
       const T=0.85, u=Math.min(1, mn._sub/T);
-      mn.pos.y = groundY + Math.sin(u*Math.PI)*3.0;      // salto simple MINI
+      mn.pos.y = groundY + Math.sin(u*Math.PI)*3.0*RK;      // salto simple MINI · ►M2HORDA: el arco baja con el tamaño
       if(u>0.5 && !mn._falling){ mn._falling=true; if(inst.acts.fall) bossAnim('fall', true, inst); }
       if(u>=1){ mn.pos.y=groundY; mn._falling=false; mn.state='wait'; mn.cd=BOSS_PAUSE; mn.stateT=0; }   // ►RONDA6d: sin sfx
       break;
@@ -16727,13 +16953,24 @@ function triggerAmbush(A, wx, wz, tgt){
     if(!overAnyPlatform(x,z)) continue;
     const top = platformTopAt(x,z);
     if(top===null || Math.abs(top-A.y)>4) continue;          // solo sobre el suelo del campamento
-    const type = (chaosLvl>=3 && spawned===0) ? 'large' : (Math.random()<0.7 ? 'small' : 'shooter');
+    let type = (chaosLvl>=3 && spawned===0) ? 'large' : (Math.random()<0.7 ? 'small' : 'shooter');   // ►M2HORDA: `let` — la rama del mundo 2 de abajo lo reasigna para casar type con la piel que sale
     /* ►S3FIX2: el mapeo de skins japonesas (aldeano/ninja/sensei) vive en spawnMinion, NO en
        spawnMinionAt — llamando directo salían goblins en pleno Japón. Se replica aquí. */
     let skin = null;
     if(STAGE===3 && Math.random() < 0.7){
       const k = ({ small:'villager', shooter:'ninja', large:'sensei' })[type];
       if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+    }
+    /* ►M2HORDA: misma trampa que documenta ►S3FIX2 justo arriba — esta vía llama a spawnMinionAt y se
+       salta el mapeo de spawnMinion, así que sin esto el mundo 2 seguiría escupiendo goblins VERDES por
+       las emboscadas. Aquí NO entra el mini-jefe a propósito: una emboscada suelta hasta 14 de golpe y
+       eso serían 14 mini-jefes (además de reventar BRUTE_MINI_MAX). El anillo del campamento es de
+       chamanes y guerreros; el mini-jefe llega por el goteo normal de la horda. */
+    if(STAGE===2){
+      const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
+      const k = pref.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
+      if(!k) continue;                                        // pieles al tope → salta este hueco, nunca goblin verde
+      skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';
     }
     const mn = spawnMinionAt(x, z, top, type, skin);
     if(mn){ mn.target=tgt; mn.retargetT=1.2; spawned++; }
@@ -21734,6 +21971,27 @@ function updateShopTimer(dt){ updateInterstage(dt); }   // alias: lo llama _veri
    da este array y buildRoadmap ya pinta el número por POSICIÓN (i+1), así que el jugador ve
    1..9 correlativos con el western en 4ª posición. */
 const CAMPAIGN_STAGES = [1,2,3,11,4,5,12,7,8,10];   // 6 y 9 están dormidos (ver stageAdvance) · ►PIRATA: el 12 entra entre la pirámide y el hielo
+/* ►DESBLOQUEAR (Toni 26/08): ?desbloquear en la URL deja la campana como si estuviera PASADA CON
+   TROFEO — bestStage al final, un trofeo y un jefe caido en cada mundo de CAMPAIGN_STAGES, y los dos
+   desbloqueos (campeon, duro). A diferencia de ?todo, esto SI se persiste; por eso es un MERGE con
+   Math.max y NO pisa nada tuyo: records, marcas (notas) y maestria por clase quedan como estaban.
+   Se aplica una vez por carga y es idempotente: quitar la bandera no lo deshace (es un guardado real). */
+if(/[?&]desbloquear(=|&|$)/.test(location.search)){
+  try{
+    const s = saveGet();
+    s.bestStage = Math.max(s.bestStage||0, CAMPAIGN_STAGES.length);
+    if(!s.trophies) s.trophies = {};
+    if(!s.bosses)   s.bosses   = {};
+    for(const st of CAMPAIGN_STAGES){
+      s.trophies[st] = Math.max(s.trophies[st]||0, 1);
+      s.bosses[st]   = Math.max(s.bosses[st]||0, 1);
+    }
+    for(const id of ['campeon','duro']) if(s.unlocks.indexOf(id) < 0) s.unlocks.push(id);
+    saveCommit();
+    if(SAVE_TODO) console.warn('[desbloquear] ?todo tambien esta puesta: modo revision, NO se ha persistido. Recarga solo con ?desbloquear.');
+    else console.log('[desbloquear] campana completa con trofeo en los ' + CAMPAIGN_STAGES.length + ' mundos');
+  }catch(e){ console.warn('[desbloquear]', e); }
+}
 const STAGE_TAG = { 1:'PRADO', 2:'JUNGLA', 3:'JAPÓN', 11:'WESTERN', 4:'DESIERTO', 5:'PIRÁMIDE', 12:'PIRATAS', 7:'HIELO', 8:'FORJA', 10:'ARCOÍRIS', 13:'CUADRIMANÍA', 14:'ARENA' };
 
 /* =====================================================================
@@ -25387,8 +25645,8 @@ const DECOR_DEFS2 = {
 
 /* paletas de BOSQUE (se aplican como sRGB en stage 2 → el hex se ve tal cual, WYSIWYG).
    Verdes profundos desaturados con musgo/oliva (NO el verde lima del prado). */
-const S2_GREENS  = ['#213818','#1f3517','#233a19','#1e3316','#223919','#25391b','#203718'];   /* ►JUNGLA25 (Toni 25/08): 38% MÁS OSCURO (factor 0.62 sobre los originales) que el prado — el verde de antes leía igual de claro que el mundo 1; ►AJUSTA: el factor era 0.84 sobre #4a7d36 y compañía */   // ►ESCULPIR: musgo ORGÁNICO — rango de valor ESTRECHO y saturación contenida (el neón '#66b84a' vs '#3d8a2c' creaba el damero)
-const S2_GREENSD = ['#1a2d12','#182a11','#1b3014','#172911','#1b2e13','#192c12'];   /* ►JUNGLA25: labio a juego con el top oscurecido */
+const S2_GREENS  = ['#4a7d36','#457634','#4f8339','#427231','#4c7f38','#527f3e','#477a35'];   /* ►SUELO25 (Toni 26/08): VUELVE al verde ORIGINAL. JUNGLA25/25c lo bajo a 0.62 y luego a ~0.45 creyendo que oscurecia follaje, pero esto es la SUPERFICIE (top) de las plataformas: lo que hay que oscurecer en el mundo 2 es el FELPUDO (CARPET_*) y las COPAS (_S2_CANOPY_PALS), no el suelo. ►AJUSTA aqui solo para el cesped de la losa. */
+const S2_GREENSD = ['#3a6529','#365f27','#3e6a2d','#345c25','#3c672c','#396228'];   /* ►SUELO25: labio a juego con el top ORIGINAL restaurado */
 const S2_BROWNS  = ['#6a4a2e','#5a3f26','#755334','#4f3722','#7d5b38','#5e4228'];   // barro de jungla húmedo (más rico/claro)
 const S2_STONE   = ['#565e54','#4e564c','#606a5c','#454d43','#5a6356','#505a4e'];   // piedra gris-verde clara
 
@@ -25854,11 +26112,15 @@ const _S2_CLUMP_BROWNS = [[0.353,0.247,0.157],[0.271,0.184,0.110],[0.424,0.310,0
 const _S2_CANOPY_PALS = (()=>{
   const mk = hexes => hexes.map(([h,k])=>{ const c = new THREE.Color(h).multiplyScalar(k).convertSRGBToLinear(); return [c.r, c.g, c.b]; });
   return {
-    /* ►JUNGLA25c: factores a ~0.45 de los de antes (0.66/0.74/0.82/0.70). Medido: con los viejos, la hoja
-       salía a 159 de verde en pantalla — verde CLARO. ►AJUSTA aquí si se quiere aclarar la selva. */
-    moss:  mk([['#2f7a1e',0.34],['#358a22',0.38],['#3a8f28',0.42],['#2b7018',0.36]]),
-    earth: mk([['#347f1c',0.34],['#3a8a24',0.38],['#3f9128',0.42],['#2e7418',0.36]]),
-    rock:  mk([['#288042',0.34],['#2d8a46',0.38],['#31904c',0.42],['#237437',0.36]]),
+    /* ►FOLLAJE26 (Toni 26/08: "elige un solo color de la superficie y úsalo para el follaje del mundo 2"):
+       los tres biomas comparten AHORA el verde del SUELO — #4a7d36 es literalmente S2_GREENS[0], el hex que
+       pinta el césped multitono de la losa — y sin oscurecer (factor 1). Antes cada bioma llevaba 4 tonos a
+       0.34-0.42 (JUNGLA25c) y tanto la copa como la alfombra de sotobosque de dressTopJungle salían casi
+       NEGRAS contra un suelo verde medio. ►AJUSTA aquí: añadir más pares [hex,factor] devuelve la variación
+       de tono por celda. */
+    moss:  mk([['#4a7d36',1]]),
+    earth: mk([['#4a7d36',1]]),
+    rock:  mk([['#4a7d36',1]]),
   };
 })();
 let _s2CanopyPal = 'moss';   // lo fija cada builder junto a _s2VegProfile
@@ -26121,10 +26383,12 @@ let _s2VegProfile = 'med';
    multiplicar ese tono por mundo. Medido A/B en la misma sesión: tocar S2_GREENS o _S2_CANOPY_PALS apenas movía
    la imagen; esto sí. ►AJUSTA aquí (1 = color del asset). */
 const S2_VEG_DARK = { s2_flowers:0.80, s2_mushroom:0.90 };                       // escalar: lo que NO es hoja (mantiene su color)
-/* TINTE de las HOJAS: verde de selva oscuro. Va como [r,g,b] al merge, así que sirve igual a las plantas con
-   color de vértice (lo multiplica) y a las que no lo tienen (antes salían GRIS CLARO). ►AJUSTA aquí. */
-const S2_VEG_TINT = { s2_fern:[0.035,0.170,0.030], s2_grasswispy:[0.040,0.175,0.035], s2_tallgrass:[0.035,0.165,0.030],
-                      s2_clover:[0.045,0.180,0.040], s2_grass2:[0.035,0.170,0.030] };
+/* TINTE de las HOJAS — ►FOLLAJE26: las cinco al MISMO verde del suelo (#4a7d36 = S2_GREENS[0]) en RGB LINEAL,
+   que es como el merge escribe el color de vértice. Va como [r,g,b] a merger.add, y ese caso ahora FIJA el color
+   (× la luminancia del asset) en vez de multiplicarlo: multiplicando, las plantas que traen color de vértice se
+   iban a negro por alto que se pusiera el tinte. ►AJUSTA aquí (mismo trío en las cinco = un solo color). */
+const S2_VEG_TINT = { s2_fern:[0.0685,0.2051,0.0369], s2_grasswispy:[0.0685,0.2051,0.0369], s2_tallgrass:[0.0685,0.2051,0.0369],
+                      s2_clover:[0.0685,0.2051,0.0369], s2_grass2:[0.0685,0.2051,0.0369] };
 function scatterModelDecorStage2(startIdx){
   if(!S2_DECOR_ON) return;                       // deco OFF → solo el blockout jugable
   if(!_modelAvailable()) return;
@@ -26352,7 +26616,9 @@ function _s2MeshMerger(){
         for(let v=0;v<vc;v++){
           _v.set(p[v*3],p[v*3+1],p[v*3+2]).applyMatrix4(o.matrixWorld); PA.push(_v.x,_v.y,_v.z);
           _v.set(nn[v*3],nn[v*3+1],nn[v*3+2]).applyMatrix3(_nm).normalize(); NA.push(_v.x,_v.y,_v.z);
-          if(cc){ CA.push(Math.min(1,cc[v*3]*kr), Math.min(1,cc[v*3+1]*kg), Math.min(1,cc[v*3+2]*kb)); }
+          if(_A){ const L2 = cc ? (0.30*cc[v*3]+0.59*cc[v*3+1]+0.11*cc[v*3+2]) : 0.27, k2 = 0.7 + L2*1.1;   // ►FOLLAJE26: con TINTE, el color se FIJA y solo se modula por la luminancia del asset (mismo criterio que dressTopJungle) — multiplicarlo dejaba negras las plantas con color de vértice horneado
+                  CA.push(Math.min(1,kr*k2), Math.min(1,kg*k2), Math.min(1,kb*k2)); }
+          else if(cc){ CA.push(Math.min(1,cc[v*3]*kr), Math.min(1,cc[v*3+1]*kg), Math.min(1,cc[v*3+2]*kb)); }
           else  { CA.push(kr, kg, kb); }
         }
       }});
@@ -26922,8 +27188,8 @@ function _buildS2Mats(){
   /* ►RONDA4: TODOS los tops son CÉSPED verde (esencia de la captura buena del usuario: nada de
      superficies pisables marrones ni grises). La identidad del bioma queda en el TONO de verde
      + el lip/base (tierra marrón · roca gris), como en sus refs 2D (top verde, talud marrón). */
-  const GREEN_WARM = ['#233a18','#203615','#263e1b','#1e3313','#253b19','#213716','#273f1b'];   // bioma tierra: verde cálido — ►JUNGLA25: 0.62 del original (era '#4f8236'...), medido con raycast: ESTE es el suelo que se ve en la mayoría de plazas
-  const GREEN_COOL = ['#1c371e','#19321b','#1f3a20','#172d15','#1e381f','#1b341c','#203c24'];   // bioma roca: verde frío — ►JUNGLA25: 0.62 del original, a juego con GREEN_WARM y S2_GREENS
+  const GREEN_WARM = ['#4f8236','#48792f','#568a3c','#43722c','#528539','#4a7c31','#578e3e'];   // bioma tierra: verde calido — ►SUELO25 (Toni 26/08): ORIGINAL restaurado (JUNGLA25 lo bajo a 0.62 y JUNGLA25c a ~0.45; es el SUELO de la mayoria de plazas, no follaje)
+  const GREEN_COOL = ['#3f7a44','#386f3c','#468248','#33652f','#427d45','#3b743f','#498750'];   // bioma roca: verde frio — ►SUELO25: ORIGINAL restaurado, a juego con GREEN_WARM y S2_GREENS
   S2MATS = {
     moss:  { top:_s2mat(S2_GREENS),       lip:_s2mat(S2_GREENSD,1/16), base:_s2mat(BROWNB,1/12) },
     earth: { top:_s2mat(GREEN_WARM),      lip:_s2mat(EARTHD,1/16),     base:_s2mat(BROWNB,1/12) },
@@ -40186,6 +40452,14 @@ function refreshSetup(){
   window._cpResize = function(){ const w = view.clientWidth, h = view.clientHeight; if(!w || !h) return;
     pr.setPixelRatio(Math.min(devicePixelRatio, 2)); pr.setSize(w, h, false); pCam.aspect = w/h; pCam.updateProjectionMatrix(); };
   setTimeout(window._cpResize, 0);   // el canvas ya está en la home (►CARRERA se construyó antes que este bloque): ajustar ya
+  /* ►ASPECTO26 (Toni 26/08: "en el visor de controles salen aplastados en horizontal"): el carrusel se MUDA
+     entre contenedores — home (#hdLeft: 880x480 APAISADO), ficha de CONTROLES (#ctlCharSlot: 172x230 VERTICAL)
+     y paso 3 del asistente — pero _cpResize solo lo llamaba la home (:18849, :19206). En la ficha el lienzo
+     conservaba el buffer y el pCam.aspect de la home dentro de una caja vertical: personajes ESTRUJADOS en X.
+     Un ResizeObserver sobre el propio canvas lo reajusta solo, sin que cada sitio tenga que acordarse de
+     llamarlo (y cubre tambien el zoom y los cambios de CSS por media query). No hay bucle de reentrada:
+     pr.setSize(w,h,false) escribe el buffer de dibujo, NO el estilo, asi que no cambia la caja observada. */
+  try{ if(window.ResizeObserver) new ResizeObserver(()=>{ try{ window._cpResize(); }catch(e){} }).observe(view); }catch(e){}
   if(THREE.sRGBEncoding) pr.outputEncoding = THREE.sRGBEncoding;
   const pScene = new THREE.Scene();
   const pCam = new THREE.PerspectiveCamera(32, cw/ch, 0.1, 100);
@@ -40303,7 +40577,12 @@ function refreshSetup(){
   const ringAngle = i => i * Math.PI * 2 / CLASS_PICK.length;
   /* ►UI23: modo SOLO (popup de controles): en el corro solo queda visible el héroe elegido */
   let _solo = false;
-  window._cpSolo = function(on){ _solo = !!on; for(const k in slots){ slots[k].visible = !_solo || k === (MATCH && MATCH.cls); } };
+  window._cpSolo = function(on){ _solo = !!on;
+    /* ►SOLO26 (Toni 26/08): manda frontKey — el héroe que el visor tiene DELANTE —, no MATCH.cls.
+       En CONTROLES se pasean personajes sin elegirlos: con MATCH.cls el corro escondía justo al que
+       estabas mirando y dejaba visible al elegido de la partida. */
+    const front = frontKey || (typeof MATCH!=='undefined' && MATCH && MATCH.cls) || null;
+    for(const k in slots){ slots[k].visible = !_solo || k === front; } };
   function ensureRing(){ if(ring) return; ring = new THREE.Group(); ring.position.set(0, 0, -RING_R); pScene.add(ring); cur = { root: ring, _sharedGeo:true }; }
   function buildSlot(k){
     if(slots[k]) return slots[k];
@@ -41066,7 +41345,12 @@ function startMatch(){
   }
   function toHome(){ const cp = picker(); if(cp && homeSlot && cp.parentNode!==homeSlot) homeSlot.appendChild(cp); if(window._cpSolo) window._cpSolo(false); }
   function openModal(step){
-    music.volume = .2; ensureMusic(); if(audio().resume) audio().resume();
+    /* ►INTRO2 (Toni 26/08): durante la PORTADA manda introMusic. Este ensureMusic — su UNICO llamador —
+       arrancaba la PLAYLIST (8bit-showdown) ENCIMA de la musica de entrada: dos temas sonando a la vez al
+       pulsar JUGAR. Misma guarda que startMenuAudio (:8628): la playlist espera a la partida.
+       El audio().resume() se queda fuera de la guarda: lo necesitan los efectos de WebAudio. */
+    if(!_introPhase){ music.volume = .2; ensureMusic(); }
+    if(audio().resume) audio().resume();
     sfxEv('ui_open',{ui:true});   // ►SFXTONI: pop de apertura
     modal.style.display = 'flex'; showStep(step||1);
   }
@@ -41373,8 +41657,15 @@ function renderHomeWorlds(){
   /* contrato de ficha idéntico al de la vitrina: ✕, clic en el velo y ESC */
   function wireModal(modalId, closeId, onOpen, onClose){
     const modal=$(modalId), x=$(closeId); if(!modal) return {open(){},close(){}};
-    const close = ()=>{ modal.style.display='none'; if(onClose) onClose(); };
-    const open  = ()=>{ sfxEv('ui_open',{ui:true}); if(onOpen) onOpen(); modal.style.display='flex'; modal.scrollTop=0; };   // ►SFXTONI
+    /* ►ASPECTO26 (Toni 26/08: "en el visor de controles salen aplastados en horizontal"): CONTROLES se
+       lleva el carrusel de la home (#hdLeft: 880x480 APAISADO) a una caja VERTICAL de 172x230, pero
+       _cpResize solo lo llamaba la home (:18849, :19206) — el lienzo se quedaba con el buffer y el
+       pCam.aspect de la home y los personajes salían estrujados en X. Hay que reajustar en los DOS
+       sentidos: al abrir (va a la caja pequeña) y al cerrar (vuelve a la grande, o la home quedaría
+       con el buffer chico). Leer clientWidth fuerza el reflujo, así que vale con llamarlo aquí mismo. */
+    const fitCarrusel = ()=>{ try{ if(window._cpResize) window._cpResize(); }catch(e){} };
+    const close = ()=>{ modal.style.display='none'; if(onClose) onClose(); fitCarrusel(); };
+    const open  = ()=>{ sfxEv('ui_open',{ui:true}); if(onOpen) onOpen(); modal.style.display='flex'; modal.scrollTop=0; fitCarrusel(); };   // ►SFXTONI
     if(x) x.addEventListener('click', close);
     modal.addEventListener('click', e=>{ if(e.target===modal) close(); });
     addEventListener('keydown', e=>{ if(modal.style.display==='flex' && e.key==='Escape'){ close(); e.preventDefault(); } });
@@ -41383,8 +41674,13 @@ function renderHomeWorlds(){
   /* CONTROLES presta el carrusel y lo devuelve a su aparcamiento; el mismo trato que le da el
      asistente, así que los dos pueden pedírselo sin pisarse. */
   const ctl = wireModal('ctlModal','ctlClose',
-    ()=>{ const cp=$('charPicker'), s=$('ctlCharSlot'); if(cp&&s&&cp.parentNode!==s) s.appendChild(cp); },
-    ()=>{ const cp=$('charPicker'), h=$('charPickerHome'); if(cp&&h&&cp.parentNode!==h) h.appendChild(cp); });
+    /* ►SOLO26 (Toni 26/08): en CONTROLES se ve SOLO el personaje de ese control, como en las versiones
+       antiguas del visor. El modo ya existía (_cpSolo, ►UI23) pero solo estaba cableado al paso 3 del
+       asistente; aquí se colaba el CORRO entero y enseñaba a los seis. */
+    ()=>{ const cp=$('charPicker'), s=$('ctlCharSlot'); if(cp&&s&&cp.parentNode!==s) s.appendChild(cp);
+          if(window._cpSolo) window._cpSolo(true); },
+    ()=>{ const cp=$('charPicker'), h=$('charPickerHome'); if(cp&&h&&cp.parentNode!==h) h.appendChild(cp);
+          if(window._cpSolo) window._cpSolo(false); });
   const opt  = wireModal('optModal','optClose');
   const lang = wireModal('langModal','langClose');
 
