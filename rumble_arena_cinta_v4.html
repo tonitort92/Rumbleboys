@@ -11827,7 +11827,7 @@ const STAGE_ASSETS = {
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
-  12: { gob:['skeleton','skelpirate','skelshooter','skelknight'] },   // ►PIRMINION: + grumete pirata
+  12: { gob:['pirgunner','pirbrute','skelshooter','skelknight'] },   // ►PIRCREW (Toni 26/08): fuera `skeleton` y `skelpirate` — la tripulación es PISTOLERO + BRUTO (los dos reusan SKEL_GLB_B64, así que no cargan un modelo nuevo)
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
 function ensureStageAssets(st){
@@ -12540,13 +12540,31 @@ function spawnMinion(){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
   }
-  /* ►PIRATA (STAGE 12): la tripulación de los barcos es de ESQUELETOS — el kit de Kenney es solo
-     escenario, no trae personajes, y unos muertos con espada son lo que mejor encaja aquí sin
-     inventar assets. Salen más que en el desierto (0.65) y los goblins hacen de grumetes. */
-  if(STAGE===12 && Math.random() < 0.65){
-    let k = ({ small:'skelpirate', shooter:'skelshooter', large:'skelknight' })[type];   // ►PIRMINION: el pequeño va VESTIDO de grumete
-    if(k==='skelpirate' && !(_gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max)) k = 'skeleton';   // pool lleno/sin cargar → esqueleto pelado
-    if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  /* ►PIRCREW (Toni 26/08) · STAGE 12: la tripulación pasa a ser PIRATA de verdad. Antes eran
+     esqueletos (`skelpirate` de grumete, `skeleton` de respaldo) y un 35 % de goblins verdes; ahora
+     los dos piratas nuevos entran en rotación con el arquero y el caballero esqueleto, y el goblin
+     verde deja de pisar el mar salvo que se llenen TODOS los pools a la vez.
+
+     LA RANURA `small` NO TIENE PIEL PIRATA — `pirgunner` es tirador (1,75) y `pirbrute` un grandullón
+     (3,4): ninguno es un pequeño. Como el mundo 2 con su chamán, la tirada `small` SUBE a `shooter`
+     en vez de caer al goblin. Consecuencia asumida (decisión de Toni): el 87 % de la horda pasa a ser
+     de tiro, así que el mar pirata reparte mucho más plomo a distancia que antes. Si eso se pasa de
+     frenada, la palanca es esta línea: devolver parte de los `small` a `large`.
+
+     Piel pirata o esqueleto a cara o cruz, y si el pool que toca está lleno se prueba el otro rol
+     antes de rendirse (mejor un bruto de más que un goblin verde en un barco). */
+  if(STAGE===12){
+    if(type==='small') type = 'shooter';                       // ►PIRCREW: sin piel pequeña pirata, el pequeño sube a tirador
+    const duo = t => (t==='large') ? ['pirbrute','skelknight'] : ['pirgunner','skelshooter'];
+    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    let orden = duo(type); if(Math.random() < 0.5) orden = [orden[1], orden[0]];   // cara o cruz: ni el pirata ni el esqueleto mandan
+    let k = orden.find(libre);
+    if(!k){                                                    // los dos de su rol al tope → prueba el OTRO rol
+      const otro = duo(type==='large' ? 'shooter' : 'large');
+      k = otro.find(libre);
+      if(k) type = (k==='pirbrute' || k==='skelknight') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
+    }
+    if(k) skin = k;                                            // si TODO está lleno, skin=null y cae al goblin (último recurso, no debería verse)
   }
   /* ►ORIENTALS: en S3 (Japón, jardín sakura) la horda mezcla ~50/50 goblins + minions orientales (textura
      natural), con el mismo type/comportamiento: small→aldeano · shooter→ninja (lanza) · large→sensei (melee).
