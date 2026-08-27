@@ -1802,7 +1802,7 @@ window.addEventListener('load', function(){
       <button type="button" id="hsOnline">ONLINE</button>
     </div>
     <aside id="hsRight" aria-label="Mundos">
-      <button type="button" id="hwHead" title="Abrir la vitrina de trofeos"><b>MUNDOS</b><u id="hwCount">0/10</u></button>
+      <button type="button" id="hwHead" title="Abrir la vitrina de trofeos"><b>MUNDOS</b><u id="hwCount">0/16</u></button>
       <div id="hwList"><!-- una fila por mundo; la pinta renderHomeWorlds() --></div>
     </aside>
   </div>
@@ -1873,7 +1873,7 @@ window.addEventListener('load', function(){
        sus dos fichas de detalle (#trophyModal / #marksModal) valen, y la lista las abre haciéndoles
        `.click()` — un botón oculto dispara igual su listener. -->
   <div id="homeMine" style="display:none">
-    <button type="button" class="hmBtn" id="trophyLink"><i>🏆</i><b>TROFEOS</b><u id="hmTroph">0/10</u></button>
+    <button type="button" class="hmBtn" id="trophyLink"><i>🏆</i><b>TROFEOS</b><u id="hmTroph">0/16</u></button>
     <button type="button" class="hmBtn" id="marksLink"><i>📊</i><b>MARCAS</b><u id="hmMark">—</u></button>
   </div>
 
@@ -1888,7 +1888,7 @@ window.addEventListener('load', function(){
   <!-- ►F1: la regla en letra pequeña FUERA de la portada (era legalese: "…y solo si el jefe cae",
        y además decía "9 mundos" con el chip en 0/10). Las reglas se aprenden jugando. Oculto, no
        borrado: el texto puede servir en CÓMO JUGAR BIEN. -->
-  <p id="homeSub" style="display:none">9 mundos, 9 trofeos. El trofeo es del que más puntos haga… y solo si el jefe cae.</p>
+  <p id="homeSub" style="display:none">16 paradas, 16 trofeos: 10 mundos con jefe y 6 minijuegos.</p>
   <!-- ►MAPSEL: mapa en el que EMPIEZA la partida. El fondo de la home cambia al elegido, así que se
        ve el mapa entero mientras decides. La run sigue desde ahí por el orden de campaña. -->
   <!-- ►F1: el selector FUERA del camino de JUGAR (era el peaje entre el titular y el botón). Oculto,
@@ -6128,7 +6128,7 @@ function makePlayer(color, darker, spawnX, isAI){
     wallSliding:false, wallSlideT:0, wallSlideStick:0, wallSlideN:null, _wallSlideLock:false, _wallDustT:0,   // DESLIZAMIENTO POR PARED
     power:0, shardAmmo:10, shardCD:0, shardReload:0, throwT:0,
     mpow:0, ult:null, _ultHeld:false, out:false, label:'', lastHitBy:null, respDrop:false, kbInput:false, padIndex:-1, atkBuf:0,
-    sc:{ dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 },   // bonus = ►INTERSTAGE: ×1.3 de superviviente acumulado
+    sc:{ dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 },   // bonus = ►INTERSTAGE: ×1.3 de superviviente acumulado
     boost:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 },              // carril TEMPORAL (cápsulas)
     own:{ dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 },        // ►INTERSTAGE: carril COMPRADO (permanente DENTRO del run)
     perm:{},                                                          // ►TIENDA26: carril PERMANENTE de verdad (tienda de la home); lo rellena permApply()
@@ -7584,7 +7584,10 @@ function scoreTotal(p){
      ese minijuego: pelear es el MEDIO para quedarte el pico, no la forma de sumar. Se sustituye
      entero — HUD de la izquierda, orden del ranking y resultado final salen de aquí. */
   if(STAGE===14 && window.ARENA && ARENA.pts) return ARENA.pts(p);
-  const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*15 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
+  /* ►16 PARADAS: `mini` son los puntos que traes de un minijuego MODULO (descensos, tubo). Van en
+     su propia categoria y no mezclados en `bonus`, que es el x1.3 de superviviente: asi el recuento
+     del tablero sigue diciendo la verdad de donde salio cada punto. */
+  const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*15 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0) + (s.mini||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 /* ►FRENZYSKIN · piel incandescente del bárbaro en Frenesí: emissive rojo en todos sus materiales, se restaura al acabar */
 function frenzySkin(p, on){
@@ -19503,13 +19506,17 @@ function updatePvpShieldFX(){
       const stg = CAMPAIGN_STAGES[Math.min(best, CAMPAIGN_STAGES.length)-1];
       reached = Math.max(0, rutaIndiceDe(stg));
     }
+    /* ►16 PARADAS (Toni 27/08): los minijuegos TAMBIEN dan trofeo, asi que dejan de ser un paso
+       de adorno: cuentan para el marcador igual que un mundo. Antes `won` los excluia a mano y
+       `nWorlds` los filtraba, y de ahi salia el 0/10 que se contradecia con los 16 eslabones que
+       el propio rail lleva dibujando desde el 20/08. */
     const mini = R.map(isMini);
-    const won  = R.map((e,i) => !mini[i] && !!tr[e.st]);
-    const disc = R.map((e,i) => i===0 || i <= reached || won[i] || (!!e.st && !!mk[e.st]));
+    const won  = R.map(e => !!tr[pasoClave(e)]);
+    const disc = R.map((e,i) => i===0 || i <= reached || won[i] || !!mk[pasoClave(e)]);
     let next = -1;
-    for(let i=0;i<R.length;i++) if(!mini[i] && !won[i]){ next = i; break; }
-    if(next < 0) for(let i=R.length-1;i>=0;i--) if(!mini[i]){ next = i; break; }
-    const nWorlds = mini.filter(x=>!x).length;
+    for(let i=0;i<R.length;i++) if(!won[i]){ next = i; break; }
+    if(next < 0) next = R.length - 1;
+    const nWorlds = R.length;
     return { R, tr, mk, best, reached, mini, won, disc, next, nWorlds, nWon: won.filter(Boolean).length };
   }
 
@@ -22430,7 +22437,11 @@ const RUN_PERKS = [
    ⚠️ Debe llamarse ANTES de stageResetPlayers(): lee p.out/p.dead para saber quién sobrevivió. */
 const SURV_BONUS = 0.30;     // +30% de lo puntuado EN EL STAGE si lo terminas en pie
 const STAGE_LOG = [];        // [{ stage, rows:[{label,charKey,pts,surv,me}], best }] → alimenta el roadmap
-function closeStageScores(){
+function closeStageScores(clave){
+  /* ►16 PARADAS: `clave` es la parada que se cierra. Por defecto el STAGE en curso, que es lo de
+     siempre; un minijuego MODULO pasa la suya, porque el motor sigue con el STAGE del mundo
+     anterior y sin esto la marca del minijuego pisaria la de ese mundo. */
+  const K = (clave === undefined) ? STAGE : clave;
   const rows = [];
   for(const p of players){
     const raw  = Math.max(0, scoreTotal(p) - (p._runXPseen||0));   // lo puntuado EN ESTE stage
@@ -22451,14 +22462,14 @@ function closeStageScores(){
     p1t = { dmg:d('dmg'), mk:d('mk'), kills:d('kills'), items:d('items'), specials:d('specials'), surv:d('surv'), bonus:d('bonus'), deaths:d('deaths') };
   }
   for(const p of players) p._scSnap = Object.assign({}, p.sc);
-  STAGE_LOG.push({ stage:STAGE, rows, best:rows[0], p1t });
-  saveNoteStage(STAGE);   // ►SAVE: progreso de campaña — se apunta al CERRAR el stage, así una run abandonada a mitad también cuenta
+  STAGE_LOG.push({ stage:K, rows, best:rows[0], p1t });
+  saveNoteStage(K);   // ►SAVE: progreso de campaña — se apunta al CERRAR el stage, así una run abandonada a mitad también cuenta
   /* ►MARCAS: y TU nota en este mundo. Se usa gradeFor(P1) a secas —la MISMA que el tablero estampa
      acto seguido (►STAMPGRADE)— para que lo guardado sea exactamente lo que el jugador acaba de ver. */
   try{
     if(typeof P1!=='undefined' && P1 && players.includes(P1)){
       const mine = rows.find(r=>r.me);
-      saveNoteMark(STAGE, gradeFor(P1).label, mine ? mine.pts : 0);
+      saveNoteMark(K, gradeFor(P1).label, mine ? mine.pts : 0);
     }
   }catch(e){ console.warn('[marcas]', e); }
 }
@@ -22467,24 +22478,42 @@ function closeStageScores(){
    ver el bloque ►RUTA). Antes era una escalera de `if(STAGE===n)` que solo sabía
    de mundos, así que no había dónde meter un minijuego.
    Único caller de verdad: la fase 'won' del jefe, vía openInterstage. */
+/* ►16 PARADAS (Toni 27/08): clave de la parada que acaba, cuando es un MINIJUEGO. La fijan
+   rutaFinMini (los de motor) y lanzarMini (los modulo) antes de abrir el entre-stage, y la consume
+   stageAdvance al final de la cadena tablero -> tienda -> siguiente. */
+let _MINI_CLAVE = null;
 function stageAdvance(){
-  saveNoteBoss(STAGE);   // ►SAVE: sólo se llega aquí tras VENCER al jefe del stage → contador de jefes derrotados
-  saveNoteTrophy(STAGE); // ►TROFEOS: y el trofeo de ese mundo, si se lo llevó P1
+  const mini = _MINI_CLAVE;
+  _MINI_CLAVE = null;
+  if(mini == null){
+    saveNoteBoss(STAGE);   // ►SAVE: sólo se llega aquí tras VENCER al jefe del stage → contador de jefes derrotados
+    saveNoteTrophy(STAGE); // ►TROFEOS: y el trofeo de ese mundo, si se lo llevó P1
+  } else {
+    /* un minijuego no tiene jefe, pero SI da trofeo: son 16 paradas, no 10 mundos. Quien lo gana lo
+       decide cada minijuego con SU mecanica (primero en puntos, ultimo en pie, mas tiempo en el
+       pico) y lo deja en _TROPHY_WINNER antes de llegar aqui. */
+    saveNoteTrophy(mini);
+  }
   /* resincronizar por si se entró a este stage por fuera de la ruta (F9, el
-     selector del menú, o una `?stage=`): manda dónde ESTÁS, no dónde creía */
-  const i = rutaIndiceDe(STAGE);
-  if(i >= 0) RUTA_I = i;
+     selector del menú, o una `?stage=`): manda dónde ESTÁS, no dónde creía.
+     Con un minijuego MODULO no vale: el motor sigue en el STAGE del mundo anterior y resincronizar
+     ahi haria repetir ese mundo. Su RUTA_I ya apunta al eslabon correcto. */
+  if(typeof mini !== 'string'){ const i = rutaIndiceDe(STAGE); if(i >= 0) RUTA_I = i; }
   rutaSiguiente();
 }
 /* ►FIN DE UN MINIJUEGO DE MOTOR (stages 13 y 14). Sus ficheros llamaban a
    `endGame()` porque nacieron sueltos; dentro de la campaña lo que toca es
    seguir la ruta. Lo llaman arena.js y cuadrimania.js. */
-function rutaFinMini(){
+function rutaFinMini(ganador){
   const i = rutaIndiceDe(STAGE);
   if(i < 0){ endGame(); return; }        // se entró suelto (?arena / ?cuadrimania): fin de partida como siempre
   RUTA_I = i;
-  closeStageScores();                    // sus puntos también cuentan para la run
-  fadeOut(()=>{ rutaSiguiente(); fadeIn(); });
+  /* ►16 PARADAS: cierra como un mundo —clasificacion, roadmap, tienda y trofeo— en vez de saltar
+     al siguiente eslabon. `ganador` lo pasa el propio minijuego con su criterio: cuadrimania el
+     ultimo en pie, arena el que mas tiempo aguanto en el pico. */
+  _TROPHY_WINNER = ganador || null;
+  _MINI_CLAVE = STAGE;
+  openInterstage(STAGE);                 // el ya llama a closeStageScores()
 }
 window.rutaFinMini = rutaFinMini;
 /* ¿este stage forma parte de una run de campaña encadenada? Lo consultan los
@@ -22701,14 +22730,18 @@ const RUTA = [
   { st:3  },                              // JAPÓN
   { st:14, mini:true },                   // ►ARENA (disco japonés · arena.js)
   { st:11 },                              // WESTERN
-  { mini:'descenso', piel:'arena', tag:'SANDBOARD', nombre:'SURFEANDO POR EL DESIERTO' },
+  /* ►16 PARADAS: `clave` es con lo que se guardan trofeo y marca. Los mundos y los dos minijuegos
+     de MOTOR son stages y usan su ID; estos cuatro no son stages (los tres descensos comparten
+     fichero y ninguno toca STAGE), asi que la clave va aqui. `trophies`/`marks` son objetos: una
+     clave de texto entra sin migrar nada. */
+  { mini:'descenso', piel:'arena', tag:'SANDBOARD', nombre:'SURFEANDO POR EL DESIERTO', clave:'m_sand' },
   { st:4  },                              // DESIERTO
   { st:5  },                              // PIRÁMIDE
   { st:13, mini:true },                   // ►CUADRIMANÍA (torre · cuadrimania.js)
   { st:12 },                              // PIRATAS
-  { mini:'descenso', piel:'mar',   tag:'SURF',      nombre:'OLA, ¿QUÉ TAL?' },
+  { mini:'descenso', piel:'mar',   tag:'SURF',      nombre:'OLA, ¿QUÉ TAL?', clave:'m_surf' },
   { st:7  },                              // HIELO
-  { mini:'descenso', piel:'nieve', tag:'SNOWBOARD', nombre:'ME MUEVE LA NIEVE' },
+  { mini:'descenso', piel:'nieve', tag:'SNOWBOARD', nombre:'ME MUEVE LA NIEVE', clave:'m_snow' },
   { st:8  },                              // FORJA
   /* DOS rótulos por minijuego, y hacen falta los dos:
        tag    — CORTO. Es el que pinta el selector de la home, que lo pone en una
@@ -22716,7 +22749,7 @@ const RUTA = [
                 motivo por el que el selector usa STAGE_TAG y no _STAGE_NAMES.
        nombre — LARGO, el de la lista con retruécano. Solo sale en la pantalla de
                 carga, que tiene sitio de sobra. */
-  { mini:'tubo', tag:'TUBO', nombre:'EL TUBO NO SE DETUBO' },
+  { mini:'tubo', tag:'TUBO', nombre:'EL TUBO NO SE DETUBO', clave:'m_tubo' },
   { st:10 },                              // VÍA ARCOÍRIS → coronación
 ];
 /* dónde estamos en la RUTA. Se pone a 0 en launchMatch y avanza en cada salto:
@@ -22760,15 +22793,28 @@ function lanzarMini(e){
       mod.lanzar({ piel:e.piel, campana:true, nombre:e.nombre,
                    clase:(typeof MATCH!=='undefined' && MATCH.cls) || null,   // ►PERSONAJE: el tuyo, no el samurai
                    alAcabar:(res)=>{
-        /* ►LOS PUNTOS DEL MINIJUEGO VAN A LA CARTERA. Decisión ya tomada con
-           Toni en el descenso ("puntúa para la run, pero poco"): lo que ganas
-           aquí se gasta en la tienda del siguiente entre-stage. */
+        /* ►16 PARADAS (Toni 27/08): un minijuego cierra COMO UN MUNDO —clasificacion, roadmap,
+           tienda y trofeo— en vez de saltar al siguiente eslabon.
+           Los cuatro corredores del modulo SON los cuatro jugadores, en el mismo orden, asi que
+           basta con volcar sus puntos en el marcador del motor: a partir de ahi el tablero, el
+           recuento animado, la marca y la cartera salen gratis del camino de siempre. Sin este
+           volcado el modulo se lleva la puntuacion consigo y el tablero saldria a cero.
+           Siguen valiendo la mitad (MINI_XP), que es lo que ya estaba decidido. */
         try {
-          if(res && res.puntos && typeof P1 !== 'undefined' && P1){
-            P1.runXP = (P1.runXP || 0) + Math.round(res.puntos * MINI_XP);
+          _TROPHY_WINNER = null;
+          if(res && res.tabla && typeof players !== 'undefined'){
+            for(let k = 0; k < res.tabla.length && k < players.length; k++){
+              const p = players[k], f = res.tabla[k]; if(!p || !f) continue;
+              /* a MITAD de valor, como estaba decidido para el descenso ('puntua para la run, pero
+                 poco'). Lo que cambia con las 16 paradas es que ahora esos puntos entran en la
+                 CLASIFICACION y reparten trofeo, no solo en la cartera. Un solo numero que tocar. */
+              p.sc.mini = (p.sc.mini || 0) + Math.round((f.pts || 0) * MINI_XP);
+              if(f.place === 1) _TROPHY_WINNER = p;
+            }
           }
-        } catch(err){}
-        fadeOut(()=>{ saltoConCarga(rutaSiguiente); });   // ►CARGA: el siguiente eslabón también bajo la carga
+        } catch(err){ console.warn('[ruta] volcado del minijuego', err); }
+        _MINI_CLAVE = e.clave || ('m_' + e.mini);
+        openInterstage(_MINI_CLAVE);
       }});
       esperarListo(()=> loadScreenHide(null));
     } catch(err){
@@ -22777,7 +22823,7 @@ function lanzarMini(e){
     }
   });
 }
-const MINI_XP = 0.5;   // los puntos del minijuego valen la mitad en EXP: "sin grandes beneficios ni grandes pérdidas" (Toni)
+const MINI_XP = 0.5;   // los puntos del minijuego valen la MITAD: "sin grandes beneficios ni grandes pérdidas" (Toni)
 /* ►WEST · el número que VE el jugador es la POSICIÓN en la ruta, no el ID interno. Con el western
    metido en medio, el desierto (ID 4) es el 5º stage de la campaña. buildRoadmap ya pintaba por
    posición; esta función es para todo lo demás que imprime "STAGE N" en pantalla. Los stages
@@ -22820,10 +22866,10 @@ function _nextStage(){
 
 /* ►INTERSTAGE: arranca el entre-stage (único caller: la fase 'won' del jefe).
    Cadena completa: fundido → CLASIFICACIÓN sola → fundido → TIENDA sola → fundido → stage nuevo. */
-function openInterstage(){
+function openInterstage(clave){
   interlude = true;
   hitstopGlobal = 0;                       // el freeze del KO del jefe no debe congelar la cuenta atrás
-  closeStageScores();                      // puntuación del stage + ×1.3 superviviente + nodo del roadmap
+  closeStageScores(clave);                 // puntuación del stage + ×1.3 superviviente + nodo del roadmap
   const me = shopPlayer();
   if(!me || me.out || !document.getElementById('lbOverlay')){   // sin humano local → salto directo, pero CON fundido
     fadeOut(()=>{ interlude=false; ISTAGE.ph='none'; stageAdvance(); fadeIn(); });
@@ -40567,6 +40613,10 @@ function nombreDePaso(e){
   if(!e) return '';
   return e.st ? nombreDeStage(e.st) : (e.nombre || e.tag || String(e.mini).toUpperCase());
 }
+/* ►16 PARADAS: con que se guardan trofeo y marca de un eslabon. Los mundos y los dos minijuegos
+   de MOTOR son stages y usan su ID; los cuatro minijuegos MODULO llevan su clave de texto en la
+   RUTA (`clave`), porque no son stages. */
+function pasoClave(e){ return e ? (e.st || e.clave || null) : null; }
 /* clase de tamanio para las chapas de UNA LINEA (#hdWNum, #isName): los nombres oficiales llegan a
    26 caracteres y esas dos son `white-space:nowrap` sin recorte, asi que se salian de la chapa. */
 function claseLargo(txt){ const n = (txt||'').length; return n > 22 ? 'n3' : n > 15 ? 'n2' : ''; }
@@ -40969,7 +41019,7 @@ function startDemo(){
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: el attract no arrastra compras
     p.ownPas = { spikes:false, elec:false, magnet:false, mines:false };
-    p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 }; p.mpow = 0; p.lastHitBy = null; p._scSnap = null;   // ►LBREDO: foto del stage fuera también en el attract
+    p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 }; p.mpow = 0; p.lastHitBy = null; p._scSnap = null;   // ►LBREDO: foto del stage fuera también en el attract
     endBeam(p); endUlt(p); endSpin(p); endShield(p); endCounter(p); endStorm(p); endBastion(p); endZone(p); endFireShield(p); endHealDisc(p);
     p.spinCD = 0; p.spinBuf = 0; p.grabCD = 0; p.shieldT = 0; p.shieldCD = 0; p.parryT = 0; p.parryCD = 0; p.suppCD = 0; p.superCD = 0; p.bowCD = 0; p.qCD = 0; p._qMax = 0; p.qAmmo = Q_AMMO; p.qReload = 0; p.healCD = 0; p.buffSpdT = 0; p.buffRateT = 0; p.rainT = 0; p.buffDmgT = 0; p.buffDefT = 0; p.block = false;
     p.hang = null; p.hangCD = 0; p.hangT = 0; p.stam = STAM_MAX; p.stamLock = false; if(p._stamBar) p._stamBar.g.visible = false;   // ►LTSTAM
@@ -41163,7 +41213,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p._pkRegen = p._pkBerserk = p._pkUltCharge = p._pkPhoenix = p._phoenixCharge = false;
     p._pkTwinAxe = p._pkTriShuriken = p._pkArrowRain = p._pkSkyStorm = p._pkShieldWall = p._pkSanctuary = false;   // ►PERKS: y los únicos por clase
     p._pkQuake = p._pkTwinSlash = p._pkFanWide = p._pkTwinOrb = p._pkTwinJavelin = p._pkBigNova = false;   // ►PERKS: 2ª carta única por clase
-    p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0 };
+    p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 };
     p._scSnap = null;   // ►LBREDO: la foto por categoría del stage anterior no cruza de partida
     p.mpow = 0; p.out = false; p.outOrder = 0; p.lastHitBy = null; p._rainbowT = 0; endUlt(p);
   }
@@ -42483,12 +42533,14 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
    ===================================================================== */
 function renderHomeMine(){
   try{
-    const s = saveGet(), n = CAMPAIGN_STAGES.length;
-    let won = 0; for(const st of CAMPAIGN_STAGES) if((s.trophies||{})[st]) won++;
+    /* ►16 PARADAS: se cuenta sobre la RUTA entera (mundos Y minijuegos), no sobre CAMPAIGN_STAGES,
+       que son solo los 10 con jefe. */
+    const s = saveGet(), R = (typeof RUTA!=='undefined') ? RUTA : [], n = R.length || CAMPAIGN_STAGES.length;
+    let won = 0; for(const e of R) if((s.trophies||{})[pasoClave(e)]) won++;
     const t = document.getElementById('hmTroph'); if(t) t.textContent = won + '/' + n;
     /* el chip de MARCAS enseña TU MEJOR nota de todas: un solo dato, el que pica */
     let best = null;
-    for(const st of CAMPAIGN_STAGES){ const m = (s.marks||{})[st]; if(m && (!best || m.gi < best.gi)) best = m; }
+    for(const e of R){ const m = (s.marks||{})[pasoClave(e)]; if(m && (!best || m.gi < best.gi)) best = m; }
     const el = document.getElementById('hmMark');
     if(el){ el.textContent = best ? best.g : '—';
             el.style.color = best ? gradeColorOf(best.g) : '#8ea6cf'; }
@@ -42593,26 +42645,33 @@ function renderHomeWorlds(){
     const list = document.getElementById('hwList'); if(!list) return;
     const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const hexOf = c => '#'+(c>>>0).toString(16).padStart(6,'0').slice(-6);
+    /* ►16 PARADAS: la lista recorre la RUTA entera. Un minijuego no tiene isla ni paleta propia,
+       asi que hereda el color del mundo del que cuelga (_rutaMundoPrevio, el mismo criterio con el
+       que el rail elige que fondo previsualizar). */
     const s = saveGet(), tr = s.trophies||{}, mk = s.marks||{};
+    const R = (typeof RUTA!=='undefined') ? RUTA : CAMPAIGN_STAGES.map(x=>({st:x}));
     let won = 0, h = '';
-    CAMPAIGN_STAGES.forEach((st,i)=>{
-      const has = tr[st]||0, m = mk[st];
+    R.forEach((e,i)=>{
+      const st = e.st || ((typeof _rutaMundoPrevio==='function') ? _rutaMundoPrevio(i) : 1);
+      const k = pasoClave(e);
+      const has = tr[k]||0, m = mk[k];
       if(has) won++;
       const c = (PORTAL_PAL[st]||[])[1];
       const col = hexOf(c==null?0x35ff6a:c);
       /* `off` = ni nota ni trofeo. La fila NO desaparece: un mundo apagado en la lista dice
          "esto te falta", y eso es justo lo que tiene que empujar a jugar otra vez. */
+      const nom = nombreDePaso(e);
       h += '<button type="button" class="hwRow'+(m||has?'':' off')+'" data-st="'+st+'"'
-         +   ' title="'+esc(nombreDeStage(st))+(m?' · '+Math.round(m.pts||0).toLocaleString('es-ES')+' pts':' · sin jugar')+'">'
+         +   ' title="'+esc(nom)+(m?' · '+Math.round(m.pts||0).toLocaleString('es-ES')+' pts':' · sin jugar')+'">'
          +   '<span class="hwDot" style="background:'+(m||has?col:'#5b647a')+'"></span>'
-         +   '<span class="hwName">'+(i+1)+' · '+esc(nombreDeStage(st))+'</span>'
+         +   '<span class="hwName">'+(i+1)+' · '+esc(nom)+'</span>'
          +   '<span class="hwMark" style="color:'+(m?gradeColorOf(m.g):'#6b7a99')+'">'+(m?esc(m.g):'—')+'</span>'
          +   '<span class="hwTro'+(has?'':' no')+'">🏆</span>'
          + '</button>';
     });
     list.innerHTML = h;
     const cnt = document.getElementById('hwCount');
-    if(cnt) cnt.textContent = won + '/' + CAMPAIGN_STAGES.length;
+    if(cnt) cnt.textContent = won + '/' + R.length;
   }catch(e){ console.warn('[homeWorlds]', e); }
 }
 (function homeMenu(){

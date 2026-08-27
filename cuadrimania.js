@@ -716,7 +716,9 @@ function tick(dt){
          Suelto (?cuadrimania) acaba como siempre. */
       setTimeout(()=>{
         if(gameOver) return;
-        if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(); return; }
+        /* ►16 PARADAS: el ganador de ESTE minijuego es el ULTIMO EN PIE, no el que mas puntos
+           hizo. Se lo pasamos a la ruta para que reparta el trofeo con el criterio correcto. */
+        if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(vivos[0] || null); return; }
         if(typeof endGame==='function') endGame();
       }, 1400);
     }

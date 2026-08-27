@@ -807,7 +807,9 @@ function tick(dt){
        (?arena) se comporta como siempre. */
     setTimeout(()=>{
       if(gameOver) return;
-      if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(); return; }
+      /* ►16 PARADAS: aqui el ganador es el que MAS PUNTOS DE PICO acumulo (`mejor`), que es la
+         mecanica de este minijuego. Se lo pasamos a la ruta para el trofeo. */
+      if(window.rutaEnCampana && window.rutaEnCampana()){ window.rutaFinMini(mejor || null); return; }
       if(typeof endGame === 'function') endGame();
     }, 1600);
   }

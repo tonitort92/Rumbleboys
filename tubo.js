@@ -2368,8 +2368,10 @@ function tuboFin(){
    ===================================================================== */
 function salir(){
   const cb = TUBO._alAcabar;
+  /* ►16 PARADAS: la TABLA ENTERA, no solo lo del humano (ver descenso.js) */
   const res = { puntos: (TUBO.racers[0] && TUBO.racers[0].pts) || 0,
-                puesto: (TUBO.racers[0] && TUBO.racers[0].place) || 0 };
+                puesto: (TUBO.racers[0] && TUBO.racers[0].place) || 0,
+                tabla: (TUBO.racers || []).map(r => ({ pts: r.pts || 0, place: r.place || 0, clase: r.clase })) };
   TUBO.on = false;
   TUBO._alAcabar = null;
   tuboFinOff();

@@ -5478,7 +5478,10 @@ function descFin(){
 function salirDesc(){
   const cb = DESC._alAcabar;
   const me = DESC.racers[0];
-  const res = { puntos: (me && me.pts) || 0, puesto: (me && me.place) || 0, piel: SKIN };
+  /* ►16 PARADAS: se devuelve la TABLA ENTERA, no solo lo del humano. La campania la vuelca en el
+     marcador del motor para poder enseñar la clasificacion y repartir el trofeo. */
+  const res = { puntos: (me && me.pts) || 0, puesto: (me && me.place) || 0, piel: SKIN,
+                tabla: (DESC.racers || []).map(r => ({ pts: r.pts || 0, place: r.place || 0, clase: r.clase })) };
   DESC.on = false;
   DESC._alAcabar = null;
   descFinOff();
