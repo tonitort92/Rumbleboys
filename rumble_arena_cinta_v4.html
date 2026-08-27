@@ -12326,7 +12326,7 @@ gobLoadKinds(['small','shooter','large']);   // la horda base de todos los stage
 const STAGE_ASSETS = {
   2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
   3:  { gob:['villager','ninja','sensei'] },
-  4:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem'] },
+  4:  { gob:['skeleton','pirskel','skelshooter','skelknight','golem'], boss:['dgolem'] },   // ►S4SKEL: entra `pirskel` (el soldado esqueleto del barco) como melee pequeno
   5:  { gob:['momia','pirskel','skelshooter','golem'], boss:['dgolem','midgolem','smallgolem'] },   // ►MOMIAS: horda propia de la pirámide — momia (large) + esqueleto soldado del barco (small) + arquero del desierto (shooter). Fuera `skeleton` y `skelknight`, que ya no salen aquí
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
@@ -13062,9 +13062,34 @@ function spawnMinion(){
       skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
     }
   }
-  if((STAGE===4 || STAGE===7) && Math.random() < 0.5){
+  if(STAGE===7 && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  }
+  /* ►S4SKEL (Toni 27/08: "quita en el mundo del desierto el shooter goblin y mete al esqueleto
+     nuevo... ponlo que sea de ataque fisico, que es como viene configurado de normal, no shooter").
+     El DESIERTO sale tambien de la linea de arriba — la compartia con la tundra, y tocarla habria
+     movido el S7 sin que nadie lo pidiese. Igual que se hizo con la piramide.
+         shooter → SIEMPRE skelshooter. Lo que se va es la PIEL del goblin tirador, no el ROL: la
+                   presion a distancia del mundo se queda como estaba, solo cambia quien dispara.
+                   (Si se hubiera quitado el rol, el desierto perderia un 22% de sus enemigos de
+                   rango de golpe, y eso es un cambio de dificultad que Toni no ha pedido.)
+         small   → a TRES bandas: goblin raso, esqueleto pelado y pirskel, el soldado del barco
+                   pirata. Entra como MELEE, que es su ficha de fabrica (shootAtk:false): no se le
+                   fuerza el type, asi que pega de cerca como el resto de pequenos.
+         large   → sin tocar, goblin3 / skelknight a cara o cruz, como siempre.
+     El respaldo es el de siempre: si el pool de la piel esta al tope, `skin` se queda en null y sale
+     el goblin del type base. */
+  if(STAGE===4){
+    const libre = k => k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max;
+    if(type === 'shooter'){
+      if(libre('skelshooter')) skin = 'skelshooter';
+    } else if(type === 'small'){
+      const c = ['skeleton', 'pirskel', null][(Math.random()*3)|0];   // null = goblin raso
+      if(c && libre(c)) skin = c;
+    } else if(Math.random() < 0.5){
+      if(libre('skelknight')) skin = 'skelknight';
+    }
   }
   /* ►MOMIAS (Toni 27/08): la PIRÁMIDE se sale de la línea de arriba y monta horda propia. Antes
      compartía el reparto con el desierto y el ártico (goblins ~50/50 con los tres esqueletos); si
