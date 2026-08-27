@@ -398,6 +398,13 @@ window.addEventListener('load', function(){
     55%{ transform:translate(-50%,-50%) scale(.84) rotate(-10deg); opacity:1; }
     72%{ transform:translate(-50%,-50%) scale(1.08) rotate(-16deg); opacity:1; }
     100%{ transform:translate(-50%,-50%) scale(1) rotate(-13deg); opacity:1; } }
+  /* el mismo golpe que gStampSlam pero SIN translate: lo aplica cada trozo, que va dentro del flex
+     del contenedor y no se centra el solo */
+  @keyframes ssSlam {
+    0%{ transform:scale(3.2) rotate(-26deg); opacity:0; }
+    55%{ transform:scale(.84) rotate(-10deg); opacity:1; }
+    72%{ transform:scale(1.08) rotate(-16deg); opacity:1; }
+    100%{ transform:scale(1) rotate(-13deg); opacity:1; } }
   @keyframes gStampFade {
     0%{ opacity:1; transform:translate(-50%,-50%) scale(1) rotate(-13deg); }
     100%{ opacity:0; transform:translate(-50%,-50%) scale(1.16) rotate(-13deg); } }
@@ -416,23 +423,34 @@ window.addEventListener('load', function(){
      CUADRIMANÍA sin que se salgan.
      z-index 43 A PROPÓSITO: el cartel de aviso (#stageCaution) está en 44, así que el pop-up cae
      ENCIMA del sello — el orden que pidió Toni (primero PUM, luego el aviso por encima). */
+  /* ►ENTRADA (Toni 27/08): el sello ya no es UN nodo con texto, sino una columna de FILAS y cada
+     fila una tira de TROZOS, que caen uno detras de otro hasta componer el nombre. El contenedor se
+     queda con el centrado (translate) y el golpe se lo lleva cada trozo, por eso hay dos juegos de
+     keyframes: gStampSlam (con translate, historico) y ssSlam (sin el, para los trozos). */
   #stageStamp { position:fixed; left:50%; top:42%; z-index:43; pointer-events:none;
-    font-weight:900; font-style:italic; letter-spacing:-1px; line-height:.9; white-space:nowrap;
-    font-size:clamp(38px, 8.4vw, 132px); max-width:94vw;
+    display:flex; flex-direction:column; align-items:center; gap:.04em;
+    max-width:92vw; transform:translate(-50%,-50%); }
+  #stageStamp .ssFila { display:flex; align-items:baseline; justify-content:center; gap:.26em; white-space:nowrap; }
+  #stageStamp .ssTrozo { font-weight:900; font-style:italic; letter-spacing:-1px; line-height:.9;
+    font-size:var(--ssFs, clamp(38px, 8.4vw, 132px));
     color:#fff; -webkit-text-stroke:9px #0a0d16; paint-order:stroke fill;
     text-shadow:0 6px 0 rgba(0,0,0,.45);
     filter:drop-shadow(0 16px 36px rgba(0,0,0,.65));
-    transform:translate(-50%,-50%) scale(3) rotate(-13deg); opacity:0; }
-  #stageStamp.slam { animation:gStampSlam .5s cubic-bezier(.15,1.35,.35,1) forwards; }
+    transform:scale(3) rotate(-13deg); opacity:0; }
+  #stageStamp .ssTrozo.slam { animation:ssSlam .5s cubic-bezier(.15,1.35,.35,1) forwards; }
+  /* ►ENTRADA: al medir hay que anular el `scale(3)` de reposo. Un hijo transformado ENSANCHA el
+     area de desbordamiento del padre, asi que el scrollWidth de la fila salia el doble de lo real y
+     el ajuste encogia el cuerpo sin ninguna necesidad (medido en headless: 1454 px contra 712). */
+  #stageStamp.midiendo .ssTrozo { transform:none; }
   #stageStamp.fade { animation:gStampFade .5s ease forwards; }
   #stageStampRing { position:fixed; left:50%; top:42%; z-index:42; pointer-events:none;
     width:44px; height:44px; border-radius:50%; border:7px solid rgba(255,255,255,.85);
     transform:translate(-50%,-50%) scale(.2); opacity:0; }
   #stageStampRing.burst { animation:gStampRingKF .62s ease-out forwards; }
   /* el outline de 9px se come las letras en pantallas pequeñas: se afina con el cuerpo */
-  @media (max-width:760px){ #stageStamp { -webkit-text-stroke-width:6px; } }
+  @media (max-width:760px){ #stageStamp .ssTrozo { -webkit-text-stroke-width:6px; } }
   @media (prefers-reduced-motion: reduce){
-    #stageStamp.slam { animation:none; opacity:1; transform:translate(-50%,-50%) rotate(-13deg); }
+    #stageStamp .ssTrozo.slam { animation:none; opacity:1; transform:rotate(-13deg); }
     #stageStampRing.burst { animation:none; } }
   /* leaderboard rebrandeado */
   .lb { width:100%; border-collapse:separate; border-spacing:0 4px; font-size:14px; }
@@ -9225,20 +9243,148 @@ const STAGE_OBJETIVO = 'OBJETIVO: QUEDA EL PRIMERO EN PUNTOS, VENCE AL JEFE Y GA
    el jugador al levantarse la carga, y con musicOn apagado la voz ni suena (stageIntroGo se corta
    antes). Colgarlo de ahí lo haría desaparecer justo para quien juega sin sonido. */
 let _stampTimer = 0, _cauDelay = 0;
-function showStageStamp(nombre){
+/* ►ENTRADA (Toni 27/08) · los tiempos de la presentacion, en un sitio y ajustables.
+   Antes el sello y la voz salian a la vez y el cartel 620 ms despues, asi que la cuenta atras
+   pisaba al cartel y no daba tiempo a leer nada. Ahora la entrada va por fases:
+     0            cae el primer trozo del sello
+     STAMP_FIN    la palabra esta completa (depende de cuantos trozos tenga el nombre)
+     +HOLD        respiro con el nombre quieto en pantalla
+     entonces     entra el cartel Y ARRANCA LA VOZ -> la cuenta cae donde siempre, dentro del clip
+   NARR_CUES NO se toca: esos cues estan medidos con ffmpeg sobre el mp3. Lo que se retrasa es el
+   arranque del audio, y el reloj de la presentacion se alarga en la misma cantidad. */
+const STAMP_TROZO_MS = 260;    // separacion entre golpe y golpe
+const STAMP_SLAM_MS  = 500;    // lo que dura un golpe (= la animacion ssSlam)
+const STAMP_HOLD_MS  = 2000;   // respiro con la palabra ya completa, antes del cartel
+const _stampTimers = [];       // los golpes escalonados, para poder abortarlos
+let _cauDue = 0;               // instante (performance.now) en que toca el cartel: sobrevive a la pausa
+let _siPreroll = 0;            // segundos de sello+respiro por delante de la voz
+
+/* Trocea el nombre en SELLOS: llenado codicioso hasta ~11 caracteres, cortando por palabras.
+   Luego dos arreglos, porque el corte a pelo deja trozos que se leen fatal:
+     · un trozo NO puede acabar en palabra corta (DE, LA, EL, NO, Y...): esa palabra pertenece a lo
+       que viene detras, asi que se le pasa al trozo siguiente.
+     · un trozo que se queda en UNA sola palabra corta se funde con el siguiente.
+   Sin esto salian cosas como ["PRADO DE","LOS","CHALADOS"]. Con esto, ["PRADO","DE LOS CHALADOS"].
+   ¿Que es "palabra corta"? NO se mide por letras: se probo y encadena. "EL REY DE LA CIMA" tiene
+   cuatro palabras de <=3 letras seguidas, asi que el arrastre se las tragaba todas y el nombre
+   salia de una pieza; lo mismo "LA VIA DEL QUE SE LIA". Lo que hay que detectar son PARTICULAS
+   (articulos, preposiciones, pronombres), no palabras breves: REY y VIA son cortas pero llevan el
+   peso. De ahi la lista. Se comparan sin tildes ni puntuacion ("¿QUÉ" -> "QUE"). */
+const _STAMP_OBJ = 11;   // caracteres por trozo, objetivo
+const _STAMP_PART = new Set(('EL LA LOS LAS UN UNA UNOS UNAS DE DEL AL A EN Y O U QUE SE NO NI LO ' +
+  'LE LES SU SUS MI MIS TU TUS ME TE POR CON SIN SOBRE PARA COMO MAS ES SON').split(' '));
+function _corta(w){
+  const c = w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return _STAMP_PART.has(c);
+}
+function _stampTrozos(nom){
+  const pal = String(nom || '').trim().split(/\s+/).filter(Boolean);
+  if(!pal.length) return [String(nom || '')];
+  let tr = [];
+  let acc = '';
+  for(const w of pal){
+    if(acc && (acc.length + 1 + w.length) > _STAMP_OBJ){ tr.push(acc); acc = w; }
+    else acc = acc ? (acc + ' ' + w) : w;
+  }
+  if(acc) tr.push(acc);
+  // ningun trozo acaba en palabra corta: se la pasa al siguiente
+  for(let i = 0; i < tr.length - 1; i++){
+    let w = tr[i].split(' ');
+    while(w.length > 1 && _corta(w[w.length - 1])){
+      tr[i + 1] = w.pop() + ' ' + tr[i + 1];
+      tr[i] = w.join(' ');
+    }
+  }
+  // y ningun trozo se queda en una sola palabra corta
+  const out = [];
+  for(let i = 0; i < tr.length; i++){
+    if(i < tr.length - 1 && tr[i].indexOf(' ') < 0 && _corta(tr[i])) tr[i + 1] = tr[i] + ' ' + tr[i + 1];
+    else out.push(tr[i]);
+  }
+  return out.length ? out : [String(nom || '')];
+}
+/* Parte los trozos en DOS filas, con el corte que deja la fila mas larga lo mas corta posible.
+   Solo se usa cuando en UNA fila no caben: los trozos quieren ir en linea, uno al lado del otro. */
+function _stampDosFilas(tr){
+  let mejor = null;
+  for(let k = 1; k < tr.length; k++){
+    const a = tr.slice(0, k), b = tr.slice(k);
+    const m = Math.max(a.join(' ').length, b.join(' ').length);
+    if(!mejor || m < mejor.m) mejor = { m, filas:[a, b] };
+  }
+  return mejor ? mejor.filas : [tr];
+}
+/* cuanto tarda el nombre en quedar COMPLETO en pantalla. Lo necesita narrateStageStart para
+   dimensionar el preroll ANTES de que el sello exista. */
+function stampDuracionMs(nom){
+  return (_stampTrozos(nom).length - 1) * STAMP_TROZO_MS + STAMP_SLAM_MS;
+}
+function showStageStamp(nombre, holdMs){
   const el = document.getElementById('stageStamp'); if(!el || demo) return;
   const rg = document.getElementById('stageStampRing');
   const nom = nombre || nombreDeStage(STAGE);
-  el.textContent = nom;                       // ES → ►I18N lo traduce como al resto de rótulos
   if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
-  /* reinicio de animación: quitar la clase no basta si el nodo no se reflowea entre medias
-     (dos stages seguidos = misma animación, el navegador no la vuelve a disparar) */
-  el.classList.remove('slam','fade'); void el.offsetWidth; el.classList.add('slam');
-  if(rg){ rg.classList.remove('burst'); void rg.offsetWidth; rg.classList.add('burst'); }
-  _stampTimer = setTimeout(()=>{ el.classList.remove('slam'); el.classList.add('fade'); _stampTimer = 0; }, 1900);
+  for(const t of _stampTimers) clearTimeout(t);
+  _stampTimers.length = 0;
+  el.classList.remove('slam','fade');
+  el.style.removeProperty('--ssFs');
+  /* MAQUETADO POR MEDIDA, no por contar letras. Primero se prueba TODO EN UNA FILA, que es la
+     lectura que se busca (los trozos uno al lado del otro componiendo la palabra). Solo si no cabe
+     se parte en dos filas, y solo si tampoco cabe asi se encoge el cuerpo.
+     offsetWidth/scrollWidth NO cuentan el transform del golpe, asi que se puede medir aqui aunque
+     los trozos esten todavia a escala 3 y con opacidad 0. */
+  const trPal = _stampTrozos(nom);
+  const maxW = window.innerWidth * 0.92;
+  const pintar = (filas) => {
+    el.innerHTML = '';
+    const out = [];
+    for(const fila of filas){
+      const f = document.createElement('div'); f.className = 'ssFila';
+      for(const t of fila){
+        const sp = document.createElement('span'); sp.className = 'ssTrozo';
+        sp.textContent = t;                   // ES → ►I18N lo traduce como al resto de rotulos
+        f.appendChild(sp); out.push(sp);
+      }
+      el.appendChild(f);
+    }
+    return out;
+  };
+  const anchoMax = () => {
+    el.classList.add('midiendo');
+    let a = 0; for(const f of el.children) a = Math.max(a, f.scrollWidth);
+    el.classList.remove('midiendo');
+    return a;
+  };
+  let trozos = pintar([trPal]);
+  let ancho = anchoMax();
+  if(ancho > maxW && trPal.length > 1){ trozos = pintar(_stampDosFilas(trPal)); ancho = anchoMax(); }
+  /* ancho 0 = no se puede medir (el #hud esta oculto): mejor no tocar el cuerpo que encogerlo a lo
+     loco con un dato falso. */
+  if(ancho > maxW && trozos.length){
+    const base = parseFloat(getComputedStyle(trozos[0]).fontSize) || 100;
+    el.style.setProperty('--ssFs', Math.max(22, Math.floor(base * maxW / ancho)) + 'px');
+  }
+  /* los golpes, uno detras de otro. El anillo revienta con el ULTIMO: es el punto final de la
+     palabra, y va fijo en el centro de la pantalla, no puede seguir a cada trozo. */
+  trozos.forEach((sp, i) => {
+    _stampTimers.push(setTimeout(() => {
+      sp.classList.add('slam');
+      if(rg && i === trozos.length - 1){ rg.classList.remove('burst'); void rg.offsetWidth; rg.classList.add('burst'); }
+    }, i * STAMP_TROZO_MS));
+  });
+  const fin = (trozos.length - 1) * STAMP_TROZO_MS + STAMP_SLAM_MS;
+  const hold = (holdMs == null) ? STAMP_HOLD_MS : holdMs;
+  _stampTimer = setTimeout(() => { el.classList.add('fade'); _stampTimer = 0; }, fin + hold);
+  return fin;
 }
 function hideStageStamp(){
-  const el = document.getElementById('stageStamp'); if(el) el.classList.remove('slam','fade');
+  const el = document.getElementById('stageStamp');
+  /* ►ENTRADA: hay que VACIARLO, no solo quitarle la clase. Los trozos llevan `forwards` en su
+     animacion, asi que al quitar el .fade del contenedor reaparecerian con opacidad 1. */
+  if(el){ el.classList.remove('slam','fade'); el.innerHTML = ''; el.style.removeProperty('--ssFs'); }
+  for(const t of _stampTimers) clearTimeout(t);
+  _stampTimers.length = 0;
+  if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
   const rg = document.getElementById('stageStampRing'); if(rg) rg.classList.remove('burst');
   if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
 }
@@ -9278,8 +9424,11 @@ function narrateStageStart(){
      HOLD (stageIntroHold) y la voz no arranca hasta que loadScreenHide() llame a stageIntroGo(): así la
      narración y el 3·2·1 empiezan con TODO precargado. Sin carga (F9, ?stage=) arranca en el acto.
      El reloj es REAL (currentTime de la voz, o performance.now si no suena): nunca se desincroniza. */
-  _stageIntroDur = NARR_CUES.go;
-  stageIntroT = NARR_CUES.go;    // congela SIEMPRE, aunque no suene la voz (musicOn apagado)
+  /* ►ENTRADA: el reloj de la presentacion se alarga con el PREROLL (sello + respiro). En demo no
+     hay sello, asi que tampoco preroll. */
+  _siPreroll = demo ? 0 : (stampDuracionMs(nombreDeStage(STAGE)) + STAMP_HOLD_MS) / 1000;
+  _stageIntroDur = _siPreroll + NARR_CUES.go;
+  stageIntroT = _stageIntroDur;  // congela SIEMPRE, aunque no suene la voz (musicOn apagado)
   stageIntroHold = true; _siPending = true; _siVoice = false;
   _siLastCount = -1;
   _siCamA0 = -Math.PI*0.62;      // ángulo de arranque del travelling de presentación
@@ -9308,12 +9457,20 @@ function stageIntroGo(){
   if(!_siPending) return;
   _siPending = false; stageIntroHold = false;
   _siT0 = performance.now(); _siLastCount = -1;
-  if(_siBannerTxt){ showBanner(_siBannerTxt, _siBannerT || 2.6); _siBannerTxt = ''; }
-  /* ►STAGESTAMP: primero PUM el nombre del mundo, y el aviso entra ENCIMA cuando el sello ya ha
-     aterrizado (el slam dura .5 s). Antes el cartel salía a la vez que se retiraba la carga. */
-  showStageStamp();
+  /* ►ENTRADA: primero se compone el nombre a trozos; el cartel, el banner y LA VOZ entran juntos
+     despues del respiro. El sello se va solo (showStageStamp programa su propio fundido). */
+  const fin = showStageStamp();
+  const espera = fin + STAMP_HOLD_MS;
   if(_cauDelay){ clearTimeout(_cauDelay); _cauDelay = 0; }
-  _cauDelay = setTimeout(()=>{ _cauDelay = 0; showStageCaution(); }, 620);
+  _cauDue = performance.now() + espera;
+  _cauDelay = setTimeout(_entradaVoz, espera);
+}
+/* segunda mitad de la entrada: cartel + banner + voz. Sale del setTimeout para poder RE-ARMARLO si
+   el jugador pausa dentro de la ventana del sello (ver closePause). */
+function _entradaVoz(){
+  _cauDelay = 0; _cauDue = 0;
+  showStageCaution();
+  if(_siBannerTxt){ showBanner(_siBannerTxt, _siBannerT || 2.6); _siBannerTxt = ''; }
   if(!musicOn || demo) return;   // mismos frenos que narrate()
   try{
     voiceStart.onended = null;
@@ -9324,8 +9481,10 @@ function stageIntroGo(){
 /* tiempo RESTANTE de presentación según el reloj real: la voz si suena, performance.now si no */
 function _stageIntroClock(){
   let el = (performance.now() - _siT0) / 1000;
-  try{ if(_siVoice && !voiceStart.paused && voiceStart.currentTime > 0) el = voiceStart.currentTime; }catch(e){}
-  return NARR_CUES.go - el;
+  /* ►ENTRADA: mientras dura el preroll no hay voz y manda performance.now; en cuanto suena, su
+     currentTime manda otra vez, pero desplazado por el preroll que ya paso. */
+  try{ if(_siVoice && !voiceStart.paused && voiceStart.currentTime > 0) el = _siPreroll + voiceStart.currentTime; }catch(e){}
+  return (_siPreroll + NARR_CUES.go) - el;
 }
 /* aborta una presentación o una carga a medias (ESC → menú): sin voz colgada ni cuenta a medias */
 function stageIntroAbort(){
@@ -25469,7 +25628,11 @@ function bossCineShot(cp, B, outP, outL){
    el propio stageIntroT (game-time) → la cámara, la cuenta y el descongelado van a una. */
 function stageIntroCamera(){
   const dur = _stageIntroDur || STAGE_INTRO_T;
-  const u = THREE.MathUtils.clamp(1 - stageIntroT/dur, 0, 1);
+  /* ►ENTRADA: durante el PREROLL (sello + respiro) el travelling se queda QUIETO en su plano de
+     salida. Es cuando se lee el nombre, y una camara moviendose por detras se lo come. Empieza a
+     viajar con la voz, y llega igual de justo al ¡LUCHA! porque el tramo que recorre es el mismo. */
+  const vuelo = Math.max(0.1, dur - _siPreroll);
+  const u = THREE.MathUtils.clamp(1 - Math.min(stageIntroT, vuelo)/vuelo, 0, 1);
   const ease = u*u*(3-2*u);                                    // smoothstep: arranca y frena suave
   const alive = players.filter(q=>!q.out); if(!alive.length) alive.push(P1);
   let cx=0, cz=0; for(const q of alive){ cx+=q.pos.x; cz+=q.pos.z; } cx/=alive.length; cz/=alive.length;
@@ -42611,7 +42774,11 @@ function openPause(){
   ov.classList.toggle('online', pauseOnline()); ov.classList.remove('confirm');
   if(!pauseOnline()){
     running = false;                                        // congela la simulación (el frame sigue dibujando)
-    if(stageIntroT > 0){ _pauseVoiceWas = false; try{ if(!voiceStart.paused){ voiceStart.pause(); _pauseVoiceWas = true; } }catch(e){} }   // la presentación también se detiene
+    if(stageIntroT > 0){ _pauseVoiceWas = false; try{ if(!voiceStart.paused){ voiceStart.pause(); _pauseVoiceWas = true; } }catch(e){} }
+    /* ►ENTRADA: si la pausa pilla el PREROLL, el setTimeout del cartel seguiria corriendo con el
+       juego parado y la voz arrancaria sobre el menu. Se desarma y se re-arma al reanudar con lo
+       que le quedaba (la ventana es de ~3 s, no de 620 ms: ahora se nota). */
+    if(_cauDelay){ clearTimeout(_cauDelay); _cauDelay = 0; }   // la presentación también se detiene
   }
   try{ if(typeof music!=='undefined' && music) music.volume = .2; }catch(e){}
   try{ if(document.pointerLockElement===canvas) document.exitPointerLock(); }catch(e){}
@@ -42622,7 +42789,11 @@ function closePause(reanudar){
   const ov = document.getElementById('pauseOverlay'); if(ov){ ov.style.display = 'none'; ov.classList.remove('confirm'); }
   closePauseCtl();
   if(pausedGame && reanudar !== false && !pauseOnline() && !gameOver){
-    if(stageIntroT > 0){ _siT0 += performance.now() - _pauseT0; try{ if(_pauseVoiceWas) voiceStart.play().catch(()=>{}); }catch(e){} }   // el reloj de la presentación no cuenta la pausa
+    if(stageIntroT > 0){
+      _siT0 += performance.now() - _pauseT0;
+      try{ if(_pauseVoiceWas) voiceStart.play().catch(()=>{}); }catch(e){}
+      if(_cauDue){ _cauDue += performance.now() - _pauseT0; _cauDelay = setTimeout(_entradaVoz, Math.max(0, _cauDue - performance.now())); }
+    }   // el reloj de la presentación no cuenta la pausa
     running = true;
   }
   if(reanudar !== false){ try{ if(typeof music!=='undefined' && music) music.volume = .45; }catch(e){} }
