@@ -12926,6 +12926,11 @@ function minionDropSpot(){
     }
   }
   const near = forced || (live.length && Math.random() < SPAWN_NEAR_CHANCE);   // se decide UNA vez por spawn
+  /* ►PIR7030: en el mar se decide el DESTINO antes de buscar sitio, y solo se acepta el candidato que
+     cae donde toca. El cupo se suelta en las ultimas vueltas: mas vale un minion en el lado que no
+     tocaba que ningun minion (sin sitio, spawnMinion se va de vacio y la horda adelgaza). La cubierta
+     es |z| < PIR_LANE — el casco llega a 9,5 y de ahi a 11 no hay nada (REGLA DE ORO de las salas). */
+  const pirDestino = (STAGE===12) ? (Math.random() < PIR_DECK_SHARE) : null;
   for(let i=0;i<24;i++){
     let x, z;
     if(near && i<16){                                    // …anclado al jugador (con distancia)
@@ -12940,6 +12945,7 @@ function minionDropSpot(){
     if(!overAnyPlatform(x, z)) continue;
     const top = platformTopAt(x, z);
     if(top===null) continue;
+    if(pirDestino !== null && i < 20 && (Math.abs(z) < PIR_LANE) !== pirDestino) continue;   // ►PIR7030
     return { x, z, y0: top };
   }
   return null;
@@ -13117,6 +13123,19 @@ function spawnMinion(){
      la cubierta, no cae nadie (ya hay tiradores apostados fuera). */
   const sp = minionDropSpot() || (STAGE===12 ? null : (dropSpot() || { x:(Math.random()-.5)*20, z:(Math.random()-.5)*10, y0:0 }));
   if(!sp) return;
+  /* ►PIROUT (Toni 27/08: "fuera hay principalmente shooters, tienes 2 puestos pero 1 es un esqueleto;
+     cambialo por el shooter esqueleto del desierto"). En el S12 el que pisa la ORILLA se planta y
+     dispara pase lo que pase (ver ►PIRHORDA en updateMinion) — pero hasta ahora le tocaba CUALQUIER
+     piel del barco, asi que la orilla se llenaba de esqueletos raso y Barbanegras disparando SIN ARMA:
+     medido, pirskel era el 64,8% de la horda y no distingue barco de orilla. A partir de aqui, fuera
+     del casco solo van las DOS pieles de tirador de verdad — el capitan pata de palo y el ARQUERO
+     ESQUELETO del desierto, que es el del casco y el arco. El type pasa a 'shooter' para que la vida
+     y el dano casen con la piel, igual que hace la rama de rescate de la tabla PIR.
+     La piel se corrige AQUI y no arriba a proposito: el sitio no se sabe hasta tener `sp`. */
+  if(STAGE===12 && Math.abs(sp.z) >= PIR_LANE){
+    const fuera = ['skelshooter','pircapt'].filter(k => _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max);
+    if(fuera.length){ skin = fuera[(Math.random()*fuera.length)|0]; type = 'shooter'; }
+  }
   spawnMinionAt(sp.x, sp.z, sp.y0, type, skin);
 }
 function killMinion(mn){
@@ -34351,6 +34370,12 @@ function pirPort(kind, cx, cz, flip){
    dónde nació: si salta a la cubierta, vuelve a ser horda normal.
    ===================================================================== */
 const PIR_OUT_RANGE = 34;     // alcance del que se queda en la orilla (antes 26 estando apostado)
+
+/* ►PIR7030 (Toni 27/08: "asegurar la proporcion 70/30 barco/fuera del barco de spawn de minions").
+   El reparto NO puede salir solo de la geometria: la orilla tiene 899 plataformas contra las 159 de
+   la cubierta, y ese peso se come el anclaje al jugador de SPAWN_NEAR_CHANCE. Medido en el headless
+   antes de tocar nada, 4000 sitios: 57,9% cubierta / 42,1% orilla. Se fuerza en minionDropSpot. */
+const PIR_DECK_SHARE = 0.70;   // parte de los spawns que tiene que caer en TU barco
 
 /* ---------- las 6 salas de la cinta ---------- */
 /* REGLA DE ORO: nada dentro de |z| < PIR_LANE (ahí está el barco). idx1 cae en x=0 al empezar.
