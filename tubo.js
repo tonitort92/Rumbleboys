@@ -326,6 +326,18 @@ function GAME_SHOWCOUNT(){ try { return (typeof showCount === 'function') ? show
 const CLASES = ['samurai', 'voxelhero', 'archer', 'knight', 'nun', 'link'];
 const CLASE_COL = { voxelhero:0xff3b30, samurai:0x9b2bff, archer:0xffd84f,
                     link:0x3ad06a, knight:0xe8edf5, nun:0x2563eb };
+/* ►PERSONAJE (Toni 27/08): el corredor HUMANO lleva TU personaje, no el samurai de siempre.
+   Antes esto era `CLASES[i % CLASES.length]`, y como el humano es el corredor 0 y el samurai
+   encabeza la lista, jugabas de samurai hicieras lo que hicieras en la home.
+   La clase elegida llega en `opt.clase` (la RUTA la saca de MATCH.cls). Los demas se reparten las
+   restantes SIN repetir, el mismo criterio que usa el corro de personajes de la portada.
+   Entrando suelto (?descenso, ?tubo) no hay clase: se queda el orden de siempre. */
+function claseDe(i){
+  const mia = (TUBO._clase && CLASES.indexOf(TUBO._clase) >= 0) ? TUBO._clase : null;
+  const orden = mia ? [mia].concat(CLASES.filter(c => c !== mia)) : CLASES;
+  return orden[i % orden.length];
+}
+
 function colorDe(clase, i){
   try { if(typeof CLASS_COLOR !== 'undefined' && CLASS_COLOR[clase] != null) return CLASS_COLOR[clase]; } catch(e){}
   if(CLASE_COL[clase] != null) return CLASE_COL[clase];
@@ -1410,7 +1422,7 @@ function animEstado(r){
    ===================================================================== */
 function makeRacer(i, human){
   const g = new THREE.Group();
-  const clase = CLASES[i % CLASES.length];
+  const clase = claseDe(i);
   const col = colorDe(clase, i);
 
   const body = new THREE.Group();
@@ -2107,7 +2119,23 @@ function stepCamera(dt){
    PRESENTACIÓN — la del juego (voz, #banner, #count321, #stageCaution),
    con el mismo procedimiento y las mismas trampas que ►DESCINTRO
    ===================================================================== */
-const INTRO = { dur:6.5, mudo:6.5, espera:12.0, titulo:2.2, popMs:3400 };
+/* ►ENTRADA: el SELLO del juego (el nombre troceado en golpes). Mismo patron que GAME_VOZ():
+   son declaraciones de nivel superior del script grande, visibles POR NOMBRE desde aqui. El
+   #stageStamp vive en #hud, que este modulo esconde, asi que buildHud se lo trae a su HUD igual
+   que hace con #banner y #count321 —sin eso el sello se compone dentro de un HUD oculto y NO SE
+   VE, la misma trampa que ya cazo este fichero dos veces. */
+function GAME_SELLO(){
+  try {
+    if(typeof showStageStamp !== 'function') return null;
+    return {
+      show: showStageStamp,
+      hide: (typeof hideStageStamp === 'function') ? hideStageStamp : function(){},
+      ms:   (typeof stampDuracionMs === 'function') ? stampDuracionMs : function(){ return 500; },
+      hold: (typeof STAMP_HOLD_MS !== 'undefined') ? STAMP_HOLD_MS : 2000
+    };
+  } catch(e){ return null; }
+}
+const INTRO = { pre:0, dur:6.5, mudo:6.5, espera:12.0, titulo:2.2, popMs:3400 };
 /* ►NOMBRES: este titulo es el RESPALDO, para cuando se entra suelto con ?tubo. Dentro de la
    campania manda el rotulo oficial del eslabon, que llega en `opt.nombre`. */
 const INTRO_TXT = { titulo:'EL TUBO DE LAS ESTRELLAS',
@@ -2134,13 +2162,26 @@ function tuboPopup(){
 function tuboPopupOff(){
   const el = document.getElementById('stageCaution'); if(el) el.classList.remove('show');
   if(_popT){ clearTimeout(_popT); _popT = null; }
+  const sello = GAME_SELLO(); if(sello) sello.hide();
 }
 function introGo(){
-  TUBO._introGo = true; TUBO.introT = 0;
+  TUBO._introGo = true; TUBO._introVoz = false; TUBO.introT = 0;
   const v = GAME_VOZ();
-  INTRO.dur = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
+  const voz = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
+  /* ►ENTRADA: mismo orden que en los mundos —sello troceado, respiro, y SOLO entonces cartel y
+     voz—. La duracion del sello la dice el juego, que es quien parte el nombre en trozos. */
+  const sello = GAME_SELLO();
+  const nom = TUBO._nombre || INTRO_TXT.titulo;
+  INTRO.pre = sello ? (sello.ms(nom) + sello.hold) / 1000 : 0;
+  INTRO.dur = INTRO.pre + voz;
+  if(sello) sello.show(nom);
+}
+/* segunda mitad: rotulo, pop-up y voz, con el nombre ya compuesto en pantalla */
+function introVoz(){
+  TUBO._introVoz = true;
   tuboBanner(TUBO._nombre || INTRO_TXT.titulo, INTRO.titulo);
   tuboPopup();
+  const v = GAME_VOZ();
   if(v){ try { v.onended = null; v.pause(); v.currentTime = 0;
     const p = v.play(); if(p && p.catch) p.catch(() => {}); } catch(e){} }
 }
@@ -2148,10 +2189,10 @@ function introGo(){
    AUDIO a los 0,6 s, no la promesa de play() (resuelve aunque el clip no
    avance, y encima llega en otro tick). */
 function introVozCheck(){
-  if(TUBO._vozVista || TUBO.introT < 0.6) return;
+  if(TUBO._vozVista || TUBO.introT < INTRO.pre + 0.6) return;   // ►ENTRADA: 0,6 s DESDE LA VOZ
   TUBO._vozVista = true;
   const v = GAME_VOZ();
-  if(!v || v.paused || v.currentTime < 0.05) INTRO.dur = Math.min(INTRO.dur, INTRO.mudo);
+  if(!v || v.paused || v.currentTime < 0.05) INTRO.dur = Math.min(INTRO.dur, INTRO.pre + INTRO.mudo);
 }
 function introCue(){
   const queda = INTRO.dur - TUBO.introT;
@@ -2175,7 +2216,8 @@ function raceGo(){
    ya convergida, así que al arrancar no hay corte. */
 function introCam(dt){
   const me = TUBO.racers[0]; if(!me) return;
-  const u = clamp(TUBO.introT / Math.max(0.1, INTRO.dur), 0, 1);
+  /* ►ENTRADA: quieta durante el preroll (sello + respiro); arranca con la voz. */
+  const u = clamp((TUBO.introT - INTRO.pre) / Math.max(0.1, INTRO.dur - INTRO.pre), 0, 1);
   let w = 1;
   if(u < 0.34){
     /* 1 · barrido alrededor de la parrilla, a la altura de la cintura */
@@ -2335,7 +2377,7 @@ function salir(){
   if(TUBO.hud && TUBO.hud.root) TUBO.hud.root.style.display = 'none';
   /* los tres nodos de presentación, de vuelta a #hud */
   const hud = document.getElementById('hud');
-  if(hud) for(const id of ['count321', 'banner', 'stageCaution']){
+  if(hud) for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== hud) hud.appendChild(el);
   }
@@ -2361,12 +2403,13 @@ TUBO.lanzar = function(opt){
   TUBO._campana = opt.campana !== false;
   TUBO._alAcabar = opt.alAcabar || null;
   TUBO._nombre = opt.nombre || null;          // ►NOMBRES: rotulo oficial del eslabon de la RUTA
+  TUBO._clase  = opt.clase  || null;          // ►PERSONAJE: el que llevas en la campania
   const rr = GAME_RENDERER();
   if(rr) TUBO._rrPrev = { exp: rr.toneMappingExposure, sh: rr.shadowMap.enabled };
   if(!TUBO._built){ TUBO._built = true; buildHud(); }
   if(TUBO.hud && TUBO.hud.root) TUBO.hud.root.style.display = '';
   /* los nodos de presentación vuelven a hacer falta AQUÍ (ver salir) */
-  if(TUBO.hud && TUBO.hud.root) for(const id of ['count321', 'banner', 'stageCaution']){
+  if(TUBO.hud && TUBO.hud.root) for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== TUBO.hud.root) TUBO.hud.root.appendChild(el);
   }
@@ -2425,7 +2468,7 @@ function buildHud(){
   /* ►los nodos de presentación del juego viven dentro de #hud, y boot() oculta
      #hud cada 250 ms durante 30 s: si no se traen aquí, la presentación corre
      ENTERA sin verse. Es la trampa que cazó el descenso. */
-  for(const id of ['count321', 'banner', 'stageCaution']){
+  for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== d) d.appendChild(el);
   }
@@ -2676,7 +2719,7 @@ function start(seed){
     orienta(m, r.a); m.rotateX(-Math.PI / 2);
   });
   TUBO.t = 0; TUBO.phase = 'intro';
-  TUBO.introT = 0; TUBO._introGo = false; TUBO._introN = -1; TUBO._vozVista = false;
+  TUBO.introT = 0; TUBO._introGo = false; TUBO._introVoz = false; TUBO._introN = -1; TUBO._vozVista = false;
   TUBO._espera = 0; TUBO._acc = 0; TUBO._kick = 0; TUBO._finT = 0;
   TUBO.finishOrder = []; TUBO.camS = 0; TUBO.camA = TUBO.racers[0].a; _camInit = false;
   tuboPopupOff(); tuboFinOff();
@@ -2700,6 +2743,7 @@ TUBO.tick = function(dt){
     if(!TUBO._introGo && (listos || TUBO._espera > INTRO.espera)) introGo();
     if(TUBO._introGo){
       TUBO.introT += dt;
+      if(!TUBO._introVoz && TUBO.introT >= INTRO.pre) introVoz();
       introVozCheck();
       introCue();
       if(TUBO.introT >= INTRO.dur) raceGo();

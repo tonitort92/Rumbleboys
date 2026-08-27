@@ -22757,7 +22757,9 @@ function lanzarMini(e){
   loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.nombre || e.tag || e.mini).toUpperCase() });   // ►CARGA: tapa el montaje del módulo (él trae su propia presentación)
   requestAnimationFrame(()=>{
     try {
-      mod.lanzar({ piel:e.piel, campana:true, nombre:e.nombre, alAcabar:(res)=>{
+      mod.lanzar({ piel:e.piel, campana:true, nombre:e.nombre,
+                   clase:(typeof MATCH!=='undefined' && MATCH.cls) || null,   // ►PERSONAJE: el tuyo, no el samurai
+                   alAcabar:(res)=>{
         /* ►LOS PUNTOS DEL MINIJUEGO VAN A LA CARTERA. Decisión ya tomada con
            Toni en el descenso ("puntúa para la run, pero poco"): lo que ganas
            aquí se gasta en la tienda del siguiente entre-stage. */

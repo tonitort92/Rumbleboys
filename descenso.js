@@ -1230,6 +1230,18 @@ function colorDe(clase, i){
   return RACER_COL[i % RACER_COL.length];
 }
 
+/* ►PERSONAJE (Toni 27/08): el corredor HUMANO lleva TU personaje, no el samurai de siempre.
+   Antes esto era `CLASES[i % CLASES.length]`, y como el humano es el corredor 0 y el samurai
+   encabeza la lista, jugabas de samurai hicieras lo que hicieras en la home.
+   La clase elegida llega en `opt.clase` (la RUTA la saca de MATCH.cls). Los demas se reparten las
+   restantes SIN repetir, el mismo criterio que usa el corro de personajes de la portada.
+   Entrando suelto (?descenso, ?tubo) no hay clase: se queda el orden de siempre. */
+function claseDe(i){
+  const mia = (DESC._clase && CLASES.indexOf(DESC._clase) >= 0) ? DESC._clase : null;
+  const orden = mia ? [mia].concat(CLASES.filter(c => c !== mia)) : CLASES;
+  return orden[i % orden.length];
+}
+
 const CHAR = { tpls:null, tabla:null, pedido:false };
 
 /* La tabla es un GLB propio (snowboard_model.js). Se parsea UNA vez y se
@@ -3905,7 +3917,7 @@ function updateKite(r, dt){
 function makeRacer(i, human){
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
-  const clase = CLASES[i % CLASES.length];
+  const clase = claseDe(i);
   const col = colorDe(clase, i);          // ►el color de la CLASE, como en el juego (ver colorDe)
   const mat = new THREE.MeshLambertMaterial({ color: col });
 
@@ -5101,7 +5113,24 @@ function stepCamera(dt){
    la presentación NO cuelga del audio (igual que stageIntroT en el juego): si
    la voz no suena, el travelling y la cuenta van igual de sincronizados.
    ===================================================================== */
+/* ►ENTRADA: el SELLO del juego (el nombre troceado en golpes). Mismo patron que GAME_VOZ():
+   son declaraciones de nivel superior del script grande, visibles POR NOMBRE desde aqui. El
+   #stageStamp vive en #hud, que este modulo esconde, asi que buildHud se lo trae a su HUD igual
+   que hace con #banner y #count321 —sin eso el sello se compone dentro de un HUD oculto y NO SE
+   VE, la misma trampa que ya cazo este fichero dos veces. */
+function GAME_SELLO(){
+  try {
+    if(typeof showStageStamp !== 'function') return null;
+    return {
+      show: showStageStamp,
+      hide: (typeof hideStageStamp === 'function') ? hideStageStamp : function(){},
+      ms:   (typeof stampDuracionMs === 'function') ? stampDuracionMs : function(){ return 500; },
+      hold: (typeof STAMP_HOLD_MS !== 'undefined') ? STAMP_HOLD_MS : 2000
+    };
+  } catch(e){ return null; }
+}
 const INTRO = {
+  pre:   0,       // ►ENTRADA: segundos de SELLO + respiro por delante de la voz (se calcula al vuelo)
   dur:   6.5,     // se ajusta a la duración REAL del clip (12,5 s) en cuanto la conoce
   mudo:  6.5,     // ...pero si el navegador RECHAZA el audio, se acorta: ver introGo()
   espera:12.0,    // tope esperando a que carguen los cuatro GLB (►PARRILLA LISTA)
@@ -5157,17 +5186,31 @@ function descPopup(){
 function descPopupOff(){
   const el = document.getElementById('stageCaution'); if(el) el.classList.remove('show');
   if(_popT){ clearTimeout(_popT); _popT = null; }
+  const sello = GAME_SELLO(); if(sello) sello.hide();
 }
 
 /* arranca la presentación: solo cuando los cuatro están montados (Toni: "que
    los personajes ya estén renderizados"), o al agotarse el tope de espera */
 function introGo(){
   DESC._introGo = true;
+  DESC._introVoz = false;
   DESC.introT = 0;
   const v = GAME_VOZ();
-  INTRO.dur = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
+  const voz = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
+  /* ►ENTRADA: el mismo orden que en los mundos —sello troceado, respiro, y SOLO entonces cartel
+     y voz—. Cuanto dura el sello lo dice el juego, que es quien decide en cuantos trozos parte el
+     nombre. Si por lo que sea no esta disponible, pre=0 y esto se comporta como antes. */
+  const sello = GAME_SELLO();
+  INTRO.pre = sello ? (sello.ms(introTxt().titulo) + sello.hold) / 1000 : 0;
+  INTRO.dur = INTRO.pre + voz;
+  if(sello) sello.show(introTxt().titulo);
+}
+/* segunda mitad de la presentacion: rotulo, pop-up y voz, ya con el nombre compuesto en pantalla */
+function introVoz(){
+  DESC._introVoz = true;
   descBanner(introTxt().titulo, INTRO.titulo);
   descPopup();
+  const v = GAME_VOZ();
   if(v){
     try {
       v.onended = null;              // que NO reentre en la cadena del intro del juego
@@ -5187,10 +5230,10 @@ function introGo(){
    (con la presentación ya empezada). A los 0,6 s el reloj del audio dice la
    verdad, y recortar ahí es indoloro: la cuenta 3·2·1 cuelga de lo que QUEDA. */
 function introVozCheck(){
-  if(DESC._vozVista || DESC.introT < 0.6) return;
+  if(DESC._vozVista || DESC.introT < INTRO.pre + 0.6) return;   // ►ENTRADA: 0,6 s DESDE LA VOZ
   DESC._vozVista = true;
   const v = GAME_VOZ();
-  if(!v || v.paused || v.currentTime < 0.05) INTRO.dur = Math.min(INTRO.dur, INTRO.mudo);
+  if(!v || v.paused || v.currentTime < 0.05) INTRO.dur = Math.min(INTRO.dur, INTRO.pre + INTRO.mudo);
 }
 /* cuenta 3·2·1 con los MISMOS números y colores del juego, gobernada por lo que
    queda de presentación (mismo reloj que el travelling: no se desincronizan) */
@@ -5238,7 +5281,9 @@ function raceGo(){
 const _ciP = new THREE.Vector3(), _ciL = new THREE.Vector3();
 function introCam(dt){
   const me = DESC.racers[0]; if(!me) return;
-  const u = clamp(DESC.introT / Math.max(0.1, INTRO.dur), 0, 1);
+  /* ►ENTRADA: la grua se queda QUIETA durante el preroll (sello + respiro) y arranca con la voz,
+     como el travelling de los mundos. El tramo que recorre es el mismo, solo empieza mas tarde. */
+  const u = clamp((DESC.introT - INTRO.pre) / Math.max(0.1, INTRO.dur - INTRO.pre), 0, 1);
   let px, pz, py, lx, lz, ly, w = 1;
 
   if(u < 0.34){
@@ -5440,7 +5485,7 @@ function salirDesc(){
   try { descPopupOff(); } catch(e){}
   if(DESC.hud && DESC.hud.root) DESC.hud.root.style.display = 'none';
   const hud = document.getElementById('hud');
-  if(hud) for(const id of ['count321', 'banner', 'stageCaution']){
+  if(hud) for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== hud) hud.appendChild(el);
   }
@@ -5464,13 +5509,14 @@ DESC.lanzar = function(opt){
   opt = opt || {};
   DESC._campana = opt.campana !== false;
   DESC._nombre = opt.nombre || null;          // ►NOMBRES: rotulo oficial del eslabon de la RUTA
+  DESC._clase  = opt.clase  || null;          // ►PERSONAJE: el que llevas en la campania
   DESC._alAcabar = opt.alAcabar || null;
   if(opt.piel && opt.piel !== SKIN) aplicaPiel(opt.piel);
   const rr = GAME_RENDERER();
   if(rr) DESC._rrPrev = { sh: rr.shadowMap.enabled };
   if(!DESC._built){ DESC._built = true; buildHud(); }
   if(DESC.hud && DESC.hud.root) DESC.hud.root.style.display = '';
-  if(DESC.hud && DESC.hud.root) for(const id of ['count321', 'banner', 'stageCaution']){
+  if(DESC.hud && DESC.hud.root) for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== DESC.hud.root) DESC.hud.root.appendChild(el);
   }
@@ -5554,7 +5600,7 @@ function buildHud(){
      aquí: son position:absolute y #descHud es position:fixed;inset:0, así que
      caen en el mismo punto de la pantalla. Las referencias del juego (el const
      count321, los getElementById) siguen valiendo: el nodo es el mismo. */
-  for(const id of ['count321', 'banner', 'stageCaution']){
+  for(const id of ['count321', 'banner', 'stageCaution', 'stageStamp', 'stageStampRing']){
     const el = document.getElementById(id);
     if(el && el.parentNode !== d) d.appendChild(el);
   }
@@ -5783,7 +5829,7 @@ function start(seed){
   /* ►DESCINTRO: la partida arranca en PRESENTACIÓN (voz + travelling + 3·2·1),
      no en una cuenta atrás pelada */
   DESC.t = 0; DESC.phase = 'intro';
-  DESC.introT = 0; DESC._introGo = false; DESC._introN = -1; DESC._vozVista = false;
+  DESC.introT = 0; DESC._introGo = false; DESC._introVoz = false; DESC._introN = -1; DESC._vozVista = false;
   descPopupOff(); descFinOff();
   if(DESC.hud && DESC.hud.root) DESC.hud.root.classList.add('cine');
   DESC.finishOrder = []; _camInit = false; DESC._acc = 0; DESC._why = {};
@@ -5812,6 +5858,7 @@ DESC.tick = function(dt){
     if(!DESC._introGo && (listos || DESC._espera > INTRO.espera)) introGo();
     if(DESC._introGo){
       DESC.introT += dt;
+      if(!DESC._introVoz && DESC.introT >= INTRO.pre) introVoz();
       introVozCheck();
       introCue();
       if(DESC.introT >= INTRO.dur) raceGo();
