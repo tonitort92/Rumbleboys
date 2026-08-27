@@ -19991,7 +19991,7 @@ function updatePvpShieldFX(){
     const box = $('hdPathIn'); if(!box) return;
     let h = '';
     st.R.forEach((e, i)=>{
-      const col = worldCol(stageOf(i)), m = e.st ? st.mk[e.st] : null;
+      const col = worldCol(stageOf(i)), m = st.mk[pasoClave(e)];
       const passed = st.won[i] || (st.mini[i] && st.disc[i] && i < st.next);
       if(i){
         const prevPassed = st.won[i-1] || (st.mini[i-1] && i-1 < st.next);
@@ -20061,16 +20061,20 @@ function updatePvpShieldFX(){
     i = Math.max(0, Math.min(st.R.length-1, i|0));
     if(i === sel && !force) return;
     sel = i;
-    const e = st.R[i], stage = stageOf(i), col = worldCol(stage), m = e.st ? st.mk[e.st] : null;
+    /* ►16 PARADAS: la marca sale de la CLAVE del eslabon, no de su stage. Los cuatro minijuegos
+       modulo no son stages y se quedaban sin marca aunque la tuvieran guardada. */
+    const e = st.R[i], stage = stageOf(i), col = worldCol(stage), m = st.mk[pasoClave(e)];
     const won = st.won[i], disc = st.disc[i], mini = st.mini[i];
     document.querySelectorAll('#hdPathIn .hdNode').forEach(n => n.classList.toggle('sel', +n.dataset.i === i));
     const num = $('hdWNum'); const _nm = linkName(e);
     num.textContent = (i+1) + ' · ' + _nm; num.style.setProperty('--wc', col);
     num.className = claseLargo(_nm);   // la chapa es de una linea: los nombres largos bajan de cuerpo
     const ws = $('hdWState'); ws.className = won ? 'tro' : (i === st.next ? 'next' : '');
-    ws.textContent = mini ? (disc ? 'MINIJUEGO · SIN TROFEO' : '🔒 MINIJUEGO · SIN DESCUBRIR')
-                   : won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
-                   : (i === st.next ? '★ SIGUIENTE OBJETIVO' : (disc ? 'SIN TROFEO TODAVÍA' : '🔒 SIN DESCUBRIR'));
+    /* ►16 PARADAS: un minijuego ya reparte trofeo, asi que deja de tener rotulo aparte. Lo unico
+       que se conserva es la palabra MINIJUEGO, que sigue diciendo de que tipo de parada se trata. */
+    ws.textContent = won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
+                   : !disc ? ('🔒 ' + (mini ? 'MINIJUEGO · ' : '') + 'SIN DESCUBRIR')
+                   : (i === st.next ? '★ SIGUIENTE OBJETIVO' : ((mini ? 'MINIJUEGO · ' : '') + 'SIN TROFEO TODAVÍA'));
     { const lo = $('hdLore'); if(lo) lo.innerHTML = !disc ? LORE_LOCK : (mini ? LORE_MINI : (WORLD_LORE[e.st] || '')); }
     setLive(i, disc);
     /* ►ESFERAS lee #isIdx como índice 1..N dentro de CAMPAIGN_STAGES (no de la RUTA) */
@@ -20079,10 +20083,12 @@ function updatePvpShieldFX(){
     { const stop = document.querySelector('#hdFrame .isStop'), q = $('hdQ');
       if(q) q.style.display = disc ? 'none' : 'block';
       if(stop) stop.style.display = disc ? 'block' : 'none'; }
-    /* arte del mundo: solo mundos (no minis) descubiertos; el PNG que no exista se apaga solo */
+    /* arte de la parada descubierta; el PNG que no exista se apaga solo (su onload no dispara).
+       ►16 PARADAS: los cuatro minijuegos MODULO no son stages y no tienen mundoN_iso.png, asi que
+       van por su clave (mini_m_sand_iso.png y hermanos). Los de MOTOR, 13 y 14, siguen por stage. */
     [['hdChar','_char'],['hdIso','_iso']].forEach(([id,suf])=>{ const im = $(id); if(!im) return;
-      if(!e.st || !disc){ im.style.display = 'none'; return; }
-      const want = 'mundo' + e.st + suf + '.png';
+      if(!disc){ im.style.display = 'none'; return; }
+      const want = (e.st ? ('mundo' + e.st) : ('mini_' + pasoClave(e))) + suf + '.png';
       if(im.getAttribute('src') === want){ const ok = !!(im.complete && im.naturalWidth); im.style.display = ok ? 'block' : 'none';
         if(ok && id==='hdIso'){ const st2 = document.querySelector('#hdFrame .isStop'); if(st2) st2.style.display = 'none'; } return; }   // mismo PNG: el onload no repite
       im.onload = ()=>{ im.style.display = 'block'; if(id==='hdIso'){ const st2 = document.querySelector('#hdFrame .isStop'); if(st2) st2.style.display = 'none'; } };   // con isla, el planeta se retira
@@ -20090,21 +20096,33 @@ function updatePvpShieldFX(){
     const body = $('hdCardBody');
     if(!disc){
       body.innerHTML = '<p id="hdCardNote">Aún no has llegado aquí. Los trofeos se ganan del tirón desde el Mundo 1: supera los eslabones anteriores en la carrera y este se revelará.</p>';
-    } else if(mini){
-      body.innerHTML = '<p id="hdCardNote">Minijuego entre mundos: un respiro en la carrera. No reparte trofeo ni marca, pero sí puntos para la tienda.</p>';
     } else {
+      /* ►16 PARADAS: un minijuego ya no es un parentesis sin premio —da trofeo y marca como un
+         mundo—, asi que ensena la MISMA ficha. Lo unico propio es la nota de COMO se gana el suyo,
+         porque cada uno tiene su mecanica y sin decirlo el jugador no sabe a que juega. */
       body.innerHTML =
           '<div class="hdRow"><span>MEJOR MARCA</span><b class="mk" style="color:' + (m ? gradeColorOf(m.g) : '#6b7a99') + '">' + (m ? m.g : '—') + '</b></div>'
         + '<div class="hdRow"><span>PUNTOS</span><b>' + (m ? Math.round(m.pts||0).toLocaleString('es-ES') : '—') + '</b></div>'
         + '<div class="hdRow"><span>VECES JUGADO</span><b>' + (m ? (m.n||1) : 0) + '</b></div>'
-        + '<div class="hdRow"><span>TROFEOS GANADOS</span><b>' + (st.tr[e.st]||0) + '</b></div>'
-        + (won ? '' : '<p id="hdCardNote">Los trofeos se ganan del tirón desde el Mundo 1.</p>');
+        + '<div class="hdRow"><span>TROFEOS GANADOS</span><b>' + (st.tr[pasoClave(e)]||0) + '</b></div>'
+        + (mini ? '<p id="hdCardNote">' + (MINI_REGLA[pasoClave(e)] || 'Minijuego: se gana con su propia regla.') + '</p>'
+                : (won ? '' : '<p id="hdCardNote">Los trofeos se ganan del tirón desde el Mundo 1.</p>'));
     }
     const tb = $('hdTrain'); if(tb) tb.firstChild.textContent = mini ? 'ENTRENAR ESTE MINIJUEGO' : 'ENTRENAR ESTE MUNDO';
     { const cd = $('hdCard'); const reached = !!(won || i === st.next || (mini && disc));   // ►TRAINREACH (Toni 23/08): solo se entrena lo ALCANZADO (superado o el objetivo actual); lo no alcanzado ni botón ni aviso
       if(cd){ cd.classList.toggle('locked', !reached); cd.classList.toggle('unreached', !reached); } }
   }
 
+  /* ►16 PARADAS: cada minijuego reparte su trofeo con SU mecanica, no con la del mundo (vencer al
+     jefe siendo el que mas puntua). La ficha lo dice, que si no el jugador no sabe a que juega. */
+  const MINI_REGLA = {
+    13: 'Torre de losetas sobre lava: la que pisas se hunde. El trofeo es del <b>último en pie</b>.',
+    14: 'Rey de la colina sobre cinco pagodas, y la colina cambia cada 30 s. El trofeo es del que <b>más aguante en el pico</b>.',
+    m_sand: 'Descenso de arena. El trofeo es del <b>primero en puntos</b>.',
+    m_surf: 'Kitesurf entre olas. El trofeo es del <b>primero en puntos</b>.',
+    m_snow: 'Descenso nevado. El trofeo es del <b>primero en puntos</b>.',
+    m_tubo: 'Carrera por dentro del tubo. El trofeo es del <b>primero en puntos</b>.'
+  };
   /* ►LOGROS (Toni 20/08, base): mini-logros que se desbloquean leyendo el save y dan MONEDAS.
      Cada uno: id estable (se persiste en s.logros), icono, título, pista, monedas y un test sobre
      (save, estado del camino). Añadir un logro = una fila. Las monedas se acumulan en s.monedas
@@ -32150,6 +32168,13 @@ function buildS3Dunas(){
   s3Blob(-13, -16, 3.5, 3, 1.6, 'dune'); s3Blob(13, -17, 3.5, 3, 2.2, 'dune');
   s3Blob(28, 6, 2.5, 2, 1.2, 'dune'); s3Blob(30, -3, 2.2, 1.8, 0.8, 'dune');   // ►S3F: rellenos orgánicos (antes losas rectas)
   s3Blob(4, 16.5, 1.6, 1.5, 4.2, 'rose');                            // ►S3D: corona sobre el knoll del ala norte (orgánica)
+  /* ►EMBALM2 (Toni 27/08: "se tiene que ver en alguna plataforma grande ese asset o repetirse en
+     mas de una"). El embalsamador estaba UNA sola vez en todo el desierto, en la terraza de las
+     Ruinas, detras del muro y arriba: habia que caer en esa sala de seis, cruzar la muralla y subir.
+     Se reparte por cuatro salas y DOS de ellas a pie de suelo, que es lo que hace que se vea.
+     Aqui: ala norte, mitad OESTE. El slab es x∈[-10,10] y la huella del edificio ronda 7,6, asi que
+     el centro tiene que quedar dentro de x∈[-6,6]; a -5,5 queda holgado del knoll de (4, 16.5). */
+  s3Embalmer(-5.5, 19.5, 0.3, 0);
   addFloating(0, 4.2, -13, 6, 3.4);                                  // alfombra sobre el hueco sur
   /* ►S3X · NIVEL 2 (ruta alta O→E): alfombras giradas; ►S3E: MÁS movimiento y más amplio */
   addFloating(-22, 5.4, 3, 4.4, 3,   { yaw:0.30, move:{axis:'y', amp:2.2, w:0.65} });   // ascensor de entrada
@@ -32175,7 +32200,7 @@ function buildS3Dunas(){
     addTree(-23, 14, 0.85); addTree(24, -7, 0.95);                   // ►S3X: palmeras en los blobs
     addTree(-25, -7, 0.9); addTree(24, -11, 0.85); addTree(-22, 10, 0.9);   // ►S3E: más palmeras (5 siluetas en juego)
     addPropS3('s3_rock2', -20, -12, 0.5, 1.2, 1.1); addPropS3('s3_rockbig', 12, 15, 0.3, 1.2, 0.7);
-    addPropS3('s3_aloe', -6, 16.5, 0.3, 1.1, 0); addCactus('s3_cactusbarrel', 26, -6, 0.7, 0.8);
+    addPropS3('s3_aloe', -0.5, 15.2, 0.3, 1.1, 0);   // ►EMBALM2: apartado, caia dentro de la huella del embalsamador addCactus('s3_cactusbarrel', 26, -6, 0.7, 0.8);
     addPropS3('s3_aloe', -12, -15, 1.6, 1.0, 0.5);                   // ►S3E: el peldaño también se viste
   }
 }
@@ -32222,6 +32247,9 @@ function buildS3Bazar(){
   s3Slab(0, 0, 34, 18, 0, 'dune');                                   // plaza del bazar (respawn)
   modUpperDeck(0, 20, { sx:16, sz:9, topY:5.5, kind:'rose' });       // terraza norte
   modStairs(-9, 9.5, { steps:3, dir:{x:0.35,z:1}, rise:1.8, run:2.8, y0:1.6 });   // subida (alfombras)
+  /* ►EMBALM2: en la terraza del bazar, mitad ESTE — la pasarela al torreón arranca en (-7.5, 18.5),
+     asi que el edificio va al otro lado y no le come el embarque. */
+  s3Embalmer(3.5, 20, 5.5, 2);
   s3Blob(-24, -10, 6.5, 5, 0.6, 'dune'); s3Blob(24, -10, 6.5, 5, 0.8, 'dune');
   s3DuneHill(-16, 17, 3.4, 2.8, 5.5, 'rose');                        // ►S3X: torreón oeste a la altura de la terraza
   /* ►S3D: peldaños de relleno */
@@ -32268,7 +32296,10 @@ function buildS3Ruinas(){
   modUpperDeck(0, 20, { sx:18, sz:9, topY:6, kind:'rose' });
   /* ►EMBALM: el embalsamador en la terraza de la ruina. Va aquí y no en la explanada porque la
      explanada ES la franja de respawn (z∈[-8,8]) y ahí no se planta nada. Descentrado en x para
-     dejar paso por el lado este de la terraza. */
+     dejar paso por el lado este de la terraza.
+     ►EMBALM2: este ya no es el unico — hay otros tres en Dunas, Bazar y Mesa. La regla del respawn
+     sigue valiendo en las seis salas, asi que ninguno va en la explanada central: los de Dunas y Mesa
+     estan a pie de suelo pero en el ala norte y en el respiro sur, fuera de la franja. */
   s3Embalmer(-4.5, 20, 6, 1);
   modStairs(9, 9.5, { steps:3, dir:{x:-0.3,z:1}, rise:1.8, run:2.8, y0:1.6 });
   s3Blob(-24, -12, 6, 5, 0.5, 'dune'); s3Blob(24, -12, 6, 5, 0.5, 'dune');
@@ -32368,6 +32399,10 @@ function buildS3Mesa(){
   /* ►S3D: TORRE de alfombras oeste */
   addFloating(-17, 4.0, -11, 4, 3); addFloating(-17, 7.4, -11, 3.6, 2.7); addFloating(-17, 10.8, -11, 3.2, 2.4);
   s3Slab(0, -21, 20, 10, 0.3, 'dune');                               // respiro sur (antesala del jefe, como buildS2Summit)
+  /* ►EMBALM2: en el respiro sur, a pie de suelo y descentrado al oeste. Es la antesala del jefe, o
+     sea el sitio donde el jugador se para: el edificio se ve entero y ademas se puede usar (se pasa
+     por el patio y se sube a la cubierta). Libre del arbol de (-6,-22) y del pedrusco de (5,-20). */
+  s3Embalmer(-1, -21.5, 0.3, 1);
   s3UpperLane(5, -13, -4);                                           // ►S3D: CINTA 2; escalera en x-4 (la mesa gemela este estorba)
   s2GapWall(0, -12, 'x', 5, 2.8, 0.8);                               // ►S3E: hueco pie→respiro (por debajo se pasa; tope 3.6 < base 4.9 de la losa del carril)
   s3Fence(0, -16.8, 'x', 9, 0.3, 1.1); s3Fence(-4, 19.7, 'x', 7, 7, 1.0);   // ►S3D: vallas (respiro + gran mesa) · ►P4a: cz 24.2→19.7 (única franja con suelo y=7 real; antes fallaba en silencio)
