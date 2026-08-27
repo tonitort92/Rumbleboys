@@ -12101,7 +12101,13 @@ const GOBLIN_KINDS = {
        ya es de color arena; re-teñirla de marrón corrupto sólo emborronaría los ojos.
      · sin weapon: pega con los puños, como el bruto pirata. */
   momia:       { fbx:'MOMIAMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
-                 h:3.55, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false, weapon:null },
+                 /* ►MOMIAPOOL: max 10, no los 6 del skelknight al que sustituye. Los 6 se pusieron por
+                    analogia y estaban MAL: con 6, a caos 12 (horda 29) la momia agotaba el cupo en el
+                    15% de las hordas y en su sitio salia un goblin large. Barrido 6..12: el tope se
+                    toca el 16,8% de las veces con 6 · 8,4% con 7 · 3,6% con 8 · 0,8% con 9 · 0% con 10,
+                    y de 10 en adelante el pico se queda en 9-10, o sea PLATO. Es la leccion de
+                    medir-proporciones-de-horda: el pool no se dimensiona con la media de su demanda. */
+                 h:3.55, walkRef:2.3, max:10, shadow:true,  jitter:false, shootAtk:false, weapon:null },
   skelshooter: { glb:'SKELSH_GLB_B64', h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'bow'  },   // ►SKELMINIONS: esqueleto SOLDADO (mid/shooter) — arco+flechas
   skelknight:  { glb:'SKELKNIGHT_GLB_B64', h:3.4, walkRef:2.3, max:6, shadow:true, jitter:false, shootAtk:false, weapon:'sword' },   // ►SKELMINIONS: esqueleto CABALLERO (big/large) — espada
   /* ►VIKINGS (S7 ártico): 2 vikingos Synty POLYGON (rig Mixamo) un poco MÁS ALTOS que los personajes
