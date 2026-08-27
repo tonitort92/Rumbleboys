@@ -22529,19 +22529,22 @@ const RUTA = [
   { st:3  },                              // JAPÓN
   { st:14, mini:true },                   // ►ARENA (disco japonés · arena.js)
   { st:11 },                              // WESTERN
-  { mini:'descenso', piel:'arena', tag:'SANDBOARD' },
+  { mini:'descenso', piel:'arena', tag:'SANDBOARD', nombre:'SURFEANDO POR EL DESIERTO' },
   { st:4  },                              // DESIERTO
   { st:5  },                              // PIRÁMIDE
   { st:13, mini:true },                   // ►CUADRIMANÍA (torre · cuadrimania.js)
   { st:12 },                              // PIRATAS
-  { mini:'descenso', piel:'mar',   tag:'SURF' },
+  { mini:'descenso', piel:'mar',   tag:'SURF',      nombre:'OLA, ¿QUÉ TAL?' },
   { st:7  },                              // HIELO
-  { mini:'descenso', piel:'nieve', tag:'SNOWBOARD' },
+  { mini:'descenso', piel:'nieve', tag:'SNOWBOARD', nombre:'ME MUEVE LA NIEVE' },
   { st:8  },                              // FORJA
-  /* rótulos CORTOS: el selector de la home los pinta en una línea y un nombre
-     largo empuja las flechas (es el mismo motivo por el que usa STAGE_TAG y no
-     los nombres largos de _STAGE_NAMES) */
-  { mini:'tubo', tag:'TUBO' },
+  /* DOS rótulos por minijuego, y hacen falta los dos:
+       tag    — CORTO. Es el que pinta el selector de la home, que lo pone en una
+                línea: un nombre largo le empuja las flechas fuera de sitio. Mismo
+                motivo por el que el selector usa STAGE_TAG y no _STAGE_NAMES.
+       nombre — LARGO, el de la lista con retruécano. Solo sale en la pantalla de
+                carga, que tiene sitio de sobra. */
+  { mini:'tubo', tag:'TUBO', nombre:'EL TUBO NO SE DETUBO' },
   { st:10 },                              // VÍA ARCOÍRIS → coronación
 ];
 /* dónde estamos en la RUTA. Se pone a 0 en launchMatch y avanza en cada salto:
@@ -22579,7 +22582,7 @@ function lanzarMini(e){
     rutaSiguiente();
     return;
   }
-  loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.tag || e.mini).toUpperCase() });   // ►CARGA: tapa el montaje del módulo (él trae su propia presentación)
+  loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.nombre || e.tag || e.mini).toUpperCase() });   // ►CARGA: tapa el montaje del módulo (él trae su propia presentación)
   requestAnimationFrame(()=>{
     try {
       mod.lanzar({ piel:e.piel, campana:true, alAcabar:(res)=>{
@@ -40363,7 +40366,13 @@ function goToStage13(){                                        // ►CUADRIMANÍ
 
 /* Nombres largos de cada mapa por ID interno (incluye los dormidos 6 y 9, que se siguen
    construyendo aunque no estén en la ruta de campaña). Lo usa el rótulo de ►EXPLORAR. */
-const _STAGE_NAMES = { 1:'PRADO', 2:'JUNGLA TORMENTA', 3:'JAPÓN', 11:'WESTERN · MESETAS DEL CAÑÓN', 4:'GRAN DESIERTO', 5:'PIRÁMIDE', 12:'MAR PIRATA', 6:'EL POZO', 7:'CUMBRES NEVADAS', 8:'LA FÁBRICA', 9:'CIELO ROTO', 10:'VÍA ARCOÍRIS' };
+/* ►NOMBRES (Toni 27/08): los rótulos largos pasan a ser los de la lista con retruécano.
+   Salen en la pantalla de carga ("MUNDO 5: LA PIRÁMIDE DE LA CÚSPIDE", ldTitulo) y en el HUD de
+   vuelo. NO tocan el sello de entrada ni el selector de la home: esos usan STAGE_TAG a propósito,
+   porque son los rótulos que ►I18N tiene en el diccionario y los largos no (se quedarían en
+   español en los otros cinco idiomas). Aquí eso da igual: son juegos de palabras y no se traducen.
+   Se añaden el 13 y el 14, que antes no estaban y caían al tag corto en la carga. */
+const _STAGE_NAMES = { 1:'PRADO DE LOS CHALADOS', 2:'LA JUNGLA DE ULTRATUMBA', 3:'EL SHOGUNATO DEL NOVATO', 11:'TE ENGANCHO EN EL RANCHO', 4:'EL DESIERTO DE LOS TUERTOS', 5:'LA PIRÁMIDE DE LA CÚSPIDE', 12:'LOS PIRATAS DE LAS MATAS', 6:'EL POZO DEL REPOSO', 7:'LA TUNDA EN LA TUNDRA', 8:'LA ESTACIÓN DEL OSTIÓN', 9:'EL CIELO ROTO DEL PILOTO', 10:'LA VÍA DEL QUE SE LÍA', 13:'PISO Y ME DESLIZO', 14:'EL REY DE LA CIMA' };
 let _stagePreview = 1;
 let MENU_STAGE = 1;    // stage en el que EMPIEZA la próxima partida (la campaña lo lleva por su cuenta)
 
@@ -40489,7 +40498,7 @@ function jugarMiniDesdeHome(e){
   fadeOut(()=>{
     if(ov) ov.style.display = 'none';
     skyOff();                                                     // ►CARGA: el cielo de la portada no tapa el minijuego
-    loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.tag || e.mini).toUpperCase() });
+    loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.nombre || e.tag || e.mini).toUpperCase() });
     requestAnimationFrame(()=>{
       mod.lanzar({ piel:e.piel, campana:true, alAcabar:()=>{
         /* de vuelta a la portada: no había partida detrás, así que no hay run
