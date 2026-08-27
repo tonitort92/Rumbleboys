@@ -13083,7 +13083,22 @@ function spawnMinion(){
   if(STAGE===4){
     const libre = k => k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max;
     if(type === 'shooter'){
+      /* ►S4NOGOB (Toni 28/08: "en el desierto sustituye goblins shooters por esqueletos shooters").
+         Aqui quedaba el ULTIMO goblin tirador del mundo: si el pool de skelshooter esta al tope,
+         `skin` se quedaba a null y gobAttach vestia el `type` base — que en la ranura shooter es
+         GOBLIN2, o sea el goblin con arco. Medido en headless (300 hordas llenas a caos 10, con la
+         contabilidad de gobAttach emulada): salia en el 0,7% de las hordas, poco pero no cero, y el
+         pico de skelshooter tocaba su max de 10 en cada ronda — el respaldo se ejercia de verdad.
+         Ahora esa tirada NO cae al goblin: se reparte entre las dos pieles de esqueleto MELEE, y si
+         tampoco hay hueco se deja el hueco vacio (mismo criterio que el mundo 2: antes un minion de
+         menos que una piel que no toca). No se sube `GOBLIN_KINDS.skelshooter.max` a proposito: es
+         global y S5/S7/S12 comparten esa piel — subirlo alli cambiaria repartos que nadie ha pedido. */
       if(libre('skelshooter')) skin = 'skelshooter';
+      else {
+        const alt = ['skeleton','pirskel'].find(libre);
+        if(!alt) return;
+        skin = alt; type = 'small';                 // el type manda vida/dano: casarlo con la piel que sale
+      }
     } else if(type === 'small'){
       const c = ['skeleton', 'pirskel', null][(Math.random()*3)|0];   // null = goblin raso
       if(c && libre(c)) skin = c;
@@ -22651,8 +22666,15 @@ function rutaFinMini(ganador){
 }
 window.rutaFinMini = rutaFinMini;
 /* ¿este stage forma parte de una run de campaña encadenada? Lo consultan los
-   minijuegos para decidir entre seguir la ruta o terminar la partida. */
-window.rutaEnCampana = function(){ return CAMPAIGN && rutaIndiceDe(STAGE) >= 0 && !gameOver; };
+   minijuegos para decidir entre seguir la ruta o terminar la partida.
+   ►MINITRAIN (Toni 28/08: "cuando terminas los minijuegos en modo entrenamiento tienes que volver
+   al menu, no continuar con la run"). `CAMPAIGN` es una CONSTANTE a true — nunca distinguió campaña
+   de entrenamiento — y Arena (14) y Cuadrimanía (13) SI están en la RUTA, así que `rutaIndiceDe`
+   les daba índice y se encadenaba el mundo siguiente aunque hubieras entrado a practicar. La guarda
+   que había (`i < 0` en rutaFinMini) sólo cubría el arranque suelto por ?arena / ?cuadrimania.
+   Con TRAIN.on a false los dos módulos caen a su `endGame()` de siempre → pantalla final → menú.
+   Los otros cuatro minijuegos son MÓDULO y ya volvían solos (jugarMiniDesdeHome). */
+window.rutaEnCampana = function(){ return CAMPAIGN && !(typeof TRAIN!=='undefined' && TRAIN.on) && rutaIndiceDe(STAGE) >= 0 && !gameOver; };
 
 function _perkOwned(perk, who){ const lvl=perk.lvl(who); return (perk.once && lvl>=1) || (!perk.once && perk.k!=='lives' && lvl>=perk.max); }
 
@@ -22817,19 +22839,30 @@ const CAMPAIGN_STAGES = [1,2,3,11,4,5,12,7,8,10];   // 6 y 9 están dormidos (ve
    desbloqueos (campeon, duro). A diferencia de ?todo, esto SI se persiste; por eso es un MERGE con
    Math.max y NO pisa nada tuyo: records, marcas (notas) y maestria por clase quedan como estaban.
    Se aplica una vez por carga y es idempotente: quitar la bandera no lo deshace (es un guardado real). */
-if(/[?&]desbloquear(=|&|$)/.test(location.search)){
+/* ►SOLOMUNDOS (Toni 28/08: "desbloqueame todos los mundos"). `?desbloquear=mundos` abre el ACCESO
+   y nada más: mueve `bestStage` y no toca trofeos, jefes ni desbloqueos. Importa porque la versión
+   completa reparte trofeo y jefe en los 10 mundos, y eso de rebote dispara logros y su premio en
+   monedas — ya pasó el 26/08 sin querer. Para descubrir los 16 eslabones basta `bestStage`: `disc`
+   en el rail es `i <= reached`, y el arcoíris (último de CAMPAIGN_STAGES) es también el último
+   eslabón de la RUTA → los reveses de la lista entran todos. */
+const _dbM = /[?&]desbloquear(?:=([^&]*))?(?:&|$)/.exec(location.search);
+if(_dbM){
+  const _soloMundos = (_dbM[1] || '') === 'mundos';
   try{
     const s = saveGet();
     s.bestStage = Math.max(s.bestStage||0, CAMPAIGN_STAGES.length);
-    if(!s.trophies) s.trophies = {};
-    if(!s.bosses)   s.bosses   = {};
-    for(const st of CAMPAIGN_STAGES){
-      s.trophies[st] = Math.max(s.trophies[st]||0, 1);
-      s.bosses[st]   = Math.max(s.bosses[st]||0, 1);
+    if(!_soloMundos){
+      if(!s.trophies) s.trophies = {};
+      if(!s.bosses)   s.bosses   = {};
+      for(const st of CAMPAIGN_STAGES){
+        s.trophies[st] = Math.max(s.trophies[st]||0, 1);
+        s.bosses[st]   = Math.max(s.bosses[st]||0, 1);
+      }
+      for(const id of ['campeon','duro']) if(s.unlocks.indexOf(id) < 0) s.unlocks.push(id);
     }
-    for(const id of ['campeon','duro']) if(s.unlocks.indexOf(id) < 0) s.unlocks.push(id);
     saveCommit();
     if(SAVE_TODO) console.warn('[desbloquear] ?todo tambien esta puesta: modo revision, NO se ha persistido. Recarga solo con ?desbloquear.');
+    else if(_soloMundos) console.log('[desbloquear] ACCESO abierto a las ' + RUTA.length + ' paradas. Trofeos, jefes y logros NO se han tocado.');
     else console.log('[desbloquear] campana completa con trofeo en los ' + CAMPAIGN_STAGES.length + ' mundos');
   }catch(e){ console.warn('[desbloquear]', e); }
 }
