@@ -2108,6 +2108,8 @@ function stepCamera(dt){
    con el mismo procedimiento y las mismas trampas que ►DESCINTRO
    ===================================================================== */
 const INTRO = { dur:6.5, mudo:6.5, espera:12.0, titulo:2.2, popMs:3400 };
+/* ►NOMBRES: este titulo es el RESPALDO, para cuando se entra suelto con ?tubo. Dentro de la
+   campania manda el rotulo oficial del eslabon, que llega en `opt.nombre`. */
 const INTRO_TXT = { titulo:'EL TUBO DE LAS ESTRELLAS',
                     frase:'Corre por dentro del tubo, salta todo y no te caigas jamás.', ico:'🌈' };
 
@@ -2137,7 +2139,7 @@ function introGo(){
   TUBO._introGo = true; TUBO.introT = 0;
   const v = GAME_VOZ();
   INTRO.dur = (v && isFinite(v.duration) && v.duration > 3) ? v.duration : INTRO.mudo;
-  tuboBanner(INTRO_TXT.titulo, INTRO.titulo);
+  tuboBanner(TUBO._nombre || INTRO_TXT.titulo, INTRO.titulo);
   tuboPopup();
   if(v){ try { v.onended = null; v.pause(); v.currentTime = 0;
     const p = v.play(); if(p && p.catch) p.catch(() => {}); } catch(e){} }
@@ -2358,6 +2360,7 @@ TUBO.lanzar = function(opt){
   opt = opt || {};
   TUBO._campana = opt.campana !== false;
   TUBO._alAcabar = opt.alAcabar || null;
+  TUBO._nombre = opt.nombre || null;          // ►NOMBRES: rotulo oficial del eslabon de la RUTA
   const rr = GAME_RENDERER();
   if(rr) TUBO._rrPrev = { exp: rr.toneMappingExposure, sh: rr.shadowMap.enabled };
   if(!TUBO._built){ TUBO._built = true; buildHud(); }

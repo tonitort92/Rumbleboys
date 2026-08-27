@@ -9217,17 +9217,18 @@ let _cautionTimer = null;
 const STAGE_CAUTION_MS = 5600;   // ►OBJTXT (Toni 24/08): tiempo visible — antes 3400, no daba tiempo a leer
 const STAGE_OBJETIVO = 'OBJETIVO: QUEDA EL PRIMERO EN PUNTOS, VENCE AL JEFE Y GANA EL TROFEO';   // ►OBJTXT: se muestra en todos los mundos de campaña
 /* ►STAGESTAMP (Toni 26/08) · el NOMBRE DEL MUNDO se estampa al empezar la partida, como la nota del
-   tablero final: "PRADO" ¡PUM!. Nombre CORTO (STAGE_TAG) y no el largo de _STAGE_NAMES — un sello es
-   una palabra, no "WESTERN · MESETAS DEL CAÑÓN".
+   tablero final: "PRADO" ¡PUM!.
+   ►NOMBRES (27/08): estampa el nombre OFICIAL, no el tag corto. Nacio con el corto porque el sello
+   era de UNA linea y "WESTERN · MESETAS DEL CAÑÓN" no cabia. Acepta un nombre por argumento para que
+   los minijuegos MODULO —que no son stages y no salen de _STAGE_NAMES— estampen el suyo.
    El sello NO se encadena a la voz ni al reloj de la presentación a propósito: es lo primero que ve
    el jugador al levantarse la carga, y con musicOn apagado la voz ni suena (stageIntroGo se corta
    antes). Colgarlo de ahí lo haría desaparecer justo para quien juega sin sonido. */
 let _stampTimer = 0, _cauDelay = 0;
-function showStageStamp(){
+function showStageStamp(nombre){
   const el = document.getElementById('stageStamp'); if(!el || demo) return;
   const rg = document.getElementById('stageStampRing');
-  const nom = (typeof STAGE_TAG!=='undefined' && STAGE_TAG[STAGE])
-           || (typeof _STAGE_NAMES!=='undefined' && _STAGE_NAMES[STAGE]) || ('MUNDO ' + STAGE);
+  const nom = nombre || nombreDeStage(STAGE);
   el.textContent = nom;                       // ES → ►I18N lo traduce como al resto de rótulos
   if(_stampTimer){ clearTimeout(_stampTimer); _stampTimer = 0; }
   /* reinicio de animación: quitar la clase no basta si el nodo no se reflowea entre medias
@@ -18669,6 +18670,8 @@ function updatePvpShieldFX(){
     '  background:linear-gradient(180deg,#1a2140,#0e1328); border:2.5px solid #ffd84f;',
     '  box-shadow:0 6px 22px rgba(0,0,0,.55), 0 0 18px rgba(255,216,79,.18), inset 0 1px 0 rgba(255,255,255,.14);',
     '  font-size:clamp(22px,2.1vw,33px); font-weight:900; font-style:italic; letter-spacing:2px; color:#fff;',
+    '#isName.n2{ font-size:clamp(17px,1.6vw,25px); }',
+    '#isName.n3{ font-size:clamp(13px,1.25vw,19px); letter-spacing:1px; }',
     '  -webkit-text-stroke:2px #14102b; paint-order:stroke fill; text-shadow:0 3px 0 rgba(0,0,0,.5); }',
     '#isInfo{ position:absolute; top:calc(4% + 68px); left:0; right:0; z-index:2; display:flex; justify-content:center; gap:10px; }',
     '.isChip{ display:inline-block; padding:5px 14px; border-radius:999px; font-size:12px; font-weight:900;',
@@ -18713,7 +18716,9 @@ function updatePvpShieldFX(){
     const n = CAMPAIGN_STAGES.length, st = CAMPAIGN_STAGES[idx];
     const s = saveGet(), m = (s.marks||{})[st], tro = (s.trophies||{})[st];
     const nameEl = document.getElementById('isName');
-    nameEl.textContent = (idx+1) + ' · ' + (STAGE_TAG[st] || ('MUNDO '+st));
+    const nm = nombreDeStage(st);
+    nameEl.textContent = (idx+1) + ' · ' + nm;
+    nameEl.className = claseLargo(nm);   // chapa de una linea: los largos bajan de cuerpo
     const col = '#' + (((PORTAL_PAL[st]||[])[1] || 0xffd84f)>>>0).toString(16).padStart(6,'0').slice(-6);
     nameEl.style.borderColor = col;   // la placa se TEMATIZA con el color del mundo
     nameEl.style.boxShadow = '0 6px 22px rgba(0,0,0,.55), 0 0 20px ' + col + '44, inset 0 1px 0 rgba(255,255,255,.14)';
@@ -19181,6 +19186,9 @@ function updatePvpShieldFX(){
     #hdWIco{ display:none; }
     #hdWNum{ background:none; border:0; box-shadow:none; padding:0 4px; transform:skewX(-4deg); color:#fff;
       -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 14px rgba(0,0,0,.7); font-size:clamp(30px,3.2vw,48px); }
+    /* ►NOMBRES: dos escalones de cuerpo para los rotulos oficiales largos */
+    #hdWNum.n2{ font-size:clamp(21px,2.2vw,33px); }
+    #hdWNum.n3{ font-size:clamp(16px,1.7vw,25px); letter-spacing:1px; }
     .hdStop .n{ right:auto; left:-12px; transform:translate(-100%,-50%); }   /* números al lado izquierdo */
     /* ---- ►CABECERA v2 (Toni 21/08): logo arriba en su línea, chip del jugador debajo alineado a la izquierda,
        toggle JUGAR ONLINE/OFFLINE debajo, rail con margen y, bajo el rail, la lista de LOGROS por desbloquear
@@ -19318,7 +19326,10 @@ function updatePvpShieldFX(){
      descensos, el tubo) es un PASO sin trofeo ni marca; los demás son MUNDOS con trofeo. */
   const ruta = () => (typeof RUTA!=='undefined') ? RUTA : [{ st:1 }];
   const isMini = e => !!e.mini;
-  const linkName = e => e.st ? tagOf(e.st) : (e.tag || String(e.mini).toUpperCase());
+  /* ►NOMBRES: el rotulo de un eslabon es el OFICIAL, no el tag corto. Los NODOS redondos no lo
+     usan —son circulos de 42 px con un numero dentro—: esto va a la chapa de la ficha (#hdWNum) y
+     al aria-label del eslabon. */
+  const linkName = e => nombreDePaso(e);
   /* el stage que "representa" a un eslabón: el suyo, o el mundo anterior si es un minijuego (es lo
      que mapSelApply previsualiza en el fondo) */
   const stageOf = i => { const R = ruta(); return R[i].st || ((typeof _rutaMundoPrevio==='function') ? _rutaMundoPrevio(i) : 1); };
@@ -19771,7 +19782,9 @@ function updatePvpShieldFX(){
     const e = st.R[i], stage = stageOf(i), col = worldCol(stage), m = e.st ? st.mk[e.st] : null;
     const won = st.won[i], disc = st.disc[i], mini = st.mini[i];
     document.querySelectorAll('#hdPathIn .hdNode').forEach(n => n.classList.toggle('sel', +n.dataset.i === i));
-    const num = $('hdWNum'); num.textContent = (i+1) + ' · ' + linkName(e); num.style.setProperty('--wc', col);
+    const num = $('hdWNum'); const _nm = linkName(e);
+    num.textContent = (i+1) + ' · ' + _nm; num.style.setProperty('--wc', col);
+    num.className = claseLargo(_nm);   // la chapa es de una linea: los nombres largos bajan de cuerpo
     const ws = $('hdWState'); ws.className = won ? 'tro' : (i === st.next ? 'next' : '');
     ws.textContent = mini ? (disc ? 'MINIJUEGO · SIN TROFEO' : '🔒 MINIJUEGO · SIN DESCUBRIR')
                    : won ? ('🏆 TROFEO CONSEGUIDO' + (m ? ' · MARCA ' + m.g : ''))
@@ -22585,7 +22598,7 @@ function lanzarMini(e){
   loadScreenShow({ titulo: 'MINIJUEGO · ' + (e.nombre || e.tag || e.mini).toUpperCase() });   // ►CARGA: tapa el montaje del módulo (él trae su propia presentación)
   requestAnimationFrame(()=>{
     try {
-      mod.lanzar({ piel:e.piel, campana:true, alAcabar:(res)=>{
+      mod.lanzar({ piel:e.piel, campana:true, nombre:e.nombre, alAcabar:(res)=>{
         /* ►LOS PUNTOS DEL MINIJUEGO VAN A LA CARTERA. Decisión ya tomada con
            Toni en el descenso ("puntúa para la run, pero poco"): lo que ganas
            aquí se gasta en la tienda del siguiente entre-stage. */
@@ -40373,6 +40386,25 @@ function goToStage13(){                                        // ►CUADRIMANÍ
    español en los otros cinco idiomas). Aquí eso da igual: son juegos de palabras y no se traducen.
    Se añaden el 13 y el 14, que antes no estaban y caían al tag corto en la carga. */
 const _STAGE_NAMES = { 1:'PRADO DE LOS CHALADOS', 2:'LA JUNGLA DE ULTRATUMBA', 3:'EL SHOGUNATO DEL NOVATO', 11:'TE ENGANCHO EN EL RANCHO', 4:'EL DESIERTO DE LOS TUERTOS', 5:'LA PIRÁMIDE DE LA CÚSPIDE', 12:'LOS PIRATAS DE LAS MATAS', 6:'EL POZO DEL REPOSO', 7:'LA TUNDA EN LA TUNDRA', 8:'LA ESTACIÓN DEL OSTIÓN', 9:'EL CIELO ROTO DEL PILOTO', 10:'LA VÍA DEL QUE SE LÍA', 13:'PISO Y ME DESLIZO', 14:'EL REY DE LA CIMA' };
+/* ►NOMBRES · UNA SOLA FUENTE para el rotulo oficial de una parada.
+   Hay DOS clases de parada, y por eso hacen falta dos funciones:
+     · un STAGE del motor (los 10 mundos + cuadrimania 13 y arena 14) -> vive en _STAGE_NAMES
+     · un minijuego MODULO (los tres descensos y el tubo) -> NO es un stage, no tiene ID y los tres
+       descensos comparten fichero, asi que su nombre vive en su eslabon de la RUTA (`nombre`)
+   Todo lo que pinte el nombre de una parada pasa por aqui. STAGE_TAG deja de ser "el nombre" y
+   vuelve a ser lo que es: la etiqueta CORTA que el diccionario ►I18N sabe traducir, util de
+   respaldo y en los sitios donde solo cabe una palabra. */
+function nombreDeStage(st){
+  const x = (st === undefined) ? STAGE : st;
+  return _STAGE_NAMES[x] || (typeof STAGE_TAG!=='undefined' && STAGE_TAG[x]) || ('MUNDO ' + x);
+}
+function nombreDePaso(e){
+  if(!e) return '';
+  return e.st ? nombreDeStage(e.st) : (e.nombre || e.tag || String(e.mini).toUpperCase());
+}
+/* clase de tamanio para las chapas de UNA LINEA (#hdWNum, #isName): los nombres oficiales llegan a
+   26 caracteres y esas dos son `white-space:nowrap` sin recorte, asi que se salian de la chapa. */
+function claseLargo(txt){ const n = (txt||'').length; return n > 22 ? 'n3' : n > 15 ? 'n2' : ''; }
 let _stagePreview = 1;
 let MENU_STAGE = 1;    // stage en el que EMPIEZA la próxima partida (la campaña lo lleva por su cuenta)
 
@@ -40426,20 +40458,19 @@ function mapSelIdx(){
   }
   return MENU_RUTA_I;
 }
-/* Se usa el nombre CORTO (STAGE_TAG), no el largo de _STAGE_NAMES, por dos razones: cabe en una línea
-   sin empujar los botones, y sobre todo **la capa ►I18N ya los traduce** (PRADO→MEADOW, JUNGLA→
-   JUNGLE…) porque son los mismos rótulos del roadmap. Los largos no están en el diccionario y se
-   habrían quedado en español en los otros cinco idiomas. */
+/* ►NOMBRES (27/08): pasa al rotulo OFICIAL, como el resto de la interfaz.
+   Lo que se pierde: ►I18N traducia los cortos (PRADO→MEADOW) y los oficiales no estan en el
+   diccionario, asi que en los otros cinco idiomas se quedan en espanol. Es lo que toca —son
+   retruecanos, no se traducen— y la capa deja INTACTA la cadena que no conoce (translateCore
+   devuelve null), asi que no rompe nada. */
 function mapSelLabel(){
   const num = document.getElementById('mapNum'), tag = document.getElementById('mapTag');
   if(!num || !tag) return;
   const i = MENU_RUTA_I, e = RUTA[i] || RUTA[0];
   num.textContent = String(i+1);
-  /* el rótulo se deja EXACTAMENTE con la palabra del diccionario (PRADO,
-     JUNGLA…) porque ►I18N traduce por texto del nodo; el "MINIJUEGO" va en un
-     nodo aparte para no romperlo. */
-  tag.textContent = e.st ? (STAGE_TAG[e.st] || _STAGE_NAMES[e.st] || ('MAPA ' + e.st))
-                         : (e.tag || String(e.mini).toUpperCase());
+  /* el "MINIJUEGO" sigue en un nodo aparte a proposito: ►I18N traduce por texto de nodo y
+     mezclarlo con el nombre impediria traducir ninguno de los dos. */
+  tag.textContent = nombreDePaso(e) || ('MAPA ' + (e.st || '?'));
   let mk = document.getElementById('mapMini');
   if(!mk && tag.parentNode){
     mk = document.createElement('span');
@@ -41081,7 +41112,7 @@ function skyOn(){ const ti = document.getElementById('titleOverlay'); if(ti) ti.
 /* rótulo del destino para la carga ("STAGE 3 · JAPÓN") */
 function ldTitulo(st){
   const s = (st === undefined) ? STAGE : st;
-  const nom = (typeof _STAGE_NAMES!=='undefined' && _STAGE_NAMES[s]) || (typeof STAGE_TAG!=='undefined' && STAGE_TAG[s]) || ('MUNDO ' + s);
+  const nom = nombreDeStage(s);
   if(s === 13 || s === 14) return 'MINIJUEGO: ' + nom;
   return 'MUNDO ' + (typeof stageNum==='function' ? stageNum(s) : s) + ': ' + nom;   // ►CARGA24
 }
@@ -42407,9 +42438,9 @@ function renderHomeWorlds(){
       /* `off` = ni nota ni trofeo. La fila NO desaparece: un mundo apagado en la lista dice
          "esto te falta", y eso es justo lo que tiene que empujar a jugar otra vez. */
       h += '<button type="button" class="hwRow'+(m||has?'':' off')+'" data-st="'+st+'"'
-         +   ' title="'+esc(STAGE_TAG[st]||('MUNDO '+st))+(m?' · '+Math.round(m.pts||0).toLocaleString('es-ES')+' pts':' · sin jugar')+'">'
+         +   ' title="'+esc(nombreDeStage(st))+(m?' · '+Math.round(m.pts||0).toLocaleString('es-ES')+' pts':' · sin jugar')+'">'
          +   '<span class="hwDot" style="background:'+(m||has?col:'#5b647a')+'"></span>'
-         +   '<span class="hwName">'+(i+1)+' · '+esc(STAGE_TAG[st]||('MUNDO '+st))+'</span>'
+         +   '<span class="hwName">'+(i+1)+' · '+esc(nombreDeStage(st))+'</span>'
          +   '<span class="hwMark" style="color:'+(m?gradeColorOf(m.g):'#6b7a99')+'">'+(m?esc(m.g):'—')+'</span>'
          +   '<span class="hwTro'+(has?'':' no')+'">🏆</span>'
          + '</button>';

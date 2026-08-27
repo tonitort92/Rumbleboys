@@ -5114,7 +5114,13 @@ const INTRO_TXT = {
   nieve: { titulo:'DESCENSO NEVADO',   frase:'Hora de bajar la montaña, ¡hazlo lo mejor que puedas!', ico:'🏂' },
   mar:   { titulo:'SURF',              frase:'Hora de surfear las olas, ¡hazlo lo mejor que puedas!', ico:'🏄' },
 };
-function introTxt(){ return INTRO_TXT[SKIN] || INTRO_TXT.arena; }
+function introTxt(){
+  const t = INTRO_TXT[SKIN] || INTRO_TXT.arena;
+  /* ►NOMBRES: dentro de la campania manda el rotulo OFICIAL del eslabon, que lo pasa lanzarMini
+     en `opt.nombre`. El literal de arriba se queda de RESPALDO para cuando se entra suelto con
+     ?descenso, que no pasa por la RUTA y no tiene eslabon del que sacarlo. */
+  return DESC._nombre ? Object.assign({}, t, { titulo: DESC._nombre }) : t;
+}
 
 /* accesos al script del juego, con el mismo patrón que GAME_RENDERER(). En
    try/catch porque `typeof` sobre un const en zona muerta temporal NO devuelve
@@ -5457,6 +5463,7 @@ DESC.salir = () => salirDesc();
 DESC.lanzar = function(opt){
   opt = opt || {};
   DESC._campana = opt.campana !== false;
+  DESC._nombre = opt.nombre || null;          // ►NOMBRES: rotulo oficial del eslabon de la RUTA
   DESC._alAcabar = opt.alAcabar || null;
   if(opt.piel && opt.piel !== SKIN) aplicaPiel(opt.piel);
   const rr = GAME_RENDERER();
