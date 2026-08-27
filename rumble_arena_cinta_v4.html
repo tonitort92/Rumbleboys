@@ -5502,13 +5502,23 @@ function _attachFlagWave(material, ph){   // ondulación de la tela de bandera e
    lo pone el reflejo real del entorno, que es más barato y no aliasa.
    ===================================================================== */
 const _waterShaders = [];    // uniforms vivos (sliders de F2)
-function applyWaterLook(m){
+/* ►SEAMULTI (Toni 27/08: "me gustaria que el mar fuera multitono turquesa"). `multi` es OPCIONAL
+   y por defecto va APAGADO: este shader lo comparten CUATRO mares —la cinta del prado, las arenas de
+   jefe del S1 y del S2, y el mar pirata— y solo el pirata lo pide. Con multi=null el uniform vale 0 y
+   el mix de abajo es la identidad, o sea que los otros tres salen exactamente como antes.
+   Forma: { amt, a, b, scale } — cuanto manda, los dos tonos y el tamano de las manchas. */
+function applyWaterLook(m, multi){
   m.onBeforeCompile = (sh)=>{
     const W = VISUAL.water;
     sh.uniforms.u_time  = _decoTimeUniform;
     sh.uniforms.uWFoam  = { value: W.on ? W.foam  : 0 };
     sh.uniforms.uWDeep  = { value: W.on ? W.deep  : 0 };
     sh.uniforms.uWShine = { value: W.on ? W.shine : 0 };
+    sh.uniforms.uWMulti = { value: multi ? multi.amt   : 0 };
+    sh.uniforms.uWMScl  = { value: multi ? multi.scale : 0.03 };
+    sh.uniforms.uWMA    = { value: new THREE.Color(multi ? multi.a : 0xffffff) };
+    sh.uniforms.uWMB    = { value: new THREE.Color(multi ? multi.b : 0xffffff) };
+    sh.uniforms.uWMRgh  = { value: multi ? (multi.rough || 0) : 0 };
     /* VERTEX: el MISMO oleaje de siempre (no se toca la silueta del mar), pero
        guardando la altura de la ola y el XZ local para que el fragment los use. */
     sh.vertexShader = 'uniform float u_time;\nvarying float vWH;\nvarying vec2 vWXZ;\n' + sh.vertexShader.replace(
@@ -5518,10 +5528,22 @@ function applyWaterLook(m){
       'transformed.z = wH;\n'+
       'vWH = wH;\n'+
       'vWXZ = position.xy;');
-    sh.fragmentShader = 'uniform float u_time;\nuniform float uWFoam;\nuniform float uWDeep;\nuniform float uWShine;\nvarying float vWH;\nvarying vec2 vWXZ;\n' +
+    sh.fragmentShader = 'uniform float u_time;\nuniform float uWFoam;\nuniform float uWDeep;\nuniform float uWShine;\nuniform float uWMulti;\nuniform float uWMScl;\nuniform float uWMRgh;\nuniform vec3 uWMA;\nuniform vec3 uWMB;\nvarying float vWH;\nvarying vec2 vWXZ;\n' +
       sh.fragmentShader.replace('#include <normal_fragment_maps>', [
         '#include <normal_fragment_maps>',
         '{',
+        /* ►SEAMULTI: MANCHAS de tono. Tres senos cruzados a escalas y velocidades distintas (la
+           relacion entre ellas no es entera → el patron no se repite a la vista) sobre el XZ local
+           del plano, que en el mar pirata mide 1400x900: con uWMScl 0.15 salen manchones de ~42 u
+           (periodo = 2pi/scl). Derivan MUY despacio (0.03-0.06) porque esto es la PROFUNDIDAD
+           del agua, no el oleaje: al ritmo de las olas pareceria una mancha de aceite.
+           Va ANTES del valle y de la espuma a proposito: el multitono es el color del AGUA, y encima
+           de el tienen que seguir cayendo la sombra del valle y el blanco de la cresta. */
+        '  float mf = sin(vWXZ.x*uWMScl + u_time*0.06)*0.55',
+        '           + sin(vWXZ.y*uWMScl*1.7 - u_time*0.045)*0.30',
+        '           + sin((vWXZ.x + vWXZ.y)*uWMScl*0.43 + u_time*0.03)*0.35;',
+        '  float mt = smoothstep(0.18, 0.82, clamp(mf*0.5 + 0.5, 0.0, 1.0));',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, mix(uWMA, uWMB, mt), uWMulti);',
         '  float crest  = smoothstep(0.30, 1.05, vWH);',        // 1 = cresta
         '  float trough = smoothstep(0.10, -1.10, vWH);',       // 1 = fondo del valle
         '  diffuseColor.rgb *= 1.0 - trough * uWDeep;',         // VOLUMEN: hunde los valles
@@ -5532,6 +5554,15 @@ function applyWaterLook(m){
         '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.96, 1.0), foam * uWFoam);',
         /* agua lisa = espejo (recoge el cielo del envMap) · espuma = mate */
         '  roughnessFactor = clamp(roughnessFactor - (1.0 - crest) * uWShine + foam * 0.5, 0.04, 1.0);',
+        /* ►SEAMULTI · LO QUE DE VERDAD HACE QUE SE VEA. Medido pintando el agua de MAGENTA PURO:
+           sale lavanda palido, o sea que el color difuso casi no pinta en el pixel final — manda el
+           reflejo del cielo (metalness .10 con la rugosidad que uWShine baja hasta 0.28 en la zona
+           lisa, o sea medio espejo sobre un cielo blanco). Por eso subir el contraste de los dos
+           tonos no servia de nada: da igual lo oscuro que sea el difuso si encima va un espejo.
+           La rugosidad SI manda, asi que se modula con el MISMO campo: la zona honda (mt→0) se
+           vuelve MATE y ensena su turquesa oscuro; el bajio (mt→1) se queda espejo y sale palido.
+           Es ademas como se lee un mar de verdad: los bajios brillan y los hondos son mate. */
+        '  roughnessFactor = clamp(roughnessFactor + (1.0 - mt) * uWMRgh, 0.04, 1.0);',
         '}'
       ].join('\n'));
     if(sh.fragmentShader.indexOf('float crest') < 0) console.warn('►WATER: no se encontró #include <normal_fragment_maps> — el agua queda como antes');
@@ -33541,7 +33572,33 @@ const PIR_WL       = 2.0;    // línea del agua = cota de muerte (blastDownY la 
 /* ►PIRSEA2 · la paleta del mar, en un sitio. Turquesa de verdad (H≈183°) en vez del cian oscuro de
    antes, y el fondo en la misma familia pero más oscuro: el agua es semitransparente, así que el lecho
    es la mitad del color que se ve. Emparentado con el turquesa del portal del mundo 12 (PORTAL_PAL). */
-const PIR_SEA_COL  = 0x14a8ad;   // superficie
+const PIR_SEA_COL  = 0x14a8ad;   // superficie (el tono medio: sigue mandando donde no llega el multitono)
+/* ►SEAMULTI (Toni 27/08: "que el mar fuera multitono turquesa"). El agua era un turquesa PLANO:
+   0x14a8ad en toda la lamina, y lo unico que la rompia era la espuma de las crestas. Ahora lleva
+   manchones grandes que van de un turquesa HONDO y verdoso a un aguamarina claro de bajio, que es
+   como se lee un mar tropical de verdad: el color cuenta la profundidad, no la ola.
+   Los dos tonos son PRIMOS del original, no colores nuevos: mismo tono (H 183-176), lo que cambia es
+   la luminosidad y la saturacion. Asi el mar sigue siendo el mismo mar y no un arcoiris.
+     A = hondo   H 187  L 24%   B = bajio  H 176  L 51%
+   `amt` 0.55 y no 1.0 para que PIR_SEA_COL siga estando presente y los extremos no canten. */
+const PIR_SEA_A    = 0x063f4d;   // turquesa MUY hondo (las zonas profundas)
+const PIR_SEA_B    = 0x2fc9c0;   // aguamarina claro (los bajios)
+const PIR_SEA_MULTI= 0.85;       // cuanto manda el multitono sobre PIR_SEA_COL
+const PIR_SEA_MSCL = 0.15;       // periodo del patron = 2pi/scl = 42 u, o sea 3-4 manchas en pantalla
+const PIR_SEA_MRGH = 0.50;       // cuanto MATE se vuelve la zona honda
+/* Los tres numeros de arriba salieron MEDIDOS, no a ojo, y los dos primeros intentos fallaron:
+   1. TONOS DEMASIADO PARECIDOS. El primer par (0x0e7f8e / 0x38d9c9) no se veia NADA. La razon:
+      este stage es de clave alta (hemi 0.70 + dir 1.15 + ambient 0.40, exposure 0.78, ACES) y el
+      agua sale con luminancia media 212 sobre 255 — o sea comprimida contra el techo de la curva,
+      donde cualquier diferencia de difuso se aplasta. Se comprobo pintando el agua de MAGENTA PURO:
+      salia LAVANDA PALIDO. Para que el multitono caiga en la parte util de la curva, el tono hondo
+      tiene que ser MUCHO mas oscuro de lo que parece razonable mirando el color base.
+   2. MANCHAS DEMASIADO GRANDES. Con scale 0.028 el periodo son 224 u y el agua cercana que ve el
+      jugador (por dentro del `near` 62 de la niebla) son ~70: siempre estabas DENTRO de una sola
+      mancha, asi que el mar cambiaba de tono entero en vez de tener varios a la vez.
+   Barrido final, desviacion tipica de luminancia en agua abierta cenital (mas = mas multitono):
+        plano  5,65   ·   el elegido  17,9   ·   un paso mas (amt 1.0, A 0x03303e)  33,0
+   El ultimo se descarto: a esa fuerza son manchas de leopardo, no agua. */
 const PIR_BED_COL  = 0x1a6b74;   // lecho marino (antes 0x17415a, azul marino: agrisaba el agua entera)
 const PIR_BEDR_COL = 0x226f70;   // peñascos del fondo
 /* ►PIRVEL (11/08, pedido de Toni: "el ritmo de avance debe ser como todos; llega un momento que el
@@ -33875,7 +33932,8 @@ function _pirBuildWater(){
      de transparencia, el reflejo del cielo pálido (metalness .18 + poca rugosidad = casi espejo) y la
      espuma blanca de ►WATER. Se corrige el color aquí y se aclara el fondo abajo; el reflejo se baja
      con MÁS rugosidad y MENOS metal, que es lo que quita el velo gris sin tocar el shader compartido. */
-  const m = applyWaterLook(mat(PIR_SEA_COL, { roughness:.58, metalness:.10, depthWrite:false }));   // ►WATER: mismo oleaje en GPU que el resto de mares del juego
+  const m = applyWaterLook(mat(PIR_SEA_COL, { roughness:.58, metalness:.10, depthWrite:false }),
+                           { amt:PIR_SEA_MULTI, a:PIR_SEA_A, b:PIR_SEA_B, scale:PIR_SEA_MSCL, rough:PIR_SEA_MRGH });   // ►WATER: mismo oleaje en GPU que el resto de mares · ►SEAMULTI: y aqui, ADEMAS, los manchones de tono
   /* SUBDIVIDIDO (96×64), como el `seaGeo` del prado (48×48): el oleaje de ►WATER desplaza VÉRTICES,
      así que un plano de 1×1 segmentos sale liso como una mesa — que es como salió el primer intento.
      Aquí encima el agua es el 80% del encuadre, o sea que es el detalle más visible del stage. */
