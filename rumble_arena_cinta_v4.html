@@ -2352,6 +2352,7 @@ window.addEventListener('load', function(){
 <script src="icevik_anims.js?v=1"></script> <!-- ►ICEBOSS · STAGE 7: Coloso Vikingo de Hielo — 11 FBX (rig Mixamo Chr_Vikings_Warrior_02) en base64; se cargan con FBXLoader (icevikLoad) -->
 <script src="robot_anims.js?v=1"></script> <!-- ►ROBOTBOSS · STAGE 8: Robot de la Forja — 14 FBX Mixamo (idle/capo/run/point1/point3/charge + 7 patadas de capoeira + death) en base64; se cargan con FBXLoader (robotLoad) -->
 <script src="robotminion_anims.js?v=1"></script> <!-- ►S8ROBOT: robot LaloBOT como MINION de la horda S8 — 3 FBX Mixamo (idle/walk/attack) en base64; los monta _gobFbxLoad -->
+<script src="momiaminion_anims.js?v=1"></script> <!-- ►MOMIAS: MOMIA grande como MINION large de la horda S5 (pirámide) — 4 FBX Mixamo en base64, ya decimados y con textura 1024; los monta _gobFbxLoad -->
 <script src="drone_model.js?v=1"></script> <!-- ►S8DRON: dron volador (OBJ+MTL de Dave404) de la horda S8. VA DESPUÉS de models.js: ese hace `window.GAME_MODELS = {...}` (asignación, no merge) y borraría el dron si fuese antes -->
 <script>window.GAME_MODELS_LOADED = !!window.GAME_MODELS;</script>
 <script>/* Pixel Clash — tema del juego (incrustado) */
@@ -12088,6 +12089,19 @@ const GOBLIN_KINDS = {
      construyen, pero no salen solos hasta que decidamos a quién sustituyen. */
   pirgunner:   { glb:'SKEL_GLB_B64',   h:1.75, walkRef:3.0, max:10, shadow:false, jitter:true,  shootAtk:true,  weapon:'flintlock', noTint:true, dress:'pirGunnerDress' },   // ►PIRGUNNER: PISTOLERO pirata (shooter S12) — dispara como los del oeste (ver minionShoot)
   pirbrute:    { glb:'SKEL_GLB_B64',   h:3.4,  walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false, weapon:null,        noTint:true, dress:'pirBruteDress'  },   // ►PIRBRUTE: BRUTO pirata (large S12) — sin arma, pega con los puños. Rig SKEL escalado a 3.4, NO el SKELKNIGHT: ese trae casco con penacho dentro del hueso Head (caja 77x94x139) y el bruto necesita el cráneo pelado
+  /* ►MOMIAS (Toni 27/08): MOMIA grande = el LARGE de la pirámide (S5), en el sitio que ocupaba
+     el caballero esqueleto. Segunda piel del proyecto montada desde FBX sueltos en vez de un GLB
+     (la primera es `robotm`), así que hereda sus dos cautelas: `fbxWorldBox` porque el rig Mixamo
+     miente con la caja LOCAL de la geometría, y 'jump' AL FINAL de fbxClips porque el donante de
+     malla es el PRIMER FBX con piel y de él salen los materiales.
+     · h 3.55 y no 3.40 como el skelknight al que sustituye: `h` se aplica sobre la BIND POSE, que
+       aquí es la T de 1,80, pero el idle va ENCORVADO y mide 1,724 — un 95,8%. 3.55×0.958 = 3.40,
+       o sea la misma altura VISTA que el caballero. Es la lección de ►RBTALLA, aplicada de entrada.
+     · noTint: la textura está pintada a mano (vendas de lino, surcos por curvatura, ojos ámbar) y
+       ya es de color arena; re-teñirla de marrón corrupto sólo emborronaría los ojos.
+     · sin weapon: pega con los puños, como el bruto pirata. */
+  momia:       { fbx:'MOMIAMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+                 h:3.55, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false, weapon:null },
   skelshooter: { glb:'SKELSH_GLB_B64', h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'bow'  },   // ►SKELMINIONS: esqueleto SOLDADO (mid/shooter) — arco+flechas
   skelknight:  { glb:'SKELKNIGHT_GLB_B64', h:3.4, walkRef:2.3, max:6, shadow:true, jitter:false, shootAtk:false, weapon:'sword' },   // ►SKELMINIONS: esqueleto CABALLERO (big/large) — espada
   /* ►VIKINGS (S7 ártico): 2 vikingos Synty POLYGON (rig Mixamo) un poco MÁS ALTOS que los personajes
@@ -12175,7 +12189,7 @@ const GOBLIN_KINDS = {
            max 18 -> 65,6/21,3/13,1  ( 6 %)  <- objetivo 65/22/13
            max 20 -> 65,7/21,4/12,9  ( 2 %)  sin ganancia
        De 18 en adelante es plano, así que 18. El aviso original es de rumbleboys-alfa-bd. */
-  pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+  pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.80, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee) · ►PIRPOOL: 12→18
   pircapt:  { fbx:'PIRCAPT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
               h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
@@ -12276,7 +12290,7 @@ const STAGE_ASSETS = {
   2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
   3:  { gob:['villager','ninja','sensei'] },
   4:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem'] },
-  5:  { gob:['skeleton','skelshooter','skelknight','golem'], boss:['dgolem','midgolem','smallgolem'] },
+  5:  { gob:['momia','pirskel','skelshooter','golem'], boss:['dgolem','midgolem','smallgolem'] },   // ►MOMIAS: horda propia de la pirámide — momia (large) + esqueleto soldado del barco (small) + arquero del desierto (shooter). Fuera `skeleton` y `skelknight`, que ya no salen aquí
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
@@ -12518,7 +12532,10 @@ function gobAttach(mn){
       if(STAGE===10){ c = _rbTmp.copy(m._s1col||m.color).lerp(rbCol, 0.9); emi = 0x0a0a12; }  // ►RECOLOR38: arcoíris (color fijo por goblin) con brillo tenue
       /* ►PIRATA: los ESQUELETOS se quedan con su hueso (una tripulación de muertos no se tiñe de
          nada), y solo los goblins pasan a verde-mar salobre para que no canten a prado en el océano. */
-      else if(STAGE===12){ c = /^skel/.test(kin) ? (m._s1col||m.color) : (m._s2col||m._s1col||m.color); }
+      /* ►MOMIAS: el test cubre ahora también `pir*`. Antes bastaba `skel` porque las tres pieles
+         piratas iban con noTint y ni llegaban aquí; a `pirskel` se le ha quitado para poder teñirlo
+         en la pirámide, así que en el barco hay que devolverle su color a mano. */
+      else if(STAGE===12){ c = /^(skel|pir)/.test(kin) ? (m._s1col||m.color) : (m._s2col||m._s1col||m.color); }
       else if(STAGE===8){ c = m._s7col||m._s3col||m._s1col; emi = 0x160630; }        // lila con leve brillo
       else if(STAGE===7){                                                        // ►FROZEN-MULTI: AZUL directo por minion (hue de ICE_HUES) con claridad = luminancia original → horda multi-azul congelada
         const oc = m._s1col||m.color; const L = 0.30*oc.r+0.59*oc.g+0.11*oc.b;
@@ -13002,9 +13019,27 @@ function spawnMinion(){
       skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
     }
   }
-  if((STAGE===4 || STAGE===5 || STAGE===7) && Math.random() < 0.5){
+  if((STAGE===4 || STAGE===7) && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  }
+  /* ►MOMIAS (Toni 27/08): la PIRÁMIDE se sale de la línea de arriba y monta horda propia. Antes
+     compartía el reparto con el desierto y el ártico (goblins ~50/50 con los tres esqueletos); si
+     se hubiera tocado allí, el cambio se habría llevado también S4 y S7.
+         large   → MOMIA          (asset nuevo; sustituye al caballero esqueleto)
+         shooter → skelshooter    (el arquero del desierto: era ya el de aquí, no cambia)
+         small   → pirskel        (el esqueleto soldado del barco pirata) o GOBLIN raso, a cara o cruz
+     El goblin se queda SOLO en la ranura `small`, que es donde se nota la variedad (65% de las
+     tiradas), y el marrón corrupto de _s4bcol (ver gobAttach) se lo come — no hay verde de prado en
+     la tumba. Las dos pieles con firma propia, momia y arquero, no se comparten con nadie.
+     El respaldo es el de siempre: si el pool de la piel está al tope, `skin` se queda en null y sale
+     el goblin del type base. OJO al medir la composición: ese respaldo NO es ruido, se come
+     proporciones enteras — hay que llenar la horda hasta el tope y contar en el plató, no contar
+     tiradas sueltas (es el mismo efecto que documenta ►PIRPOOL en la ficha de `pirskel`). */
+  if(STAGE===5){
+    const k = ({ small:'pirskel', shooter:'skelshooter', large:'momia' })[type];
+    const goblinRaso = (type==='small' && Math.random() < 0.5);   // el único verde que queda en la pirámide
+    if(!goblinRaso && k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
   }
   /* ►PIRMIX (Toni 26/08) · STAGE 12: la tripulación pasa a ser los TRES modelos propios, uno por
      ranura y sin mezcla. Sustituye al reparto de ►PIRCREW (pistolero/bruto sobre el rig SKEL con ropa
