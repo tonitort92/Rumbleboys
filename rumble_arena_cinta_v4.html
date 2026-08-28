@@ -12243,7 +12243,7 @@ const GOBLIN_KINDS = {
   large:   { glb:'GOBLIN3_GLB_B64', h:3.6,  walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false },
   /* ►F3 · PIELES NUEVAS de la horda (fábrica de rigs F2): mismo comportamiento que su type base
      (small/shooter/large), distinto MODELO. El tinte por stage (_gobBuildInst) las pinta solo. */
-  skeleton:    { glb:'SKEL_GLB_B64',   h:1.6,  walkRef:3.0, max:14, shadow:false, jitter:true,  shootAtk:false, weapon:null  },   // ►SKELMINIONS: esqueleto PEQUEÑO (small) — sin arma
+  skeleton:    { glb:'SKEL_GLB_B64',   h:1.6,  walkRef:3.0, max:17, shadow:false, jitter:true,  shootAtk:false, weapon:null  },   // ►SKELMINIONS: esqueleto PEQUEÑO (small) — sin arma
   skelpirate:  { glb:'SKEL_GLB_B64',   h:1.6,  walkRef:3.0, max:14, shadow:false, jitter:true,  shootAtk:false, weapon:null, noTint:true, dress:'skelPirateDress' },   // ►PIRMINION: GRUMETE pirata (small S12) — mismo rig SKEL + ropa por huesos; noTint = la ropa conserva sus colores
   /* ►PIRGUNNER / ►PIRBRUTE (Toni 25/08): los dos piratas nuevos. Como `skelpirate`, REUSAN el glb de otro
      kind y toda su pinta la pone el `dress` → cero bytes de asset nuevos. De momento NO están en la
@@ -12270,7 +12270,7 @@ const GOBLIN_KINDS = {
                     y de 10 en adelante el pico se queda en 9-10, o sea PLATO. Es la leccion de
                     medir-proporciones-de-horda: el pool no se dimensiona con la media de su demanda. */
                  h:3.55, walkRef:2.3, max:10, shadow:true,  jitter:false, shootAtk:false, weapon:null },
-  skelshooter: { glb:'SKELSH_GLB_B64', h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'bow'  },   // ►SKELMINIONS: esqueleto SOLDADO (mid/shooter) — arco+flechas
+  skelshooter: { glb:'SKELSH_GLB_B64', h:1.95, walkRef:2.6, max:13, shadow:false, jitter:false, shootAtk:true,  weapon:'bow'  },   // ►SKELMINIONS: esqueleto SOLDADO (mid/shooter) — arco+flechas
   skelknight:  { glb:'SKELKNIGHT_GLB_B64', h:3.4, walkRef:2.3, max:6, shadow:true, jitter:false, shootAtk:false, weapon:'sword' },   // ►SKELMINIONS: esqueleto CABALLERO (big/large) — espada
   /* ►VIKINGS (S7 ártico): 2 vikingos Synty POLYGON (rig Mixamo) un poco MÁS ALTOS que los personajes
      (h 2.4 > CHAR_TARGET_H 2.0); melee sin clip de ataque (idle/walk/jump); tinte azul congelado por gobAttach. */
