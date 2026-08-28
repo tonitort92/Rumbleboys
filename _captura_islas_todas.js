@@ -32,12 +32,23 @@ const STAGES = [
   { st: 11, rx: 30, rz: 26, cz: 0  },
   { st: 4,  rx: 32, rz: 27, cz: 0  },
   { st: 5,  rx: 30, rz: 26, cz: 0  },
-  { st: 12, rx: 32, rz: 27, cz: 0  },
+  /* ►BARCO (Toni 28/08: "en el selector falta el barco pirata, no ha salido en la imagen").
+     El barco NO es decorado: es el suelo del mundo 12. Pero mide 60 u de eslora (PIR_SHIP_L,
+     HTML:33711) en UNA sola malla, y con PIR_SHIP_Y=-2 su casco tiene el centro del bbox en y~18.4,
+     asi que los tres cortes de abajo lo mataban por separado. Los canones y barriles de cubierta
+     miden 2-3 u y SI pasaban: por eso la caratura vieja tenia canones flotando en el vacio.
+     Se le da salvoconducto explicito en vez de aflojar los umbrales, que estan ahi por los
+     mega-suelos y los mares de nubes; y `minFrac` baja el liston de la limpieza por manchas, porque
+     con el barco dentro la componente mayor pasa a ser EL BARCO y al 4% de su area se irian los dos
+     islotes con palmera que hoy salen. */
+  { st: 12, rx: 32, rz: 27, cz: 0, keep: ['PIR.ship'], minFrac: 0.015 },
   { st: 7,  rx: 30, rz: 26, cz: 0  },
   { st: 8,  rx: 30, rz: 26, cz: 0  },
   { st: 10, rx: 30, rz: 26, cz: 0  },
-  { st: 13, rx: 30, rz: 26, cz: 0  },
-  { st: 14, rx: 34, rz: 30, cz: 0  },
+  /* NO metas aqui el 13 ni el 14. Cuadrimania y Arena montan su escena en su PROPIO modulo al
+     entrar, y rebuildBelt() no les monta nada: salen en blanco. Sus caratulas son fotos de
+     gameplay y las hace _captura_minis.js. Estaban en esta lista y podian sobrescribir dos PNG
+     que estaban bien. */
 ];
 
 (async () => {
@@ -100,6 +111,21 @@ const STAGES = [
     scene.fog = null; scene.background = null;
 
     /* ---- filtrado: idéntico a _captura_isla.js ---- */
+    /* ►KEEP: salvoconducto por stage. Las rutas de C.keep se resuelven contra el scope del juego
+       (los const de modulo como PIR o BELT no cuelgan de window, pero si son visibles aqui, que es
+       como este mismo script usa scene y _cloudMat), y TODO su subarbol queda exento de los
+       cortes por tamano, por altura y por la elipse. Se autolimita solo: PIR.ship solo existe con
+       STAGE=12. Es preferible a subir los umbrales para ese stage, porque subirlos dejaria entrar
+       tambien cualquier otra cosa que midiera entre 55 y 65 o volara entre 16 y 40 — justo lo que
+       esos numeros estan ahi para matar. */
+    const KEEP = new Set();
+    for(const ruta of (C.keep || [])){
+      let o = null;
+      try{ o = eval(ruta); }catch(e){ console.warn('[keep] no resuelve ' + ruta, e && e.message); }
+      if(o && o.traverse) o.traverse(x => KEEP.add(x));
+    }
+    const MAXSZ = (C.maxSz != null ? C.maxSz : 55), MAXY = (C.maxY != null ? C.maxY : 16),
+          MINY  = (C.minY  != null ? C.minY  : -6), PAD  = (C.pad  != null ? C.pad  : 4);
     { const box = new THREE.Box3(), sz = new THREE.Vector3();
       for(const ch of scene.children){
         if(!ch.isMesh || !ch.visible) continue;
@@ -112,8 +138,8 @@ const STAGES = [
         if(Math.abs(s.x) < 34) central = s;
       }
       const wp = new THREE.Vector3();
-      scene.traverse(o => { if(o.isMesh && o.visible){ o.getWorldPosition(wp);
-        if(wp.y > 16 || Math.abs(wp.x) > 32) o.visible = false;
+      scene.traverse(o => { if(o.isMesh && o.visible){ if(KEEP.has(o)) return; o.getWorldPosition(wp);
+        if(wp.y > MAXY || Math.abs(wp.x) > 32) o.visible = false;
         else if(typeof _cloudMat!=='undefined' && o.material === _cloudMat) o.visible = false;
       } });
       if(central && central.group){
@@ -121,10 +147,10 @@ const STAGES = [
         const RX = C.rx || 27, RZ = C.rz || 24, CZ = (C.cz != null ? C.cz : -3), CX = C.cx || 0;
         const vivos = [];
         for(const ch of [...central.group.children]){
-          if(!ch.visible) continue;
+          if(!ch.visible || KEEP.has(ch)) continue;
           try{ bb.setFromObject(ch); bb.getCenter(ctr); }catch(e){ continue; }
           const szc = bb.getSize(new THREE.Vector3());
-          if(szc.x > 55 || szc.z > 55) continue;
+          if(szc.x > MAXSZ || szc.z > MAXSZ) continue;
           const ex = (ctr.x - CX)/RX, ez = (ctr.z - CZ)/RZ;
           if(ex*ex + ez*ez > 1){ ch.visible = false; continue; }
           vivos.push({ ch, b: bb.clone() });
@@ -143,13 +169,14 @@ const STAGES = [
       { const bbG = new THREE.Box3(), szG = new THREE.Vector3(), ctG = new THREE.Vector3();
         const RXg = C.rx || 22, RZg = C.rz || 19, CZg = (C.cz != null ? C.cz : -3), CXg = C.cx || 0;
         scene.traverse(o => { if(!o.isMesh || !o.visible) return;
+          if(KEEP.has(o)) return;
           if(o.isSkinnedMesh){ o.visible = false; return; }
           try{ bbG.setFromObject(o); bbG.getSize(szG); bbG.getCenter(ctG); }catch(e){ return; }
-          if(szG.x > 55 || szG.z > 55){ o.visible = false; return; }
+          if(szG.x > MAXSZ || szG.z > MAXSZ){ o.visible = false; return; }
           const ex = (ctG.x - CXg)/RXg, ez = (ctG.z - CZg)/RZg;
-          if(ex*ex + ez*ez > 1 || ctG.y > 16 || ctG.y < -6){ o.visible = false; return; }
-          if(bbG.min.x < CXg-RXg-4 || bbG.max.x > CXg+RXg+4 ||
-             bbG.min.z < CZg-RZg-4 || bbG.max.z > CZg+RZg+4) o.visible = false;
+          if(ex*ex + ez*ez > 1 || ctG.y > MAXY || ctG.y < MINY){ o.visible = false; return; }
+          if(bbG.min.x < CXg-RXg-PAD || bbG.max.x > CXg+RXg+PAD ||
+             bbG.min.z < CZg-RZg-PAD || bbG.max.z > CZg+RZg+PAD) o.visible = false;
         });
       }
     }
@@ -237,7 +264,7 @@ const STAGES = [
         sizes[nextL] = sz;
       }
       let big = 0; for(let l = 1; l <= nextL; l++) if(sizes[l] > (sizes[big]||0)) big = l;
-      const min = (sizes[big]||0)*0.04;
+      const min = (sizes[big]||0) * (C.minFrac != null ? C.minFrac : 0.04);   // ►BARCO: bajable por stage, ver minFrac en STAGES
       minX = W; minY = H; maxX = 0; maxY = 0;
       for(let p = 0; p < W*H; p++){
         if(d[p*4+3] > 0 && (lab[p] === 0 || sizes[lab[p]] < min)) d[p*4+3] = 0;

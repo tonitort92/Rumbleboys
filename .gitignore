@@ -10,3 +10,6 @@ desktop.ini
 # Local tooling
 node_modules/
 .claude/settings.local.json
+
+# Perfiles de Edge que crean los arneses de captura (--user-data-dir relativo). Se regeneran solos.
+prof_*/
