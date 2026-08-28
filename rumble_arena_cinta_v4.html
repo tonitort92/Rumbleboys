@@ -19311,8 +19311,14 @@ function updatePvpShieldFX(){
     /* ►FRAME (maqueta Gemini): el mapa del mundo en un marco sobre la ficha — la isla PNG si existe, si no el planeta de ►ESFERAS */
     #hdFrame{ position:absolute; right:clamp(18px,2.4vw,40px); top:clamp(196px,24vh,220px); width:min(440px,30vw); aspect-ratio:440/270; box-sizing:border-box;
       border-radius:16px; border:2px solid rgba(225,238,255,.8); overflow:hidden; display:grid; place-items:center; pointer-events:none;
-      background:linear-gradient(rgba(255,255,255,.10) 1px, transparent 1px) 0 0/24px 24px, linear-gradient(90deg, rgba(255,255,255,.10) 1px, transparent 1px) 0 0/24px 24px,
-        linear-gradient(180deg,#a9d8ff,#5ea4e6); box-shadow:0 16px 44px rgba(0,0,0,.5), inset 0 0 0 4px rgba(10,14,30,.55); }
+      /* ►CIELOCOVER (Toni 28/08): el fondo de la card es el CIELO REAL de esa parada — cenit arriba,
+         horizonte abajo. Los tres valores de aqui son EXACTAMENTE los de antes y quedan de DEFECTO:
+         select() los pisa con setProperty segun el eslabon, y removeProperty devuelve a este azul.
+         --cvGrid es variable porque la rejilla blanca al 10% desaparece sobre un horizonte casi
+         blanco (nieve #eaf4ff, prado #f6e7c8) y grita sobre el cenit negro del arcoiris. */
+      --cvTop:#a9d8ff; --cvHor:#5ea4e6; --cvGrid:rgba(255,255,255,.10);
+      background:linear-gradient(var(--cvGrid) 1px, transparent 1px) 0 0/24px 24px, linear-gradient(90deg, var(--cvGrid) 1px, transparent 1px) 0 0/24px 24px,
+        linear-gradient(180deg,var(--cvTop),var(--cvHor)); box-shadow:0 16px 44px rgba(0,0,0,.5), inset 0 0 0 4px rgba(10,14,30,.55); }
     #hdFrame .isStop{ position:absolute; left:50%; top:52%; width:58%; transform:translate(-50%,-50%); display:none; }
     #hdFrame .isStop img{ display:none; }   /* el #isImg del selector viejo no se usa: la isla la pone #hdIso */
     #hdFrame #hdQ{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
@@ -20098,6 +20104,14 @@ function updatePvpShieldFX(){
     { const stop = document.querySelector('#hdFrame .isStop'), q = $('hdQ');
       if(q) q.style.display = disc ? 'none' : 'block';
       if(stop) stop.style.display = disc ? 'block' : 'none'; }
+    /* ►CIELOCOVER: la card se tine con el cielo de SU parada. SOLO si esta descubierta, por dos
+       razones: el color delata que mundo hay detras antes de haber llegado, y la '?' de #hdQ se
+       pinta con tinta oscura (rgba(10,14,30,.25) + stroke), que sobre el cenit de la piramide o del
+       arcoiris no se leeria. Sin descubrir se queda el azul de defecto que declara el CSS. */
+    { const fr = $('hdFrame');
+      if(fr){ const sky = disc && COVER_SKY[pasoClave(e)];
+        if(sky){ fr.style.setProperty('--cvTop', sky[0]); fr.style.setProperty('--cvHor', sky[1]); }
+        else   { fr.style.removeProperty('--cvTop'); fr.style.removeProperty('--cvHor'); } } }
     /* arte de la parada descubierta; el PNG que no exista se apaga solo (su onload no dispara).
        ►16 PARADAS: los cuatro minijuegos MODULO no son stages y no tienen mundoN_iso.png, asi que
        van por su clave (mini_m_sand_iso.png y hermanos). Los de MOTOR, 13 y 14, siguen por stage. */
@@ -20128,6 +20142,38 @@ function updatePvpShieldFX(){
       if(cd){ cd.classList.toggle('locked', !reached); cd.classList.toggle('unreached', !reached); } }
   }
 
+  /* ►CIELOCOVER (Toni 28/08: "quiero que el fondo de cada cover se corresponda con el color que le
+     tocaria de fondo en el mundo en el gameplay"). Par [CENIT, HORIZONTE] por parada, con la misma
+     clave que MINI_REGLA (pasoClave: id de stage, o la clave del minijuego modulo).
+     De donde salen: el cielo del juego NO es scene.background — es una cupula de geometria
+     (skyDome, ~:2633) con un shader de tres bandas top/hor/bot que cada _applyXTheme muta. El
+     degradado real es mix(hor->top) con smoothstep(-0.05, 0.5, h), asi que a la altura del
+     horizonte manda `hor` casi al 98% y `top` solo tine las esquinas de arriba: por eso el par es
+     top->hor y no al reves.
+     ⚠ SON COPIAS A MANO. No hay ninguna tabla de color por stage en el motor: los valores estan
+     literales dentro de cada _applyXTheme, asi que si se retoca un tema esta card se queda
+     desincronizada EN SILENCIO. Leerlos del motor no vale: habria que aplicar los 10 temas al abrir
+     el menu. Al lado de cada fila va la linea de la que se copio. */
+  const COVER_SKY = {
+    1:  ['#2e6fd0','#f6e7c8'],   // PRADO      · init :2637   (el S1 no tiene tema propio, es el estado base)
+    2:  ['#2a333c','#50605a'],   // JUNGLA     · :26614
+    3:  ['#88aad6','#f4cac6'],   // JAPON      · :30756
+    11: ['#4a3f8c','#ffb35c'],   // WESTERN    · :26793
+    4:  ['#8fa7b8','#dcbf90'],   // DESIERTO   · :26749
+    5:  ['#1c130a','#3a2716'],   // PIRAMIDE   · :35375
+    12: ['#2f7fc4','#a8dcf0'],   // PIRATAS    · :34268
+    7:  ['#1a3a66','#bcd6f0'],   // HIELO      · :37730   (background es #2e4666, mucho mas oscuro que el cielo que se VE)
+    8:  ['#0a1230','#d8824a'],   // FORJA      · :38491   (la banda naranja del alba es la firma del mundo)
+    10: ['#010208','#0a0f22'],   // ARCOIRIS   · :39900
+    13: ['#1c130a','#3a2716'],   // CUADRIMANIA · cuadrimania.js:749 llama a _applyS5Theme: hereda la piramide
+    14: ['#88aad6','#f4cac6'],   // ARENA       · arena.js:831 llama a _applySJTheme: hereda Japon
+    /* los tres descensos, de SKINS en descenso.js:826. OJO: alli `sky2` es el CENIT y `sky` la
+       banda BAJA, o sea que el par va del reves de como esta escrito en ese fichero. */
+    m_sand: ['#7ea6d8','#ffc98c'],   // SANDBOARD · descenso.js:830
+    m_surf: ['#4fb0d8','#a8e8f5'],   // KITESURF  · descenso.js:875
+    m_snow: ['#5f9fda','#eaf4ff'],   // SNOWBOARD · descenso.js:853
+    m_tubo: ['#02030a','#080618'],   // TUBO: es INTERIOR, no tiene cielo — van su fondo y su niebla (tubo.js:283)
+  };
   /* ►16 PARADAS: cada minijuego reparte su trofeo con SU mecanica, no con la del mundo (vencer al
      jefe siendo el que mas puntua). La ficha lo dice, que si no el jugador no sabe a que juega. */
   const MINI_REGLA = {
