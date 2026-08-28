@@ -12177,10 +12177,24 @@ const WORLD_TINT   = {
 
    Cinco mundos van a 0 y quedan EXACTAMENTE como estaban. Solo cambian los tres de piel clara. */
 const WORLD_TINT_K = {
-   5: 0.35,   // PIRAMIDE · piel de hueso, ayuda poco pero se nota
-   7: 0.55,   // HIELO    · el que estaba roto: sin esto son esqueletos beige sobre nieve blanca
-  11: 0.55,   // WESTERN  · de menta lavado a teal medio
+   5: 0.35,   // PIRAMIDE · CASI IMPERCEPTIBLE: puestos los dos paneles al lado no se distingue. Se puede
+              //            quitar sin que nadie lo note; se deja como palanca por si se retoca su hex.
+   7: 0.55,   // HIELO    · mejora, pero NO lo arregla del todo — ver la nota de abajo
+  11: 0.55,   // WESTERN  · EL QUE MAS GANA: de una cara casi blanca a un teal asentado
 };
+/* ►HIELO, PENDIENTE DE DECISION DE ARTE. Medido a pixel sobre el primer plano del esqueleto: entre
+   K 0 y K 0.55 la SATURACION sube (0,36 -> 0,45) pero la LUMINANCIA no baja (0,639 -> 0,632). O sea
+   que los esqueletos salen mas naranjas pero IGUAL DE CLAROS, y contra nieve blanca lo que hacia
+   falta era que bajaran de valor. Se separan algo mas por color y casi nada por contraste.
+   Lo que si lo arregla NO es subir K, es la MUESTRA. Antes de WORLDTINT-K la L del hex no se usaba
+   para nada, asi que elegirla oscura no servia y nadie la eligio pensando en el brillo; ahora con
+   K 0.55 el hex controla la mitad del valor final. Probado en caliente con el MISMO tono (22 grados)
+   y la misma K, cambiando solo el hex:
+       hoy       #BB6C3E  L 0,49   -> esqueletos claros, se pierden en la nieve
+       propuesta #7A4526  L 0,31   -> bajan de valor y se despegan del fondo, sin aplanar mas
+   Es una entrada de WORLD_TINT, no codigo. Queda a decision de Toni: es SU muestra.
+   El WESTERN es el mismo asunto por el otro lado: su #006658 ya es oscuro (L 0,20), asi que ese no
+   pide otra muestra sino un K algo mayor — pero 0,55 es el techo antes de que el modelado se aplane. */
 /* LIMITACION CONOCIDA del western, y no la arregla subir K: con la piel del vaquero tan clara, para
    llegar al L 0,20 del #006658 harian falta K cercanos a 1, y eso ya es una calcomania. Con 0,55 se
    llega a un teal MEDIO — mucho mejor que el menta de hoy, pero no la muestra exacta. Si Toni quiere
