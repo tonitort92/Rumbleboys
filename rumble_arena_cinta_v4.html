@@ -12117,6 +12117,110 @@ const RAINBOW_PAL = [0xff3b3b,0xff8a1e,0xffdc2e,0x3ee65a,0x2ec5ff,0x5566ff,0xb04
 const ICE_HUES = [0.50,0.52,0.54,0.55,0.57,0.59,0.61,0.63];
 const _rbTmp = new THREE.Color();
 const _iceTmp = new THREE.Color(), _iceEmi = new THREE.Color();
+/* =====================================================================
+   ►WORLDTINT · EL COLOR DE LA HORDA SE PINTA EN LA TEXTURA, NO MULTIPLICANDO
+   (Toni 28/08: un color propio por mundo)
+
+   El tinte de siempre — el de gobAttach, mas abajo — hace `m.color.copy(c)` sobre un material CON
+   textura, o sea una MULTIPLICACION. Nunca puede aclarar ni cambiar el tono de un texel oscuro:
+   #006658 sobre cuero marron da casi negro, y #E673B2 sobre la piel verde del goblin da oliva sucio.
+   Para colores oscuros y saturados no vale.
+
+   Aqui se repinta el ATLAS: se fija el HUE del mundo, se sube la saturacion a un minimo y se
+   CONSERVA la luminancia, que es la que lleva el sombreado pintado del modelo. Es exactamente lo que
+   ya hace `recolorAtlas` (~:6400) para los personajes jugables, y su comentario lo dice sin rodeos:
+   "multiplicar m.color es debil y no separa piel".
+
+   POR QUE UNA FUNCION HERMANA Y NO REUSAR recolorAtlas:
+     · Su cache va indexada por CLASE de personaje; aqui la clave es el STAGE (la misma piel sale en
+       cuatro mundos con cuatro colores) Y la textura de origen.
+     · SKIN_BAND perdona la piel humana. Aqui es contraproducente: el hueso del esqueleto y las vendas
+       de la momia caen DENTRO de esa banda, o sea que no se tenirian justo las dos pieles que hay que
+       tenir. Los minions van sin perdon de piel; solo se respetan negro y blanco puros (lineas, ojos).
+     · Y sobre todo: recolorAtlas la consumen descenso.js y _fichas_chars.js para los SEIS personajes.
+       No se toca.
+
+   LAS TRES CACHES HACEN FALTA, y no es sobre-ingenieria. 15 de las 20 pieles comparten el MISMO PNG
+   byte a byte (PolygonMinis_01_A, 1024x1024), pero cada GLB/FBX se parsea por separado, asi que son
+   15 objetos THREE.Texture distintos con uuid distinto. Indexando solo por uuid se construirian OCHO
+   lienzos de 1024x1024 en el hielo (~32 MB de GPU y ocho pasadas de ~70 ms); indexando tambien por
+   CONTENIDO, uno solo. La huella se saca de los pixeles que ya se han descargado para el bucle. */
+const WORLD_TINT   = {};   // stage -> hex. VACIA de momento: sin entradas, gobAttach usa el camino de siempre
+const _gobAtlas    = {};   // 'stage|uuid'   -> CanvasTexture   (via rapida: ni un getImageData)
+const _gobAtlasFp  = {};   // 'stage|huella' -> CanvasTexture   (dedupe entre pieles con el MISMO png)
+const _gobFp       = {};   // uuid -> huella                    (se calcula UNA vez por textura, no una por stage)
+
+/* huella barata del contenido: tamano + FNV-1a sobre ~4096 pixeles muestreados. No vale `img.src`
+   (los blob URL son unicos por parseo) ni el tamano a secas (colisionaria entre dos atlas 1024). */
+function _gobFingerprint(d, w, h){
+  let hsh = 0x811c9dc5;
+  const px = (d.length/4)|0;
+  const step = Math.max(1, (px/4096)|0) * 4;
+  for(let i=0; i<d.length; i+=step){
+    hsh = Math.imul(hsh ^ d[i],   0x01000193);
+    hsh = Math.imul(hsh ^ d[i+1], 0x01000193);
+    hsh = Math.imul(hsh ^ d[i+2], 0x01000193);
+  }
+  return w + 'x' + h + ':' + ((hsh>>>0).toString(36));
+}
+
+/* devuelve el atlas de `srcMap` repintado con el color de `stage`, o null si aun no se puede
+   (imagen sin decodificar: los FBX se parsean sincronos pero dejan la Image cargando por detras,
+   y por ahi entran momia, chaman, guerrero, pirskel, pircapt y pirbeard). El llamador reintenta. */
+function gobWorldAtlas(srcMap, stage){
+  const hex = WORLD_TINT[stage];
+  if(hex == null || !srcMap) return null;
+  const kFast = stage + '|' + srcMap.uuid;
+  if(_gobAtlas[kFast]) return _gobAtlas[kFast];
+  const img = srcMap.image;
+  if(!img || !img.width || !img.height) return null;            // aun decodificando → reintento
+  const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+  const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+  let id; try{ id = cx.getImageData(0, 0, cv.width, cv.height); }
+  catch(e){ console.warn('[worldtint] getImageData', e); return null; }
+  const d = id.data;
+  let fp = _gobFp[srcMap.uuid];
+  if(fp == null){ fp = _gobFingerprint(d, img.width, img.height); _gobFp[srcMap.uuid] = fp; }
+  const kFp = stage + '|' + fp;
+  if(_gobAtlasFp[kFp]){ _gobAtlas[kFast] = _gobAtlasFp[kFp]; return _gobAtlasFp[kFp]; }   // mismo png, otro parseo
+  const bh = {}; (new THREE.Color(hex)).getHSL(bh);
+  for(let i=0; i<d.length; i+=4){
+    const hsl = _rgb2hsl(d[i], d[i+1], d[i+2]);
+    if(hsl[2] < 0.04 || hsl[2] > 0.97) continue;                // negro/blanco puro: lineas y ojos, se dejan
+    const c = _hsl2rgb(bh.h, Math.max(hsl[1], 0.45), hsl[2]);   // HUE del mundo · sat minima (colorea grises) · LUM conservada (sombreado)
+    d[i] = c[0]; d[i+1] = c[1]; d[i+2] = c[2];
+  }
+  cx.putImageData(id, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  /* copiar los parametros del original NO es opcional: sin `flipY` el minion sale con la textura del
+     reves, y sin wrap/filtros/encoding sale con costuras o desaturado. */
+  tex.flipY = srcMap.flipY; tex.wrapS = srcMap.wrapS; tex.wrapT = srcMap.wrapT;
+  tex.magFilter = srcMap.magFilter; tex.minFilter = srcMap.minFilter; tex.generateMipmaps = srcMap.generateMipmaps;
+  if('colorSpace' in srcMap) tex.colorSpace = srcMap.colorSpace; else if('encoding' in srcMap) tex.encoding = srcMap.encoding;
+  tex.needsUpdate = true;
+  _gobAtlas[kFast] = tex; _gobAtlasFp[kFp] = tex;
+  return tex;
+}
+
+/* aplica el color del mundo a una instancia ya construida. Memo por material Y stage: el pool cruza
+   mundos, asi que no basta con marcar el material — hay que saber CON QUE color se marco. */
+function gobWorldTint(inst){
+  const hex = WORLD_TINT[STAGE]; let pend = false;
+  for(const m of inst.mats){
+    if(m._tintedStage === STAGE) continue;
+    const t = m._map0 ? gobWorldAtlas(m._map0, STAGE) : null;
+    if(t){ if(m.map !== t){ m.map = t; m.needsUpdate = true; }   // needsUpdate SOLO si cambia: recompila shader
+           m.color.setRGB(1, 1, 1); }                            // el color lo lleva la textura
+    else if(m._map0){ pend = true; continue; }                   // imagen sin decodificar → lo reintenta gobUpdate
+    /* SIN textura no se puede repintar nada, y dejar el color en blanco sacaria un minion BLANCO.
+       Para esos se cae al camino de siempre: multiplicacion plana del color del mundo. */
+    else { m.color.setHex(hex); }
+    if(m.emissive) m.emissive.setHex(0x000000);                  // con la luminancia conservada ya no hace falta rescoldo
+    m._tintedStage = STAGE;
+  }
+  inst._tintPend = pend; inst.tintHex = hex;
+}
+
 const GOBLIN_KINDS = {
   small:   { glb:'GOBLIN1_GLB_B64', h:1.75, walkRef:3.0, max:22, shadow:false, jitter:true,  shootAtk:false },   // ►CAMP (F10): +6 slots (las emboscadas meten hasta 14 de golpe)
   shooter: { glb:'GOBLIN2_GLB_B64', h:1.85, walkRef:2.6, max:14, shadow:false, jitter:false, shootAtk:true  },   // ►CAMP (F10): +4 slots
@@ -12498,6 +12602,7 @@ function _gobBuildInst(type){                             // crea UNA instancia 
     const wasArr = Array.isArray(o.material);
     const arr = wasArr ? o.material : [o.material];
     const out = arr.map(m0=>{ const m = m0.clone();
+      m._map0 = m.map || null;   // ►WORLDTINT: atlas ORIGINAL. El recolor por mundo parte SIEMPRE de aqui; si partiera de m.map, volver de un mundo a otro repintaria sobre lo ya tenido.
       const oc = m.color || new THREE.Color(0x808080);
       const L = 0.30*oc.r + 0.59*oc.g + 0.11*oc.b;                       // luminancia del albedo
       const brown = new THREE.Color().setHSL(0.076, satS2, THREE.MathUtils.clamp(L*0.84 + 0.06, 0.05, 0.56));
@@ -12572,6 +12677,12 @@ function gobAttach(mn){
   for(const k in inst.acts){ const a=inst.acts[k]; a.reset(); a.enabled=true; a.setEffectiveWeight(k==='idle'?1:0); a.play(); }
   if(cfg.jitter){ if(inst.acts.walk) inst.acts.walk.time = Math.random(); if(inst.acts.idle) inst.acts.idle.time = Math.random(); }   // desfase de fase (no clónico)
   if(inst.mats){                                                  // ►ROSTER/RECOLOR38: tinte por STAGE (S1 verde · S2 marrón · S4/S5 arena · S7 azul congelado · S8 lila · S10 arcoíris)
+   if(WORLD_TINT[STAGE] != null){ gobWorldTint(inst); }          // ►WORLDTINT: mundos con color propio → se repinta el atlas
+   else {
+    inst.tintHex = null;   /* ►WORLDTINT: hay que limpiarlo. Una instancia del pool que vuelve de un
+                              mundo tenido a uno que no lo esta arrastraria su color a los cubitos. */
+    /* El camino de siempre va ENTERO en cada attach y no se le pone memo a proposito: el arcoiris
+       sortea un color por goblin y el hielo un hue por minion, asi que memorizarlo los congelaria. */
     const rbCol = (STAGE===10) ? RAINBOW_PAL[(Math.random()*RAINBOW_PAL.length)|0] : null;   // ►RECOLOR38: un color de la paleta por goblin (enjambre multicolor)
     const iceH = (STAGE===7) ? ICE_HUES[(Math.random()*ICE_HUES.length)|0] : 0;   // ►FROZEN-MULTI: un HUE de hielo fijo por minion (horda congelada multi-azul)
     const iceEmiHex = (STAGE===7) ? _iceEmi.setHSL(iceH, 0.85, 0.22).getHex() : 0;   // brillo azul ADITIVO del mismo tono → azulea incluso al goblin verde (independiente del atlas)
@@ -12609,6 +12720,7 @@ function gobAttach(mn){
       m.color.copy(c);
       if(m.emissive) m.emissive.setHex(emi);                                    // glow por-stage (negro = sin brillo; se reafirma en cada attach → el pool no arrastra tinte)
     }
+   }
   }
   inst.root.visible = true;
   scene.add(inst.root);
@@ -12624,6 +12736,11 @@ function gobRemove(mn){
 }
 function gobUpdate(mn, dt){
   const g = mn._gob; if(!g) return;
+  /* ►WORLDTINT: reintento. Las pieles FBX dejan su Image decodificando por detras, asi que el primer
+     attach puede no encontrar textura que repintar. gobAttach NO sirve para reintentar (sale por
+     `mn._gob` desde el segundo frame); gobUpdate corre cada frame por minion vivo y en regimen esto
+     es un booleano. Mismo patron que el _recolorPending de los personajes. */
+  if(g._tintPend) gobWorldTint(g);
   const cfg = GOBLIN_KINDS[mn._gobType];
   g.root.position.set(mn.pos.x, mn.pos.y + g.baseY, mn.pos.z);
   g.root.rotation.y = mn.yaw;                             // el goblin Mixamo mira a +Z, igual que mn.yaw (cajas con ojos en +Z)
@@ -13243,7 +13360,10 @@ function killMinion(mn){
      rachas de kills seguidas se anuncian. */
   const k = mn.lastHitBy && !mn.lastHitBy.dead ? mn.lastHitBy : null;
   let bodyCol = 0x26262b;
-  try{ if(mn._gob && mn._gob.mats && mn._gob.mats.length) bodyCol = mn._gob.mats[0].color.getHex(); }catch(e){}
+  /* ►WORLDTINT: en los mundos con color propio el material tiene el color en BLANCO (lo lleva la
+     textura), asi que leerlo daria cubitos blancos. Se usa el color del mundo. */
+  try{ if(mn._gob && mn._gob.tintHex != null) bodyCol = mn._gob.tintHex;
+       else if(mn._gob && mn._gob.mats && mn._gob.mats.length) bodyCol = mn._gob.mats[0].color.getHex(); }catch(e){}
   const kc = k ? classColor(k) : 0xff3030;   // ►CLASSFX (Toni 23/08): el acento de TODO efecto es el color de CLASE del atacante (samurái=lila, bárbaro=rojo…)
   if(!toonBurst(c, bodyCol, kc, Math.max(.8, mn.scale||1))){   // ►TOONFX: reventón cartoon; apagado → cubos de siempre
   burst(c, bodyCol, 20, 8, 7, 1.15); burst(c, 0xff2222, 12, 7, 6, .9); burst(c, 0xfff2c8, 6, 6, 5, .7);
