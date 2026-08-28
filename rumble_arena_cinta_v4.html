@@ -12338,7 +12338,7 @@ const STAGE_ASSETS = {
   2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
   3:  { gob:['villager','ninja','sensei'] },
   4:  { gob:['gobshaman','gobwarrior'], boss:['dgolem'] },   // ►S4JUNGLA: el desierto pasa a la horda de la jungla · fuera los 4 esqueletos y `golem` (este ultimo era carga MUERTA: ~611 KB parseados que ninguna rama de spawnMinion asignaba)
-  5:  { gob:['momia','pirskel','skelshooter','golem'], boss:['dgolem','midgolem','smallgolem'] },   // ►MOMIAS: horda propia de la pirámide — momia (large) + esqueleto soldado del barco (small) + arquero del desierto (shooter). Fuera `skeleton` y `skelknight`, que ya no salen aquí
+  5:  { gob:['momia','skeleton','pirskel','skelshooter','skelknight'], boss:['dgolem','midgolem','smallgolem'] },   // ►S5HUESOS: entran `skeleton` y `skelknight` (los 4 esqueletos reales) · sale `golem`, que era carga muerta
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
@@ -13090,23 +13090,44 @@ function spawnMinion(){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
   }
-  /* ►MOMIAS (Toni 27/08): la PIRÁMIDE se sale de la línea de arriba y monta horda propia. Antes
-     compartía el reparto con el desierto y el ártico (goblins ~50/50 con los tres esqueletos); si
-     se hubiera tocado allí, el cambio se habría llevado también S4 y S7.
-         large   → MOMIA          (asset nuevo; sustituye al caballero esqueleto)
-         shooter → skelshooter    (el arquero del desierto: era ya el de aquí, no cambia)
-         small   → pirskel        (el esqueleto soldado del barco pirata) o GOBLIN raso, a cara o cruz
-     El goblin se queda SOLO en la ranura `small`, que es donde se nota la variedad (65% de las
-     tiradas), y el marrón corrupto de _s4bcol (ver gobAttach) se lo come — no hay verde de prado en
-     la tumba. Las dos pieles con firma propia, momia y arquero, no se comparten con nadie.
-     El respaldo es el de siempre: si el pool de la piel está al tope, `skin` se queda en null y sale
-     el goblin del type base. OJO al medir la composición: ese respaldo NO es ruido, se come
-     proporciones enteras — hay que llenar la horda hasta el tope y contar en el plató, no contar
-     tiradas sueltas (es el mismo efecto que documenta ►PIRPOOL en la ficha de `pirskel`). */
+  /* ►MOMIAS (Toni 27/08) + ►S5HUESOS (Toni 28/08: "en la piramide quitaremos todos los minions menos
+     eskeletos y momia y pondremos todos los modelos de eskeletos que tenemos... los que tengo de
+     mixamo que te he dado").
+     La PIRAMIDE monta horda propia y ahora es CERRADA: ni un goblin verde en la tumba. Se cae el
+     `goblinRaso` que se llevaba la mitad de la ranura pequena, y se cae el respaldo a goblin del type
+     base — si no hay hueco, hueco vacio, como hacen la jungla y el mar.
+     Entran LOS CUATRO esqueletos reales del proyecto. Son cuatro y no siete: `skeleton`,
+     `skelshooter`, `skelknight` y `pirskel` son mallas Synty POLYGON Minis con rig y clips de Mixamo
+     (verificado en los binarios: 41 huesos mixamorig:*, clips a 30 fps). Los otros tres que parecen
+     esqueletos — `skelpirate`, `pirgunner`, `pirbrute` — NO son modelos: son el MISMO rig de
+     `skeleton` con ropa generada por codigo colgada de los huesos, y ya estaban fuera de rotacion, o
+     sea que no habia nada que quitar.
+         small   → skeleton | pirskel     a cara o cruz (32 de cupo entre los dos, sobra)
+         shooter → skelshooter            (el arquero; unica fuente de fuego a distancia del mundo)
+         large   → momia 65% | skelknight 35%
+     El 65/35 del grande es deliberado y no un 50/50: la momia es la FIRMA de este mundo y hoy se
+     lleva el 13% entero de la tirada. A medias caeria a ~6,5% (menos de dos en pantalla) y se notaria
+     que ha dejado de ser la protagonista; con 65% se queda en ~8,5%.
+     El rescate cruza entre las cinco pieles y casa el `type` con la que salga, porque el type manda
+     vida y dano. OJO al medir: el respaldo NO es ruido, se come proporciones enteras — hay que llenar
+     la horda hasta el tope y contar en el PLATO, no contar tiradas sueltas. */
   if(STAGE===5){
-    const k = ({ small:'pirskel', shooter:'skelshooter', large:'momia' })[type];
-    const goblinRaso = (type==='small' && Math.random() < 0.5);   // el único verde que queda en la pirámide
-    if(!goblinRaso && k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+    const PIR5 = { small:['skeleton','pirskel'], shooter:['skelshooter'], large:['momia','skelknight'] };
+    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    let par = PIR5[type].slice();
+    if(type==='large'){ if(Math.random() >= 0.65) par.reverse(); }        // momia 65 / caballero 35
+    else if(par.length > 1 && Math.random() < 0.5) par.reverse();          // small: cara o cruz
+    let k = par.find(libre) || null;
+    if(!k){                                                               // su ranura al tope → cualquier otra de la tumba
+      const otra = ['skeleton','pirskel','skelshooter','skelknight','momia']
+                     .filter(x => !PIR5[type].includes(x)).find(libre);
+      if(otra){ k = otra;
+        type = (k==='momia' || k==='skelknight') ? 'large'
+             : (k==='skelshooter') ? 'shooter' : 'small';                 // casar el type con la piel que sale
+      }
+    }
+    if(!k) return;                                                        // nada libre → hueco, NUNCA un goblin verde en la tumba
+    skin = k;
   }
   /* ►PIRMIX (Toni 26/08) · STAGE 12: la tripulación pasa a ser los TRES modelos propios, uno por
      ranura y sin mezcla. Sustituye al reparto de ►PIRCREW (pistolero/bruto sobre el rig SKEL con ropa
