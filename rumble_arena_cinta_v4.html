@@ -17649,7 +17649,22 @@ function carcherAttach(mn){
 function carcherTint(inst){
   const st = (typeof STAGE!=='undefined') ? STAGE : 1;
   let body, eye;
-  if(st===7){ body=[0.60,0.34,0.86]; eye=0xb060ff; }        // lila (S8)
+  /* ►WORLDTINT (28/08): si el mundo tiene color propio, la ARQUERA DE ATALAYA va con el. Hace falta
+     porque no pasa por gobAttach — es una entidad aparte con su propio tinte — asi que al recolorear
+     las hordas se quedaba fuera de paleta: amarilla en un desierto azul, ambar en un Japon verde y
+     roja en una piramide verde. En la JUNGLA no cambia nada y ese es justo el caso que ya estaba
+     bien: su rojo es el mismo [1.00,0.30,0.26] que usa la horda, y de ahi salio el _s2rojo.
+     Los ojos toman el mismo tono pero forzado a brillante, que es lo que hacia la tabla de abajo.
+     La tabla vieja se queda de respaldo, pero OJO: tiene la numeracion de stages DESFASADA EN UNO
+     (la rama st===7 da lila y dice "S8", la st===4 da amarillo y dice "S5"). No la copies a ningun
+     sitio; hoy casi no se ejerce porque los mundos con atalaya salvo la jungla tienen color propio. */
+  const _wc = (typeof WORLD_TINT!=='undefined') ? WORLD_TINT[st] : null;
+  if(_wc != null){
+    const c = new THREE.Color(_wc), h = {}; c.getHSL(h);
+    body = [c.r, c.g, c.b];
+    eye  = new THREE.Color().setHSL(h.h, Math.max(h.s, 0.80), Math.max(h.l, 0.62)).getHex();
+  }
+  else if(st===7){ body=[0.60,0.34,0.86]; eye=0xb060ff; }        // lila (S8)
   else if(st===6){ body=[0.62,0.80,0.95]; eye=0x66ccff; }   // azul congelado (S7)
   else if(st===4){ body=[0.96,0.82,0.28]; eye=0xffdd33; }   // amarillo corrupto brillante (S5, poder de la pirámide)
   else if(st===3){ body=[0.90,0.68,0.34]; eye=0xffaa33; }   // amarillo/marrón bandido del desierto (S4)
