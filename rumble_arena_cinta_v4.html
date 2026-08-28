@@ -12158,6 +12158,34 @@ const WORLD_TINT   = {
   11: 0x006658,   // WESTERN    · verde azulado
   12: 0xBB623E,   // PIRATAS    · naranja terroso
 };
+/* ►WORLDTINT-K (28/08) · CUANTO SE ACERCA EL BRILLO DE LA PIEL AL DEL COLOR ELEGIDO.
+   Hacia falta porque el hex solo aportaba el TONO: la saturacion se sustituye por un suelo y la
+   luminancia salia ENTERA del atlas. O sea que #006658 y un turquesa brillante daban el mismo
+   resultado, y Toni eligio muestras que nunca se respetaron en brillo. Se noto en los dos mundos de
+   piel mas clara: el HIELO salia beige hueso sobre nieve blanca (practicamente invisible) y el
+   WESTERN menta lavado en vez del teal oscuro elegido.
+
+   LA REGLA, medida: K mueve el valor de la piel HACIA la L del hex. Solo ayuda si la piel es MAS
+   CLARA que el hex; si es mas oscura, lo LAVA. Por eso NO es un ajuste global: con K global el hielo
+   se arregla pero el prado se estropea — su magenta profundo se vuelve rosa pastel y pierde mordiente
+   contra el follaje. Medido con el prado y el desierto como CONTROL, que es lo que destapo esto.
+
+   Y aplana: la desviacion de luminancia se comprime por (1-K) exacto, no aproximado — sigma 0,152 a
+   K 0 · 0,099 a 0,35 · 0,068 a 0,55 · 0,038 a 0,75. Hasta 0,55 el modelado aguanta (en un primer
+   plano de vaquero todavia se separan cara, barba y sombrero); a 0,75 la barba y la cara empatan en
+   valor y la cabeza se lee como una mancha. Por eso ninguno pasa de 0,55.
+
+   Cinco mundos van a 0 y quedan EXACTAMENTE como estaban. Solo cambian los tres de piel clara. */
+const WORLD_TINT_K = {
+   5: 0.35,   // PIRAMIDE · piel de hueso, ayuda poco pero se nota
+   7: 0.55,   // HIELO    · el que estaba roto: sin esto son esqueletos beige sobre nieve blanca
+  11: 0.55,   // WESTERN  · de menta lavado a teal medio
+};
+/* LIMITACION CONOCIDA del western, y no la arregla subir K: con la piel del vaquero tan clara, para
+   llegar al L 0,20 del #006658 harian falta K cercanos a 1, y eso ya es una calcomania. Con 0,55 se
+   llega a un teal MEDIO — mucho mejor que el menta de hoy, pero no la muestra exacta. Si Toni quiere
+   ese teal oscuro, lo honesto es que reelija la muestra sabiendo que el brillo lo pone la piel. Lo
+   mismo, en menor grado, en la piramide. */
 const _gobAtlas    = {};   // 'stage|uuid'   -> CanvasTexture   (via rapida: ni un getImageData)
 const _gobAtlasFp  = {};   // 'stage|huella' -> CanvasTexture   (dedupe entre pieles con el MISMO png)
 const _gobFp       = {};   // uuid -> huella                    (se calcula UNA vez por textura, no una por stage)
@@ -12202,7 +12230,7 @@ function _gobFingerprint(d, w, h){
 function gobWorldAtlas(srcMap, stage){
   const hex = WORLD_TINT[stage];
   if(hex == null || !srcMap) return null;
-  const kFast = stage + '|' + srcMap.uuid;
+  const kFast = stage + '|' + srcMap.uuid + '|' + (WORLD_TINT_K[stage] || 0);
   if(_gobAtlas[kFast]) return _gobAtlas[kFast];
   const img = srcMap.image;
   if(!img || !img.width || !img.height) return null;            // aun decodificando → reintento
@@ -12216,13 +12244,17 @@ function gobWorldAtlas(srcMap, stage){
   /* flipY EN LA CLAVE, y no es un detalle: los 23 que comparten png se parten en dos por orientacion
      (18 GLB con flipY=false y 5 FBX con flipY=true). Mismos pixeles, subida distinta. Sin esto un FBX
      recibiria el lienzo de un GLB y saldria con las UV del reves. */
-  const kFp = stage + '|' + fp + '|' + (srcMap.flipY ? 1 : 0);
+  /* la K entra en la clave aunque el `stage` ya la determine: asi tunearla en caliente no devuelve el
+     lienzo viejo (pasa en cuanto tocas WORLD_TINT_K sin vaciar las caches). */
+  const kFp = stage + '|' + fp + '|' + (srcMap.flipY ? 1 : 0) + '|' + (WORLD_TINT_K[stage] || 0);
   if(_gobAtlasFp[kFp]){ _gobAtlas[kFast] = _gobAtlasFp[kFp]; return _gobAtlasFp[kFp]; }   // mismo png, otro parseo
   const bh = {}; (new THREE.Color(hex)).getHSL(bh);
+  const K = WORLD_TINT_K[stage] || 0;                           // 0 = luminancia del atlas tal cual (lo de siempre)
   for(let i=0; i<d.length; i+=4){
     const hsl = _rgb2hsl(d[i], d[i+1], d[i+2]);
     if(hsl[2] < 0.04 || hsl[2] > 0.97) continue;                // negro/blanco puro: lineas y ojos, se dejan
-    const c = _hsl2rgb(bh.h, Math.max(hsl[1], 0.45), hsl[2]);   // HUE del mundo · sat minima (colorea grises) · LUM conservada (sombreado)
+    const l = K ? (hsl[2]*(1-K) + bh.l*K) : hsl[2];             // acerca el brillo al del hex; ver ►WORLDTINT-K
+    const c = _hsl2rgb(bh.h, Math.max(hsl[1], 0.45), l);        // HUE del mundo · sat minima (colorea grises) · LUM mezclada
     d[i] = c[0]; d[i+1] = c[1]; d[i+2] = c[2];
   }
   cx.putImageData(id, 0, 0);
