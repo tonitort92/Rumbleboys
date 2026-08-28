@@ -12168,11 +12168,21 @@ const _colBlanco   = new THREE.Color(0xffffff);   // respaldo por si un material
 function _gobFingerprint(d, w, h){
   let hsh = 0x811c9dc5;
   const px = (d.length/4)|0;
-  const step = Math.max(1, (px/4096)|0) * 4;
-  for(let i=0; i<d.length; i+=step){
+  /* El paso tiene que ser PRIMO RESPECTO AL ANCHO DE FILA. Con un paso divisor (el primer intento
+     era `(px/4096)|0 * 4`, o sea 1024 bytes en un atlas 1024x1024 de filas de 4096) se leen siempre
+     las MISMAS cuatro columnas — x = 0, 256, 512 y 768 — y no 4096 pixeles repartidos. Dos atlas que
+     se diferencien fuera de esas columnas colisionarian EN SILENCIO y una piel recibiria el lienzo
+     repintado de otra. Con un paso impar la muestra barre toda la imagen, y ademas entra el indice y
+     el canal alfa en el hash para que dos imagenes con los mismos colores en distinto sitio no
+     empaten. */
+  let step = Math.max(1, (px/4096)|0) * 4 + 4;
+  if(step % 8 === 0) step += 4;                    // que no vuelva a caer en un divisor de la fila
+  for(let i=0; i+3<d.length; i+=step){
     hsh = Math.imul(hsh ^ d[i],   0x01000193);
     hsh = Math.imul(hsh ^ d[i+1], 0x01000193);
     hsh = Math.imul(hsh ^ d[i+2], 0x01000193);
+    hsh = Math.imul(hsh ^ d[i+3], 0x01000193);     // alfa: distingue dos atlas con el mismo color y distinta mascara
+    hsh = Math.imul(hsh ^ (i & 255), 0x01000193);  // el INDICE: dos imagenes con los mismos colores en otro orden no empatan
   }
   return w + 'x' + h + ':' + ((hsh>>>0).toString(36));
 }
@@ -12698,8 +12708,24 @@ function gobAttach(mn){
    else {
     inst.tintHex = null;   /* ►WORLDTINT: hay que limpiarlo. Una instancia del pool que vuelve de un
                               mundo tenido a uno que no lo esta arrastraria su color a los cubitos. */
+    /* ►POOLMAP: DEVOLVER EL ATLAS ORIGINAL Y BORRAR EL MEMO. Sin esto el pool arrastra el lienzo
+       repintado del mundo anterior, porque gobRemove devuelve la instancia al pool (no la dispone) y
+       esta rama solo tocaba `color`. Dos fallos, los dos reproducidos:
+         1. Un goblin del prado ROSA entra en la jungla y le multiplican el rojo SOBRE el atlas rosa.
+            No es un caso raro del selector: en el mundo 2 la ranura del pequeno sale como goblin
+            RASO del kind `small`, que es justo el que el prado acaba de repintar, asi que S1->S2 lo
+            dispara SIEMPRE. Y otra vez en S8->S9.
+         2. Al VOLVER a un mundo tenido, `gobWorldTint` veia `_tintedStage === STAGE`, hacia continue
+            y no reaplicaba nada: se quedaba puesto el multiply del mundo intermedio. Un goblin que
+            pasa por el arcoiris vuelve al prado AZUL sobre ROSA (S1->S10->S1).
+       Va antes del bucle de abajo a proposito: ese sortea rbCol/iceH primero. */
+    for(const m of inst.mats){
+      if(m._map0 && m.map !== m._map0){ m.map = m._map0; m.needsUpdate = true; }
+      m._tintedStage = null;
+    }
     /* El camino de siempre va ENTERO en cada attach y no se le pone memo a proposito: el arcoiris
-       sortea un color por goblin y el hielo un hue por minion, asi que memorizarlo los congelaria. */
+       sortea un color por goblin. (La rama de ICE_HUES ya no se ejerce: el hielo tiene color propio
+       en WORLD_TINT desde WORLDTINT-2. Hoy este `else` solo lo pisan 2, 6, 9, 10, 13 y 14.) */
     const rbCol = (STAGE===10) ? RAINBOW_PAL[(Math.random()*RAINBOW_PAL.length)|0] : null;   // ►RECOLOR38: un color de la paleta por goblin (enjambre multicolor)
     const iceH = (STAGE===7) ? ICE_HUES[(Math.random()*ICE_HUES.length)|0] : 0;   // ►FROZEN-MULTI: un HUE de hielo fijo por minion (horda congelada multi-azul)
     const iceEmiHex = (STAGE===7) ? _iceEmi.setHSL(iceH, 0.85, 0.22).getHex() : 0;   // brillo azul ADITIVO del mismo tono → azulea incluso al goblin verde (independiente del atlas)
@@ -17665,7 +17691,13 @@ function carcherTint(inst){
      sitio; hoy casi no se ejerce porque los mundos con atalaya salvo la jungla tienen color propio. */
   const _wc = (typeof WORLD_TINT!=='undefined') ? WORLD_TINT[st] : null;
   if(_wc != null){
-    const c = new THREE.Color(_wc), h = {}; c.getHSL(h);
+    /* OJO: aqui se MULTIPLICA sobre el atlas (setRGB), no se repinta la textura como en la horda —
+       la arquera es una entidad aparte con su propio pool. Con el rojo de la jungla no se notaba
+       porque [1.00,0.30,0.26] tiene un canal a tope, pero los colores nuevos tienen su canal maximo
+       en 0,73: multiplicados tal cual la dejarian MAS OSCURA que los bichos que la rodean, que si
+       conservan la luminancia del atlas. Por eso se le sube la luminancia antes de multiplicar. */
+    const c0 = new THREE.Color(_wc), h = {}; c0.getHSL(h);
+    const c = new THREE.Color().setHSL(h.h, h.s, Math.max(h.l, 0.72));
     body = [c.r, c.g, c.b];
     eye  = new THREE.Color().setHSL(h.h, Math.max(h.s, 0.80), Math.max(h.l, 0.62)).getHex();
   }
