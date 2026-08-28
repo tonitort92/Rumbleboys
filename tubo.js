@@ -2752,8 +2752,11 @@ TUBO.tick = function(dt){
     }
   } else if(TUBO.phase === 'race' || TUBO.phase === 'finish'){
     for(const r of TUBO.racers){
+      /* ►AIDRIVE: mismo gancho que descenso.js:5877 — con `aiDrive` puesto, al humano lo conduce
+         la IA. No-op mientras nadie lo ponga (nadie lo hace en el juego); lo usa el arnes de
+         caratulas, que si no fotografia al corredor 0 estrellado o fuera de pista. */
       r._inp = (r.done || r.fuera > 0) ? { ax:0, jump:false }
-             : r.human ? readTubo(r) : aiInput(r, dt);
+             : (r.human && !r.aiDrive) ? readTubo(r) : aiInput(r, dt);
     }
     /* el líder se calcula UNA vez por frame: lo usan el rebufo de los cuatro */
     let lider = TUBO.racers[0];
