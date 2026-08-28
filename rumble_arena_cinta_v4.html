@@ -12326,7 +12326,7 @@ gobLoadKinds(['small','shooter','large']);   // la horda base de todos los stage
 const STAGE_ASSETS = {
   2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
   3:  { gob:['villager','ninja','sensei'] },
-  4:  { gob:['skeleton','pirskel','skelshooter','skelknight','golem'], boss:['dgolem'] },   // ►S4SKEL: entra `pirskel` (el soldado esqueleto del barco) como melee pequeno
+  4:  { gob:['gobshaman','gobwarrior'], boss:['dgolem'] },   // ►S4JUNGLA: el desierto pasa a la horda de la jungla · fuera los 4 esqueletos y `golem` (este ultimo era carga MUERTA: ~611 KB parseados que ninguna rama de spawnMinion asignaba)
   5:  { gob:['momia','pirskel','skelshooter','golem'], boss:['dgolem','midgolem','smallgolem'] },   // ►MOMIAS: horda propia de la pirámide — momia (large) + esqueleto soldado del barco (small) + arquero del desierto (shooter). Fuera `skeleton` y `skelknight`, que ya no salen aquí
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
@@ -13029,17 +13029,30 @@ function spawnMinion(){
   let skin = null;
   if(typeof ensureStageAssets==='function' && !spawnMinion._lazyDone){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }   // ►LAZY: por si se entró sin pasar por la pantalla de carga (F9, ?stage=)
   if(spawnMinion._lazyDone !== STAGE){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }
-  /* ►M2HORDA (Toni 26/08) · STAGE 2 (la jungla) tiene HORDA PROPIA y los goblins verdes NO pisan el
-     mundo 2 — "sin excepción", nada de caer al goblin si un pool se llena, que es lo que hacen S3/S4/
-     S12. Reparto por ranura, respetando la tirada de type de arriba:
+  /* ►M2HORDA (Toni 26/08) · HORDA PROPIA, sin goblins verdes: "sin excepción", nada de caer al goblin
+     si un pool se llena, que es lo que hacen S3/S12. Reparto por ranura, respetando la tirada de arriba:
        small   → MINI-JEFE encogido a tamaño de personaje (sale por spawnBrute, otra vía entera)
-       shooter → CHAMÁN, pero MELEE (su ficha lleva shootAtk:false)
+       shooter → CHAMÁN
        large   → GUERRERO
      Si el pool de la piel que toca está lleno se prueba la OTRA piel nueva antes de rendirse; si las
      dos están al tope, esta tirada no saca a nadie (`return`) en vez de colar un goblin verde. Con
-     los `max` de GOBLIN_KINDS y BRUTE_MINI_MAX no debería pasar nunca, pero el mundo 2 prefiere un
-     hueco a romper su paleta. */
-  if(STAGE===2){
+     los `max` de GOBLIN_KINDS y BRUTE_MINI_MAX no debería pasar nunca, pero estos mundos prefieren un
+     hueco a romper su paleta.
+
+     ►S4JUNGLA (Toni 28/08: "los del mundo 2 excepto la arquera los meteras en el desierto y quitaras
+     todos los que hay actualmente en el desierto, con la misma configuracion que tienen en el mundo 2").
+     El DESIERTO entra por la MISMA condicion en vez de copiarse el bloque: asi "la misma configuracion"
+     es literal y no dos copias que se separen con el tiempo. La rama propia que tenia el S4 (esqueletos
+     + goblins, ►S4SKEL/►S4NOGOB) se ha borrado; iba DESPUES de esta y le habria pisado la piel.
+     La ARQUERA no habia que moverla: no es una piel de esta tabla ni pasa por spawnMinion — es
+     `carcher`, entidad propia que sueltan las ATALAYAS (updateAmbushes), y el desierto ya tiene tres
+     suyas (s3Watchtower en Bazar/Ruinas/Mesa). Copiar esta rama no se la lleva.
+     OJO al balance: el chamán DISPARA. Su ficha dice shootAtk:false, pero eso solo elige la animacion
+     (gobUpdate); el disparo lo decide `mn.type==='shooter'` en updateMinion. O sea que el desierto
+     mantiene ~22% de presion a distancia, ahora en manos del chaman, y suma 3 mini-jefes permanentes.
+     Las emboscadas NO hay que tocarlas: triggerAmbush sale en seco para STAGE 4-9, asi que su copia
+     del mapeo del S2 no se ejerce aqui. */
+  if(STAGE===2 || STAGE===4){
     if(type==='small'){
       /* `!demo` por lo mismo que el camino élite de arriba (►RONDA6d: el mini-jefe no sale en la
          home/demo); allí se queda en chamanes, que es enjambre de fondo y no espectáculo. */
@@ -13065,46 +13078,6 @@ function spawnMinion(){
   if(STAGE===7 && Math.random() < 0.5){
     const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
     if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
-  }
-  /* ►S4SKEL (Toni 27/08: "quita en el mundo del desierto el shooter goblin y mete al esqueleto
-     nuevo... ponlo que sea de ataque fisico, que es como viene configurado de normal, no shooter").
-     El DESIERTO sale tambien de la linea de arriba — la compartia con la tundra, y tocarla habria
-     movido el S7 sin que nadie lo pidiese. Igual que se hizo con la piramide.
-         shooter → SIEMPRE skelshooter. Lo que se va es la PIEL del goblin tirador, no el ROL: la
-                   presion a distancia del mundo se queda como estaba, solo cambia quien dispara.
-                   (Si se hubiera quitado el rol, el desierto perderia un 22% de sus enemigos de
-                   rango de golpe, y eso es un cambio de dificultad que Toni no ha pedido.)
-         small   → a TRES bandas: goblin raso, esqueleto pelado y pirskel, el soldado del barco
-                   pirata. Entra como MELEE, que es su ficha de fabrica (shootAtk:false): no se le
-                   fuerza el type, asi que pega de cerca como el resto de pequenos.
-         large   → sin tocar, goblin3 / skelknight a cara o cruz, como siempre.
-     El respaldo es el de siempre: si el pool de la piel esta al tope, `skin` se queda en null y sale
-     el goblin del type base. */
-  if(STAGE===4){
-    const libre = k => k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max;
-    if(type === 'shooter'){
-      /* ►S4NOGOB (Toni 28/08: "en el desierto sustituye goblins shooters por esqueletos shooters").
-         Aqui quedaba el ULTIMO goblin tirador del mundo: si el pool de skelshooter esta al tope,
-         `skin` se quedaba a null y gobAttach vestia el `type` base — que en la ranura shooter es
-         GOBLIN2, o sea el goblin con arco. Medido en headless (300 hordas llenas a caos 10, con la
-         contabilidad de gobAttach emulada): salia en el 0,7% de las hordas, poco pero no cero, y el
-         pico de skelshooter tocaba su max de 10 en cada ronda — el respaldo se ejercia de verdad.
-         Ahora esa tirada NO cae al goblin: se reparte entre las dos pieles de esqueleto MELEE, y si
-         tampoco hay hueco se deja el hueco vacio (mismo criterio que el mundo 2: antes un minion de
-         menos que una piel que no toca). No se sube `GOBLIN_KINDS.skelshooter.max` a proposito: es
-         global y S5/S7/S12 comparten esa piel — subirlo alli cambiaria repartos que nadie ha pedido. */
-      if(libre('skelshooter')) skin = 'skelshooter';
-      else {
-        const alt = ['skeleton','pirskel'].find(libre);
-        if(!alt) return;
-        skin = alt; type = 'small';                 // el type manda vida/dano: casarlo con la piel que sale
-      }
-    } else if(type === 'small'){
-      const c = ['skeleton', 'pirskel', null][(Math.random()*3)|0];   // null = goblin raso
-      if(c && libre(c)) skin = c;
-    } else if(Math.random() < 0.5){
-      if(libre('skelknight')) skin = 'skelknight';
-    }
   }
   /* ►MOMIAS (Toni 27/08): la PIRÁMIDE se sale de la línea de arriba y monta horda propia. Antes
      compartía el reparto con el desierto y el ártico (goblins ~50/50 con los tres esqueletos); si
@@ -17162,7 +17135,7 @@ const _brutePool = []; let _bruteLive = 0;
 const ELITE_MIN_CHAOS = 4;
 const ELITE_MUL = {
   2: { hp:1.00, pow:1.00 },   // jungla: el original
-  4: { hp:1.25, pow:1.25 },   // desierto: más fuerte (era el antiguo `s3`)
+  4: { hp:1.00, pow:1.00 },   // ►S4JUNGLA: igualado al de la jungla. Toni pidio "la misma configuracion", y 1.25 le daba 150 HP contra los 120 del mismo bicho en el mundo 2
   7: { hp:0.45, pow:0.55 },   // hielo: mucho más fácil (era el antiguo `s6`, pedido de Toni)
 };
 const ELITE_MUL_DEF = { hp:1.00, pow:1.00 };   // cualquier stage sin ficha propia
@@ -17211,7 +17184,11 @@ function bruteTint(inst){
       if(st===8){ tint=new THREE.Color().setHSL(0.77, 0.60, cl(L*0.55+0.10, 0.10, 0.48)); emi=0x160630; }         // lila (forja/western)
       else if(st===7){ tint=new THREE.Color().setHSL(0.56, 0.45, cl(L*0.68+0.30, 0.30, 0.80)); emi=0x0a1a26; }    // azul congelado (hielo)
       else if(st===5){ tint=new THREE.Color().setHSL(0.135, 0.88, cl(L*0.55+0.30, 0.30, 0.74)); emi=0x2a1e00; }   // amarillo corrupto (pirámide)
-      else if(st>=3){ tint=new THREE.Color().setHSL(0.78, 0.55, cl(L*0.60+0.05, 0.05, 0.44)); amt=0.95; }         // morado (S3 Japón / S4 desierto)
+      /* ►S4JUNGLA: el desierto va ANTES que la rama `st>=3`, que es la que lo sacaba MORADO. Ahora que
+         su horda es la de la jungla y el mundo se tine de azul, un mini-jefe morado cantaria. Mismo
+         truco plano que el S2 y que carcherTint: el color tal cual, amt=1, y que el atlas multiplique. */
+      else if(st===4){ tint=new THREE.Color(0x3E75BB); emi=0x04101a; amt=1.00; }                                  // ►S4JUNGLA: azul del desierto
+      else if(st>=3){ tint=new THREE.Color().setHSL(0.78, 0.55, cl(L*0.60+0.05, 0.05, 0.44)); amt=0.95; }         // morado (S3 Japón)
       /* ►M2HORDA (Toni 26/08): el mundo 2 pasa a ROJO CORRUPTO y el mini-jefe va con él — ahora es el
          minion PEQUEÑO de esa horda, no un evento suelto, así que tiene que leerse del mismo color que
          el chamán, el guerrero y la arquera de la atalaya. Alcanza TAMBIÉN a las 3 escoltas de la
@@ -17279,7 +17256,9 @@ function spawnBrute(spot, quiet, sizeMul){   // ►S2BOSS: spot opcional (posici
   /* ►M2HORDA: en el mundo 2 los FX de aparición van ROJOS. Antes `quiet` (la horda de la arena) los
      pintaba morados a juego con el jefe; ahora el mundo 2 entero es rojo, así que unas chispas lilas
      sobre un mini-jefe rojo cantarían. Fuera del stage 2, todo igual que siempre. */
-  const _bfx = (STAGE===2) ? [0xb01818, 0xff4030] : (quiet ? [0x6a2ab0, 0x9b5bff] : [0x3a2410, 0x8a5a2a]);
+  const _bfx = (STAGE===2) ? [0xb01818, 0xff4030]
+             : (STAGE===4) ? [0x1a3a66, 0x5aa0ff]                                     // ►S4JUNGLA: chispas azules, a juego con su bruteTint
+             : (quiet ? [0x6a2ab0, 0x9b5bff] : [0x3a2410, 0x8a5a2a]);
   burst(mn.pos.clone().add(new THREE.Vector3(0,1,0)), _bfx[0], 16, 7, 6, 1.2); ring(mn.pos.clone(), _bfx[1], 20, .5);   // ►S2BOSS: FX morados en la arena
   if(!quiet){ showBanner('¡MINI-JEFE!', 1.4); shake=Math.max(shake,.5); }   // ►RONDA6d: mini-jefe SIN ruidos · ►S2BOSS: sin banner por-brute en la horda de arena
   return mn;
