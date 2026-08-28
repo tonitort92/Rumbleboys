@@ -12479,7 +12479,7 @@ const STAGE_ASSETS = {
   4:  { gob:['gobshaman','gobwarrior'], boss:['dgolem'] },   // ►S4JUNGLA: el desierto pasa a la horda de la jungla · fuera los 4 esqueletos y `golem` (este ultimo era carga MUERTA: ~611 KB parseados que ninguna rama de spawnMinion asignaba)
   5:  { gob:['momia','skeleton','pirskel','skelshooter','skelknight'], boss:['dgolem','midgolem','smallgolem'] },   // ►S5HUESOS: entran `skeleton` y `skelknight` (los 4 esqueletos reales) · sale `golem`, que era carga muerta
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
-  8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
+  8:  { gob:['robotm'], boss:['robot'] },   // >S8MUERTA: fuera s7barb/s7sam/s7knight. Mismo caso que el golem del S4/S5: tienen ficha en GOBLIN_KINDS y su script src, pero NINGUNA rama de spawnMinion los asigna como skin, asi que eran ~1,7 MB de base64 parseados en la pantalla de carga que no salian nunca. Las fichas se quedan por si se quieren usar algun dia.
   11: { gob:['westbad','westgun','westcow'] },
   12: { gob:['pircapt','pirbeard'] },   // ►PIRNOSKEL: fuera pirskel/skelshooter/skelknight — los tres son esqueletos
 };
