@@ -22908,7 +22908,11 @@ if(_dbM){
     }
     saveCommit();
     if(SAVE_TODO) console.warn('[desbloquear] ?todo tambien esta puesta: modo revision, NO se ha persistido. Recarga solo con ?desbloquear.');
-    else if(_soloMundos) console.log('[desbloquear] ACCESO abierto a las ' + RUTA.length + ' paradas. Trofeos, jefes y logros NO se han tocado.');
+    /* OJO: aqui NO se puede nombrar a RUTA. Este bloque corre ANTES de su declaracion (esta unas
+       lineas mas abajo) y un const en zona muerta lanza ReferenceError, que el catch se tragaba en
+       silencio: el guardado SI se escribia, pero el mensaje de confirmacion no salia nunca y no
+       habia forma de saber si habia prendido. Se cuentan los mundos, que es lo que se abre. */
+    else if(_soloMundos) console.log('[desbloquear] ACCESO abierto: bestStage = ' + s.bestStage + ' de ' + CAMPAIGN_STAGES.length + ' mundos. Trofeos, jefes y logros NO se han tocado.');
     else console.log('[desbloquear] campana completa con trofeo en los ' + CAMPAIGN_STAGES.length + ' mundos');
   }catch(e){ console.warn('[desbloquear]', e); }
 }
