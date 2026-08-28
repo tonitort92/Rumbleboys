@@ -11957,6 +11957,16 @@ function maxMinions(){
     if(chaosLvl===0) return base;
     if(chaosLvl===1) return Math.min(7, base + Math.floor(chaosT/6));
   }
+  /* ►PIRNOSKEL: tope PROPIO del mar pirata. Sin el pasan dos cosas malas. (1) La densidad NO baja:
+     con solo capitan (max 10) y Barbanegra (max 6) los cupos suman 16 contra un tope de 22, asi que
+     el techo lo pondrian los POOLS y la horda se quedaria en ~73%, no en el ~35% que se espera al
+     quitar la ranura del pequeno. (2) Peor: `_gobLive` solo sube dentro de gobAttach, que corre
+     DESPUES del bucle de spawn en el mismo frame, asi que con los pools al borde se empujarian
+     minions que luego no encuentran hueco para vestirse y se quedarian como el MUNECO DE CAJAS GRIS
+     del pool. Con 8 sobre 16 de cupo hay holgura de sobra y no aparece ninguno.
+     Esto rompe a proposito la invariante de ►PIRMIX ("los max suman 28 sobre un tope de 22"): ya no
+     se sostiene con dos pieles, y el tope es lo que la sustituye. */
+  if(STAGE===12) return Math.min(PIR_CAP, Math.floor((9 + chaosLvl*4)*0.6));
   const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
 function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S1 (sin elite morado del desierto)
   return type==='small' ? 14 : type==='shooter' ? 30 : type==='drone' ? DRONE_HP : type==='boss' ? 99999 : large; }   // ►S8DRON: el dron es frágil a propósito — el coste de matarlo es SUBIR a por él, no aguantarle golpes   // vida: pequeño débil · tirador medio · gordo duro/elite · JEFE: muere por su propia lógica
@@ -11964,6 +11974,7 @@ function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S
    El minion es un muñeco de cajas no-skinned (cuerpo/cabeza/2 ojos/2 brazos/2 piernas) animado por
    rotación de miembros → ideal para instancing. Geometrías y materiales compartidos. */
 const MINION_CAP = 160;            // capacidad del pool instanciado (tope DURO; maxMinions() debe quedar por debajo)
+const PIR_CAP = 8;                 // ►PIRNOSKEL: aforo del mar pirata mientras solo haya dos pieles (ver maxMinions)
 const MIN_BODY_MAT = new THREE.MeshStandardMaterial({ color:0x26262b, roughness:.75, metalness:.05 });
 const MIN_DARK_MAT = new THREE.MeshStandardMaterial({ color:0x141417, roughness:.8,  metalness:.05 });
 const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0x7a1d18 });   // ►F3c: ojos APAGADOS (era 0xff1a1a puro — el color de máxima alarma ×20 entidades en lo MENOS importante de la pantalla; de cerca se siguen leyendo)
@@ -12331,7 +12342,7 @@ const STAGE_ASSETS = {
   7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
   8:  { gob:['robotm','s7barb','s7sam','s7knight'], boss:['robot'] },
   11: { gob:['westbad','westgun','westcow'] },
-  12: { gob:['pirskel','pircapt','pirbeard','skelshooter','skelknight'] },   // ►PIRVAR (Toni 26/08): vuelven el ARQUERO y el CABALLERO del desierto para dar variedad y fuego a distancia   // ►PIRMIX (Toni 26/08): la tripulación pasa a ser los TRES modelos propios. Fuera `pirgunner`/`pirbrute` (rig SKEL + ropa procedural) y fuera también `skelshooter`/`skelknight`: con tres siluetas piratas propias, meter además los esqueletos genéricos del desierto sólo emborronaba la lectura del mundo
+  12: { gob:['pircapt','pirbeard'] },   // ►PIRNOSKEL: fuera pirskel/skelshooter/skelknight — los tres son esqueletos
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
 function ensureStageAssets(st){
@@ -13113,26 +13124,35 @@ function spawnMinion(){
      Sin respaldo a goblin verde, como en el mundo 2: si el pool de su ranura estuviera lleno se
      prueban las otras dos pieles piratas, y si tampoco, esa tirada no saca a nadie. Con los `max`
      sumando 28 sobre un tope de 22 en maxMinions() no debería pasar nunca. */
-  /* ►PIRVAR (Toni 26/08: "añade también esqueletos que disparan de lejos y los grandes del desierto,
-     así hay variedad y proporción de todos"). Vuelven a la rotación el ARQUERO (skelshooter, arco) y
-     el CABALLERO (skelknight, espada) del desierto, a cara o cruz con el pirata de su misma ranura.
-     Con esto el mar pirata tiene CINCO siluetas y, sobre todo, recupera fuego a distancia: el
-     capitán era el único que disparaba y ahora comparte ranura con el arquero.
-       small   → esqueleto soldado (melee, sin pareja: no hay esqueleto pequeño del desierto en el 12)
-       shooter → capitán pata de palo | ARQUERO esqueleto
-       large   → Barbanegra          | CABALLERO esqueleto */
+  /* ►PIRVAR (Toni 26/08) REVERTIDO el 28/08 por ►PIRNOSKEL. Habia metido el ARQUERO (skelshooter) y el
+     CABALLERO (skelknight) del desierto para dar variedad y fuego a distancia; los dos son esqueletos y
+     se han ido con el resto. Se deja la nota porque explica POR QUE el mar tenia cinco siluetas y ahora
+     tiene dos, y porque el argumento de entonces — que el capitan era el unico que disparaba — vuelve a
+     ser cierto hoy. */
+  /* ►PIRNOSKEL (Toni 28/08: "en el mundo de los piratas quita todos los minions que sean eskeletos
+     porque mas tarde pondremos solo a piratas"). Se van las TRES pieles de esqueleto que quedaban:
+     `skelshooter` y `skelknight` — los que trajo ►PIRVAR del desierto — y tambien `pirskel`, que
+     PESE A SU NOMBRE ES UN ESQUELETO: su malla es SM_Chr_Dungeon_SkeletonSoldier_02, familia mazmorra,
+     no la familia Pirates de pircapt/pirbeard. El codigo lo llamaba "el soldado del barco" y por eso
+     se coloba, pero es hueso pelado.
+     Quedan DOS siluetas, capitan y Barbanegra, y la ranura del PEQUENO se queda VACIA a proposito
+     hasta que lleguen los piratas nuevos. Toni lo sabe y lo acepta.
+     EL `return` DE ABAJO ES IMPRESCINDIBLE, no una guarda de cortesia: sin el, `par.find` devuelve
+     undefined y el rescate cruzado convertiria CADA tirada de `small` — el 65% — en capitan o
+     Barbanegra. La horda no adelgazaria: se volveria 100% de esos dos, que es justo lo contrario de
+     lo pedido, y ademas les doblaria la vida (14 de small contra 30/60). */
   if(STAGE===12){
-    const PIR = { small:['pirskel'], shooter:['pircapt','skelshooter'], large:['pirbeard','skelknight'] };
+    const PIR = { small:[], shooter:['pircapt'], large:['pirbeard'] };
+    if(!PIR[type].length) return;                              // ►PIRNOSKEL: el pequeno no tiene piel → hueco, y NO se recicla la tirada
     const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
     let par = PIR[type].slice();
     if(par.length > 1 && Math.random() < 0.5) par.reverse();    // cara o cruz: ni el pirata ni el esqueleto mandan
     let k = par.find(libre) || null;
-    if(!k){                                                    // su ranura al tope → cualquier otra piel del mundo antes que un goblin
-      const todas = ['pirskel','pircapt','pirbeard','skelshooter','skelknight'].filter(x => !PIR[type].includes(x));
+    if(!k){                                                    // su ranura al tope → la otra piel pirata antes que un goblin
+      const todas = ['pircapt','pirbeard'].filter(x => !PIR[type].includes(x));
       const otro = todas.find(libre);
       if(otro){ k = otro;
-        type = (k==='pirbeard'||k==='skelknight') ? 'large'
-             : (k==='pircapt' ||k==='skelshooter') ? 'shooter' : 'small';   // el type manda vida/daño: casarlo con la piel que sale
+        type = (k==='pirbeard') ? 'large' : 'shooter';   // el type manda vida/dano: casarlo con la piel que sale
       }
     }
     if(!k) return;                                             // todas llenas → hueco, NUNCA goblin verde en un barco
@@ -13182,9 +13202,14 @@ function spawnMinion(){
      ESQUELETO del desierto, que es el del casco y el arco. El type pasa a 'shooter' para que la vida
      y el dano casen con la piel, igual que hace la rama de rescate de la tabla PIR.
      La piel se corrige AQUI y no arriba a proposito: el sitio no se sabe hasta tener `sp`. */
+  /* ►PIRNOSKEL: el ARQUERO ESQUELETO se va con el resto de esqueletos, asi que en la orilla solo queda
+     el capitan. Y si su pool esta lleno hay que ABORTAR la tirada, no dejar el skin anterior: eso
+     plantaria a un Barbanegra en la orilla disparando SIN ARMA, que es exactamente el bug que ►PIROUT
+     vino a arreglar (updateMinion hace disparar a cualquiera que no este en el barco, sin mirar
+     shootAtk). Antes no hacia falta el else porque las dos pieles de tirador se cubrian entre si. */
   if(STAGE===12 && Math.abs(sp.z) >= PIR_LANE){
-    const fuera = ['skelshooter','pircapt'].filter(k => _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max);
-    if(fuera.length){ skin = fuera[(Math.random()*fuera.length)|0]; type = 'shooter'; }
+    if(!(_gobTpl.pircapt && _gobLive.pircapt < GOBLIN_KINDS.pircapt.max)) return;
+    skin = 'pircapt'; type = 'shooter';
   }
   spawnMinionAt(sp.x, sp.z, sp.y0, type, skin);
 }
