@@ -12145,10 +12145,23 @@ const _iceTmp = new THREE.Color(), _iceEmi = new THREE.Color();
    15 objetos THREE.Texture distintos con uuid distinto. Indexando solo por uuid se construirian OCHO
    lienzos de 1024x1024 en el hielo (~32 MB de GPU y ocho pasadas de ~70 ms); indexando tambien por
    CONTENIDO, uno solo. La huella se saca de los pixeles que ya se han descargado para el bucle. */
-const WORLD_TINT   = {};   // stage -> hex. VACIA de momento: sin entradas, gobAttach usa el camino de siempre
+/* stage -> hex. Los colores los eligio Toni el 28/08, uno por mundo. La JUNGLA (2) no esta a
+   proposito: conserva su rojo, que se sortea por el camino de siempre junto con el arcoiris (10),
+   los dos unicos que quedan ahi. Un stage sin entrada aqui sigue por el multiply de siempre. */
+const WORLD_TINT   = {
+   1: 0xE673B2,   // PRADO      · rosa
+   3: 0x5ABB3E,   // JAPON      · verde
+   4: 0x3E75BB,   // DESIERTO   · azul   (a juego con el mini-jefe, ver ►S4JUNGLA en bruteTint)
+   5: 0x3EBB6D,   // PIRAMIDE   · verde
+   7: 0xBB6C3E,   // HIELO      · naranja — sustituye a los 8 azules por minion de ICE_HUES
+   8: 0xE6DA73,   // FORJA      · amarillo
+  11: 0x006658,   // WESTERN    · verde azulado
+  12: 0xBB623E,   // PIRATAS    · naranja terroso
+};
 const _gobAtlas    = {};   // 'stage|uuid'   -> CanvasTexture   (via rapida: ni un getImageData)
 const _gobAtlasFp  = {};   // 'stage|huella' -> CanvasTexture   (dedupe entre pieles con el MISMO png)
 const _gobFp       = {};   // uuid -> huella                    (se calcula UNA vez por textura, no una por stage)
+const _colBlanco   = new THREE.Color(0xffffff);   // respaldo por si un material llega sin _col0
 
 /* huella barata del contenido: tamano + FNV-1a sobre ~4096 pixeles muestreados. No vale `img.src`
    (los blob URL son unicos por parseo) ni el tamano a secas (colisionaria entre dos atlas 1024). */
@@ -12181,7 +12194,10 @@ function gobWorldAtlas(srcMap, stage){
   const d = id.data;
   let fp = _gobFp[srcMap.uuid];
   if(fp == null){ fp = _gobFingerprint(d, img.width, img.height); _gobFp[srcMap.uuid] = fp; }
-  const kFp = stage + '|' + fp;
+  /* flipY EN LA CLAVE, y no es un detalle: los 23 que comparten png se parten en dos por orientacion
+     (18 GLB con flipY=false y 5 FBX con flipY=true). Mismos pixeles, subida distinta. Sin esto un FBX
+     recibiria el lienzo de un GLB y saldria con las UV del reves. */
+  const kFp = stage + '|' + fp + '|' + (srcMap.flipY ? 1 : 0);
   if(_gobAtlasFp[kFp]){ _gobAtlas[kFast] = _gobAtlasFp[kFp]; return _gobAtlasFp[kFp]; }   // mismo png, otro parseo
   const bh = {}; (new THREE.Color(hex)).getHSL(bh);
   for(let i=0; i<d.length; i+=4){
@@ -12210,7 +12226,7 @@ function gobWorldTint(inst){
     if(m._tintedStage === STAGE) continue;
     const t = m._map0 ? gobWorldAtlas(m._map0, STAGE) : null;
     if(t){ if(m.map !== t){ m.map = t; m.needsUpdate = true; }   // needsUpdate SOLO si cambia: recompila shader
-           m.color.setRGB(1, 1, 1); }                            // el color lo lleva la textura
+           m.color.copy(m._col0 || _colBlanco); }                 // el color lo lleva la textura; se deja el factor de FABRICA, que en los FBX Synty es #cccccc y no blanco
     else if(m._map0){ pend = true; continue; }                   // imagen sin decodificar → lo reintenta gobUpdate
     /* SIN textura no se puede repintar nada, y dejar el color en blanco sacaria un minion BLANCO.
        Para esos se cae al camino de siempre: multiplicacion plana del color del mundo. */
@@ -12246,7 +12262,7 @@ const GOBLIN_KINDS = {
      · noTint: la textura está pintada a mano (vendas de lino, surcos por curvatura, ojos ámbar) y
        ya es de color arena; re-teñirla de marrón corrupto sólo emborronaría los ojos.
      · sin weapon: pega con los puños, como el bruto pirata. */
-  momia:       { fbx:'MOMIAMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+  momia:       { fbx:'MOMIAMIN_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
                  /* ►MOMIAPOOL: max 10, no los 6 del skelknight al que sustituye. Los 6 se pusieron por
                     analogia y estaban MAL: con 6, a caos 12 (horda 29) la momia agotaba el cupo en el
                     15% de las hordas y en su sitio salia un goblin large. Barrido 6..12: el tope se
@@ -12267,15 +12283,15 @@ const GOBLIN_KINDS = {
   /* ►WESTERN: 3 pistoleros vaqueros Mixamo (horda S8, ~50/50 con goblins lila). Los 3 = tamaño
      estándar (h de shooter) y comportamiento shooter FORZADO. noTint = conservan su textura natural
      (sin lila S8); kite = si te acercas retroceden DESPACIO (alcanzables, pero hay que perseguirlos). */
-  westbad: { glb:'WESTBAD_GLB_B64', h:1.85, walkRef:2.4, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', noTint:true, kite:true },
-  westgun: { glb:'WESTGUN_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', noTint:true, kite:true },
-  westcow: { glb:'WESTCOW_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', noTint:true, kite:true },
+  westbad: { glb:'WESTBAD_GLB_B64', h:1.85, walkRef:2.4, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
+  westgun: { glb:'WESTGUN_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
+  westcow: { glb:'WESTCOW_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
   /* ►ORIENTALS (S3 Japón): 3 minions orientales Synty POLYGON (rig Mixamo) con clips idle/walk/jump/attack.
      noTint = conservan su textura natural (ninja oscuro, aldeano, sensei) — el jardín sakura no re-tiñe la horda.
      Roles: villager=small melee · ninja=shooter (lanza proyectil, gesto de tirada) · sensei=large melee (combo punch). */
-  ninja:    { glb:'NINJA_GLB_B64',    h:1.9, walkRef:3.2, max:8, shadow:false, jitter:false, shootAtk:true,  noTint:true },   // ►ORIENTALS: ninja disparador (lanza)
-  sensei:   { glb:'SENSEI_GLB_B64',   h:2.3, walkRef:2.4, max:5, shadow:true,  jitter:false, shootAtk:false, noTint:true },   // ►ORIENTALS: sensei (large melee)
-  villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:8, shadow:false, jitter:true,  shootAtk:false, noTint:true },   // ►ORIENTALS: aldeano (small melee)
+  ninja:    { glb:'NINJA_GLB_B64',   h:1.9, walkRef:3.2, max:8, shadow:false, jitter:false, shootAtk:true },  // ►ORIENTALS: ninja disparador (lanza)
+  sensei:   { glb:'SENSEI_GLB_B64',  h:2.3, walkRef:2.4, max:5, shadow:true, jitter:false, shootAtk:false },  // ►ORIENTALS: sensei (large melee)
+  villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:8, shadow:false, jitter:true, shootAtk:false },  // ►ORIENTALS: aldeano (small melee)
   /* ►S8ROBOT (Stage 8, la fábrica): robot LaloBOT de la horda. Es la ÚNICA piel del proyecto que no
      viene de un GLB sino de 4 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack / jump) → los
      monta _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
@@ -12343,9 +12359,9 @@ const GOBLIN_KINDS = {
        De 18 en adelante es plano, así que 18. El aviso original es de rumbleboys-alfa-bd. */
   pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.80, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee) · ►PIRPOOL: 12→18
-  pircapt:  { fbx:'PIRCAPT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+  pircapt:  { fbx:'PIRCAPT_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
-  pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true, noTint:true,
+  pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:3.40, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false },   // ►PIRMIX: Barbanegra (large, melee)
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
@@ -12603,6 +12619,7 @@ function _gobBuildInst(type){                             // crea UNA instancia 
     const arr = wasArr ? o.material : [o.material];
     const out = arr.map(m0=>{ const m = m0.clone();
       m._map0 = m.map || null;   // ►WORLDTINT: atlas ORIGINAL. El recolor por mundo parte SIEMPRE de aqui; si partiera de m.map, volver de un mundo a otro repintaria sobre lo ya tenido.
+      m._col0 = (m.color ? m.color.clone() : new THREE.Color(0xffffff));   // ►WORLDTINT: factor de color de FABRICA. Los 6 FBX Synty vienen a #cccccc (el 0.8 de FBXLoader), no a blanco: forzarlos a blanco los aclararia un 25%.
       const oc = m.color || new THREE.Color(0x808080);
       const L = 0.30*oc.r + 0.59*oc.g + 0.11*oc.b;                       // luminancia del albedo
       const brown = new THREE.Color().setHSL(0.076, satS2, THREE.MathUtils.clamp(L*0.84 + 0.06, 0.05, 0.56));
@@ -13312,7 +13329,9 @@ function spawnMinion(){
   }
   /* ►WEST (STAGE 11): aquí los pistoleros NO son una mezcla, son LA horda — es su stage. Sin tirada
      de probabilidad: si queda hueco en sus pools, sale vaquero. No hay que quitarles ningún tinte:
-     su ficha lleva noTint:true, así que gobAttach ni les toca el material.
+     su ficha llevaba noTint:true, así que gobAttach ni les tocaba el material. ►WORLDTINT (28/08): a las
+     NUEVE pieles activas que lo llevaban se les ha quitado para que acepten el color de su mundo; lo
+     conservan solo estas tres, que estan fuera de rotacion.
      ►S8ROBOT (pedido de Toni): los vaqueros SALEN del stage 8. Antes el S8 iba ~50/50 goblins lila +
      pistoleros; ahora la fábrica es SOLO suya — goblins lila, robots lila y drones. Los 3 pistoleros
      siguen cargados y con su pool intacto porque el stage 11 (las mesetas) es su casa. */
