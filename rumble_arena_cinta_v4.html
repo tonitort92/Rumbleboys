@@ -6410,7 +6410,7 @@ let _barbWeaponTpl = null;       // malla de la maza (se cuelga del hueso de la 
 let _axeTpl = null;              // plantilla NORMALIZADA de la hacha (largo=1 a lo largo de +Y); proyectil giratorio de la Q del barbarian
 let _vikAxeTpl = null;           // ►VIKINGS: hacha Prop_Axe_01 (pack Fantasy) — mano derecha del vikingo 1 (S7)
 let _vikHammerTpl = null;        // ►VIKINGS: martillo Prop_Hammer_01 (pack Fantasy) — mano derecha del vikingo 2 (S7)
-const AXE_LEN = 1.0;            // largo del hacha en unidades de mundo a escala de personaje 1 (cuerpo = CHAR_TARGET_H = 2.0 → hacha ≈ 1/2 del cuerpo)
+const AXE_LEN = 1.35;   // ►QTOON (Toni 29/08): 1.0 → 1.35, que se vea el hacha en vuelo            // largo del hacha en unidades de mundo a escala de personaje 1 (cuerpo = CHAR_TARGET_H = 2.0 → hacha ≈ 1/2 del cuerpo)
 /* agarre de la katana en la mano (afinable en vivo con el tuner de P1 abriendo con ?fit en la URL: rot Z/X·V/B·N/M, pos 7/8·9/0·-/+, escala G/H) */
 const KAT_FIT = { len:1.1, grip:0.0, pos:{x:0,y:0,z:0}, rot:{x:-Math.PI/2, y:Math.PI/2, z:0} };   // rot.x=-90° + yaw +90°: la hoja (+Y de la malla) apunta AL FRENTE (donde mira el personaje) en vez de de lado; grip=0 = el puño sobre el mango. Afina con el tuner (V/B = yaw) si el signo quedó al revés.
 /* maza del barbarian en la mano DERECHA. meshH = alto de la malla en glTF tras yup (medido = 1.5704);
@@ -8400,9 +8400,10 @@ function toonTrail(sp){
      torcido/roto cuando la flecha volaba en X o Z). Se proyecta la velocidad al plano de la cámara. */
   _ttQ.copy(camera.quaternion).invert(); _ttV.copy(v).applyQuaternion(_ttQ);
   const a = Math.atan2(_ttV.y, _ttV.x);
-  tfx({ kind:'streak', pos:sp.m.position.clone(), color:0xffe24a, size:(sp.big ? 1.6 : .95) + Math.random()*.3, life:sp.big ? .28 : .2, rot:a, fade:.6, over:1.05, vel:v.clone().multiplyScalar(-.15) });
-  if(sp.big) tfx({ kind:'flash', pos:sp.m.position.clone().addScaledVector(v, .02), color:0xffe24a, size:1.6, life:.07, fade:.8, over:1, add:true });   // ►COMETA: aura amarilla en la punta (flecha de fuego / lluvia)
-  if(Math.random() < .18) tfx({ kind:'mini', pos:sp.m.position.clone().add(new THREE.Vector3((Math.random()-.5)*.3,(Math.random()-.5)*.3,(Math.random()-.5)*.3)), color:0xfff3a0, size:.16 + Math.random()*.1, life:.25, vel:new THREE.Vector3((Math.random()-.5)*2, 1, (Math.random()-.5)*2), grav:6, rot:Math.random()*6.3, spin:6, fade:.5, over:1.4 });
+  const tc = sp.trailCol || 0xffe24a;   // ►QTOON: color de la estela (las Q lo ponen a su color de clase; la arquera sigue en amarillo)
+  tfx({ kind:'streak', pos:sp.m.position.clone(), color:tc, size:(sp.big ? 1.6 : .95) + Math.random()*.3, life:sp.big ? .28 : .2, rot:a, fade:.6, over:1.05, vel:v.clone().multiplyScalar(-.15) });
+  if(sp.big) tfx({ kind:'flash', pos:sp.m.position.clone().addScaledVector(v, .02), color:tc, size:1.6, life:.07, fade:.8, over:1, add:true });   // ►COMETA: aura amarilla en la punta (flecha de fuego / lluvia)
+  if(Math.random() < .18) tfx({ kind:'mini', pos:sp.m.position.clone().add(new THREE.Vector3((Math.random()-.5)*.3,(Math.random()-.5)*.3,(Math.random()-.5)*.3)), color:_tfxLight(tc, .6), size:.16 + Math.random()*.1, life:.25, vel:new THREE.Vector3((Math.random()-.5)*2, 1, (Math.random()-.5)*2), grav:6, rot:Math.random()*6.3, spin:6, fade:.5, over:1.4 });
   return true;
 }
 /* REVENTÓN de minion: flash, estrella grande, humo en corro (color del bicho ensuciado), esquirlas y anillo en el suelo */
@@ -8829,6 +8830,7 @@ sfx.cap    = ()=>{ if(!sfxEv('ui_click', {ui:true})) _syn.cap(); };
 sfx.pjump  = (p)=>{ const now=performance.now(); p._jsq = (now-(p._jsqT||0) < 1500) ? Math.min(3,(p._jsq||0)+1) : 1; p._jsqT = now;
   if(!sfxEv('jump'+p._jsq)){ if(!sfxEv(p._jsq>1?'djump':'jump')) _syn.jump(); } };
 sfx.throwQ = ()=>{ if(!sfxEv('throw_q')) try{ sfx.swing(); }catch(e){} };   // ►SFXTONI: fragmentos randomizados (file+alt por ►SFXVAR)
+sfx.whoosh = ()=>{ try{ noiseBurst(.09, .06, _sr(1300,1800), 'bandpass', 1.3, _sr(3000,4000)); }catch(e){} };   // ►QTOON: soplo corto y agudo al salir la Q (encima de la voz de throw_q)
 { const _sw = sfx.swordSwing; sfx.swordSwing = ()=>{ if(!sfxEv('swing_sword')) _sw && _sw(); }; }   // ►SFXTONI: tajo real de espada (samurái/knight/espada item; NO pisa los sonidos de impacto)
 { const _bw = sfx.bow; sfx.bow = ()=>{ if(!sfxEv('shoot_arrow')) _bw ? _bw() : 0; }; }              // ►SFXTONI: whoosh de flecha en el arco de la arquera
 /* sonidos de INTERFAZ (suenan también en la home/demo) */
@@ -11317,7 +11319,7 @@ function _axeMesh(scl){
    orienta con el mismo setFromUnitVectors(_PJ_UPY, f) y vuela de punta.
    El largo real de vuelo lo pone quien dispara (scl), proporcional al tamaño del personaje.
    Si el modelo no está, _spearMesh() devuelve null y la Q cae al cilindro de siempre. */
-const SPEAR_LEN = 1.7;   // largo de la lanza a escala de personaje 1 (cuerpo = CHAR_TARGET_H = 2.0 → algo menos que el caballero)
+const SPEAR_LEN = 2.0;   // ►QTOON: 1.7 → 2.0   // largo de la lanza a escala de personaje 1 (cuerpo = CHAR_TARGET_H = 2.0 → algo menos que el caballero)
 let _spearTpl = null, _spearTplTried = false;
 function _buildSpearTpl(){
   if(_spearTplTried) return _spearTpl; _spearTplTried = true;
@@ -11361,6 +11363,7 @@ function spawnProj(p, yaw, opts){
     m.quaternion.setFromUnitVectors(_PJ_UPZ, f);   // cara ancha perpendicular al avance
   } else if(o.shuriken && (m = _shurikenMesh('q'))){   // ►SHURIKEN: estrella de acero girando (Q del samurái) — plano perpendicular al avance (disco)
     if(!m._v) m._v = new THREE.Vector3(); m.quaternion.setFromUnitVectors(_PJ_UPZ, f); m._spin = true;
+    if(o.qcol && m.material && m.material.emissive){ m.material.emissive.setHex(o.qcol); m.material.emissiveIntensity = .55; }   // ►QTOON: acero con rescoldo lila (el material es clon por disparo)
   } else if(o.arrow && (m = _arrowMesh(o.scl))){   // ►ARROW: flecha REAL (F de la arquera) — bola de energía opcional en la punta
     m.quaternion.setFromUnitVectors(_PJ_UPY, f);
     if(o.ball){ m._glow.visible = true; m._glow.material.color.set(o.ball); m._glow.scale.setScalar(o.ballScl||1.3); }
@@ -11379,7 +11382,14 @@ function spawnProj(p, yaw, opts){
     m.quaternion.setFromUnitVectors(_PJ_UPY, f);
   }
   m.position.copy(p.pos).addScaledVector(f,.9); m.position.y += 1.1; scene.add(m);
-  wprojs.push({ m, owner:p, kind:'arrow', v:m._v.copy(f).multiplyScalar(o.speed||26), life:o.life||1.3,
+  /* ►QTOON (Toni 29/08: "arrojas tan rápido que ni ves qué lanzas"): las Q arrojadizas (shuriken /
+     hacha / lanza) llevan `qkind` + `qcol` (color de clase) y con ellos: puff + anillo + WHOOSH al salir,
+     estela cartoon en vuelo (updateWprojs) y choque toon al impactar (qImpactFX). */
+  if(o.qkind){ const c = o.qcol || o.color || 0xffffff; const P = m.position.clone();
+    ring(P, c, 8, .18);
+    try{ tfx({ kind:'puff', pos:P.clone(), color:_tfxLight(c, .5), size:.5, life:.22, fade:.7, grow:1.6 }); }catch(e){}
+    try{ sfx.whoosh(); }catch(e){} }
+  wprojs.push({ m, owner:p, kind:'arrow', v:m._v.copy(f).multiplyScalar(o.speed||26), life:o.life||1.3, qkind:o.qkind||null, qcol:o.qcol||null,
     home:!!o.home, homeRate:o.homeRate, foe:o.foe,
     dmg:o.dmg, kbK:o.kbK, spell:o.spell, bleed:o.bleed, minBonus:o.minBonus, heal:o.heal, explode:o.explode,
     x0:o.falloff?p.pos.x:null, z0:o.falloff?p.pos.z:null, col:o.color||0x88ff88, trail:o.trail, ballScl:o.ballScl,
@@ -11402,6 +11412,17 @@ function fireBazooka(p){
   wprojs.push({ m, owner:p, kind:'missile', v:m._v.copy(f).multiplyScalar(17), life:2.6, home:true, foe, homeRate:0.9 });   // autoapuntado MUY suave (misil pesado, esquivable)
   p.throwT = .24; jiggle(p,8); shake=Math.max(shake,.25); fovKick=Math.max(fovKick,.45); sfx.bazooka();
   return true;
+}
+/* ►QTOON · CHOQUE de una Q arrojadiza: flash/estrellas/esquirlas toon en el color de clase (toonHit, el mismo
+   que usa el cuerpo a cuerpo), chispa orientada, anillo y un sonido propio (metálico para shuriken y lanza,
+   sordo para el hacha). `f` = fuerza (0.5 suelo · 0.8 minion · 0.9 jugador). Respaldo en cubos si el toon está apagado. */
+function qImpactFX(pos, s, dir, f){
+  const c = s.qcol || s.col || 0xffffff;
+  const P = new THREE.Vector3(pos.x, pos.y, pos.z);
+  if(!toonHit(P, c, f, dir)) burst(P, c, 6, 4, 3, .6);
+  try{ hitSpark(P, dir, c, .9 + .5*f); }catch(e){}
+  ring(P, c, 10 + 6*f, .22 + .1*f);
+  try{ if(s.qkind==='axe') noiseHit(.07, .12); else sfx.chip(); }catch(e){}
 }
 function killWproj(i, spark){
   const s = wprojs[i];
@@ -11469,7 +11490,7 @@ const _wpA = new THREE.Vector3(), _wpB = new THREE.Vector3(), _wpDir = new THREE
 function updateWprojs(dt){
   for(let i=wprojs.length-1;i>=0;i--){
     const s=wprojs[i]; s.life-=dt;
-    if(s.life<=0){ if(s.kind==='missile') missileExplode(s); killWproj(i, s.kind==='missile'?null:0xccffcc); continue; }
+    if(s.life<=0){ if(s.kind==='missile') missileExplode(s); killWproj(i, s.kind==='missile'?null:(s.qcol||0xccffcc)); continue; }
     const homeVic = nearestPlayer(s.owner);
     if(s.home){                                       // la flecha persigue al objetivo más cercano (rival o minion)
       const foe = (s.foe && !s.foe.dead) ? s.foe : (homeVic && !homeVic.dead ? homeVic : null);
@@ -11481,12 +11502,16 @@ function updateWprojs(dt){
     }
     s.m.position.addScaledVector(s.v, dt);
     if(s.m._spin) s.m.rotateZ(dt*30);                 // ►SHURIKEN: gira en su plano mientras vuela
-    if(s.axe && s.spinAxis) s.m.rotateOnWorldAxis(s.spinAxis, dt*24);   // ►HACHA: tumbo tomahawk (≈3.8 vueltas/s) sobre eje horizontal ⟂ al avance
+    if(s.axe && s.spinAxis) s.m.rotateOnWorldAxis(s.spinAxis, dt*16);   // ►HACHA: tumbo tomahawk (≈2.5 vueltas/s, ►QTOON: antes 3.8 y no se leía la hoja) sobre eje horizontal ⟂ al avance
     if(s.orb){ _orbPulse(s.m); if(Math.random()<.55) burst(s.m.position, s.col, 1, 1.3, .7, .45); }   // ►ENERGYORB: late + estela de su color
     if(s.kind==='arrow'){
       if(s.trail){ const _arq = s.trail===AR_TRAIL_YEL && s.owner && s.owner._charKey==='archer';   // ►SWINGFX2 (Toni 24/08): la estela cartoon es SOLO de la ARQUERA (el arco recogido por otra clase vuelve a la estela sutil)
         if(!(_arq && toonTrail(s)) && Math.random()<s.trail.rate) burst(s.m.position, s.trail.col, s.trail.n||1, s.trail.spd||1, s.trail.up||.6, s.trail.sc||.4); }
-      else if(!s.axe && !s.orb && !s.spear && Math.random()<.6) burst(s.m.position, 0x88ff88, 1, 1, .6, .4);   // flechas sin estela (cilindros de otras clases): verde clásico — HACHA y LANZA (modelos reales) no la dejan, y la BOLA ya deja la suya
+      else if(s.qkind){   // ►QTOON: shuriken / hacha / lanza → estela cartoon en su color de clase (antes: el shuriken heredaba el verde de abajo y hacha/lanza no dejaban nada)
+        s.trailCol = s.qcol;
+        if(!toonTrail(s) && Math.random()<.5) burst(s.m.position, s.qcol, 1, 1, .6, .4);
+        if(Math.random()<.3) burst(s.m.position, s.qcol, 1, .8, .5, .32); }
+      else if(!s.axe && !s.orb && !s.spear && Math.random()<.6) burst(s.m.position, 0x88ff88, 1, 1, .6, .4);   // flechas sin estela (cilindros de otras clases): verde clásico — la BOLA ya deja la suya
       if(s.m._glow && s.m._glow.visible){ const k=.85+.35*Math.sin(t*18+(s.x0||0)); s.m._glow.scale.setScalar((s.ballScl||1.3)*k); }   // ►ARROW: la bola de energía de la punta late (F)
     }
     else if(Math.random()<.85) burst(s.m.position, 0xff8a3a, 1, 1.2, .7, .5);
@@ -11494,7 +11519,9 @@ function updateWprojs(dt){
     let hitWorld = y<.04 && overAnyPlatform(x,z);
     if(!hitWorld) for(const pl of _platCandidates(x, x)){ _aabbN++;   // ►PLATIDX
       if(pl.solid && y<pl.topY && y>pl.baseY && x>pl.minX && x<pl.maxX && z>pl.minZ && z<pl.maxZ){ hitWorld=true; break; } }
-    if(hitWorld){ if(s.kind==='missile') missileExplode(s); killWproj(i, s.kind==='missile'?null:0xdff1ff); continue; }
+    if(hitWorld){ if(s.kind==='missile') missileExplode(s);
+      if(s.qkind) qImpactFX(s.m.position, s, _wpDir.copy(s.v).normalize(), .5);   // ►QTOON: clava/choca contra el suelo con su chispa
+      killWproj(i, s.kind==='missile'?null:(s.qcol||0xdff1ff)); continue; }
     let consumedM=false;                              // impacto contra MINIONS
     for(const mn of minions){
       if(mn.dead||mn.invuln>0) continue;
@@ -11511,7 +11538,7 @@ function updateWprojs(dt){
         const kb=(7+mn.damage*.16)*kbMul(s.owner)*(s.kbK||1)*(mn.type==='small'?1.3:mn.type==='large'?.65:1);
         mn.vel.set(dir.x*kb,4,dir.z*kb); mn.hitstun=Math.max(mn.hitstun,.3); mn.onGround=false;
         if(s.heal&&s.owner) s.owner.damage=Math.max(0,s.owner.damage-s.heal);   // CASTIGO de la sacerdotisa: cura al pegar
-        addPower(s.owner,dmg*.5); burst(mc,s.col||0x88ff88,9,5,4,.8); sfx.hit(mn.damage, undefined, undefined, mn); killWproj(i,s.col||0x88ff88); }
+        addPower(s.owner,dmg*.5); if(s.qkind) qImpactFX(mc, s, dir, .8); burst(mc,s.col||0x88ff88,9,5,4,.8); sfx.hit(mn.damage, undefined, undefined, mn); killWproj(i,s.col||0x88ff88); }
       consumedM=true; break;
     }
     if(consumedM) continue;
@@ -11540,6 +11567,7 @@ function updateWprojs(dt){
     const kbm=kbMul(s.owner)*(s.kbK||1);
     vic.vel.set(dir.x*(6+vic.damage*.08)*kbm, 3.5, dir.z*(6+vic.damage*.08)*kbm);
     vic.hitstun=Math.max(vic.hitstun,.3); vic.onGround=false; vic.hang=null; vic.hitFlash=.16; vic.comboWindow=0;
+    if(s.qkind) qImpactFX(vc, s, dir, .9);   // ►QTOON
     burst(vc,s.col||0x88ff88,9,5,4,.8); jiggle(vic,12); sfx.hit(vic.damage, undefined, undefined, vic);   // proyectil/flecha: sin freeze global (golpe frecuente)
     killWproj(i, s.col||0x88ff88);
   }
@@ -22202,8 +22230,8 @@ function qShoot(p, rate, opts){
   if(p.qAmmo<=0) p.qReload = Q_RELOAD;              // cargador vacío → recarga
   return true;
 }
-function barbAxeQ(p){      const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={axe:true, scl:AXE_LEN*cs, color:0xc8841d,size:.15,speed:26,life:1.1,dmg:9, kbK:1.4,           aim:30,snd:'throwQ',    name:'¡HACHAS!'}; const r=qShoot(p,.16,opts); if(r && p.qAmmo<before){ p._axePoseT=.3; p._animKick=(p._animKick||0)+1; if(p._pkTwinAxe) spawnProj(p, p.yaw+0.20, opts); } return r; }   // _axePoseT = pose de lanzamiento; HACHA REAL girando · ►PERK HACHAS GEMELAS: hacha extra en abanico
-function samuraiWindQ(p){  const before = p.qAmmo; const opts={shuriken:true, color:0xcfe8ff,size:.10,speed:32,life:1.0,dmg:7, bleed:true,        aim:30,snd:'throwQ',    name:'¡SHURIKEN!'}; const r = qShoot(p,.11,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTriShuriken){ spawnProj(p, p.yaw+0.26, opts); spawnProj(p, p.yaw-0.26, opts); } } return r; }   // ►SHURIKEN: estrellas de acero girando · ►PERK TRIPLE FILO: abanico de 3
+function barbAxeQ(p){      const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={axe:true, scl:AXE_LEN*cs, color:0xff5a2a, qcol:0xff5a2a, qkind:'axe', size:.15, speed:20, life:1.45, dmg:11, kbK:1.4,           aim:30,snd:'throwQ',    name:'¡HACHAS!'}; const r=qShoot(p,.22,opts); if(r && p.qAmmo<before){ p._axePoseT=.3; p._animKick=(p._animKick||0)+1; if(p._pkTwinAxe) spawnProj(p, p.yaw+0.20, opts); } return r; }   // _axePoseT = pose de lanzamiento; HACHA REAL girando · ►PERK HACHAS GEMELAS: hacha extra en abanico
+function samuraiWindQ(p){  const before = p.qAmmo; const opts={shuriken:true, color:0x9b2bff, qcol:0x9b2bff, qkind:'shuriken', size:.10, speed:24, life:1.35, dmg:9, bleed:true,        aim:30,snd:'throwQ',    name:'¡SHURIKEN!'}; const r = qShoot(p,.17,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTriShuriken){ spawnProj(p, p.yaw+0.26, opts); spawnProj(p, p.yaw-0.26, opts); } } return r; }   // ►SHURIKEN: estrellas de acero girando · ►PERK TRIPLE FILO: abanico de 3
 const FLINE_CD = 6;
 function archerFireLineQ(p){   // Arquera Q: FLECHA DE FUEGO — línea de fuego instantánea + franja ardiente (enfriamiento, no cargador)
   if(p.qCD>0){ sfx.deny(); return true; } if(!_abilGate(p)) return false;
@@ -22211,7 +22239,7 @@ function archerFireLineQ(p){   // Arquera Q: FLECHA DE FUEGO — línea de fuego
   spawnFireLine(p); p.throwT=.25; showCombo(p,'¡FLECHA DE FUEGO!'); return true;
 }
 function mageOrbQ(p){      const before=p.qAmmo; const opts={orb:true,orbScl:1.45,color:0xb060ff,size:.13,speed:22,life:1.5,dmg:8, spell:true,kbK:1.0,  aim:40,snd:'shardC',  name:'¡ORBES ARCANOS!'}; const r=qShoot(p,.14,opts); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; if(p._pkTwinOrb) spawnProj(p, p.yaw+0.20, opts); } return r; }   // ►ENERGYORB: bolas de energía que ESTALLAN en su color (antes: cilindro) · cada orbe redispara el clip throwq · ►PERK ORBES GEMELOS: orbe extra en abanico
-function knightJavelinQ(p){const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={spear:true, scl:SPEAR_LEN*cs, color:0xc2c8d4,size:.10,speed:28,life:1.3,dmg:8, kbK:1.2,           aim:30,snd:'throwQ',    name:'¡JABALINAS!'}; const r=qShoot(p,.15,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTwinJavelin){ spawnProj(p, p.yaw+0.18, opts); spawnProj(p, p.yaw-0.18, opts); } } return r; }   // pose de lanzamiento (anim knight) · ►PERK JABALINAS EN ABANICO: 3 en abanico
+function knightJavelinQ(p){const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={spear:true, scl:SPEAR_LEN*cs, color:0x6fb3ff, qcol:0x6fb3ff, qkind:'spear', size:.10, speed:23, life:1.55, dmg:10, kbK:1.2,           aim:30,snd:'throwQ',    name:'¡JABALINAS!'}; const r=qShoot(p,.20,opts); if(r && p.qAmmo<before){ p._qPoseT=.16; p._animKick=(p._animKick||0)+1; if(p._pkTwinJavelin){ spawnProj(p, p.yaw+0.18, opts); spawnProj(p, p.yaw-0.18, opts); } } return r; }   // pose de lanzamiento (anim knight) · ►PERK JABALINAS EN ABANICO: 3 en abanico
 function priestSmiteQ(p){  const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const r=qShoot(p,.12,{lance:true,lanceLen:1.15*cs,color:0x59b8ff,size:.11,speed:28,life:1.3,dmg:6, spell:true,minBonus:18,heal:4,aim:40,snd:'parry',name:'¡CASTIGO!'}); if(r && p.qAmmo<before){ p._animKick=(p._animKick||0)+1; } return r; }   // ►ENERGYLANCE: lanzas AFILADAS de energía azul (antes: bolt dorado) · cada bolt redispara el clip throwq (va al ritmo de la ráfaga)
 
 /* ===== ASIMETRÍA: kit por CLASE. Personaliza básico (X) / súper (B) / definitiva (R); el resto del
@@ -38855,7 +38883,7 @@ function _shurikenMesh(which){   // 'f' (lila, dentro del orbe) · 'e' (acero, c
   if(!_shuriTried){ _shuriTried=true; const G=window.GAME_MODELS||{};
     _shuriF=_bakeShuriken(G.shuriken18B64, 1.55, 0xc27bff);   // F: lila, MÁS grande → las puntas asoman del núcleo y se ven girando
     _shuriE=_bakeShuriken(G.shuriken17B64, 2.3,  0xc27bff);   // E: LILA como la F (mismos tonos) recorriendo la barra arcana
-    _shuriQ=_bakeShuriken(G.shuriken17B64, 0.6,  null);       // Q: acero pequeño (proyectil)
+    _shuriQ=_bakeShuriken(G.shuriken17B64, 1.0,  null);       // Q: acero (proyectil) · ►QTOON: 0.6 → 1.0, y el clon por disparo lleva emisivo lila (spawnProj)
   }
   const tpl = which==='f'?_shuriF : which==='e'?_shuriE : _shuriQ;
   if(!tpl) return null;
