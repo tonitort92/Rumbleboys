@@ -20292,6 +20292,7 @@ function updatePvpShieldFX(){
     r.querySelectorAll('.hdModeBtn').forEach(b => b.addEventListener('click', ()=>{ saveBump(o => { o.playMode = b.dataset.mode; }); renderMode(); try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){} }));
     renderMode();
     $('hdPlay').addEventListener('click', ()=>{
+      window.__hdTrainPick = null;   // ►TRAINPICK: la carrera no arrastra una elección de entrenar
       try{ if(typeof MENU_RUTA_I!=='undefined' && MENU_RUTA_I !== 0){ MENU_RUTA_I = 0; mapSelApply(); } }
       catch(e){ console.warn('[carrera] jugar', e); }
       const b = $(modeGet() === 'on' ? 'playMultiBtn' : 'playSoloBtn'); if(b) b.click();
@@ -20310,12 +20311,22 @@ function updatePvpShieldFX(){
       if(more) more.style.display = 'none';   // VER MAS retirado (Toni 23/08): la lista hace scroll
     }
     /* ENTRENAR ESTE MUNDO = la única puerta a "elegir mundo": monta ese eslabón (►MAPSEL, que sabe
-       de minijuegos) y entra por el camino de ENTRENAR que ya existía (#hsTrain → asistente) */
+       de minijuegos) y entra por el camino de ENTRENAR que ya existía (#hsTrain → asistente).
+       ►TRAINPICK (Toni 29/08: "en entrenamiento me sale el rancho"): la elección se FIJA aquí
+       (`__hdTrainPick`) y la impone el botón de arranque. Antes solo se ponía MENU_RUTA_I y, si el rail
+       se refrescaba con el asistente abierto (refresh(true) por volver a la home, tiFlyDone…), select()
+       volvía al SIGUIENTE OBJETIVO y 450 ms después setLive movía MENU_STAGE a ese mundo sin que se
+       viera nada: el entrenamiento de Japón arrancaba en el rancho. Reproducido en headless. */
+    window.__hdTrainPick = null;
+    window.__hdPickForTrain = ()=>{
+      if(sel < 0 || typeof MENU_RUTA_I === 'undefined') return;
+      window.__hdTrainPick = sel;
+      const e = ruta()[sel];
+      if(MENU_RUTA_I !== sel || (e && e.st && e.st !== MENU_STAGE)){ MENU_RUTA_I = sel; mapSelApply(); }
+    };
     $('hdTrain').addEventListener('click', e=>{
       e.stopPropagation();
-      try{ if(sel >= 0){ MENU_RUTA_I = sel; mapSelApply(); } }
-      catch(err){ console.warn('[carrera] entrenar', err); }
-      const t = $('hsTrain'); if(t) t.click();
+      const t = $('hsTrain'); if(t) t.click();   // el verbo fija la elección (__hdPickForTrain) y abre el asistente
     });
     /* la ficha completa (puntos, visitas, escala de notas) es la de MARCAS de siempre */
     const openMarks = ()=>{ const b = $('marksLink'); if(b) b.click(); };
@@ -20491,6 +20502,7 @@ function updatePvpShieldFX(){
       try{
         if(typeof running !== 'undefined' && running) return;
         if(typeof MENU_RUTA_I==='undefined' || typeof mapSelApply!=='function') return;
+        if(wizardOpen()) return;   // ►TRAINPICK: con el asistente abierto el mundo elegido no se mueve
         if(MENU_RUTA_I !== i){ MENU_RUTA_I = i; mapSelApply(); }
       }catch(e){ console.warn('[carrera] ventana', e); }
     }, 450);
@@ -20665,9 +20677,16 @@ function updatePvpShieldFX(){
     $('hdCoinN').textContent = ls.coins;
   }
 
+  /* ►TRAINPICK: ¿está abierto el asistente (JUGAR/ENTRENAR)? Mientras lo esté, el rail no cambia la
+     elección: ni refresh(true) la devuelve al siguiente objetivo ni setLive mueve la ventana. */
+  function wizardOpen(){ const m = $('setupModal'); return !!(m && getComputedStyle(m).display !== 'none'); }
   function refresh(resetSel){
     const st = state();
-    if(resetSel || sel < 0) sel = st.next;
+    if(resetSel && sel >= 0 && wizardOpen()) resetSel = false;
+    /* ►TRAINPICK: al volver de un ENTRENAMIENTO se conserva el mundo entrenado en vez de saltar al
+       siguiente objetivo (lo deja returnToMenu en __hdKeepSel); tras una CARRERA sigue siendo el siguiente. */
+    if(resetSel || sel < 0){ const k = window.__hdKeepSel; sel = (k != null && st.R[k]) ? k : st.next; }
+    window.__hdKeepSel = null;
     checkLogros(st);
     try{ if(window.__hdRenderLogMini) window.__hdRenderLogMini(); }catch(e){}
     try{ if(window._cpResize) window._cpResize(); }catch(e){}   // nitidez del torno: cada vez que la home se enseña
@@ -43081,6 +43100,12 @@ function startMatch(){
   document.getElementById('cpusNext').addEventListener('click', ()=> showStep(3));
   document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep(MATCH.mode==='training' ? 1 : 2); });   // en entrenamiento no hay paso de CPUs
   document.getElementById('startGameBtn').addEventListener('click', ()=>{
+    /* ►TRAINPICK: el entrenamiento arranca en el mundo que se ELIGIÓ, pase lo que pase con el rail
+       mientras el asistente estaba abierto (ver __hdPickForTrain). */
+    if(MATCH.mode==='training' && window.__hdTrainPick != null && typeof RUTA!=='undefined' && typeof MENU_RUTA_I!=='undefined'){
+      const i = window.__hdTrainPick, e = RUTA[i];
+      if(e && (MENU_RUTA_I !== i || (e.st && e.st !== MENU_STAGE))){ MENU_RUTA_I = i; try{ mapSelApply(); }catch(err){ console.warn('[trainpick]', err); } }
+    }
     closeModal();                                                  // saca el carrusel del popup primero
     /* la desviación a un minijuego módulo la hace `launchMatch` (ahí pasan
        todos los caminos); aquí solo se oculta el menú si NO va a haber módulo,
@@ -43414,6 +43439,7 @@ function renderHomeWorlds(){
      obligar a pasar por el menú de modos. Se abre y se pulsa: cero lógica nueva, y si mañana
      cambia el asistente, esto le sigue solo. */
   $('hsTrain').addEventListener('click', ()=>{
+    try{ if(window.__hdPickForTrain) window.__hdPickForTrain(); }catch(err){ console.warn('[carrera] entrenar', err); }   // ►TRAINPICK: el mundo de la ficha queda fijado
     const p=$('playSoloBtn'), t=$('modeTrain');
     if(p) p.click();
     if(t) t.click();
@@ -43448,6 +43474,8 @@ function returnToMenu(){
   if(typeof hideStageCaution==='function') hideStageCaution();   // ►STAGECAUTION: retira el aviso si se sale a mitad de presentación
   narrReset();                  // corta cualquier locución del narrador al salir al menú
   if(typeof resetBossFight==='function') resetBossFight();   // oculta la barra/contador del JEFE y desmonta su arena al salir al menú (si no, la barra se queda flotando)
+  window.__hdKeepSel = (TRAIN.on && typeof MENU_RUTA_I!=='undefined') ? MENU_RUTA_I : null;   // ►TRAINPICK: el rail conserva el mundo entrenado (lo consume refresh)
+  window.__hdTrainPick = null;
   TRAIN.on = false; { const tp = document.getElementById('trainPause'); if(tp) tp.style.display = 'none'; }   // cierra el modo entrenamiento
   document.getElementById('endOverlay').style.display = 'none';
   document.getElementById('endNowBtn').style.display = 'none';
