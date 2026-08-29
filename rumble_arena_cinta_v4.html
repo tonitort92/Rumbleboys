@@ -12439,10 +12439,10 @@ const GOBLIN_KINDS = {
      MELEE a puños (ranura small), gunman y cowboy siguen de tiradores con el kite recortado (updateMinion), y
      `westbig` es el grande: el mismo GLB del cowboy a 2.7. Tallas distintas y jitter ±10/8 %. Roster cerrado en
      spawnMinion: en el rancho ya no salen goblins de relleno. Pools: ver ►MINPOOL29 (se miden). */
-  westbad: { glb:'WESTBAD_GLB_B64', h:1.9,  walkRef:3.0, max:18, shadow:false, jitter:true, jitterAmp:.2,  shootAtk:false, weapon:null },   // melee (small)
-  westgun: { glb:'WESTGUN_GLB_B64', h:2.0,  walkRef:3.0, max:8,  shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },
-  westcow: { glb:'WESTCOW_GLB_B64', h:1.8,  walkRef:3.0, max:8,  shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },
-  westbig: { glb:'WESTCOW_GLB_B64', h:2.7,  walkRef:2.4, max:6,  shadow:true,  jitter:true, jitterAmp:.16, shootAtk:false, weapon:null },   // grande (large): cowboy a 2.7, melee
+  westbad: { glb:'WESTBAD_GLB_B64', h:1.9,  walkRef:3.0, max:21, shadow:false, jitter:true, jitterAmp:.2,  shootAtk:false, weapon:null },   // melee (small) · max 21 (medido: pico 18 en 1000 llenados)
+  westgun: { glb:'WESTGUN_GLB_B64', h:2.0,  walkRef:3.0, max:10, shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },   // max 10 (pico 7-8)
+  westcow: { glb:'WESTCOW_GLB_B64', h:1.8,  walkRef:3.0, max:10, shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },
+  westbig: { glb:'WESTCOW_GLB_B64', h:2.7,  walkRef:2.4, max:9,  shadow:true,  jitter:true, jitterAmp:.16, shootAtk:false, weapon:null },   // grande (large): cowboy a 2.7, melee · max 9 (pico 6)
   /* ►ORIENTALS (S3 Japón): 3 minions orientales Synty POLYGON (rig Mixamo) con clips idle/walk/jump/attack.
      noTint = conservan su textura natural (ninja oscuro, aldeano, sensei) — el jardín sakura no re-tiñe la horda.
      Roles: villager=small melee · ninja=shooter (lanza proyectil, gesto de tirada) · sensei=large melee (combo punch). */
