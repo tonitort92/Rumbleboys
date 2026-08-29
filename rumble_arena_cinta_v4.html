@@ -12251,7 +12251,7 @@ const WORLD_TINT   = {
 
    Cinco mundos van a 0 y quedan EXACTAMENTE como estaban. Solo cambian los tres de piel clara. */
 const WORLD_TINT_K = {
-   4: 0.45,   // DESIERTO · ►DESIERTO2: acerca el brillo de la piel al del azul claro (contraste por hue, no por oscuridad)
+   4: 0.65,   // DESIERTO · ►DESIERTO2: acerca el brillo de la piel al del azul claro (medido: con A .55/K .45 seguían a L ~0.40; con .85/.65 ~0.52)
    5: 0.35,   // PIRAMIDE · CASI IMPERCEPTIBLE: puestos los dos paneles al lado no se distingue. Se puede
               //            quitar sin que nadie lo note; se deja como palanca por si se retoca su hex.
    7: 0.55,   // HIELO    · mejora, pero NO lo arregla del todo — ver la nota de abajo
@@ -12265,7 +12265,7 @@ const WORLD_TINT_K = {
    del rojo corrupto, ver gobAttach) y aquí entra por el mismo número. Legibilidad aparte: la pone la luz
    de borde por mundo (►RIMWORLD), no el relleno. */
 const WORLD_TINT_A = {
-   1: 0.55, 2: 0.55, 3: 0.55, 4: 0.55, 5: 0.55, 7: 0.55, 8: 0.55, 11: 0.55, 12: 0.55,
+   1: 0.55, 2: 0.55, 3: 0.55, 4: 0.85, 5: 0.55, 7: 0.55, 8: 0.55, 11: 0.55, 12: 0.55,   // ►DESIERTO2: el 4 va casi entero (los goblins son oscuros de atlas: con 0.55 se quedaban en L ~0.40 sobre arena L 0.69)
 };
 const _tintA = st => (WORLD_TINT_A[st] != null ? WORLD_TINT_A[st] : 1);
 /* ►HIELO, PENDIENTE DE DECISION DE ARTE. Medido a pixel sobre el primer plano del esqueleto: entre
