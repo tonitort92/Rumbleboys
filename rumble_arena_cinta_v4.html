@@ -4280,8 +4280,8 @@ const CARPET_TINT = {
    hundidos): repisas, knolls y lunas altas conservan su acabado original. Además el DEGRADADO de la hoja
    (base→punta) es por mundo: la mata se tiñe multiplicando su color de vértice por el tinte de instancia, y el
    degradado verde del prado × magenta salía marrón sucio. ►AJUSTA aquí. */
-const CARPET_MAXY  = { 2: 1.5, 3: 1.5 };                                          // topY máximo con felpudo (1 = todas)
-const CARPET_KINDS = { 2: { moss:1, earth:1 }, 3: { sakura:1, moss:1, earth:1 } };   // acabados de losa que lo llevan
+const CARPET_MAXY  = { 3: 1.5 };                                                  // topY máximo con felpudo (1 y 2 = todas) · ►FELPUDO2: la jungla ya no filtra por altura
+const CARPET_KINDS = { 3: { sakura:1, moss:1, earth:1 } };                          // acabados de losa que lo llevan · ►FELPUDO2: en la jungla todos
 const CARPET_MATTE = { 2:1 };           // ►FELPUDO25d: mundos con follaje MATE (sin brillo especular; ver sueloCarpetMat)
 const CARPET_GRAD  = { 1: [0x2f7a22, 0xc6e35a], 2: [0x113409, 0x113409], 3: [0x7a2f66, 0xf2a6dc] };   // color base → punta — ►FOLLAJE26: el mundo 2 va SIN degradado, de UN solo color: 0x113409 es #4a7d36 (S2_GREENS[0], el verde del césped multitono de la losa) pasado a LINEAL, porque el color de vértice va crudo (ver FELPUDO25b) — en pantalla sale exactamente el tono del suelo
 /* ►FELPUDO25b: OJO al calibrar estos verdes — el color de vértice va sin convertir a lineal, así que en pantalla
@@ -6190,7 +6190,7 @@ function makePlayer(color, darker, spawnX, isAI){
     charge:null, _atkHeld:false, _atkHoldT:0,
     weapon:null, rainbowT:0, bleedT:0, bleedFrom:null, wpnCD:0,
     pasSpikes:false, pasElec:false, pasMagnet:false, pasMines:false, spikeT:0, mineT:0, magnetT:0,
-    block:false, blockT:9, shieldFlash:0, stun:0, hitFlash:0,
+    block:false, blockT:9, shieldFlash:0, stun:0, hitFlash:0, _noDmgT:0,   // ►ANTICAMP: s sin recibir daño
     comboStage:0, comboWindow:0, lastKind:'hammer',
     hitstun:0, hitstopT:0,
     hang:null, hangCD:0, hangT:0, wallJumpCD:0, _wallHit:null, _moveYaw:null,   // _wallHit = normal del muro · _moveYaw = rumbo de movimiento (cámara Fall Guys)
@@ -9614,6 +9614,7 @@ function noteHit(p){
 const _minHit = new Map();                                   // muchos minions sobre el MISMO jugador
 function noteMinion(v){
   if(!v || demo) return;
+  v._noDmgT = 0;   // ►ANTICAMP: lo llaman todas las fuentes de daño de horda
   const now = performance.now();
   let e = _minHit.get(v); if(!e || now - e.t > 800){ e = { t:now, n:0 }; _minHit.set(v, e); }
   if(++e.n >= 6){ e.n = 0; narrateAwe(); }                   // 6+ golpes de minion en <0.8 s
@@ -12112,7 +12113,7 @@ function renderMinionInstances(){
   const n = Math.min(minions.length, MINION_CAP);
   for(let i=0;i<n;i++){
     const mn = minions[i];
-    if(mn._gob || mn._boss || mn._brute || mn._carcher || mn._drone){ for(let pi=0;pi<minstMeshes.length;pi++) minstMeshes[pi].setMatrixAt(i, _GOB_ZERO); continue; }   // minion con GLB animado (gob*), el JEFE o el MINI-JEFE (FBX propio): oculta su caja instanciada
+    if(mn._gob || mn._boss || mn._brute || mn._carcher || mn._drone || (mn.skin && GOBLIN_KINDS[mn.skin])){ for(let pi=0;pi<minstMeshes.length;pi++) minstMeshes[pi].setMatrixAt(i, _GOB_ZERO); continue; }   // ►GOBFANTASMA: con piel asignada, el goblin de respaldo no se dibuja nunca   // minion con GLB animado (gob*), el JEFE o el MINI-JEFE (FBX propio): oculta su caja instanciada
     _qY.setFromAxisAngle(_AX_Y, mn.yaw); _vScl.setScalar(mn.scale);
     _qLean.setFromAxisAngle(_AX_X, mn.bodyLean||0);           // inclinación adelante (lean): atacar / andar
     _qRoll.setFromAxisAngle(_AX_Z, mn.bodyRoll||0);           // balanceo lateral (sway) al andar
@@ -12220,7 +12221,7 @@ const _iceTmp = new THREE.Color(), _iceEmi = new THREE.Color();
 const WORLD_TINT   = {
    1: 0xE673B2,   // PRADO      · rosa
    3: 0x5ABB3E,   // JAPON      · verde
-   4: 0x3E75BB,   // DESIERTO   · azul   (a juego con el mini-jefe, ver ►S4JUNGLA en bruteTint)
+   4: 0x5FA0FF,   // DESIERTO   · azul CLARO · ►DESIERTO2 (Toni 29/08: "demasiado oscuro"): era 0x3E75BB (L 0,49) sobre arena L 0,69; ahora L 0,69 y K 0.45 para que los goblins SUBAN de valor
    5: 0x3EBB6D,   // PIRAMIDE   · verde
    7: 0xBB6C3E,   // HIELO      · naranja — sustituye a los 8 azules por minion de ICE_HUES
    8: 0xE6DA73,   // FORJA      · amarillo
@@ -12246,6 +12247,7 @@ const WORLD_TINT   = {
 
    Cinco mundos van a 0 y quedan EXACTAMENTE como estaban. Solo cambian los tres de piel clara. */
 const WORLD_TINT_K = {
+   4: 0.45,   // DESIERTO · ►DESIERTO2: acerca el brillo de la piel al del azul claro (contraste por hue, no por oscuridad)
    5: 0.35,   // PIRAMIDE · CASI IMPERCEPTIBLE: puestos los dos paneles al lado no se distingue. Se puede
               //            quitar sin que nadie lo note; se deja como palanca por si se retoca su hex.
    7: 0.55,   // HIELO    · mejora, pero NO lo arregla del todo — ver la nota de abajo
@@ -12429,15 +12431,20 @@ const GOBLIN_KINDS = {
   /* ►WESTERN: 3 pistoleros vaqueros Mixamo (horda S8, ~50/50 con goblins lila). Los 3 = tamaño
      estándar (h de shooter) y comportamiento shooter FORZADO. noTint = conservan su textura natural
      (sin lila S8); kite = si te acercas retroceden DESPACIO (alcanzables, pero hay que perseguirlos). */
-  westbad: { glb:'WESTBAD_GLB_B64', h:1.85, walkRef:2.4, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
-  westgun: { glb:'WESTGUN_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
-  westcow: { glb:'WESTCOW_GLB_B64', h:1.85, walkRef:3.0, max:5, shadow:false, jitter:false, shootAtk:true, weapon:'gun', kite:true },
+  /* ►RANCHO2 (Toni 29/08: "solo cowboys, alguno de melee, que no huyan tanto, asimétricos"): el `badguy` pasa a
+     MELEE a puños (ranura small), gunman y cowboy siguen de tiradores con el kite recortado (updateMinion), y
+     `westbig` es el grande: el mismo GLB del cowboy a 2.7. Tallas distintas y jitter ±10/8 %. Roster cerrado en
+     spawnMinion: en el rancho ya no salen goblins de relleno. Pools: ver ►MINPOOL29 (se miden). */
+  westbad: { glb:'WESTBAD_GLB_B64', h:1.9,  walkRef:3.0, max:18, shadow:false, jitter:true, jitterAmp:.2,  shootAtk:false, weapon:null },   // melee (small)
+  westgun: { glb:'WESTGUN_GLB_B64', h:2.0,  walkRef:3.0, max:8,  shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },
+  westcow: { glb:'WESTCOW_GLB_B64', h:1.8,  walkRef:3.0, max:8,  shadow:false, jitter:true, jitterAmp:.16, shootAtk:true,  weapon:'gun', kite:true },
+  westbig: { glb:'WESTCOW_GLB_B64', h:2.7,  walkRef:2.4, max:6,  shadow:true,  jitter:true, jitterAmp:.16, shootAtk:false, weapon:null },   // grande (large): cowboy a 2.7, melee
   /* ►ORIENTALS (S3 Japón): 3 minions orientales Synty POLYGON (rig Mixamo) con clips idle/walk/jump/attack.
      noTint = conservan su textura natural (ninja oscuro, aldeano, sensei) — el jardín sakura no re-tiñe la horda.
      Roles: villager=small melee · ninja=shooter (lanza proyectil, gesto de tirada) · sensei=large melee (combo punch). */
-  ninja:    { glb:'NINJA_GLB_B64',   h:1.9, walkRef:3.2, max:9, shadow:false, jitter:false, shootAtk:true },  // ►ORIENTALS: ninja disparador (lanza)
-  sensei:   { glb:'SENSEI_GLB_B64',  h:2.3, walkRef:2.4, max:10, shadow:true, jitter:false, shootAtk:false },  // ►ORIENTALS: sensei (large melee)
-  villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:21, shadow:false, jitter:true, shootAtk:false },  // ►ORIENTALS: aldeano (small melee)
+  ninja:    { glb:'NINJA_GLB_B64',   h:1.9, walkRef:3.2, max:9, shadow:false, jitter:true, jitterAmp:.24, shootAtk:true },  // ►ORIENTALS: ninja disparador (lanza)
+  sensei:   { glb:'SENSEI_GLB_B64',  h:2.15, walkRef:2.4, max:10, shadow:true, jitter:true, jitterAmp:.24, shootAtk:false },  // ►ORIENTALS: sensei (large melee)
+  villager: { glb:'VILLAGER_GLB_B64', h:1.85, walkRef:3.0, max:21, shadow:false, jitter:true, jitterAmp:.24, shootAtk:false },  // ►ORIENTALS: aldeano (small melee)
   /* ►S8ROBOT (Stage 8, la fábrica): robot LaloBOT de la horda. Es la ÚNICA piel del proyecto que no
      viene de un GLB sino de 4 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack / jump) → los
      monta _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
@@ -12542,7 +12549,7 @@ const GOBLIN_KINDS = {
   witch:    { fbx:'WITCH_FBX_B64',    fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'staff', magic:true },   // ►MINIONS29: BRUJA (shooter, orbe lila) · 1.83 visto · max 10 (p99,5 = 9)
   geisha:   { fbx:'GEISHA_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:2.10, walkRef:2.6, max:9,  shadow:false, jitter:false, shootAtk:true,  shuriken:true },    // ►MINIONS29: GEISHA (shooter, shuriken) · h 2.10 = 1.84 visto (el idle va agachado) · max 9 (p99,5 = 8)
+              h:2.15, walkRef:2.6, max:9,  shadow:false, jitter:true, jitterAmp:.24, shootAtk:true,  shuriken:true },    // ►MINIONS29: GEISHA (shooter, shuriken) · h 2.10 = 1.84 visto (el idle va agachado) · max 9 (p99,5 = 8)
   pirmate:  { fbx:'PIRMATE_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.90, walkRef:3.0, max:15, shadow:false, jitter:true,  shootAtk:false, weapon:null },      // ►MINIONS29: CONTRAMAESTRE (small, puños) · 1.89 visto · max 15 (p99,5 = 14)
   pireng:   { fbx:'PIRENG_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
@@ -12649,7 +12656,7 @@ const STAGE_ASSETS = {
   5:  { gob:['momia','skeleton','pirskel','skelshooter','skelknight'], boss:['dgolem','midgolem','smallgolem'] },   // ►S5HUESOS: entran `skeleton` y `skelknight` (los 4 esqueletos reales) · sale `golem`, que era carga muerta
   7:  { gob:['viking1','viking2','icerogue','icedeck'], boss:['icevik'] },   // ►S7VIKINGOS: fuera los tres esqueletos (y los goblins por spawnMinion); entran pícaro y grumete
   8:  { gob:['robotm'], boss:['robot'] },   // >S8MUERTA: fuera s7barb/s7sam/s7knight. Mismo caso que el golem del S4/S5: tienen ficha en GOBLIN_KINDS y su script src, pero NINGUNA rama de spawnMinion los asigna como skin, asi que eran ~1,7 MB de base64 parseados en la pantalla de carga que no salian nunca. Las fichas se quedan por si se quieren usar algun dia.
-  11: { gob:['westbad','westgun','westcow'] },
+  11: { gob:['westbad','westgun','westcow','westbig'] },   // ►RANCHO2: entra el grande
   12: { gob:['pirmate','pireng','pircapt','pirbeard'] },   // ►PIRNOSKEL: fuera pirskel/skelshooter/skelknight — los tres son esqueletos · ►PIRCREW2: llegan los dos piratas del pequeño
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
@@ -12892,13 +12899,14 @@ function _gobArmScaled(root, weapon, cfg, baseScale){
 const _s2Tmp = new THREE.Color();   // ►TINTMIX: scratch del lavado rojo del mundo 2
 function gobAttach(mn){
   if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobLoaded[mn.skin]) gobLoadKinds([mn.skin]);   // ►LAZY: red de seguridad (se vestirá cuando termine de parsear)
-  const kin = (mn.skin && GOBLIN_KINDS[mn.skin] && _gobTpl[mn.skin]) ? mn.skin : mn.type;   // ►F3: piel visual (esqueleto/golem) con el comportamiento del type base; si su GLB no cargó → piel base
+  if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobTpl[mn.skin]) return;   // ►GOBFANTASMA: la piel aún no está → ESPERAR (antes vestía el goblin base y luego cambiaba)
+  const kin = (mn.skin && GOBLIN_KINDS[mn.skin]) ? mn.skin : mn.type;   // ►F3: piel visual (esqueleto/golem) con el comportamiento del type base
   const cfg = GOBLIN_KINDS[kin]; if(!cfg) return;
   const tpl = _gobTpl[kin]; if(!tpl || mn._gob || _gobLive[kin] >= cfg.max) return;
   let inst = _gobPool[kin].pop();
   if(!inst) inst = _gobBuildInst(kin);
   if(inst.weapon && !inst.armed) inst.armed = _gobArmScaled(inst.root, inst.weapon, cfg, inst.baseScale);   // ►SKELMINIONS: reintento de armado (el arco pudo cargar tras el prewarm) · ►ARMAFBX
-  const jit = cfg.jitter ? (1 + (Math.random()-0.5)*0.12) : 1;   // ±6% por instancia → alturas sutilmente distintas (small)
+  const jit = cfg.jitter ? (1 + (Math.random()-0.5)*(cfg.jitterAmp||0.12)) : 1;   // ±6% por instancia (o ±jitterAmp/2) → alturas distintas · ►TALLAS3: Japón y el rancho van a ±12/±10 %
   const elite = false;                                           // ►RECOLOR38: sin ELITE — la horda de 3/4/6/7/9 es EXACTAMENTE la de S1 (mismo tamaño/color uniforme por-stage)
   mn._elite = elite;
   const sc = inst.baseScale * jit * (elite ? 1.18 : 1);          // el elite = más grande
@@ -13370,6 +13378,18 @@ function minionDropSpot(){
 }
 /* ►CAMP (F10): spawn DIRIGIDO en (x,z) — cae del cielo como los demás. Base de spawnMinion
    y de las emboscadas de campamento (updateAmbushes elige dónde y qué tipo). */
+/* ►GOBFANTASMA (Toni 29/08: "se renderizan goblins en lugar del minion real y de golpe se convierten"). Dos causas:
+   (1) `_gobLive` solo sube en gobAttach, que corre DESPUÉS del bucle de spawn (hasta 5 por tanda): la guarda
+       `_gobLive < max` dejaba pasar el pool y los sobrantes nacían sin cuerpo → el instanciado de respaldo (que ES
+       un goblin) hasta que moría uno y el reintento por frame colaba el modelo bueno, in situ.
+   (2) gobAttach vestía el goblin base si la plantilla de la piel aún no estaba.
+   gobFree cuenta también los minions VIVOS con esa piel que aún no se han vestido; gobAttach espera a la plantilla;
+   y renderMinionInstances no dibuja el goblin de respaldo a un minion con piel (invisible un frame como mucho). */
+function gobFree(x){
+  if(!_gobTpl[x] || !GOBLIN_KINDS[x]) return false;
+  let pend = 0; for(const m of minions) if(!m.dead && !m._gob && m.skin === x) pend++;
+  return _gobLive[x] + pend < GOBLIN_KINDS[x].max;
+}
 function spawnMinionAt(x, z, y0, type, skin){
   if(minions.length >= MINION_CAP) return null;             // no exceder el pool instanciado
   type = type || 'small';
@@ -13384,7 +13404,7 @@ function spawnMinionAt(x, z, y0, type, skin){
   burst(mn.pos.clone(), 0x551111, 8, 4, 4, .8);
   return mn;
 }
-function spawnMinion(){
+function spawnMinion(spot){   // ►ANTICAMP: `spot` opcional fuerza el sitio (si no, minionDropSpot)
   if(minions.length >= MINION_CAP) return;                  // no exceder el pool instanciado
   // ►RECOLOR38: sin recorte de frecuencia por-stage — 3/4/6/7/9 salen al MISMO ritmo que S1 (S6 va vacío aparte)
   /* ►ELITE: MINI-JEFE en TODOS los stages a partir de ELITE_MIN_CHAOS (antes solo Stage 2). Sigue
@@ -13422,7 +13442,7 @@ function spawnMinion(){
      goblin verde en la jungla. */
   if(STAGE===2){
     const M2 = { small:['knlight'], shooter:['knarcher','witch'], large:['knheavy'] };
-    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    const libre = gobFree;   // ►GOBFANTASMA
     let par = M2[type].slice();
     if(par.length > 1 && Math.random() < 0.5) par.reverse();              // arquero / bruja a cara o cruz
     let k = par.find(libre) || null;
@@ -13475,7 +13495,7 @@ function spawnMinion(){
       /* shooter → CHAMÁN · large → GUERRERO. El `else` es nuevo (►M2RASO): antes este bloque corría
          SIEMPRE y le habría vuelto a poner piel de chamán al pequeño, deshaciendo lo de arriba. */
       const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
-      const k = pref.find(x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max);
+      const k = pref.find(gobFree);   // ►GOBFANTASMA
       if(!k) return;                                      // las dos pieles al tope → hueco antes que romper la paleta
       skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
     }
@@ -13489,7 +13509,7 @@ function spawnMinion(){
   if(STAGE===7){
     type = (Math.random() < 0.82) ? 'small' : 'large';
     const S7 = { small:['icerogue','icedeck'], large:['viking1','viking2'] };
-    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    const libre = gobFree;   // ►GOBFANTASMA
     let par = S7[type].slice(); if(Math.random() < 0.5) par.reverse();
     let k = par.find(libre) || null;
     if(!k){ const otra = S7[type==='small' ? 'large' : 'small'].slice(); if(Math.random() < 0.5) otra.reverse();
@@ -13520,7 +13540,7 @@ function spawnMinion(){
      la horda hasta el tope y contar en el PLATO, no contar tiradas sueltas. */
   if(STAGE===5){
     const PIR5 = { small:['skeleton','pirskel'], shooter:['skelshooter'], large:['momia','skelknight'] };
-    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    const libre = gobFree;   // ►GOBFANTASMA
     let par = PIR5[type].slice();
     if(type==='large'){ if(Math.random() >= 0.65) par.reverse(); }        // momia 65 / caballero 35
     else if(par.length > 1 && Math.random() < 0.5) par.reverse();          // small: cara o cruz
@@ -13580,7 +13600,7 @@ function spawnMinion(){
        hace falta (ninguna ranura está vacía) y el tope PIR_CAP de maxMinions se ha retirado con él. */
     const PIR = { small:['pirmate','pireng'], shooter:['pircapt'], large:['pirbeard'] };
     if(!PIR[type].length) return;                              // (cinturón: hoy ninguna ranura está vacía)
-    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    const libre = gobFree;   // ►GOBFANTASMA
     let par = PIR[type].slice();
     if(par.length > 1 && Math.random() < 0.5) par.reverse();    // cara o cruz: ni el pirata ni el esqueleto mandan
     let k = par.find(libre) || null;
@@ -13603,7 +13623,7 @@ function spawnMinion(){
      nada libre — el mismo patrón que la pirámide (PIR5). */
   if(STAGE===3){
     const JP = { small:['villager'], shooter:['ninja','geisha'], large:['sensei'] };
-    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    const libre = gobFree;   // ►GOBFANTASMA
     let par = JP[type].slice();
     if(par.length > 1 && Math.random() < 0.5) par.reverse();
     let k = par.find(libre) || null;
@@ -13626,20 +13646,28 @@ function spawnMinion(){
      ►S8ROBOT (pedido de Toni): los vaqueros SALEN del stage 8. Antes el S8 iba ~50/50 goblins lila +
      pistoleros; ahora la fábrica es SOLO suya — goblins lila, robots lila y drones. Los 3 pistoleros
      siguen cargados y con su pool intacto porque el stage 11 (las mesetas) es su casa. */
+  /* ►RANCHO2: roster CERRADO (patrón PIR5): badguy melee en la ranura pequeña, gunman/cowboy tiradores a moneda,
+     y el grande. Sin respaldo a goblin: si nada está libre, hueco. */
   if(STAGE===11){
-    const ks = ['westbad','westgun','westcow'].filter(k => _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max);
-    if(ks.length){ skin = ks[(Math.random()*ks.length)|0]; type = 'shooter'; }
+    const W = { small:['westbad'], shooter:['westgun','westcow'], large:['westbig'] };
+    const libre = gobFree;
+    let par = W[type].slice(); if(par.length > 1 && Math.random() < 0.5) par.reverse();
+    let k = par.find(libre) || null;
+    if(!k){ const otra = ['westbad','westgun','westcow','westbig'].filter(x => !W[type].includes(x)).find(libre);
+      if(otra){ k = otra; type = (k==='westbig') ? 'large' : (k==='westbad') ? 'small' : 'shooter'; } }
+    if(!k) return;
+    skin = k;
   }
   /* ►S8ROBOT: en la fábrica (S8) una parte de la horda son ROBOTS lila. FUERZAN type 'large' — que es
      lo que les da los 60 de vida y el melee de 20 ("pega bastante fuerte") — sea cual sea el roll.
      Si su pool está al tope cae al goblin lila, igual que la salvaguarda de los esqueletos. */
   if(STAGE===8 && Math.random() < 0.34){
-    if(_gobTpl.robotm && _gobLive.robotm < GOBLIN_KINDS.robotm.max){ skin = 'robotm'; type = 'large'; }
+    if(gobFree('robotm')){ skin = 'robotm'; type = 'large'; }
   }
   /* ►PIRSWAP: en el mar el respaldo genérico NO vale — `dropSpot` elige cualquier plataforma de
      platforms[], o sea también un islote de la orilla, que es justo lo que no queremos. Sin sitio en
      la cubierta, no cae nadie (ya hay tiradores apostados fuera). */
-  const sp = minionDropSpot() || (STAGE===12 ? null : (dropSpot() || { x:(Math.random()-.5)*20, z:(Math.random()-.5)*10, y0:0 }));
+  const sp = spot || minionDropSpot() || (STAGE===12 ? null : (dropSpot() || { x:(Math.random()-.5)*20, z:(Math.random()-.5)*10, y0:0 }));
   if(!sp) return;
   /* ►PIROUT (Toni 27/08: "fuera hay principalmente shooters, tienes 2 puestos pero 1 es un esqueleto;
      cambialo por el shooter esqueleto del desierto"). En el S12 el que pisa la ORILLA se planta y
@@ -13656,7 +13684,7 @@ function spawnMinion(){
      vino a arreglar (updateMinion hace disparar a cualquiera que no este en el barco, sin mirar
      shootAtk). Antes no hacia falta el else porque las dos pieles de tirador se cubrian entre si. */
   if(STAGE===12 && Math.abs(sp.z) >= PIR_LANE){
-    if(!(_gobTpl.pircapt && _gobLive.pircapt < GOBLIN_KINDS.pircapt.max)) return;
+    if(!gobFree('pircapt')) return;
     skin = 'pircapt'; type = 'shooter';
   }
   spawnMinionAt(sp.x, sp.z, sp.y0, type, skin);
@@ -13864,10 +13892,12 @@ function updateMinion(mn, dt){
          con guarda de vacío (patrón huida de la arquera corrupta): si detrás no hay plataforma, se plantan. */
       const kcfg = mn.skin && GOBLIN_KINDS[mn.skin];
       const kite = !!(kcfg && kcfg.kite);
-      const SHOOT_RANGE = 15, KITE_RANGE = 10, KSPD = 2.2;
+      const SHOOT_RANGE = 15, KITE_RANGE = 6, KSPD = 1.6, KITE_MAX_T = 1.0;   // ►RANCHO2 (Toni: "que no huyan tanto"): 10→6 u, 2.2→1.6 u/s y PRESUPUESTO: 1 s de huida y 2 s plantado
+      if(mn._kiting){ mn._kiteT = (mn._kiteT||0) + dt; if(mn._kiteT >= KITE_MAX_T) mn._kiteLock = true; }
+      else { mn._kiteT = Math.max(0, (mn._kiteT||0) - dt*0.5); if(mn._kiteT <= 0) mn._kiteLock = false; }
       mn._kiting = false;
       if(dist > SHOOT_RANGE){ mn.vel.x = to.x*spd*.7; mn.vel.z = to.z*spd*.7; }
-      else if(kite && dist < KITE_RANGE){
+      else if(kite && dist < KITE_RANGE && !mn._kiteLock){
         const bx = mn.pos.x - to.x*1.5, bz = mn.pos.z - to.z*1.5;          // punto 1.5u a su espalda
         if(overAnyPlatform(bx, bz) && platformTopAt(bx, bz)!==null){ mn.vel.x = -to.x*KSPD; mn.vel.z = -to.z*KSPD; mn._kiting = true; }
         else { mn.vel.x = 0; mn.vel.z = 0; wantMove = false; }             // borde: se planta y dispara
@@ -13974,6 +14004,43 @@ function trainMinions(dt){
     }
   } else TRAIN._t = 0;
 }
+/* ►ANTICAMP (Toni 29/08: "evitar que los jugadores campeen en posiciones demasiado seguras"). Cada segundo, por
+   luchador vivo y en el suelo: si lleva CAMP_T s sin recibir daño y no tiene ningún minion a menos de CAMP_R,
+   le nacen CAMP_N minions en un anillo a 4–7 u (sobre plataforma a su altura ±3); si la horda está al tope se
+   retira en silencio (sin FX ni puntos) el minion normal más lejano de cualquier jugador. Aviso «¡TE HAN VISTO!»
+   y CAMP_CD s de tregua para no encadenar. Fuera en la demo, en entrenamiento y con el jefe. ►►► AJUSTA ◄◄◄ */
+const CAMP_T = 12, CAMP_R = 9, CAMP_N = 3, CAMP_CD = 8;
+let _campAcc = 0;
+function antiCamp(dt){
+  _campAcc += dt; if(_campAcc < 1) return; _campAcc = 0;
+  if(demo || (typeof TRAIN!=='undefined' && TRAIN.on) || bossActive) return;
+  for(const p of players){
+    if(!p || p.dead || p.out || !p.onGround) continue;
+    p._campCD = Math.max(0, (p._campCD||0) - 1);
+    if((p._noDmgT||0) < CAMP_T || p._campCD > 0) continue;
+    let cerca = false; for(const mn of minions){ if(!mn.dead && Math.hypot(mn.pos.x-p.pos.x, mn.pos.z-p.pos.z) < CAMP_R){ cerca = true; break; } }
+    if(cerca) continue;
+    let hechos = 0;
+    for(let i=0; i<CAMP_N*6 && hechos<CAMP_N; i++){
+      const a = Math.random()*Math.PI*2, r = 4 + Math.random()*3;
+      const x = p.pos.x + Math.cos(a)*r, z = p.pos.z + Math.sin(a)*r;
+      if(!overAnyPlatform(x, z)) continue;
+      const top = platformTopAt(x, z); if(top===null || Math.abs(top - p.pos.y) > 3) continue;
+      if(minions.length >= maxMinions()){                                   // al tope: se retira el normal más lejano de cualquier jugador
+        let far = null, fd = -1;
+        for(const mn of minions){ if(mn.dead || mn._boss || mn._brute || mn._carcher || mn._drone || mn.type==='boss') continue;
+          let d = Infinity; for(const q of players){ if(q && !q.out && !q.dead) d = Math.min(d, Math.hypot(mn.pos.x-q.pos.x, mn.pos.z-q.pos.z)); }
+          if(d > fd){ fd = d; far = mn; } }
+        if(!far) break;
+        far.dead = true;                                                     // silencio: ni killMinion ni awardMinion
+      }
+      const n0 = minions.length; spawnMinion({ x, z, y0: top });
+      if(minions.length > n0) hechos++;
+    }
+    if(hechos){ p._noDmgT = 0; p._campCD = CAMP_CD;
+      ring(p.pos.clone().add(new THREE.Vector3(0,.3,0)), 0xff5030, 16, .5); showCombo(p, '¡TE HAN VISTO!'); try{ sfx.grab(); }catch(e){} }
+  }
+}
 function updateMinions(dt){
   if(TRAIN.on){
     trainMinions(dt);
@@ -13984,6 +14051,7 @@ function updateMinions(dt){
       let n=0; while(minions.length<cap && n<5){ spawnMinion(); n++; }   // hasta 5 por tanda: rellena el enjambre más rápido
       minionT=Math.max(.32, 1.5 - chaosLvl*.18);
     }
+    antiCamp(dt);   // ►ANTICAMP
   }
   for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn._levi){ continue; }   // ►LEVIATAN: la punta dorada de una pata es una entidad dañable, pero la mueve su tentáculo (updateLeviathan), no una IA
       if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; }
@@ -18098,7 +18166,7 @@ function triggerAmbush(A, wx, wz, tgt){
     if(STAGE===3){   // ►S3GEISHA: roster cerrado también en la emboscada (antes 70 % oriental / 30 % goblin)
       const par = ({ small:['villager'], shooter:['ninja','geisha'], large:['sensei'] })[type].slice();
       if(par.length > 1 && Math.random() < 0.5) par.reverse();
-      const k = par.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
+      const k = par.find(gobFree);
       if(!k) continue;                                        // pieles al tope → salta este hueco, nunca goblin
       skin = k;
     }
@@ -18110,7 +18178,7 @@ function triggerAmbush(A, wx, wz, tgt){
     if(STAGE===2){   // ►M2CABALLEROS: el anillo del campamento es de caballeros (ligera / arquero-bruja / pesado), mismo mapeo que spawnMinion
       const par = ({ small:['knlight'], shooter:['knarcher','witch'], large:['knheavy'] })[type].slice();
       if(par.length > 1 && Math.random() < 0.5) par.reverse();
-      const k = par.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
+      const k = par.find(gobFree);
       if(!k) continue;                                        // pieles al tope → salta este hueco, nunca goblin verde
       skin = k;
     }
@@ -22410,7 +22478,7 @@ function applyHit(att, vic, o){
      abajo sigue: empujón con vic.damage≈0, flash blanco, hitstun) pero no hiere ni da crédito/poder
      (dmg 0 en la fuente). Minions y jefe no son `players` → intactos. */
   dmg *= pvpMul(att, vic);
-  vic.damage += dmg;
+  vic.damage += dmg; vic._noDmgT = 0;   // ►ANTICAMP
   if(o.credit !== false){ credit(att, dmg); vic.lastHitBy = att; }
   if(o.powAtt) addPower(att, o.powAtt * dmg);
   if(o.powAttFlat) addPower(att, o.powAttFlat);
@@ -25760,6 +25828,7 @@ function updateFighter(p, dt){
 
   /* --- BRILLO por daño + flash blanco al recibir golpe --- */
   p.hitFlash = Math.max(0, p.hitFlash - dt);
+  p._noDmgT = (p._noDmgT||0) + dt;   // ►ANTICAMP
   if(p.hitFlash<=0) p._hitFlashCol = 0;   // ►F2: color de peso caducado (0 = blanco por defecto)
   const heat = Math.min(1.6, p.damage/110);
   const _R = READABILITY_MODE;                                       // brillo de daño DOMADO (el color de clase no se lava)
@@ -28610,7 +28679,7 @@ function s2Floor(cx, cz, sx, sz, topY=0, kind='moss'){
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: suelo pisable = oclusor (se funde si tapa), respetado por el guard cuando es el nivel más bajo
   const _rec = { minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2, topY, baseY: topY-4.5, solid:true, sand:(STAGE===4)||undefined };   // ►S4: losas = arena (hundimiento), sin blob (sin arrastre)
   platforms.push(_rec); _rec._group = g;
-  if(SUELO_TEST && (STAGE===2 || STAGE===3) && sx>=4 && sz>=4 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: el felpudo REAL de la jungla y las losas bajas de Japón (la cinta no pasa por addFloorBlock)
+  if(SUELO_TEST && (STAGE===2 || STAGE===3) && sx>=3 && sz>=3 && carpetOK(topY, kind)){   // ►FELPUDO23b/25: el felpudo REAL de la jungla y las losas bajas de Japón (la cinta no pasa por addFloorBlock) · ►FELPUDO2 (Toni 29/08: "muchas plataformas del mundo 2 sin felpudo"): umbral 4→3 (los tramos de cinta son 6×3), sin tope de altura ni filtro de acabado en la jungla
     g.userData._sueloTest = true; sueloCarpet(g, sx, sz, topY, cx, cz);
     if(!_sueloB) _sueloB = { x0:cx-sx/2, x1:cx+sx/2, z0:cz-sz/2, z1:cz+sz/2 };
   }
@@ -28636,6 +28705,8 @@ function s2Hill(cx, cz, sx, sz, topY, kind='rock'){
   if(STAGE===4 || STAGE===11) dressTopSand(g, sx, sz, topY, cx, cz, null, kind);   // ►COVER: las mesetas/colinas también se visten (antes iban peladas) · ►WEST
   else if(STAGE===3) dressTopSakura(g, sx, sz, topY, cx, cz, kind);  // ►JAPAN
   else if(STAGE===2) dressTopJungle(g, sx, sz, topY, cx, cz, kind);
+  /* ►FELPUDO2: las colinas/mesetas de la jungla también llevan felpudo (antes solo sotobosque; era lo que dejaba media jungla "pelada") */
+  if(SUELO_TEST && STAGE===2 && sx>=3 && sz>=3 && carpetOK(topY, kind)){ g.userData._sueloTest = true; sueloCarpet(g, sx, sz, topY, cx, cz); }
   g.position.set(cx, 0, cz); g.userData.occFloor = true; scene.add(g);   // ►OCC: colina/meseta pisable = oclusor; el guard la respeta si es el suelo más bajo bajo los pies
   const _rec = { minX:cx-sx/2, maxX:cx+sx/2, minZ:cz-sz/2, maxZ:cz+sz/2, topY, baseY:0, solid:true, sand:(STAGE===4)||undefined };
   platforms.push(_rec); _rec._group = g;
