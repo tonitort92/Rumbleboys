@@ -18890,21 +18890,17 @@ const FLINCH_AMP  = 1.0;      // multiplicador general de la sacudida (0 = apaga
    11/08 (LT volvió a ser agarrar, ►FGGRAB) y se decidió NO recuperarlo — el carry ES el empujón.
    La barra de aguante queda solo para lo suyo: borde + cargar + forcejear (►LTSTAM). */
 /* ===== ESCUDO (toque → burbuja de 5 s): vas lento, no atacas, empuja+daña a los de alrededor para
-   apartarlos y pasar. No cancelable. Enfriamiento tras agotarse. ►►► AJUSTA ◄◄◄ */
-/* ►ESCUDO2 (16/08, pedido de Toni): SOSTENIDO — arriba mientras mantienes LB (antes: toque → 5s
-   fijos). Se AGRIETA con el uso (avisos por tercios) y a SHIELD_MAX_T se ROMPE en cristales →
-   CD corto. Soltarlo antes NO castiga: el desgaste se recupera solo. El COUNTER vive AQUÍ
-   (PARRY_WIN): alzarlo en el último instante anula el golpe y, contra un JUGADOR, dispara la
-   CONTRA automática — cero botones nuevos, el novato solo ve "mantén para defenderte". */
-const SHIELD_MAX_T = 3;      // s de uso CONTINUO hasta romperse (grietas a 1/3 y 2/3) ►AJUSTA
-const SHIELD_CD = 3;         // s de enfriamiento SOLO al romperse (antes 8, y con duración fija)
-const SHIELD_REGEN = 0.6;    // × del ritmo de gasto al que se RECUPERA el desgaste estando bajado
-/* ►ESCUDO2b (17/08, exploit de Toni: "puedes abusar haciendo click compulsivamente"): subir/bajar
-   era gratis y cada alzada re-armaba la ventana de parry → aporrear LB = bloqueo casi perpetuo +
-   parry pescado a spam. Ahora ALZAR CUESTA un mordisco de integridad (spamear ≈5 alzadas = rotura
-   y sus 3 s de CD; mantener sale mejor que aporrear) y hay un mini-retardo entre bajar y realzar. */
-const SHIELD_RAISE_COST = 0.5;   // s de desgaste que cuesta CADA alzada ►AJUSTA
-const SHIELD_RECD = 0.3;         // s mínimos entre bajar el escudo y poder alzarlo otra vez ►AJUSTA
+   apartarlos y pasar. Enfriamiento tras agotarse. ►►► AJUSTA ◄◄◄ */
+/* ►ESCUDO3 (Toni 29/08: "demasiadas teclas a las que prestar atención o dejar pulsadas"): vuelve el
+   escudo de UN TOQUE. Pulsas T (LB) → burbuja SHIELD_MAX_T s → se apaga sola → SHIELD_CD s de
+   enfriamiento. No hay que mantener nada. Se cae antes si te pegan o si haces otra cosa (y también
+   entra en CD). El desgaste de ►ESCUDO2 se conserva como CUENTA ATRÁS: las grietas a 1/3 y 2/3 avisan
+   de que se acaba, pero al agotarse no "se rompe" (era el castigo del sostenido): se apaga con un
+   chip y a esperar. Con eso sobran el coste por alzada y el retardo de realzado de ►ESCUDO2b (eran
+   anti-spam de un botón que ya no se puede aporrear con provecho: en CD no hay nada que alzar).
+   El COUNTER sigue viviendo aquí (PARRY_WIN, blockT arranca en 0 al alzar). */
+const SHIELD_MAX_T = 5;      // s que dura la burbuja (grietas de aviso a 1/3 y 2/3) ►AJUSTA
+const SHIELD_CD = 6;         // s de enfriamiento tras apagarse (o caerse) ►AJUSTA
 const SHIELD_R = 2.6;        // radio de empuje
 const SHIELD_PUSH = 10;      // fuerza de empuje hacia fuera
 const SHIELD_DMG = 6;        // daño por tick a quien empuja
@@ -19007,13 +19003,8 @@ function updateSpin(p, dt){
 }
 
 /* ===== ESCUDO: burbuja de empuje (los timers/p.block se llevan en updateFighter) ===== */
-function endShield(p){ if(p.shieldT>0) p._shieldReCD = SHIELD_RECD; p.shieldT = 0; }   // ►ESCUDO2: bajarlo NO castiga (el CD lo pone la ROTURA) · ►ESCUDO2b: pero realzar espera un pelín
-function shieldBreak(p){
-  p.shieldT = 0; p.shieldCD = SHIELD_CD; p.shieldWear = SHIELD_MAX_T;   // el desgaste se rellena entero durante el CD (ver updateFighter)
-  const c = p.pos.clone().add(new THREE.Vector3(0,1.1,0));
-  burst(c, 0xaffaff, 22, 8, 6, 1.0); burst(c, 0xffffff, 10, 6, 4, .7); ring(c, 0xaffaff, 20, .45);
-  sfx.crack(); jiggle(p, 18); showCombo(p, '¡ESCUDO ROTO!');
-}
+/* ►ESCUDO3: TODO fin de escudo (agotado, golpe, otra acción) pone el CD y limpia el desgaste. */
+function endShield(p){ if(p.shieldT>0){ p.shieldT = 0; p.shieldCD = SHIELD_CD; } p.shieldWear = 0; p._crackLvl = 0; }
 function updateShield(p, dt){
   if(p.dead || p.shieldT<=0) return;
   p.shieldTick -= dt;
@@ -24593,9 +24584,8 @@ function updateFighter(p, dt){
   p.healCD = Math.max(0, (p.healCD||0)-dt);   // enfriamiento de la cura (cruceta ↑)
   if(p._pkRegen && !p.dead && !p.out && p.damage>0) p.damage = Math.max(0, p.damage - REGEN_RATE*dt);   // ►PERK REGENERACIÓN: recupera daño poco a poco
   p.parryCD = Math.max(0, p.parryCD-dt);
-  /* ►ESCUDO2: desgaste mientras está ARRIBA (crujido de grieta a 1/3 y 2/3, rotura al llegar al
-     tope) y recuperación mientras está abajo; durante el CD de rotura se rellena entero justo a
-     tiempo. blockT es el reloj del PARRY (empieza en 0 al alzarlo; doParry lo consume). */
+  /* ►ESCUDO3: el desgaste es la CUENTA ATRÁS de la burbuja (crujido de aviso a 1/3 y 2/3; al tope se
+     apaga sola y entra en CD). blockT es el reloj del PARRY (empieza en 0 al alzarlo; doParry lo consume). */
   if(p.shieldT>0){
     p.blockT += dt;
     p.shieldWear = (p.shieldWear||0) + dt;
@@ -24603,14 +24593,11 @@ function updateFighter(p, dt){
     const _lvl = _wf>=1 ? 3 : _wf>2/3 ? 2 : _wf>1/3 ? 1 : 0;
     if(_lvl !== (p._crackLvl||0)){
       p._crackLvl = _lvl;
-      if(_lvl>=3) shieldBreak(p);
-      else { sfx.chip(); p.shieldFlash = Math.max(p.shieldFlash||0, .2); jiggle(p, 6); }   // CRUJE la grieta
+      if(_lvl>=3){ endShield(p); sfx.chip(); ring(p.pos.clone().add(new THREE.Vector3(0,1.1,0)), 0xaffaff, 14, .3); }   // agotado: se apaga, sin drama
+      else { sfx.chip(); p.shieldFlash = Math.max(p.shieldFlash||0, .2); jiggle(p, 6); }   // CRUJE la grieta: aviso de que se acaba
     }
   } else {
     p.shieldCD = Math.max(0, p.shieldCD-dt);
-    p._shieldReCD = Math.max(0, (p._shieldReCD||0)-dt);   // ►ESCUDO2b: retardo de realzado
-    if((p.shieldWear||0) > 0) p.shieldWear = Math.max(0, p.shieldWear - dt*(p.shieldCD>0 ? SHIELD_MAX_T/SHIELD_CD : SHIELD_REGEN));
-    p._crackLvl = 0;
   }
   p.block = p.shieldT>0;                                                // p.block ahora = escudo activo
   p.hangCD = Math.max(0, p.hangCD-dt);
@@ -24726,19 +24713,17 @@ function updateFighter(p, dt){
       if(classF(p)) p.spinBuf = 0;                   // F ÚNICA: giro / destello / voltereta / parpadeo / embestida / nova
     }
     /* el GIRO NO se interrumpe: ninguna acción lo corta, se ejecuta hasta el final */
-    /* ESCUDO (LB, ►ESCUDO2): SOSTENIDO — arriba mientras lo mantienes (antes: toque → 5s fijos).
-       Alzarlo pide suelo; una vez arriba, aguanta en el aire. Se cae solo si te pegan, si haces
-       otra cosa o si el desgaste llega al tope (shieldBreak, en updateFighter). */
+    /* ESCUDO (LB, ►ESCUDO3): UN TOQUE → burbuja SHIELD_MAX_T s → CD. Alzarlo pide suelo; una vez
+       arriba aguanta en el aire y se apaga sola (updateFighter). Se cae antes si te pegan o si haces
+       otra cosa. No hay toggle: un segundo toque no lo baja (un doble clic accidental no lo tira). */
     {
-      const shieldOk = inp.block && !_held && p.shieldCD<=0 && !p.counter
-        && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.beam && !p.spin && !p.hang
-        && (p.shieldWear||0) + SHIELD_RAISE_COST < SHIELD_MAX_T;   // ►ESCUDO2b: hace falta integridad para PAGAR la alzada
-      if(!p.shieldT && shieldOk && p.onGround && (p._shieldReCD||0)<=0){
-        p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0;
-        p.shieldWear = (p.shieldWear||0) + SHIELD_RAISE_COST;   // ►ESCUDO2b: la alzada cuesta
+      const libre = !_held && !p.counter && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.beam && !p.spin && !p.hang;
+      const tap = inp.block && !p._blockHeld;   // FLANCO: pulsar, no mantener
+      if(!p.shieldT && tap && libre && p.shieldCD<=0 && p.onGround){
+        p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0; p.shieldWear = 0;
         p.shieldFlash = .25; p._shieldPoseT = .45; sfx.parry();   // _shieldPoseT: anim de alzar el escudo 1 vez (x2)
-      } else if(p.shieldT && !shieldOk) endShield(p);
-      if(inp.block && !p._blockHeld && p.shieldCD>0 && !p.shieldT) sfx.deny();
+      } else if(p.shieldT && !libre) endShield(p);
+      if(tap && p.shieldCD>0 && !p.shieldT) sfx.deny();
     }
     p._blockHeld = inp.block;
   } else {
@@ -24754,13 +24739,12 @@ function updateFighter(p, dt){
       const e = nearestPlayer(p), eClose = e && p.pos.distanceTo(e.pos) < SPIN_R*0.8;
       if(near>=3 || (eClose && Math.random()<0.04)) classF(p);
     }
-    /* la IA escuda si lo quiere y puede — ►ESCUDO2: lo MANTIENE mientras blockWant siga vivo */
+    /* la IA escuda si lo quiere y puede — ►ESCUDO3: lo alza como un toque y PUEDE bajarlo cuando
+       blockWant muere (a la CPU no le cuesta una tecla; bajarlo antes de tiempo le cuesta el CD igual) */
     {
-      const aiOk = p.ai.blockWant && p.shieldCD<=0 && !p.spin && p.atk.phase==='none'
-        && p.hitstun<=0 && p.stun<=0 && !p.beam && (p.shieldWear||0) + SHIELD_RAISE_COST < SHIELD_MAX_T;
-      if(!p.shieldT && aiOk && p.onGround && (p._shieldReCD||0)<=0){ p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0;
-        p.shieldWear = (p.shieldWear||0) + SHIELD_RAISE_COST; p._shieldPoseT = .45; }   // ►ESCUDO2b: la CPU paga igual
-      else if(p.shieldT && !aiOk) endShield(p);
+      const aiLibre = !p.spin && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.beam;
+      if(!p.shieldT && p.ai.blockWant && aiLibre && p.shieldCD<=0 && p.onGround){ p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0; p.shieldWear = 0; p._shieldPoseT = .45; }
+      else if(p.shieldT && (!p.ai.blockWant || !aiLibre)) endShield(p);
     }
   }
   /* ►DI: foto de la intención de movimiento de ESTE frame. Se guarda aquí, antes de que los estados
