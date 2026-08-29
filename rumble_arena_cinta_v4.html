@@ -14016,7 +14016,7 @@ function trainMinions(dt){
 const CAMP_T = 12, CAMP_R = 9, CAMP_N = 3, CAMP_CD = 8;
 let _campAcc = 0;
 function antiCamp(dt){
-  _campAcc += dt; if(_campAcc < 1) return; _campAcc = 0;
+  if(dt > 0) _campAcc += Math.min(dt, 0.25); if(_campAcc < 1) return; _campAcc = 0;   // (medido: en el attract llegan dt negativos que dejaban el acumulador bajo cero)
   if(demo || (typeof TRAIN!=='undefined' && TRAIN.on) || bossActive) return;
   for(const p of players){
     if(!p || p.dead || p.out || !p.onGround) continue;
