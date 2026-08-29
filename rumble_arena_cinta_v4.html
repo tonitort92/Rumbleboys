@@ -1066,6 +1066,8 @@ window.addEventListener('load', function(){
     text-align:left; text-shadow:none; overflow-y:auto; }
   /* lo ÚNICO propio de cada una */
   #optCard, #langCard { width:min(520px,94vw); }
+  /* ►MODAL27: ningún título se mete bajo la ✕ (antes solo la tienda lo compensaba a mano) */
+  #optCard h2, #langCard h2, #ctlCard h2, #guideCard h2, #trophyCard h2, #marksCard h2, #charStatsCard h2, #htCard h2, #hdLogCard h2 { padding:0 34px; }
   /* ►MODAL26 · la ✕ es `absolute` DENTRO de la ficha; si la ficha es la que scrollea, la cruz se va
      con el contenido (en LOGROS, al tercer logro ya no la veías). En las ventanas con un cuerpo de
      lista claro el scroll se muda a ese cuerpo y la ficha deja de scrollear → la ✕ se queda clavada.
@@ -1435,13 +1437,15 @@ window.addEventListener('load', function(){
   #htDots .adot.on { background:var(--hc,#fff); border-color:#fff; box-shadow:0 0 8px var(--hc,#fff); }
   /* ---------- popup de configuración (JUGAR YA) ---------- */
   #setupModal { z-index:20; background:rgba(6,9,20,.74); backdrop-filter:blur(5px); }
-  .modalCard { position:relative; box-sizing:border-box; width:min(1040px,94vw); background:rgba(14,18,38,.94);
-    border:2px solid rgba(255,255,255,.16); border-radius:20px; padding:30px 30px 24px;
-    box-shadow:0 18px 60px rgba(0,0,0,.6); pointer-events:auto; }   /* ancho FIJO: no cambia según el personaje ni el paso */
+  /* ►MODAL27 (Toni 29/08: "todos los pop-ups con el mismo layout"): el asistente (#setupModal) y la sala (#netLobby)
+     eran los dos que se salían del marco ►MODAL26 (fondo plano, borde 2 px, otro padding). Mismo marco que el grupo. */
+  .modalCard { position:relative; box-sizing:border-box; width:min(1040px,94vw); max-height:94vh; display:flex; flex-direction:column;
+    background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14); border-radius:20px; padding:26px 26px 22px;
+    box-shadow:0 24px 70px rgba(0,0,0,.6); pointer-events:auto; overflow-y:auto; text-shadow:none; }   /* ancho FIJO: no cambia según el personaje ni el paso */
   .modalClose { position:absolute; top:10px; right:12px; width:34px; height:34px; border-radius:50%; cursor:pointer; pointer-events:auto;
     border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#dfe9ff; font-size:16px; font-weight:900; }
   .modalClose:hover { background:rgba(255,255,255,.18); }
-  .modalH { font-size:clamp(20px,3vw,30px); font-weight:900; margin:0 0 18px; color:#fff; }
+  .modalH { margin:0 0 12px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; padding:0 34px; }   /* ►MODAL27: el mismo título que el resto (h2 de ►MODAL26) */
   .modeRow { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
   .bigOpt { pointer-events:auto; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;
     width:210px; padding:24px 16px; border-radius:16px; border:2px solid rgba(255,255,255,.22); background:rgba(12,16,34,.7);
@@ -20134,6 +20138,11 @@ function updatePvpShieldFX(){
     #hdUser{ top:44px; } #hdMode{ top:118px; } #hdLogo{ top:30px; }
     #hdUTxt{ min-width:96px; } #hdCoins{ padding:4px 7px; }
     #hdLogMini{ width:236px; }
+    /* ►LOGMINI (Toni 29/08): el bloque de logros tan largo como la chip offline/online: los dos comparten --hdColW */
+    #startOverlay{ --hdColW:368px; }
+    #hdMode{ width:var(--hdColW); box-sizing:border-box; }
+    .hdModeBtn{ flex:1 1 0; width:auto; }
+    #hdLogMini{ width:var(--hdColW); }
     #hdUXp{ display:none; }   /* la barra basta; los numeros de XP comian el sitio del logo */
     #hdLogMiniList{ max-height:clamp(96px, 13vh, 120px); }   /* 3 filas: aire entre rail y logros con el margen inferior mayor */
     /* el rail, 20px más abajo del centro para dejar sitio al toggle más alto */
@@ -20691,7 +20700,7 @@ function updatePvpShieldFX(){
                 : (won ? '' : '<p id="hdCardNote">Los trofeos se ganan del tirón desde el Mundo 1.</p>'));
     }
     const tb = $('hdTrain'); if(tb) tb.firstChild.textContent = mini ? 'ENTRENAR ESTE MINIJUEGO' : 'ENTRENAR ESTE MUNDO';
-    { const cd = $('hdCard'); const reached = !!(won || i === st.next || (mini && disc));   // ►TRAINREACH (Toni 23/08): solo se entrena lo ALCANZADO (superado o el objetivo actual); lo no alcanzado ni botón ni aviso
+    { const cd = $('hdCard'); const reached = !!(won || i === st.next || disc);   // ►TRAINALL (Toni 29/08): todo mundo ALCANZADO se puede entrenar (antes solo el superado o el siguiente objetivo)   // ►TRAINREACH (Toni 23/08): solo se entrena lo ALCANZADO (superado o el objetivo actual); lo no alcanzado ni botón ni aviso
       if(cd){ cd.classList.toggle('locked', !reached); cd.classList.toggle('unreached', !reached); } }
   }
 
@@ -43570,6 +43579,11 @@ function returnToMenu(){
   if(typeof mapSelApply === 'function') mapSelApply();
 }
 document.getElementById('menuBtn').addEventListener('click', returnToMenu);
+/* ►MODAL27: el asistente y la sala online también se cierran con clic en el velo, como los demás (la ✕ y ESC ya iban) */
+for(const [mid, cid] of [['setupModal','setupClose'],['netLobby','netClose']]){
+  const el = document.getElementById(mid), x = document.getElementById(cid);
+  if(el && x) el.addEventListener('click', e=>{ if(e.target===el) x.click(); });
+}
 /* ESC: si hay un diálogo abierto en la home lo cierra; si estás en partida / cuenta atrás / fin, vuelve al menú */
 addEventListener('keydown', e=>{
   if(e.code !== 'Escape') return;
@@ -44838,7 +44852,8 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   var CONTAINERS = ['#startOverlay','#endOverlay','#lbOverlay','#perkOverlay',
                     '#netLobby','#guideModal','#trophyModal','#marksModal','#howToModal',
                     '#optModal','#langModal','#ctlModal','#setupModal',   /* ►HOME2: las tres fichas del menú de lista */
-                    '#trainPause','#pauseOverlay','#moveSheet','#atkShow'];   /* ►PAUSA (la chuleta solo es contenedor en modo modal: fuera de él no tiene botones) */
+                    '#trainPause','#pauseOverlay','#moveSheet','#atkShow',
+                    '#hdLogModal','#hdShopModal','#charStatsModal'];   /* ►UINAV2 (Toni 29/08): LOGROS y TIENDA cuelgan de body y la ficha de personaje no estaba: con ellos abiertos el mando navegaba la home de detrás */   /* ►PAUSA (la chuleta solo es contenedor en modo modal: fuera de él no tiene botones) */
   /* En estos overlays las FLECHAS ya las gestiona el juego (cambian slide/personaje). Ahí NO
      movemos el foco con flechas; el mando replica esa navegación pulsando sus botones. */
   var ARROW_OWNED = { atkShow:1, howToModal:1 };
@@ -44851,7 +44866,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   };
   /* incluye <div> clicables (perkCard, puntos) — evita a propósito el confeti (.confetti i.dot) */
   var FOCUS_SEL = 'button, a[href], input:not([type=hidden]), select, textarea, .perkCard,'+
-                  ' #cpDots .dot, #atkDots .dot, #htDots .dot, [data-uinav]';
+                  ' #cpDots .dot, #atkDots .dot, #htDots .dot, [data-uinav], [tabindex]:not([tabindex="-1"])';   /* ►UINAV2: #hdUser (logros) y #hdCard son div[tabindex] */
 
   var focusEl = null, activeC = null, activeId = '';
 
