@@ -2342,6 +2342,15 @@ window.addEventListener('load', function(){
 <script src="pirate_skeleton_anims.js?v=1"></script>  <!-- ►PIRMIX: Esqueleto soldado (Synty, rig Mixamo) — minion 'small' del mundo 12 -->
 <script src="pirate_captain_anims.js?v=1"></script>   <!-- ►PIRMIX: Capitán pata de palo — minion 'shooter' del mundo 12, con clip SHOOTING propio -->
 <script src="pirate_blackbeard_anims.js?v=1"></script><!-- ►PIRMIX: Barbanegra — minion 'large' del mundo 12 -->
+<script src="knightheavy_anims.js?v=1"></script>      <!-- ►MINIONS29: caballero PESADO (large, espada) — horda del mundo 2; 4 FBX Mixamo en base64, los monta _gobFbxLoad -->
+<script src="knightlight_anims.js?v=1"></script>      <!-- ►MINIONS29: caballera LIGERA (small mediano, melee espada) — mundo 2 -->
+<script src="knightarcher_anims.js?v=1"></script>     <!-- ►MINIONS29: soldado ARQUERO (shooter, arco + flecha real) — mundo 2 -->
+<script src="witch_anims.js?v=1"></script>            <!-- ►MINIONS29: BRUJA (shooter, bastón del mago + orbe lila) — mundo 2 -->
+<script src="geisha_anims.js?v=1"></script>           <!-- ►MINIONS29: GEISHA (shooter, shuriken de acero como la Q del samurái) — mundo 3 -->
+<script src="pirate_firstmate_anims.js?v=1"></script> <!-- ►MINIONS29: CONTRAMAESTRE pirata (small mediano, melee a puños) — mundo 12 -->
+<script src="pirate_english_anims.js?v=1"></script>   <!-- ►MINIONS29: CAPITÁN INGLÉS (small mediano, melee espada) — mundo 12 -->
+<script src="ice_rogue_anims.js?v=1"></script>        <!-- ►MINIONS29: PÍCARO del hielo (small mediano, melee espada) — mundo 7 -->
+<script src="ice_deckhand_anims.js?v=1"></script>     <!-- ►MINIONS29: GRUMETE del hielo (small mediano, melee hacha vikinga) — mundo 7 -->
 <script src="samboss_model.js?v=1"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
 <script src="samboss_death.js?v=1"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
 <script src="boss_anims.js?v=1"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
@@ -11966,7 +11975,9 @@ function maxMinions(){
      del pool. Con 8 sobre 16 de cupo hay holgura de sobra y no aparece ninguno.
      Esto rompe a proposito la invariante de ►PIRMIX ("los max suman 28 sobre un tope de 22"): ya no
      se sostiene con dos pieles, y el tope es lo que la sustituye. */
-  if(STAGE===12) return Math.min(PIR_CAP, Math.floor((9 + chaosLvl*4)*0.6));
+  /* ►PIRCREW2 (29/08): el tope PIR_CAP se RETIRA. Con contramaestre y capitán inglés en la ranura del
+     pequeño los cupos vuelven a sumar por encima del tope general (11+10+10+6 = 37 > 22) y el mar va
+     con la misma fórmula que los demás mundos. */
   const m=(STAGE===5)?1.3:1; return Math.min(Math.round(22*m), Math.floor((9 + chaosLvl*4)*0.6*m)); }   // enjambre al 50% del anterior (44→22; era 88; tunable si pesa) · ►S5: +30% de cap (22→29) para COMPENSAR la mortandad por baldosas-trampa/bombas/simas — misma CADENCIA que el resto, solo más aforo
 function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S1 (sin elite morado del desierto)
   return type==='small' ? 14 : type==='shooter' ? 30 : type==='drone' ? DRONE_HP : type==='boss' ? 99999 : large; }   // ►S8DRON: el dron es frágil a propósito — el coste de matarlo es SUBIR a por él, no aguantarle golpes   // vida: pequeño débil · tirador medio · gordo duro/elite · JEFE: muere por su propia lógica
@@ -11974,7 +11985,6 @@ function minionHP(type){ const large = 60;   // ►RECOLOR38: HP uniforme como S
    El minion es un muñeco de cajas no-skinned (cuerpo/cabeza/2 ojos/2 brazos/2 piernas) animado por
    rotación de miembros → ideal para instancing. Geometrías y materiales compartidos. */
 const MINION_CAP = 160;            // capacidad del pool instanciado (tope DURO; maxMinions() debe quedar por debajo)
-const PIR_CAP = 8;                 // ►PIRNOSKEL: aforo del mar pirata mientras solo haya dos pieles (ver maxMinions)
 const MIN_BODY_MAT = new THREE.MeshStandardMaterial({ color:0x26262b, roughness:.75, metalness:.05 });
 const MIN_DARK_MAT = new THREE.MeshStandardMaterial({ color:0x141417, roughness:.8,  metalness:.05 });
 const MIN_EYE_MAT  = new THREE.MeshBasicMaterial({ color:0x7a1d18 });   // ►F3c: ojos APAGADOS (era 0xff1a1a puro — el color de máxima alarma ×20 entidades en lo MENOS importante de la pantalla; de cerca se siguen leyendo)
@@ -12428,6 +12438,35 @@ const GOBLIN_KINDS = {
               h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
   pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:3.40, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false },   // ►PIRMIX: Barbanegra (large, melee)
+  /* ►MINIONS29 (Toni 29/08) · NUEVE PIELES NUEVAS de horda, Synty POLYGON Mini riggeadas en Mixamo, todas por
+     el camino `fbx`/`fbxClips` (_gobFbxLoad) como los piratas del S12: idle PRIMERO, jump AL FINAL, fbxWorldBox.
+     Ninguna trae arma en la malla (comprobado en los PNG de referencia): las cuelga _gobArmModel por `weapon`.
+     SIN noTint a propósito (decisión de Toni): cogen el color de su mundo como las demás pieles activas.
+     "Mediano" = h ~1.95 con type small/shooter (la liga de villager/pirskel/pircapt); "grande" = large.
+     Los `max` de partida son los de sus vecinos de ranura; se miden y se dejan en el plató (►MINPOOL29).
+       MUNDO 2 (jungla, roja): knheavy (large, espada) · knlight (small, espada) · knarcher (shooter, arco) ·
+                               witch (shooter, bastón del mago + orbe lila; `magic` lo lee minionShoot)
+       MUNDO 3 (Japón):        geisha (shooter; `shuriken` = la estrella de acero de la Q del samurái)
+       MUNDO 12 (piratas):     pirmate (small, puños) · pireng (small, espada)
+       MUNDO 7 (hielo):        icerogue (small, espada) · icedeck (small, hacha vikinga) */
+  knheavy:  { fbx:'KNHEAVY_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:3.6,  walkRef:2.3, max:8,  shadow:true,  jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballero PESADO (large)
+  knlight:  { fbx:'KNLIGHT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballera LIGERA (small, melee)
+  knarcher: { fbx:'KNARCHER_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  weapon:'bow' },     // ►MINIONS29: soldado ARQUERO (shooter, flecha real)
+  witch:    { fbx:'WITCH_FBX_B64',    fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  weapon:'staff', magic:true },   // ►MINIONS29: BRUJA (shooter, orbe lila)
+  geisha:   { fbx:'GEISHA_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  shuriken:true },    // ►MINIONS29: GEISHA (shooter, shuriken)
+  pirmate:  { fbx:'PIRMATE_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.90, walkRef:3.0, max:11, shadow:false, jitter:true,  shootAtk:false, weapon:null },      // ►MINIONS29: CONTRAMAESTRE (small, puños)
+  pireng:   { fbx:'PIRENG_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:3.0, max:10, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: CAPITÁN INGLÉS (small, espada)
+  icerogue: { fbx:'ICEROGUE_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:3.0, max:12, shadow:false, jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: PÍCARO del hielo (small, espada)
+  icedeck:  { fbx:'ICEDECK_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
+              h:1.95, walkRef:3.0, max:12, shadow:false, jitter:false, shootAtk:false, weapon:'vikaxe' },  // ►MINIONS29: GRUMETE del hielo (small, hacha)
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
@@ -12520,14 +12559,14 @@ function gobLoadKinds(kinds){
 gobLoadKinds(['small','shooter','large']);   // la horda base de todos los stages
 /* qué pieles y qué jefes necesita cada stage (lo demás no se toca hasta entrar) */
 const STAGE_ASSETS = {
-  2:  { gob:['gobshaman','gobwarrior'] },   // ►M2HORDA: la jungla tiene horda propia (el mini-jefe usa _bossTpl, que ya carga aparte)
-  3:  { gob:['villager','ninja','sensei'] },
+  2:  { gob:['knheavy','knlight','knarcher','witch'] },   // ►MINIONS29: la jungla es de los CABALLEROS; chamán/guerrero siguen cargando en el 4, que se los queda
+  3:  { gob:['villager','ninja','sensei','geisha'] },      // ►S3GEISHA: entra la geisha (tiradora de shuriken) y la horda deja de mezclar goblins
   4:  { gob:['gobshaman','gobwarrior'], boss:['dgolem'] },   // ►S4JUNGLA: el desierto pasa a la horda de la jungla · fuera los 4 esqueletos y `golem` (este ultimo era carga MUERTA: ~611 KB parseados que ninguna rama de spawnMinion asignaba)
   5:  { gob:['momia','skeleton','pirskel','skelshooter','skelknight'], boss:['dgolem','midgolem','smallgolem'] },   // ►S5HUESOS: entran `skeleton` y `skelknight` (los 4 esqueletos reales) · sale `golem`, que era carga muerta
-  7:  { gob:['skeleton','skelshooter','skelknight','viking1','viking2'], boss:['icevik'] },
+  7:  { gob:['viking1','viking2','icerogue','icedeck'], boss:['icevik'] },   // ►S7VIKINGOS: fuera los tres esqueletos (y los goblins por spawnMinion); entran pícaro y grumete
   8:  { gob:['robotm'], boss:['robot'] },   // >S8MUERTA: fuera s7barb/s7sam/s7knight. Mismo caso que el golem del S4/S5: tienen ficha en GOBLIN_KINDS y su script src, pero NINGUNA rama de spawnMinion los asigna como skin, asi que eran ~1,7 MB de base64 parseados en la pantalla de carga que no salian nunca. Las fichas se quedan por si se quieren usar algun dia.
   11: { gob:['westbad','westgun','westcow'] },
-  12: { gob:['pircapt','pirbeard'] },   // ►PIRNOSKEL: fuera pirskel/skelshooter/skelknight — los tres son esqueletos
+  12: { gob:['pirmate','pireng','pircapt','pirbeard'] },   // ►PIRNOSKEL: fuera pirskel/skelshooter/skelknight — los tres son esqueletos · ►PIRCREW2: llegan los dos piratas del pequeño
 };
 const BOSS_LOADERS = {};   // los rellenan dgolemLoad/midgolemLoad/smallgolemLoad/icevikLoad/robotLoad (abajo)
 function ensureStageAssets(st){
@@ -12572,6 +12611,12 @@ function _gobArmModel(root, weapon){
     if(!tpl) return false;                                  // plantilla aún no cargada → gobAttach reintenta el armado
     const rhand = find(/^fist\.?r$/i) || find(/right.*hand$/i) || find(/hand.*r$/i) || find(/fist.*r$/i);
     if(rhand) _hangProp(rhand, tpl, _fitN(weapon), null, 1, root);
+    return true;
+  }
+  if(weapon==='staff'){                                     // ►MINIONS29: BASTÓN del mago (GLB) en la mano DERECHA de la bruja, el mismo encaje que attachStaff
+    if(!_staffTpl) return false;                            // plantilla aún no cargada → gobAttach reintenta el armado
+    const rhand = find(/^fist\.?r$/i) || find(/right.*hand$/i) || find(/hand.*r$/i) || find(/fist.*r$/i);
+    if(rhand) _hangProp(rhand, _staffTpl, _fitN('staff'), null, 1, root);
     return true;
   }
   if(weapon==='gun'){                                       // ►WESTERN: revólver procedural en la mano DERECHA (mismo encaje que la espada)
@@ -13262,7 +13307,31 @@ function spawnMinion(){
   let skin = null;
   if(typeof ensureStageAssets==='function' && !spawnMinion._lazyDone){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }   // ►LAZY: por si se entró sin pasar por la pantalla de carga (F9, ?stage=)
   if(spawnMinion._lazyDone !== STAGE){ spawnMinion._lazyDone = STAGE; ensureStageAssets(STAGE); }
-  /* ►M2HORDA (Toni 26/08) · HORDA PROPIA, sin goblins verdes: "sin excepción", nada de caer al goblin
+  /* ►M2CABALLEROS (Toni 29/08) · MUNDO 2 = LOS CABALLEROS. Fuera chamán, guerrero, goblin raso y los 3
+     mini-jefes (decisión de Toni: la jungla queda SOLO con las cuatro pieles nuevas). El bloque del
+     desierto de más abajo (►M2HORDA/►S4JUNGLA) CONSERVA la horda goblin + mini-jefe tal cual: ya no es
+     "la misma configuración que el mundo 2", ahora es la suya. Roster cerrado, patrón PIR5:
+         small   → caballera LIGERA (melee, espada)
+         shooter → ARQUERO (arco, flecha real) | BRUJA (bastón, orbe lila), a moneda
+         large   → caballero PESADO (espada)
+     El fuego a distancia sigue siendo la ranura de tirador (22 % de la tirada), como hoy. Rescate
+     cruzado casando el type con la piel (el type manda vida y daño) y HUECO si no hay nada libre: ni un
+     goblin verde en la jungla. */
+  if(STAGE===2){
+    const M2 = { small:['knlight'], shooter:['knarcher','witch'], large:['knheavy'] };
+    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    let par = M2[type].slice();
+    if(par.length > 1 && Math.random() < 0.5) par.reverse();              // arquero / bruja a cara o cruz
+    let k = par.find(libre) || null;
+    if(!k){                                                               // su ranura al tope → cualquier otro caballero
+      const otra = ['knlight','knarcher','witch','knheavy'].filter(x => !M2[type].includes(x)).find(libre);
+      if(otra){ k = otra; type = (k==='knheavy') ? 'large' : (k==='knlight') ? 'small' : 'shooter'; }
+    }
+    if(!k) return;                                                        // nada libre → hueco, NUNCA un goblin verde
+    skin = k;
+  }
+  /* ►M2HORDA (Toni 26/08) · [desde ►M2CABALLEROS este bloque es SOLO del DESIERTO (S4); el mundo 2 va
+     arriba con los caballeros] HORDA PROPIA, sin goblins verdes: "sin excepción", nada de caer al goblin
      si un pool se llena, que es lo que hacen S3/S12. Reparto por ranura, respetando la tirada de arriba:
        small   → MINI-JEFE encogido a tamaño de personaje (sale por spawnBrute, otra vía entera)
        shooter → CHAMÁN
@@ -13285,7 +13354,7 @@ function spawnMinion(){
      mantiene ~22% de presion a distancia, ahora en manos del chaman, y suma 3 mini-jefes permanentes.
      Las emboscadas NO hay que tocarlas: triggerAmbush sale en seco para STAGE 4-9, asi que su copia
      del mapeo del S2 no se ejerce aqui. */
-  if(STAGE===2 || STAGE===4){
+  if(STAGE===4){
     if(type==='small'){
       /* `!demo` por lo mismo que el camino élite de arriba (►RONDA6d: el mini-jefe no sale en la
          home/demo); allí se queda en chamanes, que es enjambre de fondo y no espectáculo. */
@@ -13308,9 +13377,22 @@ function spawnMinion(){
       skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';   // el type manda vida/daño: casarlo con la piel que sale
     }
   }
-  if(STAGE===7 && Math.random() < 0.5){
-    const k = ({ small:'skeleton', shooter:'skelshooter', large:'skelknight' })[type];
-    if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  /* ►S7VIKINGOS (Toni 29/08): el hielo es SOLO vikingos — fuera los goblins y los tres esqueletos que
+     entraban por aquí (►SKELMINIONS). Entran el PÍCARO (espada) y el GRUMETE (hacha) como medianos y los
+     dos vikingos grandes siguen. TODO MELEE, a propósito (decisión de Toni): la tirada base se REHACE
+     sin ranura de tirador —82 % mediano / 18 % grande— porque un type 'shooter' DISPARA aunque su piel
+     no tenga arma (updateMinion mira el type, no la ficha). Moneda dentro de cada ranura, rescate
+     cruzado casando el type, y hueco si no hay nada libre: ni un goblin en la nieve. */
+  if(STAGE===7){
+    type = (Math.random() < 0.82) ? 'small' : 'large';
+    const S7 = { small:['icerogue','icedeck'], large:['viking1','viking2'] };
+    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    let par = S7[type].slice(); if(Math.random() < 0.5) par.reverse();
+    let k = par.find(libre) || null;
+    if(!k){ const otra = S7[type==='small' ? 'large' : 'small'].slice(); if(Math.random() < 0.5) otra.reverse();
+      k = otra.find(libre) || null; if(k) type = (type==='small') ? 'large' : 'small'; }
+    if(!k) return;
+    skin = k;
   }
   /* ►MOMIAS (Toni 27/08) + ►S5HUESOS (Toni 28/08: "en la piramide quitaremos todos los minions menos
      eskeletos y momia y pondremos todos los modelos de eskeletos que tenemos... los que tengo de
@@ -13390,17 +13472,20 @@ function spawnMinion(){
      Barbanegra. La horda no adelgazaria: se volveria 100% de esos dos, que es justo lo contrario de
      lo pedido, y ademas les doblaria la vida (14 de small contra 30/60). */
   if(STAGE===12){
-    const PIR = { small:[], shooter:['pircapt'], large:['pirbeard'] };
-    if(!PIR[type].length) return;                              // ►PIRNOSKEL: el pequeno no tiene piel → hueco, y NO se recicla la tirada
+    /* ►PIRCREW2 (Toni 29/08): llegan los dos piratas que faltaban y la ranura del PEQUEÑO vuelve a tener
+       piel: CONTRAMAESTRE (puños) y CAPITÁN INGLÉS (espada), a moneda. El `return` de ►PIRNOSKEL ya no
+       hace falta (ninguna ranura está vacía) y el tope PIR_CAP de maxMinions se ha retirado con él. */
+    const PIR = { small:['pirmate','pireng'], shooter:['pircapt'], large:['pirbeard'] };
+    if(!PIR[type].length) return;                              // (cinturón: hoy ninguna ranura está vacía)
     const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
     let par = PIR[type].slice();
     if(par.length > 1 && Math.random() < 0.5) par.reverse();    // cara o cruz: ni el pirata ni el esqueleto mandan
     let k = par.find(libre) || null;
     if(!k){                                                    // su ranura al tope → la otra piel pirata antes que un goblin
-      const todas = ['pircapt','pirbeard'].filter(x => !PIR[type].includes(x));
+      const todas = ['pirmate','pireng','pircapt','pirbeard'].filter(x => !PIR[type].includes(x));
       const otro = todas.find(libre);
       if(otro){ k = otro;
-        type = (k==='pirbeard') ? 'large' : 'shooter';   // el type manda vida/dano: casarlo con la piel que sale
+        type = (k==='pirbeard') ? 'large' : (k==='pircapt') ? 'shooter' : 'small';   // el type manda vida/dano: casarlo con la piel que sale
       }
     }
     if(!k) return;                                             // todas llenas → hueco, NUNCA goblin verde en un barco
@@ -13409,17 +13494,27 @@ function spawnMinion(){
   /* ►ORIENTALS: en S3 (Japón, jardín sakura) la horda mezcla ~50/50 goblins + minions orientales (textura
      natural), con el mismo type/comportamiento: small→aldeano · shooter→ninja (lanza) · large→sensei (melee).
      Si su pool está lleno cae al goblin (evita caja sin textura). */
-  if(STAGE===3 && Math.random() < 0.5){
-    const k = ({ small:'villager', shooter:'ninja', large:'sensei' })[type];
-    if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+  /* ►S3GEISHA (Toni 29/08): Japón deja de mezclar goblins (era ~50/50) y cierra el roster con los tres
+     orientales + la GEISHA, tiradora de shuriken de acero (la estrella de la Q del samurái). Ninja y
+     geisha se reparten la ranura de tirador a moneda. Rescate cruzado casando el type y hueco si no hay
+     nada libre — el mismo patrón que la pirámide (PIR5). */
+  if(STAGE===3){
+    const JP = { small:['villager'], shooter:['ninja','geisha'], large:['sensei'] };
+    const libre = x => _gobTpl[x] && _gobLive[x] < GOBLIN_KINDS[x].max;
+    let par = JP[type].slice();
+    if(par.length > 1 && Math.random() < 0.5) par.reverse();
+    let k = par.find(libre) || null;
+    if(!k){
+      const otra = ['villager','ninja','geisha','sensei'].filter(x => !JP[type].includes(x)).find(libre);
+      if(otra){ k = otra; type = (k==='sensei') ? 'large' : (k==='villager') ? 'small' : 'shooter'; }
+    }
+    if(!k) return;                                                        // nada libre → hueco, NUNCA un goblin en el jardín
+    skin = k;
   }
   /* ►VIKINGS: en S7 (ártico) los enemigos GRANDES pueden ser vikingos de hielo (bruisers con hacha/martillo,
      un poco más altos que los personajes). Sustituyen a veces al caballero/goblin grande; si su pool está
      lleno se conserva el skin previo (evita caja sin textura). Tinte azul congelado lo aplica gobAttach. */
-  if(STAGE===7 && type==='large' && Math.random() < 0.55){
-    const vk = Math.random()<0.5 ? 'viking1' : 'viking2';
-    if(_gobTpl[vk] && _gobLive[vk] < GOBLIN_KINDS[vk].max) skin = vk;
-  }
+  /* (el 55 % de vikingos en la ranura grande de antes vive ahora en la tabla S7 de ►S7VIKINGOS, arriba) */
   /* ►WEST (STAGE 11): aquí los pistoleros NO son una mezcla, son LA horda — es su stage. Sin tirada
      de probabilidad: si queda hueco en sus pools, sale vaquero. No hay que quitarles ningún tinte:
      su ficha llevaba noTint:true, así que gobAttach ni les tocaba el material. ►WORLDTINT (28/08): a las
@@ -13501,9 +13596,11 @@ function killMproj(i){ const s=mprojs[i]; scene.remove(s.m);
 const _mprojGeo = new THREE.SphereGeometry(.2,8,6), _mprojPool = [];   // ►PERF2: pool de disparos de minion
 const _mpO = new THREE.Vector3(), _mpD = new THREE.Vector3();
 function minionShoot(mn, tgt){
-  const arrow = (mn.skin==='skelshooter');                 // ►SKELMINIONS: el soldado esqueleto dispara FLECHA real con su arco (no la esfera roja del goblin)
-  const gun = !!(mn.skin && GOBLIN_KINDS[mn.skin] && /^(gun|flintlock)$/.test(GOBLIN_KINDS[mn.skin].weapon || ''));   // ►WESTERN: pistolero → BALA trazadora (rápida, cálida) en vez de esfera roja   // ►PIRGUNNER: la pistola de chispa hereda TODO el disparo del oeste (bala, fogonazo, altura de boca, sonido)
-  const oy = arrow ? 1.35 : gun ? 1.3 : 1.1*mn.scale;      // sale a la altura del arco / del revólver
+  const kcfg = (mn.skin && GOBLIN_KINDS[mn.skin]) || null;   // ►MINIONS29: la FICHA de la piel decide el proyectil (arco / pistola / shuriken / magia)
+  const arrow = (mn.skin==='skelshooter' || !!(kcfg && kcfg.weapon==='bow'));   // ►SKELMINIONS: el soldado esqueleto dispara FLECHA real con su arco (no la esfera roja del goblin) · ►MINIONS29: y cualquier piel con arco (el arquero caballero)
+  const gun = !!(kcfg && /^(gun|flintlock)$/.test(kcfg.weapon || ''));   // ►WESTERN: pistolero → BALA trazadora (rápida, cálida) en vez de esfera roja   // ►PIRGUNNER: la pistola de chispa hereda TODO el disparo del oeste (bala, fogonazo, altura de boca, sonido)
+  const shuri = !!(kcfg && kcfg.shuriken), magic = !!(kcfg && kcfg.magic);   // ►MINIONS29: geisha / bruja
+  const oy = arrow ? 1.35 : (gun || shuri || magic) ? 1.3 : 1.1*mn.scale;      // sale a la altura del arco / del revólver / de la mano
   const o = _mpO.set(mn.pos.x, mn.pos.y + oy, mn.pos.z);
   const dir = _mpD.set(tgt.pos.x, tgt.pos.y+1, tgt.pos.z).sub(o).normalize();
   mn.yaw = Math.atan2(dir.x, dir.z);
@@ -13514,18 +13611,27 @@ function minionShoot(mn, tgt){
     if(m){ const acol=(STAGE===5)?0xff8420:0xffb040; m._glow.visible=true; m._glow.material.color.set(acol); m._glow.scale.setScalar(1.15);
       m.quaternion.setFromUnitVectors(_PJ_UPY, dir); }     // orienta la flecha en la dirección de vuelo
   }
-  if(!m){                                                  // esfera roja (goblin shooter clásico · o fallback si no hay malla de flecha)
+  if(shuri){   /* ►MINIONS29 · GEISHA: la estrella de ACERO de la Q del samurái (_shurikenMesh 'q'), como hace
+                  bossShuriken pero a tamaño minion. Disco perpendicular al avance y `spin` en updateMprojs.
+                  No va por pool: _shurikenMesh clona geometría y material y killMproj los dispone. */
+    m = (typeof _shurikenMesh==='function') ? _shurikenMesh('q') : null;
+    if(m){ m.scale.setScalar(1.6); m.quaternion.setFromUnitVectors(_PJ_UPZ, dir); if(!m._v) m._v = new THREE.Vector3(); }
+  }
+  if(!m){                                                  // esfera roja (goblin shooter clásico · o fallback si no hay malla de flecha/shuriken)
     m = _mprojPool.pop();
     if(!m){ m = new THREE.Mesh(_mprojGeo, new THREE.MeshStandardMaterial({ color:0xff4030, emissive:0xff0000, emissiveIntensity:1.3, roughness:.4 }));
       m._v = new THREE.Vector3(); m._pool = _mprojPool; }
     m.material.color.set(0xff4030); m.material.emissive.set(0xff0000); m.material.emissiveIntensity = 1.3;   // (compartido con otros tiradores que ajustan el color)
     m.scale.setScalar(1); m.quaternion.identity();
     if(gun){ m.material.color.set(0xfff2c0); m.material.emissive.set(0xffc23a); m.material.emissiveIntensity = 2.2; m.scale.setScalar(0.55); }   // ►WESTERN: bala pequeña blanco-cálido (el pool se resetea arriba en cada disparo)
+    else if(magic){ m.material.color.set(0xb060ff); m.material.emissive.set(0x7a2bff); m.material.emissiveIntensity = 1.8; m.scale.setScalar(1.3); }   // ►MINIONS29 · BRUJA: orbe LILA, el color del orbe arcano del mago (mageOrbQ)
   }
   m.visible = true;
   m.position.copy(o); scene.add(m);
-  mprojs.push({ m, v:m._v.copy(dir).multiplyScalar(gun?28:20), life:(gun?1.6:2.4), dmg: 8 + chaosLvl });   // ►ROSTER: el DISPARADOR pega más fuerte que los goblins (melee ~5) — proyectil con daño propio · ►WESTERN: bala más rápida y de vida corta
+  mprojs.push({ m, v:m._v.copy(dir).multiplyScalar(gun?28:shuri?26:20), life:(gun||shuri)?1.6:2.4, dmg: 8 + chaosLvl,
+    spin: shuri || undefined, trailCol: shuri ? 0xcfe8ff : magic ? 0xb060ff : undefined });   // ►ROSTER: el DISPARADOR pega más fuerte que los goblins (melee ~5) — proyectil con daño propio · ►WESTERN: bala más rápida y de vida corta · ►MINIONS29: el shuriken gira y deja estela acero (la del samurái), el orbe de la bruja estela lila
   if(gun) burst(o.clone(), 0xffd060, 6, 3, 2, .3);          // ►WESTERN: fogonazo en la boca del cañón (o = scratch _mpO → clonar)
+  else if(magic) burst(o.clone(), 0xb060ff, 6, 3, 3, .35);   // ►MINIONS29: chispazo lila en la mano de la bruja
   mn.shootT = .25;                                          // brazo derecho al frente un instante (gesto de disparo)
   sfx.throwS();
 }
@@ -17886,20 +17992,24 @@ function triggerAmbush(A, wx, wz, tgt){
     /* ►S3FIX2: el mapeo de skins japonesas (aldeano/ninja/sensei) vive en spawnMinion, NO en
        spawnMinionAt — llamando directo salían goblins en pleno Japón. Se replica aquí. */
     let skin = null;
-    if(STAGE===3 && Math.random() < 0.7){
-      const k = ({ small:'villager', shooter:'ninja', large:'sensei' })[type];
-      if(k && _gobTpl[k] && _gobLive[k] < GOBLIN_KINDS[k].max) skin = k;
+    if(STAGE===3){   // ►S3GEISHA: roster cerrado también en la emboscada (antes 70 % oriental / 30 % goblin)
+      const par = ({ small:['villager'], shooter:['ninja','geisha'], large:['sensei'] })[type].slice();
+      if(par.length > 1 && Math.random() < 0.5) par.reverse();
+      const k = par.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
+      if(!k) continue;                                        // pieles al tope → salta este hueco, nunca goblin
+      skin = k;
     }
     /* ►M2HORDA: misma trampa que documenta ►S3FIX2 justo arriba — esta vía llama a spawnMinionAt y se
        salta el mapeo de spawnMinion, así que sin esto el mundo 2 seguiría escupiendo goblins VERDES por
        las emboscadas. Aquí NO entra el mini-jefe a propósito: una emboscada suelta hasta 14 de golpe y
        eso serían 14 mini-jefes (además de reventar BRUTE_MINI_MAX). El anillo del campamento es de
        chamanes y guerreros; el mini-jefe llega por el goteo normal de la horda. */
-    if(STAGE===2){
-      const pref = (type==='large') ? ['gobwarrior','gobshaman'] : ['gobshaman','gobwarrior'];
-      const k = pref.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
+    if(STAGE===2){   // ►M2CABALLEROS: el anillo del campamento es de caballeros (ligera / arquero-bruja / pesado), mismo mapeo que spawnMinion
+      const par = ({ small:['knlight'], shooter:['knarcher','witch'], large:['knheavy'] })[type].slice();
+      if(par.length > 1 && Math.random() < 0.5) par.reverse();
+      const k = par.find(x2 => _gobTpl[x2] && _gobLive[x2] < GOBLIN_KINDS[x2].max);
       if(!k) continue;                                        // pieles al tope → salta este hueco, nunca goblin verde
-      skin = k; type = (k==='gobwarrior') ? 'large' : 'shooter';
+      skin = k;
     }
     const mn = spawnMinionAt(x, z, top, type, skin);
     if(mn){ mn.target=tgt; mn.retargetT=1.2; spawned++; }
