@@ -12349,8 +12349,8 @@ const GOBLIN_KINDS = {
   skelknight:  { glb:'SKELKNIGHT_GLB_B64', h:3.4, walkRef:2.3, max:6, shadow:true, jitter:false, shootAtk:false, weapon:'sword' },   // ►SKELMINIONS: esqueleto CABALLERO (big/large) — espada
   /* ►VIKINGS (S7 ártico): 2 vikingos Synty POLYGON (rig Mixamo) un poco MÁS ALTOS que los personajes
      (h 2.4 > CHAR_TARGET_H 2.0); melee sin clip de ataque (idle/walk/jump); tinte azul congelado por gobAttach. */
-  viking1:     { glb:'VIKING1_GLB_B64', h:2.4, walkRef:3.4, max:5, shadow:true, jitter:false, shootAtk:false, weapon:'vikaxe'    },   // ►VIKINGS: vikingo 1 — HACHA (mano der)
-  viking2:     { glb:'VIKING2_GLB_B64', h:2.4, walkRef:3.4, max:5, shadow:true, jitter:false, shootAtk:false, weapon:'vikhammer' },   // ►VIKINGS: vikingo 2 — MARTILLO (mano der)
+  viking1:     { glb:'VIKING1_GLB_B64', h:2.4, walkRef:3.4, max:9, shadow:true, jitter:false, shootAtk:false, weapon:'vikaxe'    },   // ►VIKINGS: vikingo 1 — HACHA (mano der)
+  viking2:     { glb:'VIKING2_GLB_B64', h:2.4, walkRef:3.4, max:9, shadow:true, jitter:false, shootAtk:false, weapon:'vikhammer' },   // ►VIKINGS: vikingo 2 — MARTILLO (mano der)
   golem:       { glb:'GOLEM_GLB_B64',  h:3.4,  walkRef:2.3, max:5,  shadow:true,  jitter:false, shootAtk:false },   // golem de roca (large de S5/S7)
   s7barb:      { glb:'S7BARB_GLB_B64',  h:3.2, walkRef:2.4, max:5,  shadow:true,  jitter:false, shootAtk:false },   // ►F3b: héroe-minion S8 (bárbaro, large)
   s7sam:       { glb:'S7SAM_GLB_B64',   h:2.2, walkRef:3.0, max:10, shadow:false, jitter:true,  shootAtk:false },   // ►F3b: héroe-minion S8 (samurái, small rápido)
@@ -12364,9 +12364,9 @@ const GOBLIN_KINDS = {
   /* ►ORIENTALS (S3 Japón): 3 minions orientales Synty POLYGON (rig Mixamo) con clips idle/walk/jump/attack.
      noTint = conservan su textura natural (ninja oscuro, aldeano, sensei) — el jardín sakura no re-tiñe la horda.
      Roles: villager=small melee · ninja=shooter (lanza proyectil, gesto de tirada) · sensei=large melee (combo punch). */
-  ninja:    { glb:'NINJA_GLB_B64',   h:1.9, walkRef:3.2, max:8, shadow:false, jitter:false, shootAtk:true },  // ►ORIENTALS: ninja disparador (lanza)
-  sensei:   { glb:'SENSEI_GLB_B64',  h:2.3, walkRef:2.4, max:5, shadow:true, jitter:false, shootAtk:false },  // ►ORIENTALS: sensei (large melee)
-  villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:8, shadow:false, jitter:true, shootAtk:false },  // ►ORIENTALS: aldeano (small melee)
+  ninja:    { glb:'NINJA_GLB_B64',   h:1.9, walkRef:3.2, max:9, shadow:false, jitter:false, shootAtk:true },  // ►ORIENTALS: ninja disparador (lanza)
+  sensei:   { glb:'SENSEI_GLB_B64',  h:2.3, walkRef:2.4, max:10, shadow:true, jitter:false, shootAtk:false },  // ►ORIENTALS: sensei (large melee)
+  villager: { glb:'VILLAGER_GLB_B64', h:1.8, walkRef:3.0, max:21, shadow:false, jitter:true, shootAtk:false },  // ►ORIENTALS: aldeano (small melee)
   /* ►S8ROBOT (Stage 8, la fábrica): robot LaloBOT de la horda. Es la ÚNICA piel del proyecto que no
      viene de un GLB sino de 4 FBX Mixamo sueltos (idle / walk / attack=Zombie Attack / jump) → los
      monta _gobFbxLoad, que fabrica el mismo {scene, animations} que devuelve GLTFLoader.
@@ -12435,38 +12435,51 @@ const GOBLIN_KINDS = {
   pirskel:  { fbx:'PIRSKELM_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
               h:1.80, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false },   // ►PIRMIX: esqueleto soldado (small, melee) · ►PIRPOOL: 12→18
   pircapt:  { fbx:'PIRCAPT_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING)
+              h:1.95, walkRef:2.6, max:12, shadow:false, jitter:false, shootAtk:true  },   // ►PIRMIX: capitán pata de palo (shooter, clip SHOOTING) · ►MINPOOL29: 10→12
   pirbeard: { fbx:'PIRBEARD_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:3.40, walkRef:2.3, max:6,  shadow:true,  jitter:false, shootAtk:false },   // ►PIRMIX: Barbanegra (large, melee)
+              h:3.40, walkRef:2.3, max:9,  shadow:true,  jitter:false, shootAtk:false },   // ►PIRMIX: Barbanegra (large, melee) · ►MINPOOL29: 6→9
   /* ►MINIONS29 (Toni 29/08) · NUEVE PIELES NUEVAS de horda, Synty POLYGON Mini riggeadas en Mixamo, todas por
      el camino `fbx`/`fbxClips` (_gobFbxLoad) como los piratas del S12: idle PRIMERO, jump AL FINAL, fbxWorldBox.
      Ninguna trae arma en la malla (comprobado en los PNG de referencia): las cuelga _gobArmModel por `weapon`.
      SIN noTint a propósito (decisión de Toni): cogen el color de su mundo como las demás pieles activas.
      "Mediano" = h ~1.95 con type small/shooter (la liga de villager/pirskel/pircapt); "grande" = large.
-     Los `max` de partida son los de sus vecinos de ranura; se miden y se dejan en el plató (►MINPOOL29).
+     ►MINPOOL29 · TALLAS Y CUPOS MEDIDOS (29/08, headless, memoria medir-proporciones-de-horda):
+     · Talla: altura VISTA en el idle = HeadTop_End − hueso más bajo, en mundo. Con h 1.95 los medianos
+       daban de 1,71 (geisha, idle agachado) a 1,92 (knlight); el pesado 3,28 con h 3.6. Referencias:
+       pircapt 1,79 · ninja 1,88 · gobwarrior 3,48. Cada h de abajo deja al mediano en ~1,85 y al pesado en 3,46.
+     · Cupos: 1500 llenados hasta el tope 22 (caos 12) SIN topes para ver la demanda natural; max = p99,5 + 1.
+       Con los max de partida el S3 tocaba tope en el 99,9 % de las hordas (villager 8 para el 65 % de la
+       tirada: los goblins se lo comían antes), el S7 el 37,6 % y el S12 el 26,1 %. Demanda medida (media / p99,5):
+         S2  knlight 14,3/20 · knheavy 2,8/9 · knarcher 2,5/7 · witch 2,4/9
+         S3  villager 14,3/20 · ninja 2,4/8 · geisha 2,4/8 · sensei 2,9/9
+         S7  icerogue 9,1/15 · icedeck 9,0/15 · viking1 2,0/8 · viking2 2,0/8
+         S12 pirmate 7,1/14 · pireng 7,2/13 · pircapt 4,9/11 · pirbeard 2,9/8
+       Los vecinos que ahora cubren ranura entera suben con ellos: villager 8→21, ninja 8→9, sensei 5→10,
+       viking1/2 5→9, pircapt 10→12, pirbeard 6→9. Verificado después con estos max: ver la cifra de
+       hordas con pool lleno en el commit MINPOOL29.
        MUNDO 2 (jungla, roja): knheavy (large, espada) · knlight (small, espada) · knarcher (shooter, arco) ·
                                witch (shooter, bastón del mago + orbe lila; `magic` lo lee minionShoot)
        MUNDO 3 (Japón):        geisha (shooter; `shuriken` = la estrella de acero de la Q del samurái)
        MUNDO 12 (piratas):     pirmate (small, puños) · pireng (small, espada)
        MUNDO 7 (hielo):        icerogue (small, espada) · icedeck (small, hacha vikinga) */
   knheavy:  { fbx:'KNHEAVY_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:3.6,  walkRef:2.3, max:8,  shadow:true,  jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballero PESADO (large)
+              h:3.8,  walkRef:2.3, max:10, shadow:true,  jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballero PESADO (large) · h 3.8 = 3.46 VISTO (gobwarrior 3.48) · max 10 (p99,5 = 9)
   knlight:  { fbx:'KNLIGHT_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:3.0, max:18, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballera LIGERA (small, melee)
+              h:1.88, walkRef:3.0, max:21, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: caballera LIGERA (small, melee) · h 1.88 = 1.85 visto · max 21 (p99,5 = 20, pico 21)
   knarcher: { fbx:'KNARCHER_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  weapon:'bow' },     // ►MINIONS29: soldado ARQUERO (shooter, flecha real)
+              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  weapon:'bow' },     // ►MINIONS29: soldado ARQUERO (shooter, flecha real) · 1.87 visto · max 8 (p99,5 = 7)
   witch:    { fbx:'WITCH_FBX_B64',    fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  weapon:'staff', magic:true },   // ►MINIONS29: BRUJA (shooter, orbe lila)
+              h:1.95, walkRef:2.6, max:10, shadow:false, jitter:false, shootAtk:true,  weapon:'staff', magic:true },   // ►MINIONS29: BRUJA (shooter, orbe lila) · 1.83 visto · max 10 (p99,5 = 9)
   geisha:   { fbx:'GEISHA_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:2.6, max:8,  shadow:false, jitter:false, shootAtk:true,  shuriken:true },    // ►MINIONS29: GEISHA (shooter, shuriken)
+              h:2.10, walkRef:2.6, max:9,  shadow:false, jitter:false, shootAtk:true,  shuriken:true },    // ►MINIONS29: GEISHA (shooter, shuriken) · h 2.10 = 1.84 visto (el idle va agachado) · max 9 (p99,5 = 8)
   pirmate:  { fbx:'PIRMATE_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.90, walkRef:3.0, max:11, shadow:false, jitter:true,  shootAtk:false, weapon:null },      // ►MINIONS29: CONTRAMAESTRE (small, puños)
+              h:1.90, walkRef:3.0, max:15, shadow:false, jitter:true,  shootAtk:false, weapon:null },      // ►MINIONS29: CONTRAMAESTRE (small, puños) · 1.89 visto · max 15 (p99,5 = 14)
   pireng:   { fbx:'PIRENG_FBX_B64',   fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:3.0, max:10, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: CAPITÁN INGLÉS (small, espada)
+              h:2.08, walkRef:3.0, max:14, shadow:false, jitter:true,  shootAtk:false, weapon:'sword' },   // ►MINIONS29: CAPITÁN INGLÉS (small, espada) · h 2.08 = 1.85 visto · max 14 (p99,5 = 13)
   icerogue: { fbx:'ICEROGUE_FBX_B64', fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:3.0, max:12, shadow:false, jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: PÍCARO del hielo (small, espada)
+              h:2.00, walkRef:3.0, max:16, shadow:false, jitter:false, shootAtk:false, weapon:'sword' },   // ►MINIONS29: PÍCARO del hielo (small, espada) · h 2.00 = 1.85 visto · max 16 (p99,5 = 15)
   icedeck:  { fbx:'ICEDECK_FBX_B64',  fbxClips:['idle','walk','attack','jump'], fbxWorldBox:true,
-              h:1.95, walkRef:3.0, max:12, shadow:false, jitter:false, shootAtk:false, weapon:'vikaxe' },  // ►MINIONS29: GRUMETE del hielo (small, hacha)
+              h:1.90, walkRef:3.0, max:16, shadow:false, jitter:false, shootAtk:false, weapon:'vikaxe' },  // ►MINIONS29: GRUMETE del hielo (small, hacha) · h 1.90 = 1.86 visto · max 16 (p99,5 = 15)
 };
 const _gobTpl = {}, _gobPool = {}, _gobLive = {};
 for(const k in GOBLIN_KINDS){ _gobPool[k] = []; _gobLive[k] = 0; }
@@ -12783,9 +12796,27 @@ function _gobBuildInst(type){                             // crea UNA instancia 
     acts[c.name]=a;
   }
   const weapon = cfg.weapon || null;                     // ►SKELMINIONS: arma por defecto (arco/espada) del minion
-  const armed = _gobArmModel(root, weapon);              // intenta armarlo YA (si el arco no cargó → gobAttach reintenta)
+  const baseScale = (sz.y>0.001 ? cfg.h/sz.y : 1);
+  const armed = _gobArmScaled(root, weapon, cfg, baseScale);   // intenta armarlo YA (si el arco no cargó → gobAttach reintenta) · ►ARMAFBX: con la escala corregida en los rigs FBX
   if(typeof registerMinionSil === 'function') registerMinionSil(root);   // ►MINSIL: outline color del mapa (una vez por instancia; el pool la reutiliza)
-  return { root, mixer, acts, mats:(cfg.noTint ? null : mats), baseScale:(sz.y>0.001 ? cfg.h/sz.y : 1), baseYmin:box.min.y, weapon, armed };   // ►WESTERN: null (no []) — gobAttach comprueba if(inst.mats)
+  return { root, mixer, acts, mats:(cfg.noTint ? null : mats), baseScale, baseYmin:box.min.y, weapon, armed };   // ►WESTERN: null (no []) — gobAttach comprueba if(inst.mats)
+}
+/* ►ARMAFBX (29/08) · POR QUÉ las armas salían de 1 cm en las pieles FBX. _gobArmModel compensa la escala
+   del HUESO medida ANTES de que gobAttach aplique baseScale a la raíz. En los GLB Synty eso funciona
+   porque la armadura ya lleva su 0.01 dentro (hueso a 0.01, raíz a ~1.7): el arma sale a size×sc, o sea
+   proporcional a la talla del minion (la espada del skelknight mide 1,96). En un FBX Mixamo la geometría
+   va en cm con los huesos a escala 1 y TODO el 0.01 lo pone baseScale en la raíz: al medir el hueso a 1,
+   el arma se dejaba a `size` y luego la raíz la encogía ×0.01 (medido: 0,01 u de espada, arco y bastón
+   en las cuatro pieles del mundo 2). Aquí se escala la raíz A MANO durante el armado con el factor que
+   deja el arma en size×(h/2), que es lo que reciben los GLB (su altura nativa es ~2), y se restaura
+   después. Los GLB no pasan por aquí: ni un cambio en las pieles que ya iban bien. */
+function _gobArmScaled(root, weapon, cfg, baseScale){
+  if(!cfg.fbx || !weapon) return _gobArmModel(root, weapon);
+  const s0 = root.scale.x;
+  root.scale.setScalar(baseScale * 2.0 / cfg.h); root.updateMatrixWorld(true);
+  let ok = true;
+  try{ ok = _gobArmModel(root, weapon); } finally { root.scale.setScalar(s0); root.updateMatrixWorld(true); }
+  return ok;
 }
 function gobAttach(mn){
   if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobLoaded[mn.skin]) gobLoadKinds([mn.skin]);   // ►LAZY: red de seguridad (se vestirá cuando termine de parsear)
@@ -12794,7 +12825,7 @@ function gobAttach(mn){
   const tpl = _gobTpl[kin]; if(!tpl || mn._gob || _gobLive[kin] >= cfg.max) return;
   let inst = _gobPool[kin].pop();
   if(!inst) inst = _gobBuildInst(kin);
-  if(inst.weapon && !inst.armed) inst.armed = _gobArmModel(inst.root, inst.weapon);   // ►SKELMINIONS: reintento de armado (el arco pudo cargar tras el prewarm)
+  if(inst.weapon && !inst.armed) inst.armed = _gobArmScaled(inst.root, inst.weapon, cfg, inst.baseScale);   // ►SKELMINIONS: reintento de armado (el arco pudo cargar tras el prewarm) · ►ARMAFBX
   const jit = cfg.jitter ? (1 + (Math.random()-0.5)*0.12) : 1;   // ±6% por instancia → alturas sutilmente distintas (small)
   const elite = false;                                           // ►RECOLOR38: sin ELITE — la horda de 3/4/6/7/9 es EXACTAMENTE la de S1 (mismo tamaño/color uniforme por-stage)
   mn._elite = elite;
