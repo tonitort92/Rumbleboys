@@ -2604,17 +2604,48 @@ function _rimChunk(){
     'reflectedLight.indirectDiffuse += rimF * '+g(R.strength)+' * vec3('+g(c.r)+', '+g(c.g)+', '+g(c.b)+');',
     /* ►MINMARK (opción C): luz de borde ROJA solo en los materiales marcados con el define MIN_RIM (minions) */
     '#ifdef MIN_RIM',
-    'reflectedLight.indirectDiffuse += pow(1.0 - saturate(dot(geometry.normal, geometry.viewDir)), 2.4) * 0.55 * vec3(1.0, 0.30, 0.12);',
+    'reflectedLight.indirectDiffuse += pow(1.0 - saturate(dot(geometry.normal, geometry.viewDir)), 2.4) * minRim.a * minRim.rgb;',   // ►RIMWORLD: color y fuerza por mundo (uniform compartido, sin recompilar)
     '#endif'
   ].join('\n');
 }
 const MIN_RIM_ON = true;   // ►MINMARK · ►AJUSTA: luz de borde roja en los minions (opción C)
+/* ►RIMWORLD (Toni 29/08): la luz de borde de los minions deja de ser el rojo fijo y pasa a ser el
+   COMPLEMENTARIO MEDIDO de cada mundo. La legibilidad (que "resalten") la pone este borde; el relleno
+   (►TINTMIX) queda libre para conservar la personalidad de cada piel. Va como UNIFORM compartido: cambiar
+   de mundo es un .set(), no una recompilación de shaders (que es lo que costaba la vía de literales).
+   `str` = fuerza (0.55 era el rojo de siempre); los mundos de fondo claro suben un poco. Los que no estén
+   en la tabla conservan el rojo de ►MINMARK. Medido con q_scene (color medio de la escena a la altura de
+   los minions) → hue opuesto, saturado y claro para que sume luz sobre cualquier atlas. */
+const MIN_RIM_DEF = { col:0xff4d1f, str:0.55 };
+const WORLD_RIM = {
+   1: { col:0xDB4CF0, str:0.8 },   // suelo #91b78b (h 112°, L 0.63) → borde h 292°
+   2: { col:0xA94CF0, str:0.6 },   // suelo #80a366 (h 94°, L 0.52) → borde h 274°
+   3: { col:0x4CF099, str:0.8 },   // suelo #cf8cb0 (h 328°, L 0.68) → borde h 148°
+   4: { col:0x4C6DF0, str:0.8 },   // suelo #c8bf98 (h 48°, L 0.69) → borde h 228°
+   5: { col:0x4C90F0, str:0.8 },   // suelo #c2a57b (h 35°, L 0.62) → borde h 215°
+   7: { col:0xF08B4C, str:0.8 },   // suelo #d2d9de (h 203°, L 0.85) → borde h 23°
+   8: { col:0x4CC2F0, str:0.6 },   // suelo #8b8785 (h 17°, L 0.54) → borde h 197°
+  10: { col:0x96F04C, str:0.6 },   // suelo #5d5464 (h 273°, L 0.36) → borde h 93°
+  11: { col:0x4C88F0, str:0.8 },   // suelo #f0d7aa (h 38°, L 0.81) → borde h 218°
+  12: { col:0x4CB1F0, str:0.6 },   // suelo #b58a6f (h 23°, L 0.58) → borde h 203°
+};
+const _minRimU = { value: new THREE.Vector4(1.0, 0.30, 0.12, 0.55) };
+const _minRimC = new THREE.Color();
+function setMinionRim(stage){
+  const e = WORLD_RIM[stage] || MIN_RIM_DEF; _minRimC.setHex(e.col != null ? e.col : MIN_RIM_DEF.col);
+  _minRimU.value.set(_minRimC.r, _minRimC.g, _minRimC.b, e.str != null ? e.str : MIN_RIM_DEF.str);
+}
 function markMinionRim(root){
   if(!MIN_RIM_ON || !root) return;
   root.traverse(o=>{ if(!o.isMesh || !o.material) return;
     const arr = Array.isArray(o.material) ? o.material : [o.material];
     for(const m of arr){ if(!m || m.userData._minRim) continue; m.userData._minRim = true;
       m.defines = Object.assign({}, m.defines || {}, { MIN_RIM: 1 });
+      /* ►RIMWORLD: el uniform `minRim` que lee el chunk. Se encadena por si el material ya traía un
+         onBeforeCompile (viento, empuje…); el objeto uniform es el MISMO para todos → un set() los mueve a todos */
+      { const prev = m.onBeforeCompile;
+        m.onBeforeCompile = function(sh, r){ if(typeof prev === 'function') prev.call(this, sh, r);
+          sh.uniforms.minRim = _minRimU; sh.fragmentShader = 'uniform vec4 minRim;\n' + sh.fragmentShader; }; }
       const ck = m.customProgramCacheKey; m.customProgramCacheKey = ()=> 'minrim' + (ck ? ck.call(m) : '');
       m.needsUpdate = true; }
   });
@@ -12166,7 +12197,7 @@ const WORLD_TINT   = {
    7: 0xBB6C3E,   // HIELO      · naranja — sustituye a los 8 azules por minion de ICE_HUES
    8: 0xE6DA73,   // FORJA      · amarillo
   11: 0x006658,   // WESTERN    · verde azulado
-  12: 0xBB623E,   // PIRATAS    · naranja terroso
+  12: 0x3E8FBB,   // PIRATAS    · AZUL (►TINTAUDIT 29/08: el naranja terroso 0xBB623E estaba a 6° de la cubierta, medido; los piratas se fundían con la madera)
 };
 /* ►WORLDTINT-K (28/08) · CUANTO SE ACERCA EL BRILLO DE LA PIEL AL DEL COLOR ELEGIDO.
    Hacia falta porque el hex solo aportaba el TONO: la saturacion se sustituye por un suelo y la
@@ -12192,6 +12223,17 @@ const WORLD_TINT_K = {
    7: 0.55,   // HIELO    · mejora, pero NO lo arregla del todo — ver la nota de abajo
   11: 0.55,   // WESTERN  · EL QUE MAS GANA: de una cara casi blanca a un teal asentado
 };
+/* ►TINTMIX (Toni 29/08: "el recolor me gusta, pero pierde mucha personalidad"). CUÁNTO del repintado se
+   aplica: 1 = sustitución del hue como hasta ahora; 0 = atlas intacto. Con ~0.55 el minion sigue siendo
+   "de este mundo" pero conserva debajo su morado (bruja), su casaca roja (capitán inglés) o su kimono
+   rosa (geisha): un LAVADO, no una calcomanía. Se mezcla en RGB entre el píxel original y el teñido, así
+   que el detalle del atlas no se toca. El mundo 2 no pasa por gobWorldAtlas (va por multiplicación plana
+   del rojo corrupto, ver gobAttach) y aquí entra por el mismo número. Legibilidad aparte: la pone la luz
+   de borde por mundo (►RIMWORLD), no el relleno. */
+const WORLD_TINT_A = {
+   1: 0.55, 2: 0.55, 3: 0.55, 4: 0.55, 5: 0.55, 7: 0.55, 8: 0.55, 11: 0.55, 12: 0.55,
+};
+const _tintA = st => (WORLD_TINT_A[st] != null ? WORLD_TINT_A[st] : 1);
 /* ►HIELO, PENDIENTE DE DECISION DE ARTE. Medido a pixel sobre el primer plano del esqueleto: entre
    K 0 y K 0.55 la SATURACION sube (0,36 -> 0,45) pero la LUMINANCIA no baja (0,639 -> 0,632). O sea
    que los esqueletos salen mas naranjas pero IGUAL DE CLAROS, y contra nieve blanca lo que hacia
@@ -12254,7 +12296,7 @@ function _gobFingerprint(d, w, h){
 function gobWorldAtlas(srcMap, stage){
   const hex = WORLD_TINT[stage];
   if(hex == null || !srcMap) return null;
-  const kFast = stage + '|' + srcMap.uuid + '|' + (WORLD_TINT_K[stage] || 0);
+  const kFast = stage + '|' + srcMap.uuid + '|' + (WORLD_TINT_K[stage] || 0) + '|' + _tintA(stage);   // ►TINTMIX: la A también en la clave (retocarla en caliente no puede devolver el lienzo viejo)
   if(_gobAtlas[kFast]) return _gobAtlas[kFast];
   const img = srcMap.image;
   if(!img || !img.width || !img.height) return null;            // aun decodificando → reintento
@@ -12270,16 +12312,17 @@ function gobWorldAtlas(srcMap, stage){
      recibiria el lienzo de un GLB y saldria con las UV del reves. */
   /* la K entra en la clave aunque el `stage` ya la determine: asi tunearla en caliente no devuelve el
      lienzo viejo (pasa en cuanto tocas WORLD_TINT_K sin vaciar las caches). */
-  const kFp = stage + '|' + fp + '|' + (srcMap.flipY ? 1 : 0) + '|' + (WORLD_TINT_K[stage] || 0);
+  const kFp = stage + '|' + fp + '|' + (srcMap.flipY ? 1 : 0) + '|' + (WORLD_TINT_K[stage] || 0) + '|' + _tintA(stage);
   if(_gobAtlasFp[kFp]){ _gobAtlas[kFast] = _gobAtlasFp[kFp]; return _gobAtlasFp[kFp]; }   // mismo png, otro parseo
   const bh = {}; (new THREE.Color(hex)).getHSL(bh);
   const K = WORLD_TINT_K[stage] || 0;                           // 0 = luminancia del atlas tal cual (lo de siempre)
+  const A = _tintA(stage), A0 = 1 - A;                          // ►TINTMIX: cuánto del teñido entra (1 = como siempre)
   for(let i=0; i<d.length; i+=4){
     const hsl = _rgb2hsl(d[i], d[i+1], d[i+2]);
     if(hsl[2] < 0.04 || hsl[2] > 0.97) continue;                // negro/blanco puro: lineas y ojos, se dejan
     const l = K ? (hsl[2]*(1-K) + bh.l*K) : hsl[2];             // acerca el brillo al del hex; ver ►WORLDTINT-K
     const c = _hsl2rgb(bh.h, Math.max(hsl[1], 0.45), l);        // HUE del mundo · sat minima (colorea grises) · LUM mezclada
-    d[i] = c[0]; d[i+1] = c[1]; d[i+2] = c[2];
+    d[i] = d[i]*A0 + c[0]*A; d[i+1] = d[i+1]*A0 + c[1]*A; d[i+2] = d[i+2]*A0 + c[2]*A;   // ►TINTMIX: lavado, no sustitución
   }
   cx.putImageData(id, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
@@ -12818,6 +12861,7 @@ function _gobArmScaled(root, weapon, cfg, baseScale){
   try{ ok = _gobArmModel(root, weapon); } finally { root.scale.setScalar(s0); root.updateMatrixWorld(true); }
   return ok;
 }
+const _s2Tmp = new THREE.Color();   // ►TINTMIX: scratch del lavado rojo del mundo 2
 function gobAttach(mn){
   if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobLoaded[mn.skin]) gobLoadKinds([mn.skin]);   // ►LAZY: red de seguridad (se vestirá cuando termine de parsear)
   const kin = (mn.skin && GOBLIN_KINDS[mn.skin] && _gobTpl[mn.skin]) ? mn.skin : mn.type;   // ►F3: piel visual (esqueleto/golem) con el comportamiento del type base; si su GLB no cargó → piel base
@@ -12896,7 +12940,7 @@ function gobAttach(mn){
          Entra el goblin RASO del mundo 1 (kind `small`, GOBLIN1, melee) recoloreado, así que la
          condición ya no puede enumerar pieles: en la jungla corrupta va TODO en rojo, venga la malla
          de donde venga. Sigue habiendo respaldo (_s2col/_s1col) por si algún día falta el tinte. */
-      else if(STAGE===2){ c = m._s2rojo || m._s2col || m._s1col || m.color; emi = 0x1a0404; }
+      else if(STAGE===2){ c = _s2Tmp.copy(m._s1col || m.color).lerp(m._s2rojo || m._s2col || m._s1col || m.color, _tintA(2)); emi = 0x1a0404; }   // ►TINTMIX: el rojo corrupto entra por WORLD_TINT_A[2], no entero
       else              { c = m._s1col||m.color; }
       m.color.copy(c);
       if(m.emissive) m.emissive.setHex(emi);                                    // glow por-stage (negro = sin brillo; se reafirma en cada attach → el pool no arrastra tinte)
@@ -27082,6 +27126,7 @@ function applyStageTheme(stage){
   _snapStage1Theme();
   _restoreS1Theme();   // SIEMPRE parte del prado limpio → los ajustes RELATIVOS del S2 (multiplyScalar de madera) no se acumulan al ciclar 1→2→3→2
   _resetInk();         // ►INKDEF: y la TINTA también parte limpia (western/hielo la bajan y no la devolvían)
+  if(typeof setMinionRim==='function') setMinionRim(stage);   // ►RIMWORLD: la luz de borde de los minions, del color complementario de este mundo
   if(typeof gobClearAll==='function') gobClearAll();   // ►F5-FIX: los minions ya VESTIDOS conservaban el tinte del stage ANTERIOR al cambiar (F9/campaña) — al pool y re-attach con el tinte nuevo en el siguiente tick
   if(stage!==12 && typeof _pirClearShip==='function') _pirClearShip();   // ►PIRATA: el barco y el mar son de la RAÍZ (no de la cinta) → si no se retiran aquí, viajan al stage siguiente
   /* ►ARENA / CUADRIMANÍA: EXACTAMENTE el mismo caso que el barco de arriba. El
