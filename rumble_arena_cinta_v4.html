@@ -43851,6 +43851,12 @@ const titleCampfire = (function(){
     lip.position.y = -0.95; g.add(lip);
     const grass = aoMesh(organicSlabGeo(ISL_X, ISL_Z, 0.5, 1.9, 0.38, 0.2), M.grass);
     grass.position.y = -0.7; g.add(grass);
+    /* ►SATFELPUDO v4 (Toni 30/08): la losa principal lleva el felpudo del PRADO (mundo 1), el mismo sueloCarpet
+       de partida (tinte CARPET_TINT[1]), a 0.6 de escala porque la losa mide 8,8 u. Fuera de _carpets (LOD). */
+    { const st0 = STAGE; STAGE = 1; try{ const t = new THREE.Group(); const n0 = _carpets.length; sueloCarpet(t, ISL_X/0.4, ISL_Z/0.4, 0.21, null, null); if(_carpets.length > n0) _carpets.length = n0;
+        /* la hoguera (point light a 0,9 u) y la luz frontal QUEMABAN las matas a blanco: material mate, sin metal, y color a 0.6 */
+        t.traverse(o=>{ if(o.isInstancedMesh && o.material){ o.material = o.material.clone(); o.material.roughness = 1; o.material.metalness = 0; o.material.color.setHex(0x3d7a24); } });   // verde prado como base: aquí el degradado de vértice salía blanco (la hoguera lo quema)
+        t.scale.setScalar(0.4); g.add(t); } finally { STAGE = st0; } }
     /* pedruscos medio enterrados en la pared de tierra, como en las islas de la cinta */
     for(let i=0;i<7;i++){
       const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24 + Math.random()*0.3, 0), M.rock);
@@ -44027,9 +44033,10 @@ const titleCampfire = (function(){
       const st0 = STAGE; STAGE = st;
       try{
         const t = new THREE.Group(); const n0 = _carpets.length;
-        sueloCarpet(t, W2*2, D2*2, 0.21, null, null);
+        sueloCarpet(t, W2/0.35, D2/0.35, 0.21, null, null);   // 0.35: la proporción mata/losa de una plataforma de ~9 u en partida
         if(_carpets.length > n0) _carpets.length = n0;
-        t.scale.setScalar(0.5); s.add(t);
+        t.traverse(o=>{ if(o.isInstancedMesh && o.material){ o.material = o.material.clone(); o.material.roughness = 1; o.material.metalness = 0; } });
+        t.scale.setScalar(0.35); s.add(t);
       } finally { STAGE = st0; }
     }
     function mkSlab(P, WP, W2, D2, st){
