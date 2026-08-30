@@ -12075,16 +12075,23 @@ let minstMeshes = null;
    disco oscuro de contacto + un aro fino rojo-naranja ("color enemigo" fijo) bajo CADA minion, instanciados
    (2 draw calls para toda la horda). Siguen la posición de los pies; renderMinionInstances los recoloca. */
 const MIN_MARK_ON = true;
-const MIN_MARK_COL = 0xff5a2a;
+const MIN_MARK_COL = 0xff5a2a;   // respaldo: mundos sin entrada en WORLD_TINT (2, 6, 9, 10, 13, 14)
 let _minDiscIM = null, _minRingIM = null;
 const _mmM = new THREE.Matrix4(), _mmQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), -Math.PI/2), _mmP = new THREE.Vector3(), _mmS = new THREE.Vector3();
 function _minMarkInit(){
   if(_minDiscIM || !MIN_MARK_ON) return;
   const dm = new THREE.MeshBasicMaterial({ color:0x05070c, transparent:true, opacity:.26, depthWrite:false, fog:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
-  const rm = new THREE.MeshBasicMaterial({ color:MIN_MARK_COL, transparent:true, opacity:.62, depthWrite:false, fog:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
+  const rm = new THREE.MeshBasicMaterial({ color:MIN_MARK_COL, transparent:true, opacity:.85 /* ►NATURAL: .62 → .85, ahora es el aro quien dice "de qué mundo" es la horda */, depthWrite:false, fog:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
   _minDiscIM = new THREE.InstancedMesh(new THREE.CircleGeometry(.56, 22), dm, MINION_CAP);
   _minRingIM = new THREE.InstancedMesh(new THREE.RingGeometry(.56, .70, 26), rm, MINION_CAP);
   for(const im of [_minDiscIM, _minRingIM]){ im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.renderOrder = 2; scene.add(im); }
+}
+/* ►NATURAL: el aro coge el color del mundo (el mismo hex que antes lavaba la piel). Lo llama
+   applyStageTheme junto a setMinionRim; no puede ir en _minMarkInit, que corre antes de WORLD_TINT. */
+function _minMarkColor(stage){
+  if(!_minRingIM) return;
+  const hex = (typeof WORLD_TINT !== 'undefined' && WORLD_TINT[stage] != null) ? WORLD_TINT[stage] : MIN_MARK_COL;
+  _minRingIM.material.color.setHex(hex);
 }
 function _minMarkUpdate(n){
   if(!_minDiscIM) return;
@@ -12267,8 +12274,14 @@ const WORLD_TINT_K = {
    que el detalle del atlas no se toca. El mundo 2 no pasa por gobWorldAtlas (va por multiplicación plana
    del rojo corrupto, ver gobAttach) y aquí entra por el mismo número. Legibilidad aparte: la pone la luz
    de borde por mundo (►RIMWORLD), no el relleno. */
+/* ►NATURAL (Toni 30/08, tras la página A/B/C de 4 mundos: "vamos con la B"). El recolor se APAGA: todo
+   a 0 y cada piel lleva su atlas de fábrica (la casaca roja del capitán, el naranja del sensei, el
+   verde del goblin). La legibilidad la ponen la luz de borde (►RIMWORLD) y el ANILLO del suelo, que
+   pasa a ser del color del mundo (►MINMARK + _minMarkColor). WORLD_TINT sigue vivo: ahora es el color
+   del anillo. Las tablas A/K se dejan como palanca: subir un mundo aquí vuelve a lavarlo. Valores que
+   había: .55 en todos salvo el desierto (.85). */
 const WORLD_TINT_A = {
-   1: 0.55, 2: 0.55, 3: 0.55, 4: 0.85, 5: 0.55, 7: 0.55, 8: 0.55, 11: 0.55, 12: 0.55,   // ►DESIERTO2: el 4 va casi entero (los goblins son oscuros de atlas: con 0.55 se quedaban en L ~0.40 sobre arena L 0.69)
+   1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 7: 0, 8: 0, 11: 0, 12: 0,   // ►NATURAL: apagado · ►DESIERTO2 (histórico): el 4 va casi entero (los goblins son oscuros de atlas: con 0.55 se quedaban en L ~0.40 sobre arena L 0.69)
 };
 const _tintA = st => (WORLD_TINT_A[st] != null ? WORLD_TINT_A[st] : 1);
 /* ►HIELO, PENDIENTE DE DECISION DE ARTE. Medido a pixel sobre el primer plano del esqueleto: entre
@@ -12333,6 +12346,7 @@ function _gobFingerprint(d, w, h){
 function gobWorldAtlas(srcMap, stage){
   const hex = WORLD_TINT[stage];
   if(hex == null || !srcMap) return null;
+  if(_tintA(stage) <= 0) return srcMap;   // ►NATURAL: lavado 0 = el atlas de fábrica, sin lienzo ni caché
   const kFast = stage + '|' + srcMap.uuid + '|' + (WORLD_TINT_K[stage] || 0) + '|' + _tintA(stage);   // ►TINTMIX: la A también en la clave (retocarla en caliente no puede devolver el lienzo viejo)
   if(_gobAtlas[kFast]) return _gobAtlas[kFast];
   const img = srcMap.image;
@@ -12385,7 +12399,7 @@ function gobWorldTint(inst){
     else if(m._map0){ pend = true; continue; }                   // imagen sin decodificar → lo reintenta gobUpdate
     /* SIN textura no se puede repintar nada, y dejar el color en blanco sacaria un minion BLANCO.
        Para esos se cae al camino de siempre: multiplicacion plana del color del mundo. */
-    else { m.color.setHex(hex); }
+    else { if(_tintA(STAGE) > 0) m.color.setHex(hex); else m.color.copy(m._col0 || _colBlanco); }   // ►NATURAL: con lavado 0 tampoco hay multiply plano
     if(m.emissive) m.emissive.setHex(0x000000);                  // con la luminancia conservada ya no hace falta rescoldo
     m._tintedStage = STAGE;
   }
@@ -27161,6 +27175,7 @@ function applyStageTheme(stage){
   _restoreS1Theme();   // SIEMPRE parte del prado limpio → los ajustes RELATIVOS del S2 (multiplyScalar de madera) no se acumulan al ciclar 1→2→3→2
   _resetInk();         // ►INKDEF: y la TINTA también parte limpia (western/hielo la bajan y no la devolvían)
   if(typeof setMinionRim==='function') setMinionRim(stage);   // ►RIMWORLD: la luz de borde de los minions, del color complementario de este mundo
+  if(typeof _minMarkColor==='function') _minMarkColor(stage);   // ►NATURAL: el aro del suelo, del color del mundo
   if(typeof gobClearAll==='function') gobClearAll();   // ►F5-FIX: los minions ya VESTIDOS conservaban el tinte del stage ANTERIOR al cambiar (F9/campaña) — al pool y re-attach con el tinte nuevo en el siguiente tick
   if(stage!==12 && typeof _pirClearShip==='function') _pirClearShip();   // ►PIRATA: el barco y el mar son de la RAÍZ (no de la cinta) → si no se retiran aquí, viajan al stage siguiente
   /* ►ARENA / CUADRIMANÍA: EXACTAMENTE el mismo caso que el barco de arriba. El
