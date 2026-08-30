@@ -44017,31 +44017,19 @@ const titleCampfire = (function(){
        western (arenas oscurecidas), montoncitos de nieve en el hielo y remaches/placas grises en la forja.
        UN InstancedMesh por losa (1 draw call) con color por instancia; la cara pisable es y=0. */
     function satDress(s, st, W2, D2, f){
-      /* v2 (Toni 30/08: "pon lo que tengamos actualmente in game"): las MISMAS funciones que visten las
-         plataformas en partida, sobre la losa (cara pisable en y=0, cx=null = sin comprobar muros ni pads):
-           jungla → sueloCarpet (felpudo real del S2) + dressTopJungle (sotobosque)
-           Japón  → sueloCarpet del S3 + dressTopSakura (césped magenta + pétalos)
-           desierto / western → dressTopSand (domos de arena, matojos, guijarros)
-           hielo  → dressTopSand en modo nieve (derivas blancas + guijarros fríos)
-           forja  → chapa limpia en partida: unas placas grises para que no quede pelada.
-         STAGE se pone al del mundo mientras se hornea (geometría, material y tinte del felpudo van por STAGE)
-         y se restaura; el felpudo se saca de _carpets para que el LOD del juego (cámara de partida) no lo recorte. */
+      /* v3 (Toni 30/08: "solo el puto felpudo de cada plataforma"): SOLO el felpudo de césped de los mundos
+         de hierba (2 y 3, con el tinte de cada uno: CARPET_TINT por STAGE), a mitad de escala porque la losa
+         mide 3 u y las matas están hechas para plataformas de 6-12 u. Desierto, western, hielo y forja llevan
+         SU tapa (pal(st): arena, arena rojiza, nieve, chapa) y nada encima. STAGE se pone al del mundo
+         mientras se hornea (geometría/material/tinte van por STAGE) y se restaura; el felpudo se saca de
+         _carpets para que el LOD del juego (cámara de partida) no lo recorte. */
+      if(!(st===2 || st===3)) return;
       const st0 = STAGE; STAGE = st;
       try{
-        if(st===2 || st===3){ const n0 = _carpets.length; sueloCarpet(s, W2, D2, 0.21, null, null); if(_carpets.length > n0) _carpets.length = n0; }
-        if(st===2) dressTopJungle(s, W2, D2, 0.02, null, null, 'moss');
-        else if(st===3) dressTopSakura(s, W2, D2, 0.02, null, null, 'sakura');
-        else if(st===4 || st===11 || st===7){   // las piezas de arena/nieve están pensadas para losas de 6-12 u: en una de 3 se hornean en un grupo aparte a mitad de escala (sobre la cara pisable, y=0)
-          const t = new THREE.Group(); dressTopSand(t, W2*2, D2*2, 0, null, null, null, st===7 ? 'snow' : 'sand'); t.scale.setScalar(0.5); s.add(t); }
-        else if(st===8){
-          const n = Math.max(4, Math.round(W2*D2*3)), geo = new THREE.BoxGeometry(0.15*f, 0.05*f, 0.15*f).translate(0, 0.025*f, 0);
-          const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness:1, color:0xffffff }), n);
-          const M = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(1,1,1), col = new THREE.Color(), Y = new THREE.Vector3(0,1,0);
-          const cols = ['#3a3f47','#4b515a','#2f333a','#565c66','#6a7079'];
-          for(let i=0;i<n;i++){ pos.set((Math.random()-.5)*(W2-0.4*f), 0, (Math.random()-.5)*(D2-0.4*f)); q.setFromAxisAngle(Y, Math.random()*Math.PI*2);
-            im.setMatrixAt(i, M.compose(pos, q, sc)); im.setColorAt(i, col.set(cols[(Math.random()*cols.length)|0])); }
-          im.instanceMatrix.needsUpdate = true; if(im.instanceColor) im.instanceColor.needsUpdate = true; im.frustumCulled = false; s.add(im);
-        }
+        const t = new THREE.Group(); const n0 = _carpets.length;
+        sueloCarpet(t, W2*2, D2*2, 0.21, null, null);
+        if(_carpets.length > n0) _carpets.length = n0;
+        t.scale.setScalar(0.5); s.add(t);
       } finally { STAGE = st0; }
     }
     function mkSlab(P, WP, W2, D2, st){
