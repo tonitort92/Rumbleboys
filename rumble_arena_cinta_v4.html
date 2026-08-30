@@ -826,6 +826,7 @@ window.addEventListener('load', function(){
   .overlay h1 { font-size:54px; font-weight:900; font-style:italic; letter-spacing:3px;
     background:linear-gradient(90deg,#5ec8ff,#ff5e7a); -webkit-background-clip:text; background-clip:text; color:transparent; }
   .overlay h2 { font-size:42px; font-weight:900; margin-bottom:18px; }
+  .overlay .modalH, .overlay .modalCard h2 { margin:0 0 12px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; padding:0 34px; }   /* ►MODAL28: el asistente y la sala online con el mismo título que el resto (esta regla gana a .overlay h2) */
   .overlay p { opacity:.85; margin:6px 0; font-size:15px; max-width:560px; line-height:1.55; }
   /* ---------- ►TITLE · PANTALLA 1 de la home (la portada-anuncio) ----------
      Aquí NO se decide nada: ni mapa, ni personaje, ni ajustes. Solo dice qué es esto y cómo
@@ -1065,9 +1066,11 @@ window.addEventListener('load', function(){
     border-radius:20px; padding:26px 26px 22px; box-shadow:0 24px 70px rgba(0,0,0,.6);
     text-align:left; text-shadow:none; overflow-y:auto; }
   /* lo ÚNICO propio de cada una */
-  #optCard, #langCard { width:min(520px,94vw); }
+  #optCard, #langCard { width:min(820px,94vw); }   /* ►MODAL28: ancho común de los pop-ups (Toni: "más o menos el mismo tamaño") */
   /* ►MODAL27: ningún título se mete bajo la ✕ (antes solo la tienda lo compensaba a mano) */
   #optCard h2, #langCard h2, #ctlCard h2, #guideCard h2, #trophyCard h2, #marksCard h2, #charStatsCard h2, #htCard h2, #hdLogCard h2 { padding:0 34px; }
+  #setupModal .modalCard:has(.setupStep[data-step="3"]:not([hidden])) { width:min(1040px,94vw); }   /* ►MODAL28: solo el paso de elegir personaje (6 cards) pide el ancho grande */
+  #hdShopHd h2 { text-align:center; }
   /* ►MODAL26 · la ✕ es `absolute` DENTRO de la ficha; si la ficha es la que scrollea, la cruz se va
      con el contenido (en LOGROS, al tercer logro ya no la veías). En las ventanas con un cuerpo de
      lista claro el scroll se muda a ese cuerpo y la ficha deja de scrollear → la ✕ se queda clavada.
@@ -1075,7 +1078,7 @@ window.addEventListener('load', function(){
      ficha porque su contenido es heterogéneo y cabe de sobra. */
   #guideCard, #trophyCard, #hdLogCard, #hdShopCard { overflow:visible; }
   .modalBody { flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 -6px; padding:0 6px; }
-  #ctlCard { width:min(1300px,96vw); text-align:center; }   /* ►MODAL26: el resto lo pone la ficha común */
+  #ctlCard { width:min(1300px,96vw); text-align:center; }   /* ►MODAL26: el resto lo pone la ficha común · ►MODAL28: es el único que se sale del ancho común (el diagrama del mando no cabe en 820) */
   #ctlCard h2, #optCard h2, #langCard h2 { margin:0 0 4px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
   #ctlCard .gsub, #optCard .gsub, #langCard .gsub { margin:0 0 14px; font-size:13px; color:#9fb0d6; text-align:center; }
   .optBlock { margin:0 0 20px; }
@@ -1174,7 +1177,7 @@ window.addEventListener('load', function(){
   /* ►GUIDE: ficha de referencia de objetos/mejoras + tienda (lista generada desde los datos del juego) */
   /* la MISMA card para las tres fichas de referencia (objetos, trofeos y marcas): son hermanas y se
      abren desde el mismo sitio, así que abrir una y otra no debe cambiar de lenguaje visual. */
-  #guideCard, #trophyCard, #marksCard, #charStatsCard { width:min(700px,94vw); }   /* ►MODAL26 */
+  #guideCard, #trophyCard, #marksCard, #charStatsCard { width:min(820px,94vw); }   /* ►MODAL28: ancho común */   /* ►MODAL26 */
   #guideCard h2, #trophyCard h2, #marksCard h2, #charStatsCard h2 { margin:0 0 4px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; }
   #guideCard .gsub, #trophyCard .gsub, #marksCard .gsub, #charStatsCard .gsub { margin:0 0 6px; font-size:13px; color:#9fb0d6; text-align:center; }
   .gSecTitle { display:flex; align-items:center; gap:11px; margin:24px 0 12px; font-size:14px; font-weight:900;
@@ -1415,7 +1418,7 @@ window.addEventListener('load', function(){
   #atkDots .adot.on { background:var(--hc,#fff); border-color:#fff; box-shadow:0 0 8px var(--hc,#fff); }
   @media (prefers-reduced-motion: reduce){ #atkVid{ transition:none!important; } }
   /* ---------- ►HOWTO · slideshow tutorial (mismo lenguaje que el de ataques, sin vídeo) ---------- */
-  #htCard { width:min(560px,94vw); text-align:center; }   /* ►MODAL26: era la única con fondo PLANO y sombra corta */
+  #htCard { width:min(820px,94vw); text-align:center; }   /* ►MODAL26: era la única con fondo PLANO y sombra corta */
   #htHd { display:flex; flex-direction:column; align-items:center; gap:14px; margin:0 0 16px; }
   /* el número, redondo y con el color del paso (lo fija el JS) — igual que los círculos del roadmap */
   #htNum { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
@@ -1439,10 +1442,10 @@ window.addEventListener('load', function(){
   #setupModal { z-index:20; background:rgba(6,9,20,.74); backdrop-filter:blur(5px); }
   /* ►MODAL27 (Toni 29/08: "todos los pop-ups con el mismo layout"): el asistente (#setupModal) y la sala (#netLobby)
      eran los dos que se salían del marco ►MODAL26 (fondo plano, borde 2 px, otro padding). Mismo marco que el grupo. */
-  .modalCard { position:relative; box-sizing:border-box; width:min(1040px,94vw); max-height:94vh; display:flex; flex-direction:column;
+  .modalCard { position:relative; box-sizing:border-box; width:min(820px,94vw); max-height:94vh; display:flex; flex-direction:column;
     background:linear-gradient(180deg,#141a30,#0d1122); border:1px solid rgba(255,255,255,.14); border-radius:20px; padding:26px 26px 22px;
     box-shadow:0 24px 70px rgba(0,0,0,.6); pointer-events:auto; overflow-y:auto; text-shadow:none; }   /* ancho FIJO: no cambia según el personaje ni el paso */
-  .modalClose { position:absolute; top:10px; right:12px; width:34px; height:34px; border-radius:50%; cursor:pointer; pointer-events:auto;
+  .modalClose { position:absolute !important; top:10px !important; right:12px !important; left:auto !important; bottom:auto !important; margin:0 !important; z-index:5; width:34px; height:34px; border-radius:50%; cursor:pointer; pointer-events:auto;   /* ►MODAL28: !important porque en LOGROS/MARCAS/OBJETOS salía en relative (arriba a la IZQUIERDA) */
     border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#dfe9ff; font-size:16px; font-weight:900; }
   .modalClose:hover { background:rgba(255,255,255,.18); }
   .modalH { margin:0 0 12px; font-size:23px; font-weight:900; letter-spacing:1px; text-align:center; color:#fff; padding:0 34px; }   /* ►MODAL27: el mismo título que el resto (h2 de ►MODAL26) */
@@ -2007,9 +2010,9 @@ window.addEventListener('load', function(){
 </div>
 
 <div class="overlay" id="netLobby" style="display:none">
-  <div class="modalCard" style="max-width:460px">
+  <div class="modalCard">
     <button class="modalClose" id="netClose" aria-label="Cerrar">✕</button>
-    <h2 style="font-size:26px;margin:2px 0 6px">🌐 ONLINE <span style="font-size:13px;opacity:.6;font-weight:700">beta · 2 jugadores P2P</span></h2>
+    <h2>🌐 ONLINE <span style="font-size:13px;opacity:.6;font-weight:700">beta · 2 jugadores P2P</span></h2>
     <p style="font-size:13px;opacity:.82;max-width:380px;margin:0 auto 12px">Juega con un colega por internet. <b>Uno crea la sala</b> y comparte el código; <b>el otro se une</b> con ese código. Elegid vuestro personaje antes (carrusel de la home).</p>
     <div style="display:flex;justify-content:center;margin:8px 0">
       <button class="btn" id="netCreate" style="margin-top:0;padding:12px 28px;font-size:16px">CREAR SALA</button>
@@ -19709,11 +19712,11 @@ function updatePvpShieldFX(){
     /* ►MODAL26: la CAJA (fondo, borde, padding, sombra, scroll) la pone ahora la ficha común de la
        hoja estática. Aquí queda solo el ancho — y OJO, este bloque se inyecta en runtime y gana a la
        hoja estática, así que todo lo que se declare aquí pisa a la ficha común. */
-    #hdLogCard{ width:min(640px,94vw); }
+    #hdLogCard{ width:min(820px,94vw); }   /* ►MODAL28: ancho común */
     /* ►TIENDA26 · la ventana de la TIENDA. Vive aquí, y no en un <style> propio inyectado desde su
        bloque, para que comparta hoja con LOGROS: dos hojas inyectadas compitiendo por las mismas
        fichas es justo el lío de orden que había. La CAJA la pone la ficha común (►MODAL26). */
-    #hdShopCard{ width:min(940px,94vw); }
+    #hdShopCard{ width:min(820px,94vw); }   /* ►MODAL28: ancho común */
     #hdShopCard h2{ margin:0; font-size:23px; font-weight:900; letter-spacing:1px; color:#fff; }
     #hdShopCard .gsub{ margin:0 0 14px; font-size:13px; color:#9fb0d6; text-align:center; }
     #hdShopHd{ display:flex; align-items:baseline; justify-content:center; gap:12px; margin:0 0 4px; padding-right:34px; }
