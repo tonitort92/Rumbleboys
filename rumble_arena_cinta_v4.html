@@ -44016,39 +44016,33 @@ const titleCampfire = (function(){
        alta de jungla (S2_GREENS), pétalos/brotes rosas en Japón (SJ_PINKS), matojos secos en desierto y
        western (arenas oscurecidas), montoncitos de nieve en el hielo y remaches/placas grises en la forja.
        UN InstancedMesh por losa (1 draw call) con color por instancia; la cara pisable es y=0. */
-    function bladeGeo(w, h){   // dos quads en cruz, sin BufferGeometryUtils (no está cargado en la portada)
-      const g = new THREE.BufferGeometry(), a = w/2, v = [], nn = [], uv = [];
-      const quad = (x0,z0,x1,z1)=>{ v.push(x0,0,z0, x1,0,z1, x1,h,z1,  x0,0,z0, x1,h,z1, x0,h,z0); for(let i=0;i<6;i++) nn.push(0,0,1); uv.push(0,0,1,0,1,1, 0,0,1,1,0,1); };
-      quad(-a,0,a,0); quad(0,-a,0,a);
-      g.setAttribute('position', new THREE.Float32BufferAttribute(v,3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nn,3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
-      g.computeVertexNormals(); return g;
-    }
     function satDress(s, st, W2, D2, f){
-      const kind = (st===3) ? 'petal' : (st===4 || st===11) ? 'dry' : (st===7) ? 'snow' : (st===8) ? 'metal' : 'grass';
-      const P = pal(st);
-      const dens = { grass:16, petal:10, dry:5, snow:5, metal:4 }[kind];
-      const n = Math.max(6, Math.round(W2*D2*dens));
-      let geo;
-      if(kind==='snow') geo = new THREE.SphereGeometry(0.13*f, 7, 4, 0, Math.PI*2, 0, Math.PI/2);
-      else if(kind==='metal') geo = new THREE.BoxGeometry(0.15*f, 0.05*f, 0.15*f).translate(0, 0.025*f, 0);
-      else geo = bladeGeo((kind==='petal' ? 0.11 : 0.07)*f, (kind==='grass' ? 0.32 : kind==='petal' ? 0.15 : 0.20)*f);
-      const cols = (kind==='dry') ? dark(P) : (kind==='metal') ? ['#3a3f47','#4b515a','#2f333a','#565c66','#6a7079'] : (kind==='snow') ? ['#ffffff','#f1f6fb','#e6eef7','#f8fbfe'] : P;
-      const mat = new THREE.MeshStandardMaterial({ roughness:1, side:THREE.DoubleSide, color:0xffffff });
-      const im = new THREE.InstancedMesh(geo, mat, n);
-      const M = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color(), Y = new THREE.Vector3(0,1,0), tilt = new THREE.Quaternion(), ax = new THREE.Vector3();
-      const rx = W2/2 - 0.12*f, rz = D2/2 - 0.12*f;
-      for(let i=0;i<n;i++){
-        let u = 0, w = 0; for(let k=0;k<12;k++){ u = Math.random()*2-1; w = Math.random()*2-1; if(Math.pow(Math.abs(u),4) + Math.pow(Math.abs(w),4) <= 0.9) break; }
-        pos.set(u*rx, 0, w*rz);
-        q.setFromAxisAngle(Y, Math.random()*Math.PI*2);
-        if(kind==='grass' || kind==='petal' || kind==='dry'){ ax.set(Math.random()-.5, 0, Math.random()-.5).normalize(); tilt.setFromAxisAngle(ax, (Math.random()-.5)*0.5); q.multiply(tilt); }
-        const k2 = 0.7 + Math.random()*0.6; sc.set(k2, (kind==='snow' ? 0.6 + Math.random()*0.5 : k2), k2);
-        im.setMatrixAt(i, M.compose(pos, q, sc));
-        im.setColorAt(i, col.set(cols[(Math.random()*cols.length)|0]));
-      }
-      im.instanceMatrix.needsUpdate = true; if(im.instanceColor) im.instanceColor.needsUpdate = true;
-      im.frustumCulled = false; im.userData.noInk = true;
-      s.add(im);
+      /* v2 (Toni 30/08: "pon lo que tengamos actualmente in game"): las MISMAS funciones que visten las
+         plataformas en partida, sobre la losa (cara pisable en y=0, cx=null = sin comprobar muros ni pads):
+           jungla → sueloCarpet (felpudo real del S2) + dressTopJungle (sotobosque)
+           Japón  → sueloCarpet del S3 + dressTopSakura (césped magenta + pétalos)
+           desierto / western → dressTopSand (domos de arena, matojos, guijarros)
+           hielo  → dressTopSand en modo nieve (derivas blancas + guijarros fríos)
+           forja  → chapa limpia en partida: unas placas grises para que no quede pelada.
+         STAGE se pone al del mundo mientras se hornea (geometría, material y tinte del felpudo van por STAGE)
+         y se restaura; el felpudo se saca de _carpets para que el LOD del juego (cámara de partida) no lo recorte. */
+      const st0 = STAGE; STAGE = st;
+      try{
+        if(st===2 || st===3){ const n0 = _carpets.length; sueloCarpet(s, W2, D2, 0.21, null, null); if(_carpets.length > n0) _carpets.length = n0; }
+        if(st===2) dressTopJungle(s, W2, D2, 0.02, null, null, 'moss');
+        else if(st===3) dressTopSakura(s, W2, D2, 0.02, null, null, 'sakura');
+        else if(st===4 || st===11 || st===7){   // las piezas de arena/nieve están pensadas para losas de 6-12 u: en una de 3 se hornean en un grupo aparte a mitad de escala (sobre la cara pisable, y=0)
+          const t = new THREE.Group(); dressTopSand(t, W2*2, D2*2, 0, null, null, null, st===7 ? 'snow' : 'sand'); t.scale.setScalar(0.5); s.add(t); }
+        else if(st===8){
+          const n = Math.max(4, Math.round(W2*D2*3)), geo = new THREE.BoxGeometry(0.15*f, 0.05*f, 0.15*f).translate(0, 0.025*f, 0);
+          const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness:1, color:0xffffff }), n);
+          const M = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(1,1,1), col = new THREE.Color(), Y = new THREE.Vector3(0,1,0);
+          const cols = ['#3a3f47','#4b515a','#2f333a','#565c66','#6a7079'];
+          for(let i=0;i<n;i++){ pos.set((Math.random()-.5)*(W2-0.4*f), 0, (Math.random()-.5)*(D2-0.4*f)); q.setFromAxisAngle(Y, Math.random()*Math.PI*2);
+            im.setMatrixAt(i, M.compose(pos, q, sc)); im.setColorAt(i, col.set(cols[(Math.random()*cols.length)|0])); }
+          im.instanceMatrix.needsUpdate = true; if(im.instanceColor) im.instanceColor.needsUpdate = true; im.frustumCulled = false; s.add(im);
+        }
+      } finally { STAGE = st0; }
     }
     function mkSlab(P, WP, W2, D2, st){
       const s = new THREE.Group(), f = W2/3.1;
