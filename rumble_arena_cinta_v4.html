@@ -2280,7 +2280,7 @@ window.addEventListener('load', function(){
    en _test4a: barra visible desde ~1 s), asi que cada onload de los <script src> locales (los 95 MB
    de assets embebidos) mueve la barra del splash. __ldTot debe coincidir con el numero de tags con
    onload=__ld() — si el reempaquetado a .glb cambia la lista, actualizarlo. */
-var __ldN=0, __ldTot=91;
+var __ldN=0, __ldTot=34;
 /* ►SKIPINTRO: una tecla/click DURANTE LA CARGA ya cuenta como 'saltate los logos' — la intencion se
    guarda aqui (este script existe desde el primer segundo) y introSeqStart la honra al arrancar. */
 ['keydown','pointerdown','mousedown','touchstart'].forEach(function(ev){
@@ -2295,6 +2295,66 @@ function __ld(){ __ldN++;
   if(f) f.style.width=pc+'%';
   if(t) t.textContent='CARGANDO '+pc+'%';
 }
+</script>
+<script>
+/* ►REPACK (4b, fase 1): los 57 .js de assets base64 (~123 MB de JS que habia que parsear al arrancar)
+   viven ahora como binarios en assets/ (los genera _repack_extract.js) y llegan por fetch SIN bloquear:
+   primero el lote critico (personajes, armas, goblins del arranque), el resto en segundo plano, y
+   RB_ASSETS.need(nombre) adelanta en la cola lo que pida un stage. Los globales window.X_B64 se rellenan
+   con ArrayBuffers (ya NO base64): _rbBuf() en el juego acepta ambos formatos. */
+window.RB_ASSETS = (function(){
+  var man = null, state = {}, queue = [], active = 0, CONC = 2, arrived = [], routing = 0;
+  var manP = fetch('assets/manifest.json').then(function(r){ return r.json(); }).then(function(j){
+    man = j;
+    var names = Object.keys(j);
+    for(var i=0;i<names.length;i++){ if(queue.indexOf(names[i])<0 && !state[names[i]]) queue.push(names[i]); }
+    pump(); return j;
+  }, function(e){ console.warn('[repack] sin manifest', e); });
+  function route(name){
+    if(typeof window._rbAssetArrived === 'function'){ try{ window._rbAssetArrived(name); }catch(e){ console.warn('[repack] arrival', name, e); } return; }
+    arrived.push(name);
+    if(!routing){ routing = setInterval(function(){
+      if(typeof window._rbAssetArrived !== 'function') return;
+      clearInterval(routing);
+      for(var i=0;i<arrived.length;i++){ try{ window._rbAssetArrived(arrived[i]); }catch(e){} }
+      arrived.length = 0;
+    }, 250); }
+  }
+  function done(name, ok){ active--; state[name] = ok ? 'ok' : null; if(ok) route(name); pump(); }
+  function start(name){
+    state[name] = 'pend'; active++;
+    var e = man[name];
+    if(!e){ done(name, true); return; }
+    var p;
+    if(e.f){
+      p = fetch('assets/'+e.f).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+           .then(function(b){ window[name] = b; });
+    } else {
+      var map = {}; p = Promise.resolve();
+      e.keys.forEach(function(k){
+        p = p.then(function(){ return fetch('assets/'+e.d+'/'+k+'.bin').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }).then(function(b){ map[k] = b; }); });
+      });
+      p = p.then(function(){ window[name] = map; });
+    }
+    p.then(function(){ done(name, true); }, function(err){ console.warn('[repack] fallo '+name, err); done(name, false); });
+  }
+  function pump(){
+    if(!man) return;
+    while(active < CONC && queue.length){ var nm = queue.shift(); if(!state[nm]) start(nm); }
+  }
+  function need(name){
+    if(!name || state[name]) return;
+    var i = queue.indexOf(name); if(i >= 0) queue.splice(i, 1);
+    queue.unshift(name);
+    if(man) pump();
+  }
+  /* lote critico por delante: sin esto la home no tiene personajes hasta que toque por orden */
+  var P0 = ['CHAR_MODELS_B64','CHAR_GLB_B64','GOBLIN_PARTS_B64','KATANA_GLB_B64','SHIELD_GLB_B64',
+            'BARBWEAPON_GLB_B64','AXE_GLB_B64','STAFF_GLB_B64','BOW_GLB_B64',
+            'GOBLIN1_GLB_B64','GOBLIN2_GLB_B64','GOBLIN3_GLB_B64'];
+  for(var i=P0.length-1;i>=0;i--) queue.unshift(P0[i]);
+  return { need: need, have: function(nm){ return state[nm] === 'ok'; } };
+})();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- postprocesado (bloom) — versiones globales r128 -->
@@ -2334,78 +2394,22 @@ function __ld(){ __ldN++;
 <script src="stage7_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
 <script src="stage2_ruins_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
 <script src="stage_japan_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
-<script src="western_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
 <script src="stage_western_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
 <script src="stage_pirate2_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRSWAP · STAGE 12: barco grande/pequeño, bote y 3 muelles portuarios de Quaternius (pq_*), recoloreados a la madera naranja del kit Kenney. Color plano → 1 draw call por modelo -->
 <script src="stage_pirate_solids.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRSOLID · STAGE 12: la COLISIÓN de esos modelos y de las torres/pantalanes del kit, medida con raycast dentro del juego (no escrita a mano). Ver scratchpad/p_solids.js -->
 <script src="stage_pirate_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
-<script src="char_model.js" onload="__ld()" onerror="__ld()"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
-<script src="chars_models.js?v=20260811a" onload="__ld()" onerror="__ld()"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
 <script src="carry_poses.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
 <script src="carry_clips.js?v=1" onload="__ld()" onerror="__ld()"></script>
 <script src="sit_clips.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►HOGUERA · clip 'sit' de Mixamo (uno por personaje) para el corro de la PANTALLA 1, en el mismo formato de pistas de carry_clips.js -->  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
-<script src="katana_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
-<script src="shield_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
-<script src="staff_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
-<script src="bow_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- arco (Synty) en base64; se adjunta a la mano izquierda de la arquera; opcional -->
 <script src="arrow_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►ARROWS: FLECHA real (Arrow2 OBJ) en GAME_MODELS.arrow; proyectil de TODAS las flechas (antes CHAHIN parecía un bulto) -->
 <script src="spear_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SPEAR: LANZA real (OBJ+MTL) en GAME_MODELS.spear; proyectil de la Q del CABALLERO (antes cilindro gris) -->
 <script src="seal_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SEAL: FOCA (OBJ) en GAME_MODELS.seal; critter de empuje del stage 7 (solo molesta) -->
-<script src="penguin_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►PENGUIN v2: GLB RIGGEADO (PENG_GLB_B64, clips walk/idle/throw); enemigo lento del stage 7 -->
 <script src="icecream_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ICECREAM: OBJ en GAME_MODELS.icecream; proyectil del pingüino (3 sabores) -->
-<script src="skeleton_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO pequeño (small) Synty Minis riggeado, clips idle/walk/jump/attack — horda S4/S5 -->
-<script src="skelshooter_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO SOLDADO mediano (shooter) con arco+flechas -->
-<script src="skelknight_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO CABALLERO grande (large) con espada -->
 <script src="skelpirate_gear.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRMINION: vestuario pirata (bandana/camiseta/pantalón) colgado de los huesos del esqueleto pequeño — S12 -->
 <script src="pirgunner_gear.js?v=3" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRGUNNER: PISTOLERO pirata (shooter S12) — tricornio, parche, chaleco roto y botas sobre el MISMO rig SKEL; las dos pistolas las pone weapon:'flintlock' -->
 <script src="pirbrute_gear.js?v=4" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRBRUTE: BRUTO pirata (large S12) — camiseta/pantalón de rayas, ojo amarillo y puños enormes sobre el MISMO rig SKEL, escalado a 3.4 -->
-<script src="viking1_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: vikingo de hielo 1 (S7) con hacha -->
-<script src="viking2_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: vikingo de hielo 2 (S7) con martillo -->
-<script src="vikaxe_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: hacha Prop_Axe_01 del pack Fantasy -->
-<script src="vikhammer_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: martillo Prop_Hammer_01 del pack Fantasy -->
-<script src="westbad_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 1 (badguy) — horda S8, textura natural, kitea -->
-<script src="westgun_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 2 (gunman) -->
-<script src="westcow_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 3 (cowboy) -->
-<script src="ninja_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: ninja (shooter, lanza) — horda S3 Japón -->
-<script src="sensei_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: sensei (large, melee combo punch) — horda S3 Japón -->
-<script src="villager_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: aldeano (small, melee) — horda S3 Japón -->
-<script src="golem_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3: GOLEM de roca riggeado — large de S5 (pirámide) y S7 (azul) -->
-<script src="s7barb_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del bárbaro) -->
-<script src="s7sam_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del samurái) -->
-<script src="s7knight_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del caballero) -->
 <script src="shuriken_models.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SHURIKEN: 2 FBX base64 (18 lila=F · 17 acero=E/Q) para los ataques del samurai -->
-<script src="barbweapon_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- maza (Synty Prop_Hammer) en base64; se adjunta a la mano del barbarian; opcional -->
-<script src="axe_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- HACHA (FBX de Toni → GLB) en base64; proyectil de la Q del barbarian (se lanza girando), tamaño proporcional al personaje -->
-<script src="goblin_minion.js" onload="__ld()" onerror="__ld()"></script>  <!-- piezas del minion GOBLIN (Synty) troceado, en base64; opcional -->
-<script src="goblin3_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 3 animado (rig Mixamo) para el minion GRANDE; usa el MODELO de GOBLIN 2 (swap); opcional -->
-<script src="goblin2_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 2 animado (rig Mixamo) para el minion MEDIANO 'shooter'; usa el MODELO de GOBLIN 3 (swap); opcional -->
-<script src="goblin1_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 1 animado (rig Mixamo) para el minion PEQUEÑO 'small'; en base64; opcional -->
-<script src="goblinshaman_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►M2HORDA: Goblin CHAMÁN (Synty, rig Mixamo) — minion 'shooter' MELEE del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
-<script src="goblinwarrior_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►M2HORDA: Goblin GUERRERO (Synty sin hombrera, rig Mixamo) — minion 'large' del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
-<script src="pirate_skeleton_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRMIX: Esqueleto soldado (Synty, rig Mixamo) — minion 'small' del mundo 12 -->
-<script src="pirate_captain_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►PIRMIX: Capitán pata de palo — minion 'shooter' del mundo 12, con clip SHOOTING propio -->
-<script src="pirate_blackbeard_anims.js?v=1" onload="__ld()" onerror="__ld()"></script><!-- ►PIRMIX: Barbanegra — minion 'large' del mundo 12 -->
-<script src="knightheavy_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>      <!-- ►MINIONS29: caballero PESADO (large, espada) — horda del mundo 2; 4 FBX Mixamo en base64, los monta _gobFbxLoad -->
-<script src="knightlight_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>      <!-- ►MINIONS29: caballera LIGERA (small mediano, melee espada) — mundo 2 -->
-<script src="knightarcher_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►MINIONS29: soldado ARQUERO (shooter, arco + flecha real) — mundo 2 -->
-<script src="witch_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>            <!-- ►MINIONS29: BRUJA (shooter, bastón del mago + orbe lila) — mundo 2 -->
-<script src="geisha_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>           <!-- ►MINIONS29: GEISHA (shooter, shuriken de acero como la Q del samurái) — mundo 3 -->
-<script src="pirate_firstmate_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►MINIONS29: CONTRAMAESTRE pirata (small mediano, melee a puños) — mundo 12 -->
-<script src="pirate_english_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►MINIONS29: CAPITÁN INGLÉS (small mediano, melee espada) — mundo 12 -->
-<script src="ice_rogue_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>        <!-- ►MINIONS29: PÍCARO del hielo (small mediano, melee espada) — mundo 7 -->
-<script src="ice_deckhand_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►MINIONS29: GRUMETE del hielo (small mediano, melee hacha vikinga) — mundo 7 -->
-<script src="samboss_model.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
-<script src="samboss_death.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
-<script src="boss_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
-<script src="boss_anims2.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- JEFE: 4 anims extra (run/jump/fall/idle) Mixamo -->
-<script src="desertgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►DGOLEM · STAGE 4: Gólem del Desierto — 7 FBX (rig Mixamo RockGolem) en base64; se cargan con FBXLoader -->
-<script src="midgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►G3 · STAGE 5: Gólem BRUJO mediano (kiter a distancia) — 8 FBX Mixamo en base64; los monta midgolemLoad → BOSS_TPLS_S5.mid -->
-<script src="smallgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►G3 · STAGE 5: Gólem VELOZ pequeño (dasher rápido) — 6 FBX Mixamo en base64; los monta smallgolemLoad → BOSS_TPLS_S5.small -->
-<script src="icevik_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►ICEBOSS · STAGE 7: Coloso Vikingo de Hielo — 11 FBX (rig Mixamo Chr_Vikings_Warrior_02) en base64; se cargan con FBXLoader (icevikLoad) -->
-<script src="robot_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►ROBOTBOSS · STAGE 8: Robot de la Forja — 14 FBX Mixamo (idle/capo/run/point1/point3/charge + 7 patadas de capoeira + death) en base64; se cargan con FBXLoader (robotLoad) -->
-<script src="robotminion_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►S8ROBOT: robot LaloBOT como MINION de la horda S8 — 3 FBX Mixamo (idle/walk/attack) en base64; los monta _gobFbxLoad -->
-<script src="momiaminion_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►MOMIAS: MOMIA grande como MINION large de la horda S5 (pirámide) — 4 FBX Mixamo en base64, ya decimados y con textura 1024; los monta _gobFbxLoad -->
 <script src="drone_model.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►S8DRON: dron volador (OBJ+MTL de Dave404) de la horda S8. VA DESPUÉS de models.js: ese hace `window.GAME_MODELS = {...}` (asignación, no merge) y borraría el dron si fuese antes -->
 <script>window.GAME_MODELS_LOADED = !!window.GAME_MODELS;</script>
 <script>/* Pixel Clash — tema del juego (incrustado) */
@@ -7545,20 +7549,39 @@ function introSeqStart(){
 }
 addEventListener('load', ()=> setTimeout(hideSplash, 1200));   // fallback si no carga el GLB
 setTimeout(hideSplash, 8000);                                   // red de seguridad: nunca se queda colgado
-if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || window.CHAR_MODELS_B64)){
+/* ►REPACK: b64 string (legado) o ArrayBuffer (assets/ por fetch) → ArrayBuffer para los .parse() */
+function _rbBuf(v){
+  if(v instanceof ArrayBuffer) return v;
+  if(v && v.buffer instanceof ArrayBuffer) return v.buffer;
+  const bin = atob(v), u = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+/* ►REPACK: el cargador avisa al llegar cada asset; los consumidores con reintento se re-pinchan solos */
+window._rbAssetArrived = function(name){
+  try{
+    if(name === 'GOBLIN_PARTS_B64' && typeof _goblinBoot === 'function'){ _goblinBoot(); }
+    if(name === 'BOSS_FBX_B64' && typeof _bossBoot === 'function'){ _bossBoot(); }
+    if((name === 'SAMBOSS_GLB_B64' || name === 'SAMBOSS_DEATH_FBX_B64') && typeof _sambossBoot === 'function'){ _sambossBoot(); }
+    _charAssetsBoot();
+    if(typeof ensureStageAssets === 'function' && typeof STAGE !== 'undefined'){ try{ ensureStageAssets(STAGE); }catch(e){} }
+  }catch(e){ console.warn('[repack] arrival '+name, e); }
+};
+const _cabDone = {};   // ►REPACK: sub-bloques ya procesados (la funcion se re-invoca con cada llegada)
+function _charAssetsBoot(){
+ if(!(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || window.CHAR_MODELS_B64))) return;
   try {
     /* loader + decodificador Draco (uno por parseo) y utilidad base64→ArrayBuffer */
     const _mkLoader = ()=>{ const gl = new THREE.GLTFLoader();
       if(THREE.DRACOLoader){ const dl = new THREE.DRACOLoader();
         dl.setDecoderPath('https://unpkg.com/three@0.128.0/examples/js/libs/draco/'); gl.setDRACOLoader(dl); }
       return gl; };
-    const _b64ToBuf = b64=>{ const bin = atob(b64); const a = new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) a[i] = bin.charCodeAt(i); return a.buffer; };
+    const _b64ToBuf = _rbBuf;   // ►REPACK: acepta b64 legado y ArrayBuffer de assets/
     /* asigna un modelo único a cada jugador (P1..P6) */
     for(let i=0;i<allPlayers.length;i++){ if(i<CHAR_ROSTER.length) allPlayers[i]._charKey = CHAR_ROSTER[i]; }
     const _modelKeys = window.CHAR_MODELS_B64 ? Object.keys(window.CHAR_MODELS_B64) : [];
     /* 1) humanoide original = FALLBACK: solo para jugadores sin modelo Meshy propio disponible */
-    if(window.CHAR_GLB_B64){
+    if(window.CHAR_GLB_B64 && !_cabDone.CHAR_GLB_B64){ _cabDone.CHAR_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.CHAR_GLB_B64), '', gltf=>{
         _charTpl = { scene: gltf.scene, animations: gltf.animations };
         for(const q of allPlayers){ if(!q._charApplied && (!q._charKey || _modelKeys.indexOf(q._charKey)<0)) applyCharModel(q); }
@@ -7568,6 +7591,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
     }
     /* 2) 6 modelos Meshy (chars_models.js): cada jugador recibe el suyo en cuanto carga */
     for(const key of _modelKeys){
+      if(_cabDone['M:'+key]) continue; _cabDone['M:'+key] = 1;
       _mkLoader().parse(_b64ToBuf(window.CHAR_MODELS_B64[key]), '', gltf=>{
         /* ►CARRY2 · monta 'carry'/'carryidle' (pose de carry_poses.js + piernas de run/idle) ANTES de
            guardar la plantilla: applyCharModel crea una acción por clip, así que tienen que estar ya. */
@@ -7584,7 +7608,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       }, err=>{ console.warn('[char] fallo modelo '+key, err); });
     }
     /* katana (Synty) que se cuelga del hueso de la mano del samurái (se adjunta en applyCharModel) */
-    if(window.KATANA_GLB_B64){
+    if(window.KATANA_GLB_B64 && !_cabDone.KATANA_GLB_B64){ _cabDone.KATANA_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.KATANA_GLB_B64), '', gltf=>{
         _katanaTpl = gltf.scene;
         for(const q of allPlayers){ if(q._charKey==='samurai' && q._charApplied) attachKatana(q); }   // re-cuelga si el samurái ya estaba montado
@@ -7593,7 +7617,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       }, err=>{ console.warn('[char] fallo katana', err); });
     }
     /* escudo (Synty) que se cuelga del brazo izquierdo del caballero (se adjunta en applyCharModel) */
-    if(window.SHIELD_GLB_B64){
+    if(window.SHIELD_GLB_B64 && !_cabDone.SHIELD_GLB_B64){ _cabDone.SHIELD_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.SHIELD_GLB_B64), '', gltf=>{
         _shieldTpl = gltf.scene;
         for(const q of allPlayers){ if(q._charKey==='knight' && q._charApplied) attachShield(q); }   // re-cuelga si el caballero ya estaba montado
@@ -7602,7 +7626,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       }, err=>{ console.warn('[char] fallo escudo', err); });
     }
     /* maza (Synty) que se cuelga del hueso de la mano del barbarian (se adjunta en applyCharModel) */
-    if(window.BARBWEAPON_GLB_B64){
+    if(window.BARBWEAPON_GLB_B64 && !_cabDone.BARBWEAPON_GLB_B64){ _cabDone.BARBWEAPON_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.BARBWEAPON_GLB_B64), '', gltf=>{
         _barbWeaponTpl = gltf.scene;
         for(const q of allPlayers){ if(q._charKey==='voxelhero' && q._charApplied) attachWeapon(q); }   // re-cuelga si el barbarian ya estaba montado
@@ -7613,7 +7637,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
     /* HACHA (FBX de Toni → GLB): proyectil de la Q del barbarian. Se normaliza una vez a largo=1 a lo
        largo de +Y y centrada en el origen; _axeMesh() la clona/escala por lanzamiento (proporcional al
        personaje) y vuela GIRANDO (tomahawk) sobre un eje horizontal perpendicular al avance. */
-    if(window.AXE_GLB_B64){
+    if(window.AXE_GLB_B64 && !_cabDone.AXE_GLB_B64){ _cabDone.AXE_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.AXE_GLB_B64), '', gltf=>{
         const src = gltf.scene; src.updateMatrixWorld(true);
         const box = new THREE.Box3().setFromObject(src), size = new THREE.Vector3(), ctr = new THREE.Vector3();
@@ -7655,7 +7679,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       }, err=>{ console.warn('[char] fallo hacha', err); });
     }
     /* bastón (Synty) que se cuelga del hueso de la mano del mago (se adjunta en applyCharModel) */
-    if(window.STAFF_GLB_B64){
+    if(window.STAFF_GLB_B64 && !_cabDone.STAFF_GLB_B64){ _cabDone.STAFF_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.STAFF_GLB_B64), '', gltf=>{
         _staffTpl = gltf.scene;
         for(const q of allPlayers){ if(q._charKey==='link' && q._charApplied) attachStaff(q); }   // re-cuelga si el mago ya estaba montado
@@ -7664,7 +7688,7 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
       }, err=>{ console.warn('[char] fallo bastón', err); });
     }
     /* arco (Synty) que se cuelga del hueso de la mano izquierda de la arquera (se adjunta en applyCharModel) */
-    if(window.BOW_GLB_B64){
+    if(window.BOW_GLB_B64 && !_cabDone.BOW_GLB_B64){ _cabDone.BOW_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.BOW_GLB_B64), '', gltf=>{
         _bowTpl = gltf.scene;
         for(const q of allPlayers){ if(q._charKey==='archer' && q._charApplied) attachBow(q); }   // re-cuelga si la arquera ya estaba montada
@@ -7674,18 +7698,19 @@ if(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || wi
     }
     /* ►VIKINGS: hacha + martillo (pack Fantasy, mismo atlas) que se cuelgan de la mano derecha de los
        vikingos de hielo de S7 en runtime (_gobArmModel). Solo plantillas; la horda las clona con _hangProp. */
-    if(window.VIKAXE_GLB_B64){
+    if(window.VIKAXE_GLB_B64 && !_cabDone.VIKAXE_GLB_B64){ _cabDone.VIKAXE_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.VIKAXE_GLB_B64), '', gltf=>{
         _vikAxeTpl = gltf.scene; console.log('[char] hacha vikinga lista');
       }, err=>{ console.warn('[char] fallo hacha vikinga', err); });
     }
-    if(window.VIKHAMMER_GLB_B64){
+    if(window.VIKHAMMER_GLB_B64 && !_cabDone.VIKHAMMER_GLB_B64){ _cabDone.VIKHAMMER_GLB_B64 = 1;
       _mkLoader().parse(_b64ToBuf(window.VIKHAMMER_GLB_B64), '', gltf=>{
         _vikHammerTpl = gltf.scene; console.log('[char] martillo vikingo listo');
       }, err=>{ console.warn('[char] fallo martillo vikingo', err); });
     }
   } catch(e){ console.warn('[char] no se pudo cargar el humanoide', e); }
 }
+_charAssetsBoot();   // ►REPACK: primer intento ya (por si algun asset llego antes de parsear este script)
 /* === puntuación / barra de minions / ataque DEFINITIVO === */
 const MINION_PTS = { small:10, shooter:25, large:50, brute:120, drone:40 };   // ►S8DRON: paga casi como un grande — hay que subir a por él en el aire   // (ajustable) pequeño<tirador<grande · brute = MINI-JEFE (el más fuerte del stage)
 const MPOW_MAX = 300;                                    // barra de minions llena (ajustable)
@@ -12211,11 +12236,12 @@ function rebuildMinionInstances(){
   } minstMeshes=null; }
   initMinionInstances();
 }
-(function loadGoblinMinion(){
+function _goblinBoot(){   // ►REPACK: antes era un IIFE de un solo tiro; ahora lo re-invoca la llegada del asset
+  if(_goblinBoot._done) return;
   if(!window.GOBLIN_PARTS_B64 || !THREE.GLTFLoader) return;
+  _goblinBoot._done = true;
   try{
-    const bin=atob(window.GOBLIN_PARTS_B64), buf=new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    const buf=new Uint8Array(_rbBuf(window.GOBLIN_PARTS_B64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
     new THREE.GLTFLoader().parse(buf.buffer, '', gltf=>{
       try{
         const by={}; gltf.scene.traverse(o=>{ if(o.isMesh) by[o.name]=o; });
@@ -12241,7 +12267,8 @@ function rebuildMinionInstances(){
       }catch(e){ console.warn('[goblin] build', e); }
     }, err=>{ console.warn('[goblin] parse', err); });
   }catch(e){ console.warn('[goblin] load', e); }
-})();
+}
+_goblinBoot();
 /* ===== MINION GOBLIN ANIMADO (rig Mixamo, skinned) — UN SOLO sistema parametrizado por mn.type con POOL.
    Sustituye los 3 bloques duplicados _g1/_g2/_g3. SkinnedMesh propio con idle/walk/jump/attack reales;
    walk ligado a la velocidad real (anti foot-slide). POOL: las instancias se reciclan (no se clona ni se
@@ -12646,13 +12673,13 @@ const _GOB_ZERO = new THREE.Matrix4().makeScale(0,0,0);   // matriz nula → ocu
      · stripRootMotion en TODOS los clips — estos FBX mueven la cadera en X/Z y sin congelarla el
        minion se "despega" de su posición lógica (la que usan colisión y ataques). */
 function _gobFbxLoad(type){
-  const cfg = GOBLIN_KINDS[type], dict = window[cfg.fbx];
+  const cfg = GOBLIN_KINDS[type]; if(window.RB_ASSETS) RB_ASSETS.need(cfg.fbx);   // ►REPACK
+  const dict = window[cfg.fbx];
   if(!dict || !THREE.FBXLoader){ console.warn('[goblin] '+type+': sin '+cfg.fbx+' o FBXLoader'); return; }
   const loader = new THREE.FBXLoader(), names = cfg.fbxClips, parsed = {};
   for(const key of names){
     const b64 = dict[key]; if(!b64) continue;
-    try{ const bin=atob(b64), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    try{ const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       parsed[key] = loader.parse(buf.buffer, ''); }
     catch(e){ console.warn('[goblin] parse '+type+'/'+key, e); }
   }
@@ -12693,13 +12720,15 @@ const _gobLoaded = {};
 function gobLoadKinds(kinds){
   for(const type of kinds){
     if(_gobLoaded[type] || !GOBLIN_KINDS[type]) continue;
-    _gobLoaded[type] = true;
-    if(GOBLIN_KINDS[type].fbx){ _gobFbxLoad(type); continue; }   // ►S8ROBOT: piel de FBX sueltos (no GLB)
+    if(window.RB_ASSETS) RB_ASSETS.need(GOBLIN_KINDS[type].fbx || GOBLIN_KINDS[type].glb);   // ►REPACK: pide el binario ya
+    if(GOBLIN_KINDS[type].fbx){
+      if(!window[GOBLIN_KINDS[type].fbx]) continue;   // ►REPACK: SIN marcar _gobLoaded — gobAttach reintenta cuando llegue
+      _gobLoaded[type] = true; _gobFbxLoad(type); continue; }   // ►S8ROBOT: piel de FBX sueltos (no GLB)
     const glbVar = GOBLIN_KINDS[type].glb;
-    if(!window[glbVar] || !THREE.GLTFLoader) continue;
+    if(!window[glbVar] || !THREE.GLTFLoader) continue;   // ►REPACK: sin marcar — reintenta al llegar
+    _gobLoaded[type] = true;
     try{
-      const bin=atob(window[glbVar]), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      const buf=new Uint8Array(_rbBuf(window[glbVar]));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       ((t)=>{ new THREE.GLTFLoader().parse(buf.buffer, '', gltf=>{
         _gobTpl[t] = { scene:gltf.scene, animations:gltf.animations||[] };
         console.log('[goblin] '+t+' animado listo ·', _gobTpl[t].animations.map(a=>a.name).join('/'));
@@ -14220,16 +14249,18 @@ let bossAH = ARENA_HALF, bossRZ = RING_Z;   // ►DGOLEM: semilado/anillo EFECTI
 
 /* ---- carga de los 7 FBX y montaje de la plantilla (malla + clips con nombre) ---- */
 let _bossTpl = null;   // { root, clips:{name:AnimationClip}, baseScale, baseY }
-(function bossLoad(){
-  if(!window.BOSS_FBX_B64 || !THREE.FBXLoader){ console.warn('[boss] sin BOSS_FBX_B64 o FBXLoader'); return; }
+function _bossBoot(){   // ►REPACK: antes IIFE de un tiro; lo re-invoca la llegada del asset
+  if(_bossBoot._done) return;
+  if(window.RB_ASSETS) RB_ASSETS.need('BOSS_FBX_B64');
+  if(!window.BOSS_FBX_B64 || !THREE.FBXLoader){ console.warn('[boss] sin BOSS_FBX_B64 o FBXLoader (llegara por assets/)'); return; }
+  _bossBoot._done = true;
   const loader = new THREE.FBXLoader();
   const names = ['standup','roar','saltos','cabezazo','giro','ulti','muerte','run','jump','fall','idle'];   // +run/jump/fall/idle (boss_anims2.js)
   const parsed = {};
   for(const key of names){
     const b64 = window.BOSS_FBX_B64[key]; if(!b64) continue;
     try{
-      const bin=atob(b64), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       parsed[key] = loader.parse(buf.buffer, '');
     }catch(e){ console.warn('[boss] parse '+key, e); }
   }
@@ -14284,7 +14315,8 @@ let _bossTpl = null;   // { root, clips:{name:AnimationClip}, baseScale, baseY }
       if(fake._binst){ precalentarObjeto(fake._binst.root, 'brute (elite)'); bruteRemove(fake); }
     }catch(e){ console.warn('[elite-warm]', e); }
   } });
-})();
+}
+_bossBoot();
 
 /* ===================================================================
    ►SAMBOSS · JEFES POR STAGE (framework mínimo, NO-rompe)
@@ -14499,7 +14531,7 @@ function loadBossGLB(stage, glbB64, targetH, rawGeo){
   if(!glbB64){ console.warn('[samboss] sin GLB para stage', stage); return; }
   if(!THREE.GLTFLoader){ console.warn('[samboss] sin GLTFLoader'); return; }
   try{
-    const bin=atob(glbB64), buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    const buf=new Uint8Array(_rbBuf(glbB64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
     new THREE.GLTFLoader().parse(buf.buffer, '', gltf=>{
       const root=gltf.scene;
       root.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){ o.castShadow=true; o.frustumCulled=false; if(o.material){ o.material.metalness=0; o.material.roughness=0.9; } } });
@@ -14515,9 +14547,7 @@ function loadBossGLB(stage, glbB64, targetH, rawGeo){
       // clave normalizada (sin símbolos ni mayúsculas) para ser robusto a esa diferencia; congela X,Z del root.
       if(stage===3 && window.SAMBOSS_DEATH_FBX_B64 && THREE.FBXLoader){
         try{
-          const db=atob(window.SAMBOSS_DEATH_FBX_B64), dbuf=new Uint8Array(db.length);
-          for(let i=0;i<db.length;i++) dbuf[i]=db.charCodeAt(i);
-          const dfbx=new THREE.FBXLoader().parse(dbuf.buffer,'');
+          const dfbx=new THREE.FBXLoader().parse(_rbBuf(window.SAMBOSS_DEATH_FBX_B64),'');   // ►REPACK
           const dc=dfbx.animations && dfbx.animations[0];
           if(dc){
             const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -14539,7 +14569,14 @@ function loadBossGLB(stage, glbB64, targetH, rawGeo){
     }, err=>{ console.warn('[samboss] GLB parse stage'+stage, err); });
   }catch(e){ console.warn('[samboss] load stage'+stage, e); }
 }
-if(window.SAMBOSS_GLB_B64) loadBossGLB(3, window.SAMBOSS_GLB_B64, STAGE_BOSSES[3].targetH);   // eager (GLB ~1MB); con 8 jefes → lazy en startBossArena
+function _sambossBoot(){   // ►REPACK: era un eager de parse-time; ahora espera a sus DOS binarios (GLB + FBX de muerte)
+  if(_sambossBoot._done) return;
+  if(window.RB_ASSETS){ RB_ASSETS.need('SAMBOSS_GLB_B64'); RB_ASSETS.need('SAMBOSS_DEATH_FBX_B64'); }
+  if(!window.SAMBOSS_GLB_B64 || !window.SAMBOSS_DEATH_FBX_B64) return;
+  _sambossBoot._done = true;
+  loadBossGLB(3, window.SAMBOSS_GLB_B64, STAGE_BOSSES[3].targetH);
+}
+_sambossBoot();
 // ►ICEBOSS (S7): ya NO usa el viking2 GLB — su plantilla FBX propia (BOSS_TPLS[7]) la monta icevikLoad() más abajo.
 
 /* ►DGOLEM-LOOK: la textura 'Atlas' del RockGolem es PIZARRA OSCURA (luminancia máx ≈ 47%, media #676e73).
@@ -14591,7 +14628,8 @@ function _dgolemBakeWhenReady(m){
 /* ►DGOLEM · STAGE 4: monta la plantilla FBX del Gólem del Desierto → BOSS_TPLS[4] (misma forma que _bossTpl,
    pero por-stage). Copia fina de bossLoad(): 7 clips propios (idle/run/jump/atk1..4), donante = 'idle'
    (Neutral Idle, único con malla), y RAMPA ARENISCA sobre la textura del RockGolem para casar con el desierto. */
-function dgolemLoad(){ if(BOSS_TPLS[4]) return;   // ►LAZY: lo invoca ensureStageAssets(4/5)
+function dgolemLoad(){ if(BOSS_TPLS[4]) return;
+  if(window.RB_ASSETS) RB_ASSETS.need('DGOLEM_FBX_B64');   // ►LAZY: lo invoca ensureStageAssets(4/5)
   if(!window.DGOLEM_FBX_B64 || !THREE.FBXLoader){ console.warn('[dgolem] sin DGOLEM_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','run','jump','atk1','atk2','atk3','atk4'];
@@ -14599,8 +14637,7 @@ function dgolemLoad(){ if(BOSS_TPLS[4]) return;   // ►LAZY: lo invoca ensureSt
   for(const key of names){
     const b64 = window.DGOLEM_FBX_B64[key]; if(!b64) continue;
     try{
-      const bin=atob(b64), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       parsed[key] = loader.parse(buf.buffer, '');
     }catch(e){ console.warn('[dgolem] parse '+key, e); }
   }
@@ -14646,7 +14683,7 @@ function _s5GolemLoad(tag, b64dict, clipNames, dest, tintHex){
   const loader = new THREE.FBXLoader(), parsed = {};
   for(const key of clipNames){
     const b64 = b64dict[key]; if(!b64) continue;
-    try{ const bin=atob(b64), buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i); parsed[key]=loader.parse(buf.buffer, ''); }
+    try{ const buf=new Uint8Array(_rbBuf(b64)); parsed[key]=loader.parse(buf.buffer, ''); }   // ►REPACK
     catch(e){ console.warn('['+tag+'] parse '+key, e); }
   }
   let meshSrc=null;
@@ -14666,16 +14703,17 @@ function _s5GolemLoad(tag, b64dict, clipNames, dest, tintHex){
   dest.tpl = { root:meshSrc, clips, baseScale, baseY:-box.min.y*baseScale };
   console.log('['+tag+'] listo · clips:', Object.keys(clips).join('/'), '· baseScale', baseScale.toFixed(4));
 }
-BOSS_LOADERS.midgolem = function midgolemLoad(){ if(BOSS_TPLS_S5.mid) return; const d={}; _s5GolemLoad('midgolem', window.MIDGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3','atk4','melee'], d, 0xffa020);
+BOSS_LOADERS.midgolem = function midgolemLoad(){ if(BOSS_TPLS_S5.mid) return; if(window.RB_ASSETS) RB_ASSETS.need('MIDGOLEM_FBX_B64'); const d={}; _s5GolemLoad('midgolem', window.MIDGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3','atk4','melee'], d, 0xffa020);
   if(d.tpl) BOSS_TPLS_S5.mid = d.tpl; };   // ►LAZY: stage 5
-BOSS_LOADERS.smallgolem = function smallgolemLoad(){ if(BOSS_TPLS_S5.small) return; const d={}; _s5GolemLoad('smallgolem', window.SMALLGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3'], d, 0xff5030);
+BOSS_LOADERS.smallgolem = function smallgolemLoad(){ if(BOSS_TPLS_S5.small) return; if(window.RB_ASSETS) RB_ASSETS.need('SMALLGOLEM_FBX_B64'); const d={}; _s5GolemLoad('smallgolem', window.SMALLGOLEM_FBX_B64, ['idle','run','jump','atk1','atk2','atk3'], d, 0xff5030);
   if(d.tpl) BOSS_TPLS_S5.small = d.tpl; };
 
 /* ►ICEBOSS · STAGE 7: monta la plantilla FBX del Coloso Vikingo de Hielo → BOSS_TPLS[7] (misma forma que _bossTpl,
    por-stage). Copia fina de dgolemLoad(): 11 clips propios (idle/run/jump/laying/kipup/death + atk1..5 de gran espada),
    donante = 'idle' (Neutral Idle, con malla), y NADA de rampa de textura — el look ESCARCHA lo pone spec.tint por
    instancia (bossSpawnInst). El rig es Mixamo (setFromObject mide bien, como el gólem → SIN rawGeo). */
-function icevikLoad(){ if(BOSS_TPLS[7]) return;   // ►LAZY: lo invoca ensureStageAssets(7)
+function icevikLoad(){ if(BOSS_TPLS[7]) return;
+  if(window.RB_ASSETS) RB_ASSETS.need('ICEVIK_FBX_B64');   // ►LAZY: lo invoca ensureStageAssets(7)
   if(!window.ICEVIK_FBX_B64 || !THREE.FBXLoader){ console.warn('[iceboss] sin ICEVIK_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','run','jump','laying','kipup','death','atk1','atk2','atk3','atk4','atk5'];
@@ -14683,8 +14721,7 @@ function icevikLoad(){ if(BOSS_TPLS[7]) return;   // ►LAZY: lo invoca ensureSt
   for(const key of names){
     const b64 = window.ICEVIK_FBX_B64[key]; if(!b64) continue;
     try{
-      const bin=atob(b64), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       parsed[key] = loader.parse(buf.buffer, '');
     }catch(e){ console.warn('[iceboss] parse '+key, e); }
   }
@@ -14723,7 +14760,8 @@ BOSS_LOADERS.icevik = icevikLoad;
    por-stage). Copia fina de icevikLoad(): 14 clips propios (idle general + capo=ginga base + run + point1/point3/charge
    = 3 láseres de dedo + 7 patadas de capoeira + death), donante = 'idle' (con malla). El look METÁLICO lo da el material
    (metalness alta) + spec.tint por instancia (bossSpawnInst). El rig es Mixamo → setFromObject mide bien, SIN rawGeo. */
-function robotLoad(){ if(BOSS_TPLS[8]) return;   // ►LAZY: lo invoca ensureStageAssets(8)
+function robotLoad(){ if(BOSS_TPLS[8]) return;
+  if(window.RB_ASSETS) RB_ASSETS.need('ROBOT_FBX_B64');   // ►LAZY: lo invoca ensureStageAssets(8)
   if(!window.ROBOT_FBX_B64 || !THREE.FBXLoader){ console.warn('[robotboss] sin ROBOT_FBX_B64 o FBXLoader'); return; }
   const loader = new THREE.FBXLoader();
   const names = ['idle','capo','run','point1','point3','charge','mma','meiafrente','meiacompasso','legsweep','kick','chapa','queshada','death','deathrun','deathback'];   // ►ROBOTDEATH: +deathrun (Running Tired) + deathback (Death From The Back) = secuencia de muerte en 2 tiempos
@@ -14731,8 +14769,7 @@ function robotLoad(){ if(BOSS_TPLS[8]) return;   // ►LAZY: lo invoca ensureSta
   for(const key of names){
     const b64 = window.ROBOT_FBX_B64[key]; if(!b64) continue;
     try{
-      const bin=atob(b64), buf=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+      const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
       parsed[key] = loader.parse(buf.buffer, '');
     }catch(e){ console.warn('[robotboss] parse '+key, e); }
   }
@@ -33926,13 +33963,13 @@ let _wASpawnT = 3, _wAnimT = 0;
 function _wAnimBuildTpl(kind){
   if(_wATpl[kind]) return _wATpl[kind];
   const cfg = WA_KINDS[kind]; if(!cfg) return null;
+  if(window.RB_ASSETS) RB_ASSETS.need(cfg.glb);   // ►REPACK
   if(_wATried[kind]) return null;
   const b64 = window[cfg.glb];
   if(!(b64 && THREE.GLTFLoader)){ console.warn('[west-animal] aún sin '+cfg.glb+'/GLTFLoader — reintento en el próximo spawn'); return null; }
   _wATried[kind] = true;
   try{
-    const bin = atob(b64), buf = new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+    const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
     /* ►GLTFLoader.parse es ASÍNCRONO (decodifica texturas por blob URL): esto devuelve null la
        primera vez y el spawn reintenta solo. No asumas que la plantilla existe tras el parse. */
     new THREE.GLTFLoader().parse(buf.buffer, '', g=>{
@@ -39237,7 +39274,7 @@ function _bakeStatic(obj, targetLen){                          // funde todas la
 function _bakeShuriken(b64, size, colorHex){
   if(!(b64 && THREE.FBXLoader)) return null;
   try{
-    const bin=atob(b64), buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    const buf=new Uint8Array(_rbBuf(b64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
     const grp=new THREE.FBXLoader().parse(buf.buffer,''); grp.updateMatrixWorld(true);
     const PA=[],NA=[]; const _v=new THREE.Vector3(),_nm=new THREE.Matrix3();
     grp.traverse(o=>{ if(!o.isMesh||!o.geometry||!o.geometry.attributes.position) return;
@@ -39277,9 +39314,10 @@ function _shurikenMesh(which){   // 'f' (lila, dentro del orbe) · 'e' (acero, c
 let _pengTpl=null, _pengTried=false;
 function _buildPenguinTpl(){                                   // ►F3b: pingüino RIGGEADO (GLB con clips walk/idle/throw hechos a keyframes en Blender)
   if(_pengTpl || _pengTried) return _pengTpl;
+  if(window.RB_ASSETS) RB_ASSETS.need('PENG_GLB_B64');
   if(!(window.PENG_GLB_B64 && THREE.GLTFLoader)){ console.warn('[penguin] aún sin PENG_GLB_B64/GLTFLoader — reintento en el próximo spawn'); return null; }
   _pengTried=true;
-  try{ const bin=atob(window.PENG_GLB_B64), buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+  try{ const buf=new Uint8Array(_rbBuf(window.PENG_GLB_B64));   // ►REPACK: b64 legado o ArrayBuffer de assets/
     new THREE.GLTFLoader().parse(buf.buffer, '', g=>{ _pengTpl={ scene:g.scene, animations:g.animations||[] };
       console.log('[penguin] rig listo ·', _pengTpl.animations.map(a=>a.name).join('/')); }, e=>console.warn('[penguin] parse', e));
     return _pengTpl;                                           // null hasta que el parse (async) acabe — el spawn reintenta solo
@@ -45541,7 +45579,6 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
      porque necesita leer `renderer` y `keys`, que son const del ámbito léxico del
      script de arriba (accesibles por nombre, pero NO en window). Sin ?descenso en
      la URL el fichero sale en su primera línea y no hace nada. -->
-<script src="snowboard_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
 <script src="descenso.js?v=1" onload="__ld()" onerror="__ld()"></script>
 <script src="cuadrimania.js?v=1" onload="__ld()" onerror="__ld()"></script>
 <script src="tubo.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►TUBO (?tubo): "el tubo de las estrellas", el minijuego que va después de la FORJA (stage 8). Escena/cámara propias como el descenso: la gravedad es RADIAL (corres por dentro del tubo) y el motor no puede con eso. Sin ?tubo el fichero sale en su primera línea. -->
