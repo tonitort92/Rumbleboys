@@ -794,7 +794,7 @@ window.addEventListener('load', function(){
              font-size:clamp(12px,2.4vw,18px); margin-bottom:14px; text-shadow:0 2px 8px rgba(0,0,0,.6); }
   #logoSub span { text-shadow:0 2px 8px rgba(0,0,0,.7); }   /* cada tag con su color (los · quedan tenues) */
   .xppop { position:absolute; transform:translate(-50%,-50%); font-weight:900; font-style:italic;
-           font-size:18px; letter-spacing:1px; text-shadow:0 2px 5px rgba(0,0,0,.7); opacity:0; }
+           font-size:18px; letter-spacing:1px; text-shadow:0 2px 4px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.55); opacity:0; }
   .xppop.go { animation:xpRise .85s ease-out forwards; }
   @keyframes xpRise {
     0%   { opacity:0; transform:translate(-50%,-50%) scale(.6); }
@@ -9335,6 +9335,7 @@ function narrateAwe(){                                        // asombro: MUY de
    El 3·2·1 en pantalla cae EN el número hablado y el ¡LUCHA! en el "fight": la presentación dura NARR_CUES.go,
    no el clip entero (la cola de la voz suena ya sobre la pelea). */
 const NARR_CUES = { n3:5.47, n2:7.42, n1:9.18, go:11.24 };
+const NARR_TRIM = 2.0;   // ►NARRTRIM (Toni 31/08): arranca el clip en el s2 — fuera el 'Ladies and gentlemen'; el reloj va por currentTime, asi que cues y visuales se sincronizan solos
 const STAGE_INTRO_T = NARR_CUES.go;
 let stageIntroT = 0, _stageIntroDur = STAGE_INTRO_T, _siLastCount = -1, _siCamA0 = 0;
 let stageIntroHold = false, _siT0 = 0, _siVoice = false, _siPending = false, _siBannerTxt = '', _siBannerT = 0;
@@ -9595,7 +9596,7 @@ function _entradaVoz(){
   if(!musicOn || demo) return;   // mismos frenos que narrate()
   try{
     voiceStart.onended = null;
-    voiceStart.pause(); voiceStart.currentTime = 0;
+    voiceStart.pause(); voiceStart.currentTime = NARR_TRIM;   // ►NARRTRIM
     voiceStart.play().then(()=>{ _siVoice = true; }).catch(()=>{ _siVoice = false; });   // si suena, SU currentTime manda el reloj
   }catch(e){}
 }
@@ -21396,7 +21397,7 @@ function popKill(pos, txt, color){
   const x = (_xpV.x*.5+.5)*innerWidth, y = (-_xpV.y*.5+.5)*innerHeight;
   const d = _xpPool[_xpIdx]; _xpIdx = (_xpIdx+1) % _xpPool.length;
   d.textContent = txt;
-  { const _n = parseInt(txt.replace(/[^0-9]/g,''),10)||0; d.style.fontSize = (_n>=100?27:_n>=30?21:16)+'px'; }   // ►PTSPOP: el pool se reusa, hay que fijarlo SIEMPRE
+  { const _n = parseInt(txt.replace(/[^0-9]/g,''),10)||0; d.style.fontSize = (_n>=100?40:_n>=30?30:22)+'px'; }   // ►PTSPOP: el pool se reusa, hay que fijarlo SIEMPRE
   d.style.color = '#'+((color!=null?color:0xffffff).toString(16).padStart(6,'0'));
   d.style.left = x+'px'; d.style.top = y+'px';
   d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
@@ -21408,7 +21409,7 @@ function popXP(p, n){
   const x = (_xpV.x*.5+.5)*innerWidth, y = (-_xpV.y*.5+.5)*innerHeight;
   const d = _xpPool[_xpIdx]; _xpIdx = (_xpIdx+1) % _xpPool.length;
   d.textContent = '+'+n;
-  d.style.fontSize = (n>=100?27:n>=30?21:16)+'px';   // ►PTSPOP
+  d.style.fontSize = (n>=100?40:n>=30?30:22)+'px';   // ►PTSPOP (31/08: Toni los veia pequeños en partida — 27/21/16 → 40/30/22)
   d.style.color = '#'+p.color.toString(16).padStart(6,'0');
   d.style.left = x+'px'; d.style.top = y+'px';
   d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
