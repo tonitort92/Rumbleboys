@@ -1755,7 +1755,8 @@ window.addEventListener('load', function(){
      y una tecla suelta durante la carga se comería la portada sin que nadie llegue a leerla. */
   function loading(){
     var s = document.getElementById('splash');
-    return (!!s && s.style.display !== 'none' && !s.classList.contains('hide')) || !!window._introSeqOn;   // ►INTRO: durante los logos tampoco
+    return (!!s && s.style.display !== 'none' && !s.classList.contains('hide')) || !!window._introSeqOn
+        || (performance.now() - (window._introSkipAt||0) < 600);   // ►SKIPFIX: un clic emite pointerdown Y mousedown — el pointerdown salta los logos y el mousedown llegaba con la via libre y volaba la portada de rebote
   }
   function dismiss(){
     if(gone || loading()) return;
@@ -2280,6 +2281,14 @@ window.addEventListener('load', function(){
    de assets embebidos) mueve la barra del splash. __ldTot debe coincidir con el numero de tags con
    onload=__ld() — si el reempaquetado a .glb cambia la lista, actualizarlo. */
 var __ldN=0, __ldTot=91;
+/* ►SKIPINTRO: una tecla/click DURANTE LA CARGA ya cuenta como 'saltate los logos' — la intencion se
+   guarda aqui (este script existe desde el primer segundo) y introSeqStart la honra al arrancar. */
+['keydown','pointerdown','mousedown','touchstart'].forEach(function(ev){
+  addEventListener(ev, function(){
+    var sp = document.getElementById('splash');
+    if(sp && sp.style.display !== 'none' && !sp.classList.contains('hide')) window._introSkipReq = true;
+  }, { capture:true, passive:true });
+});
 function __ld(){ __ldN++;
   var f=document.getElementById('ldBootF'), t=document.getElementById('ldBootT');
   var pc=Math.min(100, Math.round(__ldN/__ldTot*100));
@@ -7509,8 +7518,6 @@ function _introAudioOff(){
   try{ _introVoxDone = true; }catch(e){}                    // el reloj de la locución ya no la lanza
   try{ _fadeAudio(introMusic, 0, .45, ()=>{ if(_introPhase) introMusic.pause(); }); }catch(e){}
 }
-['keydown','pointerdown','touchstart'].forEach(ev=> addEventListener(ev, ()=>{
-  if(!window._introSeqOn && !_splashHidden) window._introSkipReq = true; }, { capture:true, passive:true }));
 function introSeqStart(){
   const el = document.getElementById('introSeq'); if(!el || window._introSeqOn) return;
   const cards = ['isMagic','isClaude','isRumble'].map(id=>document.getElementById(id));
@@ -7531,10 +7538,10 @@ function introSeqStart(){
     try{ if(typeof homeWelcome==='function') homeWelcome(); }catch(e){}   // ►CROWDHOME: el gentío da la bienvenida al aparecer la portada
     setTimeout(()=>{ el.classList.remove('on'); el.classList.remove('out'); el.classList.remove('fast'); cards.forEach(c=>c.classList.remove('in')); }, fast ? 380 : 650);
   }
-  function skip(){ if(performance.now() - t0 < 400) return; _introAudioOff(); end(true); }   // ►SKIPINTRO: fade de música + locución fuera
+  function skip(){ window._introSkipAt = performance.now(); _introAudioOff(); end(true); }   // ►SKIPINTRO (31/08, pedido de Toni): la PRIMERA pulsación salta TODO — el guard de 400 ms de antes se comía justo el clic hecho durante la carga, que el navegador entrega en cola al arrancar la secuencia · ►SKIPFIX arma la gracia de loading()
   ['keydown','pointerdown','touchstart'].forEach(ev=> addEventListener(ev, skip, { capture:true, passive:true }));
   window._introSeqEnd = end;
-  if(window._introSkipReq){ window._introSkipReq = false; _introAudioOff(); end(true); }   // ►SKIPINTRO: pulsado durante la carga → directo a la portada
+  if(window._introSkipReq){ window._introSkipReq = false; window._introSkipAt = performance.now(); _introAudioOff(); end(true); }   // ►SKIPINTRO: pulsado durante la carga → directo a la portada (con gracia ►SKIPFIX)
 }
 addEventListener('load', ()=> setTimeout(hideSplash, 1200));   // fallback si no carga el GLB
 setTimeout(hideSplash, 8000);                                   // red de seguridad: nunca se queda colgado
