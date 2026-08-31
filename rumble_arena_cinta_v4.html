@@ -7500,6 +7500,17 @@ function shotBurst(at){
   });
 }
 window._introSeqOn = false;
+/* ►SKIPINTRO (Toni 31/08): al saltar los logos el audio de la intro se VA (fade de la música y la
+   locución calla — antes seguían sonando en la portada), y la PRIMERA tecla/click cuenta aunque se
+   pulse DURANTE la carga: la intención se recuerda y introSeqStart la honra al arrancar. La música
+   vuelve bajita al llegar a la home 2 (tiFlyDone). */
+function _introAudioOff(){
+  try{ introVox.pause(); introVox.currentTime = 0; }catch(e){}
+  try{ _introVoxDone = true; }catch(e){}                    // el reloj de la locución ya no la lanza
+  try{ _fadeAudio(introMusic, 0, .45, ()=>{ if(_introPhase) introMusic.pause(); }); }catch(e){}
+}
+['keydown','pointerdown','touchstart'].forEach(ev=> addEventListener(ev, ()=>{
+  if(!window._introSeqOn && !_splashHidden) window._introSkipReq = true; }, { capture:true, passive:true }));
 function introSeqStart(){
   const el = document.getElementById('introSeq'); if(!el || window._introSeqOn) return;
   const cards = ['isMagic','isClaude','isRumble'].map(id=>document.getElementById(id));
@@ -7520,9 +7531,10 @@ function introSeqStart(){
     try{ if(typeof homeWelcome==='function') homeWelcome(); }catch(e){}   // ►CROWDHOME: el gentío da la bienvenida al aparecer la portada
     setTimeout(()=>{ el.classList.remove('on'); el.classList.remove('out'); el.classList.remove('fast'); cards.forEach(c=>c.classList.remove('in')); }, fast ? 380 : 650);
   }
-  function skip(){ if(performance.now() - t0 < 400) return; end(true); }
+  function skip(){ if(performance.now() - t0 < 400) return; _introAudioOff(); end(true); }   // ►SKIPINTRO: fade de música + locución fuera
   ['keydown','pointerdown','touchstart'].forEach(ev=> addEventListener(ev, skip, { capture:true, passive:true }));
   window._introSeqEnd = end;
+  if(window._introSkipReq){ window._introSkipReq = false; _introAudioOff(); end(true); }   // ►SKIPINTRO: pulsado durante la carga → directo a la portada
 }
 addEventListener('load', ()=> setTimeout(hideSplash, 1200));   // fallback si no carga el GLB
 setTimeout(hideSplash, 8000);                                   // red de seguridad: nunca se queda colgado
@@ -8998,7 +9010,11 @@ function introMusicStart(){
 }
 function introMusicUnlock(){ if(!_introPhase || _introAudible || !musicOn) return; if(introMusic.paused) introMusic.play().then(introMusicGo).catch(()=>{}); else introMusicGo(); }
 addEventListener('tiFlyDone', ()=>{ try{ crowdCheer(.45, false, true); }catch(e){}   // ►CROWDHOME: vítor al llegar a la home 2
-  _introBase = .18; const vox = introVox.currentTime > 0 && !introVox.paused && !introVox.ended; if(_introPhase && !vox) _fadeAudio(introMusic, .18, 1.0); });   // home 2: más baja (si la voz sigue, 'ended' ya baja a la base)
+  _introBase = .18; const vox = introVox.currentTime > 0 && !introVox.paused && !introVox.ended;
+  if(_introPhase && !vox){
+    if(introMusic.paused && musicOn){ try{ introMusic.play().catch(()=>{}); }catch(e){} }   // ►SKIPINTRO: el skip la dejó pausada
+    _fadeAudio(introMusic, .18, 1.0);
+  } });   // home 2: más baja (si la voz sigue, 'ended' ya baja a la base)
 
 /* cuenta atrás visual sincronizada: los números hablados del clip caen
    en 2.08s / 3.56s / 4.95s (medido por detección de silencios) */
