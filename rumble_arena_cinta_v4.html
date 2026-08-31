@@ -51,6 +51,11 @@ window.addEventListener('load', function(){
   .splashTitle { font-size:clamp(40px,9vw,96px); font-weight:900; letter-spacing:.12em;
                  background:linear-gradient(180deg,#9fd0ff,#4f9dff); -webkit-background-clip:text; background-clip:text; color:transparent;
                  text-shadow:0 6px 30px rgba(79,157,255,.4); }
+  /* ►BOOTBAR (Paso 4a): barra de progreso REAL bajo el spinner del splash de arranque */
+  #ldBoot { width:min(420px,60vw); height:10px; margin:26px auto 0; border-radius:999px; background:rgba(255,255,255,.10);
+            box-shadow:inset 0 1px 3px rgba(0,0,0,.5); overflow:hidden; }
+  #ldBootF { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#ffd84f,#ff8c3a); }
+  #ldBootT { margin-top:10px; font:900 13px/1 'Segoe UI',system-ui,sans-serif; letter-spacing:3px; color:#9fe8ff; }
   /* círculo antracita contrastado sobre el fondo antracita; dentro una pill de arcoíris que orbita */
   .splashSpin { position:relative; width:76px; height:76px; margin:30px auto 0; border-radius:50%;
                 background:radial-gradient(circle at 50% 40%, #242c46, #0c0f1a);
@@ -1498,6 +1503,8 @@ window.addEventListener('load', function(){
        onerror="this.style.display='none';var t=this.parentNode.querySelector('.splashTitle');if(t)t.style.display='block';">
   <div class="splashTitle" style="display:none">RUMBLEBOYS</div>
   <div class="splashSpin"></div>
+  <div id="ldBoot"><div id="ldBootF"></div></div>
+  <div id="ldBootT">CARGANDO</div>
 </div></div>
 <!-- ►CARGA: pantalla de carga de partida (JUGAR y saltos de mundo). La rellena loadScreenShow(). -->
 <div id="loadScreen"><div class="splashInner">
@@ -2267,6 +2274,19 @@ window.addEventListener('load', function(){
 <div id="fadeVeil"></div>
 
 <script>window._LT0 = performance.now();</script><!-- ►LOADTIME: el reloj arranca ANTES de los 72 scripts de assets (121 MB de JS): antes se medía solo lo que venía después -->
+<script>
+/* ►BOOTBAR (Paso 4a): progreso REAL del arranque. El navegador pinta entre script y script (medido
+   en _test4a: barra visible desde ~1 s), asi que cada onload de los <script src> locales (los 95 MB
+   de assets embebidos) mueve la barra del splash. __ldTot debe coincidir con el numero de tags con
+   onload=__ld() — si el reempaquetado a .glb cambia la lista, actualizarlo. */
+var __ldN=0, __ldTot=91;
+function __ld(){ __ldN++;
+  var f=document.getElementById('ldBootF'), t=document.getElementById('ldBootT');
+  var pc=Math.min(100, Math.round(__ldN/__ldTot*100));
+  if(f) f.style.width=pc+'%';
+  if(t) t.textContent='CARGANDO '+pc+'%';
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- postprocesado (bloom) — versiones globales r128 -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
@@ -2291,93 +2311,93 @@ window.addEventListener('load', function(){
 <script src="https://unpkg.com/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/libs/fflate.min.js"></script>   <!-- descompresión FBX binario (dep. de FBXLoader) -->
 <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>   <!-- carga los FBX del JEFE FINAL (rig Mixamo) -->
-<script src="models.js"></script>
-<script src="rockpaths.js"></script>   <!-- caminos de piedra (FBX→OBJ decimado, geometría embebida) -->
-<script src="campfire.js"></script>    <!-- hoguera (OBJ + textura) que quema al tocar -->
-<script src="grass_patch.js"></script> <!-- parche de hierba con flores (OBJ+MTL) para poblar los suelos verdes -->
-<script src="trees3.js"></script>      <!-- 3 árboles FBX (Synty CommonTree) en base64; se parsean con FBXLoader y sustituyen TODOS los árboles -->
-<script src="stage2_models.js?v=7"></script> <!-- STAGE 2: props de bosque (Synty) OBJ color-plano en GAME_MODELS (s2_*) -->
-<script src="stage3_models.js?v=2"></script>
-<script src="stage4_models.js?v=1"></script>
-<script src="stage5_models.js?v=1"></script>   <!-- STAGE 5: tesoro, vasijas, sarcofagos, pilares, losetas (OBJ+MTL plano, como los demas packs) -->
-<script src="egypt_embalmer_model.js?v=1"></script>   <!-- ►EMBALM · STAGE 4: embalsamador egipcio — estructura TRANSITABLE (muros con collide + cubierta pisable); OBJ+atlas, va DESPUÉS de models.js -->
-<script src="stage6_models.js?v=1"></script> <!-- STAGE 7: props de nieve (pinos/árboles secos/iglú/cristales/muñeco/trineo/picos) OBJ color-plano (s6_*) — generado por build_stage6_assets.js --> <!-- STAGE 5: losa-parche (rejilla) + cepo (circuito) --> <!-- STAGE 4: props de desierto (cactus/palmeras/rocas/alfombras) OBJ color-plano en GAME_MODELS (s3_*) — generado por build_stage3_assets.js -->
-<script src="stage7_models.js?v=1"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
-<script src="stage2_ruins_models.js?v=1"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
-<script src="stage_japan_models.js?v=1"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
-<script src="western_anims.js?v=1"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
-<script src="stage_western_models.js?v=1"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
-<script src="stage_pirate2_models.js?v=1"></script> <!-- ►PIRSWAP · STAGE 12: barco grande/pequeño, bote y 3 muelles portuarios de Quaternius (pq_*), recoloreados a la madera naranja del kit Kenney. Color plano → 1 draw call por modelo -->
-<script src="stage_pirate_solids.js?v=1"></script> <!-- ►PIRSOLID · STAGE 12: la COLISIÓN de esos modelos y de las torres/pantalanes del kit, medida con raycast dentro del juego (no escrita a mano). Ver scratchpad/p_solids.js -->
-<script src="stage_pirate_models.js?v=1"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
+<script src="models.js" onload="__ld()" onerror="__ld()"></script>
+<script src="rockpaths.js" onload="__ld()" onerror="__ld()"></script>   <!-- caminos de piedra (FBX→OBJ decimado, geometría embebida) -->
+<script src="campfire.js" onload="__ld()" onerror="__ld()"></script>    <!-- hoguera (OBJ + textura) que quema al tocar -->
+<script src="grass_patch.js" onload="__ld()" onerror="__ld()"></script> <!-- parche de hierba con flores (OBJ+MTL) para poblar los suelos verdes -->
+<script src="trees3.js" onload="__ld()" onerror="__ld()"></script>      <!-- 3 árboles FBX (Synty CommonTree) en base64; se parsean con FBXLoader y sustituyen TODOS los árboles -->
+<script src="stage2_models.js?v=7" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 2: props de bosque (Synty) OBJ color-plano en GAME_MODELS (s2_*) -->
+<script src="stage3_models.js?v=2" onload="__ld()" onerror="__ld()"></script>
+<script src="stage4_models.js?v=1" onload="__ld()" onerror="__ld()"></script>
+<script src="stage5_models.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- STAGE 5: tesoro, vasijas, sarcofagos, pilares, losetas (OBJ+MTL plano, como los demas packs) -->
+<script src="egypt_embalmer_model.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►EMBALM · STAGE 4: embalsamador egipcio — estructura TRANSITABLE (muros con collide + cubierta pisable); OBJ+atlas, va DESPUÉS de models.js -->
+<script src="stage6_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 7: props de nieve (pinos/árboles secos/iglú/cristales/muñeco/trineo/picos) OBJ color-plano (s6_*) — generado por build_stage6_assets.js --> <!-- STAGE 5: losa-parche (rejilla) + cepo (circuito) --> <!-- STAGE 4: props de desierto (cactus/palmeras/rocas/alfombras) OBJ color-plano en GAME_MODELS (s3_*) — generado por build_stage3_assets.js -->
+<script src="stage7_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 8 · SPACEPORT: flecha aceleradora, valla, hélices, felpudo, teleports, super-muelle (s7_*) — generado por build_stage7_assets.js -->
+<script src="stage2_ruins_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- STAGE 2 · RUINAS: mallas del "Ruins Pack.fbx" + fence pillar recoloreadas a piedra GRIS (s2r_*) + override GRIS de s2_arch — generado por build_stage2_ruins.js. Carga DESPUÉS de stage2_models.js → sobreescribe s2_arch -->
+<script src="stage_japan_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►JAPAN · STAGE 3: torii/pagoda/arces-cerezo/bambú/trigo/estanque-puente/estatua/linterna/puerta/montaña (sj_*) — generado por build_stage_japan_assets.js (pagoda/trigo/bambús = atlas muestreado por cara → multitono) -->
+<script src="western_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►WEST: caballo/burro/vaca RIGGEADOS (GLB skinned, clips idle/walk/run/eat/attack) — generado por build_western_animals.py -->
+<script src="stage_western_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►WEST · STAGE 11: saloon/cabañas/granero/silo/almacén/vallas/carros/campos/raíles/locomotora/barril (w_*) — generado por build_stage_western_assets.js. VA DESPUÉS de models.js: ese reasigna window.GAME_MODELS ENTERO y borraría estas claves -->
+<script src="stage_pirate2_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRSWAP · STAGE 12: barco grande/pequeño, bote y 3 muelles portuarios de Quaternius (pq_*), recoloreados a la madera naranja del kit Kenney. Color plano → 1 draw call por modelo -->
+<script src="stage_pirate_solids.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRSOLID · STAGE 12: la COLISIÓN de esos modelos y de las torres/pantalanes del kit, medida con raycast dentro del juego (no escrita a mano). Ver scratchpad/p_solids.js -->
+<script src="stage_pirate_models.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►PIRATA · STAGE 12: barcos/atalayas/pantalanes/islotes/cañones/barriles (p_*) del kit Pirate de Kenney. Los 45 comparten UN atlas de 10 KB (paleta) → van con tex+std, NO horneados a color plano. DESPUÉS de models.js, como el resto -->
 
-<script src="char_model.js"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
-<script src="chars_models.js?v=20260811a"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
-<script src="carry_poses.js?v=1"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
-<script src="carry_clips.js?v=1"></script>
-<script src="sit_clips.js?v=1"></script>     <!-- ►HOGUERA · clip 'sit' de Mixamo (uno por personaje) para el corro de la PANTALLA 1, en el mismo formato de pistas de carry_clips.js -->  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
-<script src="katana_model.js?v=1"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
-<script src="shield_model.js?v=1"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
-<script src="staff_model.js?v=1"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
-<script src="bow_model.js?v=1"></script>  <!-- arco (Synty) en base64; se adjunta a la mano izquierda de la arquera; opcional -->
-<script src="arrow_model.js?v=2"></script>  <!-- ►ARROWS: FLECHA real (Arrow2 OBJ) en GAME_MODELS.arrow; proyectil de TODAS las flechas (antes CHAHIN parecía un bulto) -->
-<script src="spear_model.js?v=1"></script>  <!-- ►SPEAR: LANZA real (OBJ+MTL) en GAME_MODELS.spear; proyectil de la Q del CABALLERO (antes cilindro gris) -->
-<script src="seal_model.js?v=1"></script>  <!-- ►SEAL: FOCA (OBJ) en GAME_MODELS.seal; critter de empuje del stage 7 (solo molesta) -->
-<script src="penguin_model.js?v=2"></script>  <!-- ►PENGUIN v2: GLB RIGGEADO (PENG_GLB_B64, clips walk/idle/throw); enemigo lento del stage 7 -->
-<script src="icecream_model.js?v=1"></script>  <!-- ►ICECREAM: OBJ en GAME_MODELS.icecream; proyectil del pingüino (3 sabores) -->
-<script src="skeleton_model.js?v=2"></script>  <!-- ►SKELMINIONS: ESQUELETO pequeño (small) Synty Minis riggeado, clips idle/walk/jump/attack — horda S4/S5 -->
-<script src="skelshooter_model.js?v=2"></script>  <!-- ►SKELMINIONS: ESQUELETO SOLDADO mediano (shooter) con arco+flechas -->
-<script src="skelknight_model.js?v=1"></script>  <!-- ►SKELMINIONS: ESQUELETO CABALLERO grande (large) con espada -->
-<script src="skelpirate_gear.js?v=1"></script>  <!-- ►PIRMINION: vestuario pirata (bandana/camiseta/pantalón) colgado de los huesos del esqueleto pequeño — S12 -->
-<script src="pirgunner_gear.js?v=3"></script>  <!-- ►PIRGUNNER: PISTOLERO pirata (shooter S12) — tricornio, parche, chaleco roto y botas sobre el MISMO rig SKEL; las dos pistolas las pone weapon:'flintlock' -->
-<script src="pirbrute_gear.js?v=4"></script>  <!-- ►PIRBRUTE: BRUTO pirata (large S12) — camiseta/pantalón de rayas, ojo amarillo y puños enormes sobre el MISMO rig SKEL, escalado a 3.4 -->
-<script src="viking1_model.js?v=1"></script>  <!-- ►VIKINGS: vikingo de hielo 1 (S7) con hacha -->
-<script src="viking2_model.js?v=1"></script>  <!-- ►VIKINGS: vikingo de hielo 2 (S7) con martillo -->
-<script src="vikaxe_model.js?v=1"></script>  <!-- ►VIKINGS: hacha Prop_Axe_01 del pack Fantasy -->
-<script src="vikhammer_model.js?v=1"></script>  <!-- ►VIKINGS: martillo Prop_Hammer_01 del pack Fantasy -->
-<script src="westbad_model.js?v=1"></script>  <!-- ►WESTERN: pistolero 1 (badguy) — horda S8, textura natural, kitea -->
-<script src="westgun_model.js?v=1"></script>  <!-- ►WESTERN: pistolero 2 (gunman) -->
-<script src="westcow_model.js?v=1"></script>  <!-- ►WESTERN: pistolero 3 (cowboy) -->
-<script src="ninja_model.js?v=1"></script>  <!-- ►ORIENTALS: ninja (shooter, lanza) — horda S3 Japón -->
-<script src="sensei_model.js?v=1"></script>  <!-- ►ORIENTALS: sensei (large, melee combo punch) — horda S3 Japón -->
-<script src="villager_model.js?v=1"></script>  <!-- ►ORIENTALS: aldeano (small, melee) — horda S3 Japón -->
-<script src="golem_model.js?v=1"></script>  <!-- ►F3: GOLEM de roca riggeado — large de S5 (pirámide) y S7 (azul) -->
-<script src="s7barb_model.js?v=1"></script>  <!-- ►F3b: minion-héroe S8 (anims del bárbaro) -->
-<script src="s7sam_model.js?v=1"></script>  <!-- ►F3b: minion-héroe S8 (anims del samurái) -->
-<script src="s7knight_model.js?v=1"></script>  <!-- ►F3b: minion-héroe S8 (anims del caballero) -->
-<script src="shuriken_models.js?v=1"></script>  <!-- ►SHURIKEN: 2 FBX base64 (18 lila=F · 17 acero=E/Q) para los ataques del samurai -->
-<script src="barbweapon_model.js?v=1"></script>  <!-- maza (Synty Prop_Hammer) en base64; se adjunta a la mano del barbarian; opcional -->
-<script src="axe_model.js?v=1"></script>  <!-- HACHA (FBX de Toni → GLB) en base64; proyectil de la Q del barbarian (se lanza girando), tamaño proporcional al personaje -->
-<script src="goblin_minion.js"></script>  <!-- piezas del minion GOBLIN (Synty) troceado, en base64; opcional -->
-<script src="goblin3_model.js?v=2"></script>  <!-- GOBLIN 3 animado (rig Mixamo) para el minion GRANDE; usa el MODELO de GOBLIN 2 (swap); opcional -->
-<script src="goblin2_model.js?v=2"></script>  <!-- GOBLIN 2 animado (rig Mixamo) para el minion MEDIANO 'shooter'; usa el MODELO de GOBLIN 3 (swap); opcional -->
-<script src="goblin1_model.js?v=2"></script>  <!-- GOBLIN 1 animado (rig Mixamo) para el minion PEQUEÑO 'small'; en base64; opcional -->
-<script src="goblinshaman_anims.js?v=1"></script>  <!-- ►M2HORDA: Goblin CHAMÁN (Synty, rig Mixamo) — minion 'shooter' MELEE del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
-<script src="goblinwarrior_anims.js?v=1"></script> <!-- ►M2HORDA: Goblin GUERRERO (Synty sin hombrera, rig Mixamo) — minion 'large' del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
-<script src="pirate_skeleton_anims.js?v=1"></script>  <!-- ►PIRMIX: Esqueleto soldado (Synty, rig Mixamo) — minion 'small' del mundo 12 -->
-<script src="pirate_captain_anims.js?v=1"></script>   <!-- ►PIRMIX: Capitán pata de palo — minion 'shooter' del mundo 12, con clip SHOOTING propio -->
-<script src="pirate_blackbeard_anims.js?v=1"></script><!-- ►PIRMIX: Barbanegra — minion 'large' del mundo 12 -->
-<script src="knightheavy_anims.js?v=1"></script>      <!-- ►MINIONS29: caballero PESADO (large, espada) — horda del mundo 2; 4 FBX Mixamo en base64, los monta _gobFbxLoad -->
-<script src="knightlight_anims.js?v=1"></script>      <!-- ►MINIONS29: caballera LIGERA (small mediano, melee espada) — mundo 2 -->
-<script src="knightarcher_anims.js?v=1"></script>     <!-- ►MINIONS29: soldado ARQUERO (shooter, arco + flecha real) — mundo 2 -->
-<script src="witch_anims.js?v=1"></script>            <!-- ►MINIONS29: BRUJA (shooter, bastón del mago + orbe lila) — mundo 2 -->
-<script src="geisha_anims.js?v=1"></script>           <!-- ►MINIONS29: GEISHA (shooter, shuriken de acero como la Q del samurái) — mundo 3 -->
-<script src="pirate_firstmate_anims.js?v=1"></script> <!-- ►MINIONS29: CONTRAMAESTRE pirata (small mediano, melee a puños) — mundo 12 -->
-<script src="pirate_english_anims.js?v=1"></script>   <!-- ►MINIONS29: CAPITÁN INGLÉS (small mediano, melee espada) — mundo 12 -->
-<script src="ice_rogue_anims.js?v=1"></script>        <!-- ►MINIONS29: PÍCARO del hielo (small mediano, melee espada) — mundo 7 -->
-<script src="ice_deckhand_anims.js?v=1"></script>     <!-- ►MINIONS29: GRUMETE del hielo (small mediano, melee hacha vikinga) — mundo 7 -->
-<script src="samboss_model.js?v=1"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
-<script src="samboss_death.js?v=1"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
-<script src="boss_anims.js?v=1"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
-<script src="boss_anims2.js?v=1"></script> <!-- JEFE: 4 anims extra (run/jump/fall/idle) Mixamo -->
-<script src="desertgolem_anims.js?v=1"></script> <!-- ►DGOLEM · STAGE 4: Gólem del Desierto — 7 FBX (rig Mixamo RockGolem) en base64; se cargan con FBXLoader -->
-<script src="midgolem_anims.js?v=1"></script>   <!-- ►G3 · STAGE 5: Gólem BRUJO mediano (kiter a distancia) — 8 FBX Mixamo en base64; los monta midgolemLoad → BOSS_TPLS_S5.mid -->
-<script src="smallgolem_anims.js?v=1"></script> <!-- ►G3 · STAGE 5: Gólem VELOZ pequeño (dasher rápido) — 6 FBX Mixamo en base64; los monta smallgolemLoad → BOSS_TPLS_S5.small -->
-<script src="icevik_anims.js?v=1"></script> <!-- ►ICEBOSS · STAGE 7: Coloso Vikingo de Hielo — 11 FBX (rig Mixamo Chr_Vikings_Warrior_02) en base64; se cargan con FBXLoader (icevikLoad) -->
-<script src="robot_anims.js?v=1"></script> <!-- ►ROBOTBOSS · STAGE 8: Robot de la Forja — 14 FBX Mixamo (idle/capo/run/point1/point3/charge + 7 patadas de capoeira + death) en base64; se cargan con FBXLoader (robotLoad) -->
-<script src="robotminion_anims.js?v=1"></script> <!-- ►S8ROBOT: robot LaloBOT como MINION de la horda S8 — 3 FBX Mixamo (idle/walk/attack) en base64; los monta _gobFbxLoad -->
-<script src="momiaminion_anims.js?v=1"></script> <!-- ►MOMIAS: MOMIA grande como MINION large de la horda S5 (pirámide) — 4 FBX Mixamo en base64, ya decimados y con textura 1024; los monta _gobFbxLoad -->
-<script src="drone_model.js?v=1"></script> <!-- ►S8DRON: dron volador (OBJ+MTL de Dave404) de la horda S8. VA DESPUÉS de models.js: ese hace `window.GAME_MODELS = {...}` (asignación, no merge) y borraría el dron si fuese antes -->
+<script src="char_model.js" onload="__ld()" onerror="__ld()"></script>   <!-- humanoide GLB (FALLBACK) en base64 -->
+<script src="chars_models.js?v=20260811a" onload="__ld()" onerror="__ld()"></script>  <!-- 6 personajes (1 por jugador) en base64; ?v= = cache-bust, súbelo al regenerar. 10/08: 'heal' del CABALLERO = Standing 1H Cast Spell 01 · 11/08: clip 'melee' (Standing Melee Attack Downward) en MAGO, BRUJA y ARQUERA para el arma recogida -->
+<script src="carry_poses.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►CARRY2 · POSE (1 frame, Overhead Squat de Mixamo) del que carga en volandas, una por personaje. NO es un clip: buildCarryClip la mezcla con las piernas de 'run'/'idle' al cargar cada GLB -->
+<script src="carry_clips.js?v=1" onload="__ld()" onerror="__ld()"></script>
+<script src="sit_clips.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►HOGUERA · clip 'sit' de Mixamo (uno por personaje) para el corro de la PANTALLA 1, en el mismo formato de pistas de carry_clips.js -->  <!-- ►CARRY2 · clips 'carried' (Writhing In Pain) y 'toss' (Throw In) de Mixamo, uno por personaje, como pistas numéricas; buildFbxClips los reconstruye al cargar cada GLB -->
+<script src="katana_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- katana (Synty) en base64; se adjunta a la mano del samurai; opcional -->
+<script src="shield_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- escudo (Synty) en base64; se adjunta al brazo izquierdo del caballero; opcional -->
+<script src="staff_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- bastón (Synty) en base64; se adjunta a la mano derecha del mago; opcional -->
+<script src="bow_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- arco (Synty) en base64; se adjunta a la mano izquierda de la arquera; opcional -->
+<script src="arrow_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►ARROWS: FLECHA real (Arrow2 OBJ) en GAME_MODELS.arrow; proyectil de TODAS las flechas (antes CHAHIN parecía un bulto) -->
+<script src="spear_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SPEAR: LANZA real (OBJ+MTL) en GAME_MODELS.spear; proyectil de la Q del CABALLERO (antes cilindro gris) -->
+<script src="seal_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SEAL: FOCA (OBJ) en GAME_MODELS.seal; critter de empuje del stage 7 (solo molesta) -->
+<script src="penguin_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►PENGUIN v2: GLB RIGGEADO (PENG_GLB_B64, clips walk/idle/throw); enemigo lento del stage 7 -->
+<script src="icecream_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ICECREAM: OBJ en GAME_MODELS.icecream; proyectil del pingüino (3 sabores) -->
+<script src="skeleton_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO pequeño (small) Synty Minis riggeado, clips idle/walk/jump/attack — horda S4/S5 -->
+<script src="skelshooter_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO SOLDADO mediano (shooter) con arco+flechas -->
+<script src="skelknight_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SKELMINIONS: ESQUELETO CABALLERO grande (large) con espada -->
+<script src="skelpirate_gear.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRMINION: vestuario pirata (bandana/camiseta/pantalón) colgado de los huesos del esqueleto pequeño — S12 -->
+<script src="pirgunner_gear.js?v=3" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRGUNNER: PISTOLERO pirata (shooter S12) — tricornio, parche, chaleco roto y botas sobre el MISMO rig SKEL; las dos pistolas las pone weapon:'flintlock' -->
+<script src="pirbrute_gear.js?v=4" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRBRUTE: BRUTO pirata (large S12) — camiseta/pantalón de rayas, ojo amarillo y puños enormes sobre el MISMO rig SKEL, escalado a 3.4 -->
+<script src="viking1_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: vikingo de hielo 1 (S7) con hacha -->
+<script src="viking2_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: vikingo de hielo 2 (S7) con martillo -->
+<script src="vikaxe_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: hacha Prop_Axe_01 del pack Fantasy -->
+<script src="vikhammer_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►VIKINGS: martillo Prop_Hammer_01 del pack Fantasy -->
+<script src="westbad_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 1 (badguy) — horda S8, textura natural, kitea -->
+<script src="westgun_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 2 (gunman) -->
+<script src="westcow_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►WESTERN: pistolero 3 (cowboy) -->
+<script src="ninja_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: ninja (shooter, lanza) — horda S3 Japón -->
+<script src="sensei_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: sensei (large, melee combo punch) — horda S3 Japón -->
+<script src="villager_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►ORIENTALS: aldeano (small, melee) — horda S3 Japón -->
+<script src="golem_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3: GOLEM de roca riggeado — large de S5 (pirámide) y S7 (azul) -->
+<script src="s7barb_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del bárbaro) -->
+<script src="s7sam_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del samurái) -->
+<script src="s7knight_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►F3b: minion-héroe S8 (anims del caballero) -->
+<script src="shuriken_models.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►SHURIKEN: 2 FBX base64 (18 lila=F · 17 acero=E/Q) para los ataques del samurai -->
+<script src="barbweapon_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- maza (Synty Prop_Hammer) en base64; se adjunta a la mano del barbarian; opcional -->
+<script src="axe_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- HACHA (FBX de Toni → GLB) en base64; proyectil de la Q del barbarian (se lanza girando), tamaño proporcional al personaje -->
+<script src="goblin_minion.js" onload="__ld()" onerror="__ld()"></script>  <!-- piezas del minion GOBLIN (Synty) troceado, en base64; opcional -->
+<script src="goblin3_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 3 animado (rig Mixamo) para el minion GRANDE; usa el MODELO de GOBLIN 2 (swap); opcional -->
+<script src="goblin2_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 2 animado (rig Mixamo) para el minion MEDIANO 'shooter'; usa el MODELO de GOBLIN 3 (swap); opcional -->
+<script src="goblin1_model.js?v=2" onload="__ld()" onerror="__ld()"></script>  <!-- GOBLIN 1 animado (rig Mixamo) para el minion PEQUEÑO 'small'; en base64; opcional -->
+<script src="goblinshaman_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►M2HORDA: Goblin CHAMÁN (Synty, rig Mixamo) — minion 'shooter' MELEE del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
+<script src="goblinwarrior_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►M2HORDA: Goblin GUERRERO (Synty sin hombrera, rig Mixamo) — minion 'large' del mundo 2; 4 FBX en base64, los monta _gobFbxLoad -->
+<script src="pirate_skeleton_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►PIRMIX: Esqueleto soldado (Synty, rig Mixamo) — minion 'small' del mundo 12 -->
+<script src="pirate_captain_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►PIRMIX: Capitán pata de palo — minion 'shooter' del mundo 12, con clip SHOOTING propio -->
+<script src="pirate_blackbeard_anims.js?v=1" onload="__ld()" onerror="__ld()"></script><!-- ►PIRMIX: Barbanegra — minion 'large' del mundo 12 -->
+<script src="knightheavy_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>      <!-- ►MINIONS29: caballero PESADO (large, espada) — horda del mundo 2; 4 FBX Mixamo en base64, los monta _gobFbxLoad -->
+<script src="knightlight_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>      <!-- ►MINIONS29: caballera LIGERA (small mediano, melee espada) — mundo 2 -->
+<script src="knightarcher_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►MINIONS29: soldado ARQUERO (shooter, arco + flecha real) — mundo 2 -->
+<script src="witch_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>            <!-- ►MINIONS29: BRUJA (shooter, bastón del mago + orbe lila) — mundo 2 -->
+<script src="geisha_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>           <!-- ►MINIONS29: GEISHA (shooter, shuriken de acero como la Q del samurái) — mundo 3 -->
+<script src="pirate_firstmate_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►MINIONS29: CONTRAMAESTRE pirata (small mediano, melee a puños) — mundo 12 -->
+<script src="pirate_english_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►MINIONS29: CAPITÁN INGLÉS (small mediano, melee espada) — mundo 12 -->
+<script src="ice_rogue_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>        <!-- ►MINIONS29: PÍCARO del hielo (small mediano, melee espada) — mundo 7 -->
+<script src="ice_deckhand_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>     <!-- ►MINIONS29: GRUMETE del hielo (small mediano, melee hacha vikinga) — mundo 7 -->
+<script src="samboss_model.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►SAMBOSS · STAGE 3: Samurái de Japón — GLB optimizado (malla 1×+11 clips) magenta/blanco; se carga con GLTFLoader -->
+<script src="samboss_death.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►SAMDEATH · STAGE 3: clip de muerte del samurái (FBX Mixamo) retargeteado al rig del GLB en loadBossGLB -->
+<script src="boss_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- JEFE FINAL: 7 FBX (rig Mixamo) en base64; se cargan con FBXLoader; opcional -->
+<script src="boss_anims2.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- JEFE: 4 anims extra (run/jump/fall/idle) Mixamo -->
+<script src="desertgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►DGOLEM · STAGE 4: Gólem del Desierto — 7 FBX (rig Mixamo RockGolem) en base64; se cargan con FBXLoader -->
+<script src="midgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►G3 · STAGE 5: Gólem BRUJO mediano (kiter a distancia) — 8 FBX Mixamo en base64; los monta midgolemLoad → BOSS_TPLS_S5.mid -->
+<script src="smallgolem_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►G3 · STAGE 5: Gólem VELOZ pequeño (dasher rápido) — 6 FBX Mixamo en base64; los monta smallgolemLoad → BOSS_TPLS_S5.small -->
+<script src="icevik_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►ICEBOSS · STAGE 7: Coloso Vikingo de Hielo — 11 FBX (rig Mixamo Chr_Vikings_Warrior_02) en base64; se cargan con FBXLoader (icevikLoad) -->
+<script src="robot_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►ROBOTBOSS · STAGE 8: Robot de la Forja — 14 FBX Mixamo (idle/capo/run/point1/point3/charge + 7 patadas de capoeira + death) en base64; se cargan con FBXLoader (robotLoad) -->
+<script src="robotminion_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►S8ROBOT: robot LaloBOT como MINION de la horda S8 — 3 FBX Mixamo (idle/walk/attack) en base64; los monta _gobFbxLoad -->
+<script src="momiaminion_anims.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►MOMIAS: MOMIA grande como MINION large de la horda S5 (pirámide) — 4 FBX Mixamo en base64, ya decimados y con textura 1024; los monta _gobFbxLoad -->
+<script src="drone_model.js?v=1" onload="__ld()" onerror="__ld()"></script> <!-- ►S8DRON: dron volador (OBJ+MTL de Dave404) de la horda S8. VA DESPUÉS de models.js: ese hace `window.GAME_MODELS = {...}` (asignación, no merge) y borraría el dron si fuese antes -->
 <script>window.GAME_MODELS_LOADED = !!window.GAME_MODELS;</script>
 <script>/* Pixel Clash — tema del juego (incrustado) */
 const MUSIC_SRC='';
@@ -45478,10 +45498,10 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
      porque necesita leer `renderer` y `keys`, que son const del ámbito léxico del
      script de arriba (accesibles por nombre, pero NO en window). Sin ?descenso en
      la URL el fichero sale en su primera línea y no hace nada. -->
-<script src="snowboard_model.js?v=1"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
-<script src="descenso.js?v=1"></script>
-<script src="cuadrimania.js?v=1"></script>
-<script src="tubo.js?v=1"></script>   <!-- ►TUBO (?tubo): "el tubo de las estrellas", el minijuego que va después de la FORJA (stage 8). Escena/cámara propias como el descenso: la gravedad es RADIAL (corres por dentro del tubo) y el motor no puede con eso. Sin ?tubo el fichero sale en su primera línea. -->
-<script src="arena.js?v=1"></script>   <!-- ►ARENA · STAGE 14: disco japonés que se deshace por secciones; combate a puntos con reaparición -->  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
+<script src="snowboard_model.js?v=1" onload="__ld()" onerror="__ld()"></script>  <!-- ►DESCENSO: tabla de snowboard (GLB de Geldvillager) en base64; el deck se TINTA con el color de cada clase -->
+<script src="descenso.js?v=1" onload="__ld()" onerror="__ld()"></script>
+<script src="cuadrimania.js?v=1" onload="__ld()" onerror="__ld()"></script>
+<script src="tubo.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►TUBO (?tubo): "el tubo de las estrellas", el minijuego que va después de la FORJA (stage 8). Escena/cámara propias como el descenso: la gravedad es RADIAL (corres por dentro del tubo) y el motor no puede con eso. Sin ?tubo el fichero sale en su primera línea. -->
+<script src="arena.js?v=1" onload="__ld()" onerror="__ld()"></script>   <!-- ►ARENA · STAGE 14: disco japonés que se deshace por secciones; combate a puntos con reaparición -->  <!-- ►CUADRIMANIA: minijuego "Hexagonia con cuadrados" (?cuadrimania). Va AQUÍ por lo mismo que descenso.js: necesita ver `platforms`, `players`, `scene`, `MENU_STAGE`… que son const/let del ámbito léxico del script grande (accesibles por nombre, NO en window). A diferencia del descenso, este NO se queda el frame: conduce el motor del juego (STAGE 13) para heredar combate, daño, empujón y minions. -->
 </body>
 </html>
