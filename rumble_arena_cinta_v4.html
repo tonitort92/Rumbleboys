@@ -26494,6 +26494,25 @@ function updateOcclusion(){
     _xraySetColor(sil, me.color);
     sil.position.copy(me.pos); sil.rotation.y = me.yaw;
   } else sil.visible = false;
+  /* ►SILFOLLAJE (Paso 3): el rayo de arriba apunta al PECHO y para en dist-0.6 — el follaje DENSO
+     que te traga (mundo 1, confirmado en Paso 0) queda bajo esa línea o dentro del margen, y el
+     jugador se hunde SIN silueta. Segundo rayo a la altura de las RODILLAS y solo su TRAMO FINAL
+     (2,5 u): follaje pegado al jugador = silueta encendida. No funde nada: la alfombra va fusionada
+     por plataforma y fundirla entera abre un boquete (probado en sil_b). */
+  if(!sil.visible && !me.dead){
+    _occTo.copy(me.pos); _occTo.y += 0.55;
+    _occDir.copy(_occTo).sub(_occFrom);
+    const d2 = _occDir.length();
+    if(d2 > 1.2){
+      _occDir.multiplyScalar(1/d2);
+      _occRay.set(_occFrom, _occDir); _occRay.near = Math.max(0.3, d2 - 2.5); _occRay.far = d2 - 0.05;
+      if(_occRay.intersectObjects(cand, false).length > 0){
+        sil.visible = true;
+        _xraySetColor(sil, me.color);
+        sil.position.copy(me.pos); sil.rotation.y = me.yaw;
+      }
+    }
+  }
 }
 
 /* SACOS rebotadores: al tocarlos empujan al jugador hacia fuera (obstáculo molesto) */
