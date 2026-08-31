@@ -795,7 +795,7 @@ window.addEventListener('load', function(){
   #logoSub span { text-shadow:0 2px 8px rgba(0,0,0,.7); }   /* cada tag con su color (los · quedan tenues) */
   .xppop { position:absolute; transform:translate(-50%,-50%); font-weight:900; font-style:italic;
            font-size:18px; letter-spacing:1px; text-shadow:0 2px 4px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.55); opacity:0; }
-  .xppop.go { animation:xpRise .85s ease-out forwards; }
+  .xppop.go { animation:xpRise 1.4s ease-out forwards; }   /* ►PTSPOP 01/09: 'que duren un poco mas' (.85 → 1.4) */
   @keyframes xpRise {
     0%   { opacity:0; transform:translate(-50%,-50%) scale(.6); }
     20%  { opacity:1; transform:translate(-50%,-90%) scale(1.15); }
@@ -9604,7 +9604,7 @@ function _entradaVoz(){
   try{
     voiceStart.onended = null;
     voiceStart.pause(); voiceStart.currentTime = NARR_TRIM;   // ►NARRTRIM
-    voiceStart.play().then(()=>{ _siVoice = true; }).catch(()=>{ _siVoice = false; });   // si suena, SU currentTime manda el reloj
+    voiceStart.play().then(()=>{ _siVoice = true; try{ if(voiceStart.currentTime < NARR_TRIM - 0.05) voiceStart.currentTime = NARR_TRIM; }catch(e){} }).catch(()=>{ _siVoice = false; });   // ►NARRTRIM: si el seek de arriba cayo antes de los metadatos, se reafirma ya sonando   // si suena, SU currentTime manda el reloj
   }catch(e){}
 }
 /* tiempo RESTANTE de presentación según el reloj real: la voz si suena, performance.now si no */
@@ -21404,7 +21404,7 @@ function popKill(pos, txt, color){
   const x = (_xpV.x*.5+.5)*innerWidth, y = (-_xpV.y*.5+.5)*innerHeight;
   const d = _xpPool[_xpIdx]; _xpIdx = (_xpIdx+1) % _xpPool.length;
   d.textContent = txt;
-  { const _n = parseInt(txt.replace(/[^0-9]/g,''),10)||0; d.style.fontSize = (_n>=100?40:_n>=30?30:22)+'px'; }   // ►PTSPOP: el pool se reusa, hay que fijarlo SIEMPRE
+  { const _n = parseInt(txt.replace(/[^0-9]/g,''),10)||0; d.style.fontSize = (_n>=100?100:_n>=30?75:55)+'px'; }   // ►PTSPOP: el pool se reusa, hay que fijarlo SIEMPRE
   d.style.color = '#'+((color!=null?color:0xffffff).toString(16).padStart(6,'0'));
   d.style.left = x+'px'; d.style.top = y+'px';
   d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
@@ -21416,7 +21416,7 @@ function popXP(p, n){
   const x = (_xpV.x*.5+.5)*innerWidth, y = (-_xpV.y*.5+.5)*innerHeight;
   const d = _xpPool[_xpIdx]; _xpIdx = (_xpIdx+1) % _xpPool.length;
   d.textContent = '+'+n;
-  d.style.fontSize = (n>=100?40:n>=30?30:22)+'px';   // ►PTSPOP (31/08: Toni los veia pequeños en partida — 27/21/16 → 40/30/22)
+  d.style.fontSize = (n>=100?100:n>=30?75:55)+'px';   // ►PTSPOP (01/09, Toni: 'x2,5 de verdad que son enanos' — 40/30/22 → 100/75/55)
   d.style.color = '#'+p.color.toString(16).padStart(6,'0');
   d.style.left = x+'px'; d.style.top = y+'px';
   d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
