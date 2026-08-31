@@ -15,17 +15,20 @@ trabajo = **una sola rama activa**. Consecuencias que hay que respetar SIEMPRE:
    sesiones editándolo a la vez es la forma más fácil de perder trabajo: si vas a hacer un barrido
    grande sobre él, pregunta antes.
 
-## Assets 3D: usa la convención actual
+## Assets 3D: convención NUEVA desde el REPACK (01/09/2026, rama repack-glb)
 
-Los modelos van **embebidos en ficheros `.js`** (73 de ellos, ~95 MB en total) que el HTML carga con
-`<script src>`: base64 para GLB/FBX, texto plano para OBJ. Es lento (obliga a parsear 95 MB de
-JavaScript en el hilo principal al arrancar) y **está previsto reempaquetarlo entero a `.glb`
-comprimidos con carga por stage**.
+Los assets **base64 (GLB/FBX)** ya NO van en `.js` embebidos: viven como binarios en `assets/`
+(`NOMBRE.bin` o `NOMBRE/clave.bin`) listados en `assets/manifest.json`, y los trae por fetch el
+cargador `RB_ASSETS` (script inline junto al BOOTBAR): lote crítico primero (personajes, armas,
+goblins), el resto en segundo plano, y `RB_ASSETS.need('NOMBRE')` adelanta en la cola lo que pida
+un stage. Los globales `window.X_B64` se rellenan con **ArrayBuffers**; en el juego decodifica
+`_rbBuf()` (acepta b64 legado y buffer). Para añadir un asset nuevo: binario en `assets/`, entrada
+en el manifest (o regenerarlo con `node _repack_extract.js fichero.js`) y consumidor con REINTENTO
+(el patrón de los jefes: need() + comprobar window[NOMBRE] y volver a intentar).
+OJO: por `file://` el fetch NO funciona — valida siempre por http://8181.
 
-**Mientras tanto, añade tus assets nuevos IGUAL que los existentes.** No inventes un formato ni un
-cargador propio "mejor": el reempaquetado se hará de una sola pasada sobre todos, y un caso especial
-solo añade trabajo. Si tu stage necesita assets, mete su `.js` como los demás y su `<script src>`
-junto a los otros.
+Los modelos **OBJ de texto** (`GAME_MODELS`, ~30 ficheros `.js` con `<script src>`) siguen con la
+convención vieja — su fase 2 está pendiente; añade OBJ nuevos como los existentes.
 
 ## Cómo se valida aquí
 
