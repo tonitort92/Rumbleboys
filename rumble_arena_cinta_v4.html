@@ -984,7 +984,7 @@ window.addEventListener('load', function(){
      líneas el gradiente se lee como un banner decorativo y la promesa pierde autoridad. Hay que
      deshacer a mano el background-clip:text que hereda de `.overlay h1`, o el texto se vuelve
      invisible en WebKit al quitarle el fondo. */
-  #tiClaim { font-size:clamp(19px,3.1vw,36px); font-weight:900; font-style:normal; letter-spacing:1.5px;
+  #tiClaim { font-size:clamp(17px,2.6vw,30px);   /* 01/09 Toni: mas pequeño, que quepa con margen en 2 lineas */ font-weight:900; font-style:normal; letter-spacing:1.5px;
     line-height:1.22; max-width:min(940px,92vw); margin:0 auto; color:#fff;
     background:none; -webkit-background-clip:border-box; background-clip:border-box; -webkit-text-fill-color:#fff;
     text-shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 26px rgba(0,0,0,.75); }
@@ -44221,9 +44221,9 @@ const titleCampfire = (function(){
     grass.position.y = -0.7; g.add(grass);
     /* ►SATFELPUDO v4 (Toni 30/08): la losa principal lleva el felpudo del PRADO (mundo 1), el mismo sueloCarpet
        de partida (tinte CARPET_TINT[1]), a 0.6 de escala porque la losa mide 8,8 u. Fuera de _carpets (LOD). */
-    { const st0 = STAGE; STAGE = 1; try{ const t = new THREE.Group(); const n0 = _carpets.length; sueloCarpet(t, ISL_X/0.4, ISL_Z/0.4, 0.21, null, null); if(_carpets.length > n0) _carpets.length = n0;
+    { const st0 = STAGE; STAGE = 1; try{ const t = new THREE.Group(); const n0 = _carpets.length; sueloCarpet(t, ISL_X/0.4*0.86, ISL_Z/0.4*0.86, 0.21, null, null); if(_carpets.length > n0) _carpets.length = n0;
         /* la hoguera (point light a 0,9 u) y la luz frontal QUEMABAN las matas a blanco: material mate, sin metal, y color a 0.6 */
-        t.traverse(o=>{ if(o.isInstancedMesh && o.material){ o.material = o.material.clone(); o.material.roughness = 1; o.material.metalness = 0; o.material.color.setHex(0x3d7a24); } });   // verde prado como base: aquí el degradado de vértice salía blanco (la hoguera lo quema)
+        t.traverse(o=>{ if(o.isInstancedMesh && o.material){ o.material = new THREE.MeshLambertMaterial({ vertexColors:true, side:THREE.DoubleSide }); } });   // ►FELPUDOCORRO (01/09, medido en vivo): lo palido era el ESPECULAR blanco del Standard bajo la hoguera (mismo hallazgo que ►FELPUDO25d) — ni oscurecer el color ni saturar las instancias movian nada; Lambert no tiene especular y el tinte del prado sale tal cual   // verde prado como base: aquí el degradado de vértice salía blanco (la hoguera lo quema)
         t.scale.setScalar(0.4); g.add(t); } finally { STAGE = st0; } }
     /* pedruscos medio enterrados en la pared de tierra, como en las islas de la cinta */
     for(let i=0;i<7;i++){
