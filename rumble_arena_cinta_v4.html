@@ -26957,10 +26957,49 @@ function updateBeltArrow(){
   const dirSign = (BELT.vel >= 0) ? -1 : 1;                 // dirección correcta = CONTRA la marcha (por si un stage invirtiera la cinta)
   _baR.set(1,0,0).applyQuaternion(camera.quaternion);       // eje X de pantalla, en world
   _baU.set(0,1,0).applyQuaternion(camera.quaternion);       // eje Y de pantalla (arriba), en world
-  const sx = dirSign * _baR.x;                              // componente pantalla-derecha del vector destino
-  const sy = dirSign * _baU.x;                              // componente pantalla-arriba
+  /* ►FLECHAPLAT (02/09/2026): los probadores ciegos murieron "siguiendo la flecha" — apuntaba a un RUMBO
+     (contra la cinta) y un novato la leía como "anda hacia ahí", derecho al hueco. Ahora apunta a la
+     PLATAFORMA alcanzable más cercana por delante (vector 3D real proyectado a pantalla: si toca subir,
+     la flecha sube). Sin candidata (jefe, tramo vacío) vuelve al rumbo puro. */
+  let vx = dirSign, vy = 0, vz = 0;
+  const tg = _beltArrowTarget(dirSign);
+  if(tg){ vx = tg.x; vy = tg.y; vz = tg.z; }
+  const sx = vx*_baR.x + vy*_baR.y + vz*_baR.z;            // componente pantalla-derecha del vector destino
+  const sy = vx*_baU.x + vy*_baU.y + vz*_baU.z;            // componente pantalla-arriba
   const deg = Math.atan2(sx, sy) * 180 / Math.PI;          // 0 = arriba, 90 = derecha (la flecha por defecto apunta arriba)
   if(_beltArrowRot) _beltArrowRot.setAttribute('transform', 'rotate(' + deg.toFixed(1) + ' 50 50)');
+}
+/* ►FLECHAPLAT: plataforma objetivo para el humano. Candidatas: sólidas, por delante en el sentido de avance
+   (borde más próximo a ≥0,8 u), a ≤ 22 u de distancia, |dz| ≤ 12, desnivel entre -8 y +6 (el alcance real
+   de salto es 7,4 — ver calibración) y que NO sea la que pisa. Puntúa distancia horizontal + 0,6·|dy|
+   (prefiere la llana). Devuelve el vector unitario al punto más cercano de su borde superior. Se recalcula
+   cada 6 frames (la cinta mueve todo, pero 0,1 s de retraso no se nota). */
+const _baTgt = { x:0, y:0, z:0 }; let _baTgtHas = false, _baTgtN = 0;
+function _beltArrowTarget(dirSign){
+  if((_baTgtN++ % 6) !== 0) return _baTgtHas ? _baTgt : null;
+  _baTgtHas = false;
+  let p = null; for(const q of players){ if(!q.ai && !q.out && !q.dead){ p = q; break; } }
+  if(!p || !p.pos) return null;
+  const px = p.pos.x, py = p.pos.y, pz = p.pos.z;
+  const cands = (typeof _platCandidates === 'function') ? _platCandidates(px - 24, px + 24) : platforms;
+  let best = null, bestS = Infinity, bx = 0, by = 0, bz = 0;
+  for(const pl of cands){
+    if(!pl.solid || pl._fell || pl._bossNoFloor || pl.blob || pl.topY == null) continue;
+    if(px >= pl.minX && px <= pl.maxX && pz >= pl.minZ && pz <= pl.maxZ && Math.abs(pl.topY - py) < 1.2) continue;   // la que pisa
+    const ex = (dirSign < 0) ? pl.maxX : pl.minX;              // borde más próximo en el sentido de avance
+    const ahead = (dirSign < 0) ? (px - ex) : (ex - px);
+    if(ahead < 0.8 || ahead > 22) continue;
+    const tz = Math.max(pl.minZ, Math.min(pl.maxZ, pz)); const dz = tz - pz; if(Math.abs(dz) > 12) continue;
+    const dy = pl.topY - py; if(dy < -8 || dy > 6) continue;
+    const tx = (dirSign < 0) ? Math.min(pl.maxX - 0.6, px) : Math.max(pl.minX + 0.6, px);   // punto del borde más cercano (0,6 dentro)
+    const dx = tx - px;
+    const sc = Math.hypot(dx, dz) + 0.6*Math.abs(dy);
+    if(sc < bestS){ bestS = sc; best = pl; bx = dx; by = dy; bz = dz; }
+  }
+  if(!best) return null;
+  const L = Math.hypot(bx, by, bz) || 1;
+  _baTgt.x = bx/L; _baTgt.y = by/L; _baTgt.z = bz/L; _baTgtHas = true;
+  return _baTgt;
 }
 
 /* =====================================================================
@@ -44999,7 +45038,8 @@ window._net = {
     for(let i=0;i<players.length;i++){ const p=players[i]; if(!p) continue;
       P.push({ i, x:+p.pos.x.toFixed(2), y:+p.pos.y.toFixed(2), z:+p.pos.z.toFixed(2), yaw:+p.yaw.toFixed(2),
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
-        d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2) }); }
+        d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
+        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null }); }   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0 }); }catch(e){}
   },
@@ -45014,6 +45054,8 @@ window._net = {
       p.beam = ps.bm ? (p.beam||true) : null;
       p.ult  = ps.ul ? (p.ult||true)  : null;
       p.hitstun = ps.hs||0;
+      p.onGround = !!ps.og; p._dj = !!ps.dj;                                       // ►NETFIX2
+      if(ps.sc && p.sc) Object.assign(p.sc, ps.sc);                                // ►NETFIX2: scoreTotal(p) lee p.sc → HUD y ranking del cliente al dia
       if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; if(p.out) fighterHide(p.gfx); else fighterShow(p.gfx); tagOutlineLayer(p.gfx.root); }   // ►LUZCONSTANTE (idempotente por _ljOff, 30 Hz sin coste)
     }
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
