@@ -17,14 +17,16 @@ trabajo = **una sola rama activa**. Consecuencias que hay que respetar SIEMPRE:
 
 ## Assets 3D: convención NUEVA desde el REPACK (01/09/2026, rama repack-glb)
 
-Los assets **base64 (GLB/FBX)** ya NO van en `.js` embebidos: viven como binarios en `assets/`
-(`NOMBRE.bin` o `NOMBRE/clave.bin`) listados en `assets/manifest.json`, y los trae por fetch el
-cargador `RB_ASSETS` (script inline junto al BOOTBAR): lote crítico primero (personajes, armas,
-goblins), el resto en segundo plano, y `RB_ASSETS.need('NOMBRE')` adelanta en la cola lo que pida
-un stage. Los globales `window.X_B64` se rellenan con **ArrayBuffers**; en el juego decodifica
-`_rbBuf()` (acepta b64 legado y buffer). Para añadir un asset nuevo: binario en `assets/`, entrada
-en el manifest (o regenerarlo con `node _repack_extract.js fichero.js`) y consumidor con REINTENTO
-(el patrón de los jefes: need() + comprobar window[NOMBRE] y volver a intentar).
+Los assets **base64 (GLB/FBX)** ya NO van en `.js` embebidos: viven como binarios **gzip** en `assets/`
+(`NOMBRE.bin.gz` o `NOMBRE/clave.bin.gz`, 39 MB en vez de 92) listados en `assets/manifest.json`
+(`gz:1`), y los trae por fetch el cargador `RB_ASSETS` (script inline junto al BOOTBAR), que
+descomprime con `DecompressionStream` (así no depende de que el hosting comprima octet-stream): lote
+crítico primero (personajes, armas, goblins), el resto en segundo plano, y `RB_ASSETS.need('NOMBRE')`
+adelanta en la cola lo que pida un stage. Los globales `window.X_B64` se rellenan con
+**ArrayBuffers**; en el juego decodifica `_rbBuf()` (acepta b64 legado y buffer). Para añadir un
+asset nuevo: `node _repack_extract.js fichero.js` (ya escribe el .gz y el manifest), o binario a mano
+en `assets/` + `node _repack_gzip.js`; y consumidor con REINTENTO (el patrón de los jefes: need() +
+comprobar window[NOMBRE] y volver a intentar).
 OJO: por `file://` el fetch NO funciona — valida siempre por http://8181.
 
 Los modelos **OBJ de texto** (`GAME_MODELS`, ~30 ficheros `.js` con `<script src>`) siguen con la

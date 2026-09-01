@@ -1,19 +1,23 @@
 {
  "WHORSE_GLB_B64": {
   "f": "WHORSE_GLB_B64.bin",
-  "n": 578408
+  "n": 578408,
+  "gz": 1
  },
  "WDONKEY_GLB_B64": {
   "f": "WDONKEY_GLB_B64.bin",
-  "n": 591696
+  "n": 591696,
+  "gz": 1
  },
  "WCOW_GLB_B64": {
   "f": "WCOW_GLB_B64.bin",
-  "n": 558988
+  "n": 558988,
+  "gz": 1
  },
  "CHAR_GLB_B64": {
   "f": "CHAR_GLB_B64.bin",
-  "n": 434816
+  "n": 434816,
+  "gz": 1
  },
  "CHAR_MODELS_B64": {
   "d": "CHAR_MODELS_B64",
@@ -25,119 +29,148 @@
    "link",
    "archer"
   ],
-  "n": 11075556
+  "n": 11075556,
+  "gz": 1
  },
  "KATANA_GLB_B64": {
   "f": "KATANA_GLB_B64.bin",
-  "n": 72556
+  "n": 72556,
+  "gz": 1
  },
  "SHIELD_GLB_B64": {
   "f": "SHIELD_GLB_B64.bin",
-  "n": 72716
+  "n": 72716,
+  "gz": 1
  },
  "STAFF_GLB_B64": {
   "f": "STAFF_GLB_B64.bin",
-  "n": 73428
+  "n": 73428,
+  "gz": 1
  },
  "BOW_GLB_B64": {
   "f": "BOW_GLB_B64.bin",
-  "n": 75452
+  "n": 75452,
+  "gz": 1
  },
  "PENG_GLB_B64": {
   "f": "PENG_GLB_B64.bin",
-  "n": 74444
+  "n": 74444,
+  "gz": 1
  },
  "SKEL_GLB_B64": {
   "f": "SKEL_GLB_B64.bin",
-  "n": 629004
+  "n": 629004,
+  "gz": 1
  },
  "SKELSH_GLB_B64": {
   "f": "SKELSH_GLB_B64.bin",
-  "n": 649004
+  "n": 649004,
+  "gz": 1
  },
  "SKELKNIGHT_GLB_B64": {
   "f": "SKELKNIGHT_GLB_B64.bin",
-  "n": 799560
+  "n": 799560,
+  "gz": 1
  },
  "VIKING1_GLB_B64": {
   "f": "VIKING1_GLB_B64.bin",
-  "n": 442720
+  "n": 442720,
+  "gz": 1
  },
  "VIKING2_GLB_B64": {
   "f": "VIKING2_GLB_B64.bin",
-  "n": 439224
+  "n": 439224,
+  "gz": 1
  },
  "VIKAXE_GLB_B64": {
   "f": "VIKAXE_GLB_B64.bin",
-  "n": 74404
+  "n": 74404,
+  "gz": 1
  },
  "VIKHAMMER_GLB_B64": {
   "f": "VIKHAMMER_GLB_B64.bin",
-  "n": 74868
+  "n": 74868,
+  "gz": 1
  },
  "WESTBAD_GLB_B64": {
   "f": "WESTBAD_GLB_B64.bin",
-  "n": 396780
+  "n": 396780,
+  "gz": 1
  },
  "WESTGUN_GLB_B64": {
   "f": "WESTGUN_GLB_B64.bin",
-  "n": 473008
+  "n": 473008,
+  "gz": 1
  },
  "WESTCOW_GLB_B64": {
   "f": "WESTCOW_GLB_B64.bin",
-  "n": 442560
+  "n": 442560,
+  "gz": 1
  },
  "NINJA_GLB_B64": {
   "f": "NINJA_GLB_B64.bin",
-  "n": 483948
+  "n": 483948,
+  "gz": 1
  },
  "SENSEI_GLB_B64": {
   "f": "SENSEI_GLB_B64.bin",
-  "n": 539692
+  "n": 539692,
+  "gz": 1
  },
  "VILLAGER_GLB_B64": {
   "f": "VILLAGER_GLB_B64.bin",
-  "n": 564984
+  "n": 564984,
+  "gz": 1
  },
  "GOLEM_GLB_B64": {
   "f": "GOLEM_GLB_B64.bin",
-  "n": 458312
+  "n": 458312,
+  "gz": 1
  },
  "S7BARB_GLB_B64": {
   "f": "S7BARB_GLB_B64.bin",
-  "n": 440732
+  "n": 440732,
+  "gz": 1
  },
  "S7SAM_GLB_B64": {
   "f": "S7SAM_GLB_B64.bin",
-  "n": 415016
+  "n": 415016,
+  "gz": 1
  },
  "S7KNIGHT_GLB_B64": {
   "f": "S7KNIGHT_GLB_B64.bin",
-  "n": 412776
+  "n": 412776,
+  "gz": 1
  },
  "BARBWEAPON_GLB_B64": {
   "f": "BARBWEAPON_GLB_B64.bin",
-  "n": 74748
+  "n": 74748,
+  "gz": 1
  },
  "AXE_GLB_B64": {
   "f": "AXE_GLB_B64.bin",
-  "n": 19536
+  "n": 19536,
+  "gz": 1
  },
  "GOBLIN_PARTS_B64": {
   "f": "GOBLIN_PARTS_B64.bin",
-  "n": 141668
+  "n": 141668,
+  "gz": 1
  },
  "GOBLIN3_GLB_B64": {
   "f": "GOBLIN3_GLB_B64.bin",
-  "n": 580792
+  "n": 580792,
+  "gz": 1
  },
  "GOBLIN2_GLB_B64": {
   "f": "GOBLIN2_GLB_B64.bin",
-  "n": 564456
+  "n": 564456,
+  "gz": 1
  },
  "GOBLIN1_GLB_B64": {
   "f": "GOBLIN1_GLB_B64.bin",
-  "n": 559312
+  "n": 559312,
+  "gz": 1
  },
  "GOBSHAMAN_FBX_B64": {
   "d": "GOBSHAMAN_FBX_B64",
@@ -147,7 +180,8 @@
    "attack",
    "jump"
   ],
-  "n": 2061872
+  "n": 2061872,
+  "gz": 1
  },
  "GOBWARRIOR_FBX_B64": {
   "d": "GOBWARRIOR_FBX_B64",
@@ -157,7 +191,8 @@
    "attack",
    "jump"
   ],
-  "n": 2664272
+  "n": 2664272,
+  "gz": 1
  },
  "PIRSKELM_FBX_B64": {
   "d": "PIRSKELM_FBX_B64",
@@ -167,7 +202,8 @@
    "attack",
    "jump"
   ],
-  "n": 2137920
+  "n": 2137920,
+  "gz": 1
  },
  "PIRCAPT_FBX_B64": {
   "d": "PIRCAPT_FBX_B64",
@@ -177,7 +213,8 @@
    "attack",
    "jump"
   ],
-  "n": 2580176
+  "n": 2580176,
+  "gz": 1
  },
  "PIRBEARD_FBX_B64": {
   "d": "PIRBEARD_FBX_B64",
@@ -187,7 +224,8 @@
    "attack",
    "jump"
   ],
-  "n": 1893616
+  "n": 1893616,
+  "gz": 1
  },
  "KNHEAVY_FBX_B64": {
   "d": "KNHEAVY_FBX_B64",
@@ -197,7 +235,8 @@
    "attack",
    "jump"
   ],
-  "n": 1816208
+  "n": 1816208,
+  "gz": 1
  },
  "KNLIGHT_FBX_B64": {
   "d": "KNLIGHT_FBX_B64",
@@ -207,7 +246,8 @@
    "attack",
    "jump"
   ],
-  "n": 2177552
+  "n": 2177552,
+  "gz": 1
  },
  "KNARCHER_FBX_B64": {
   "d": "KNARCHER_FBX_B64",
@@ -217,7 +257,8 @@
    "attack",
    "jump"
   ],
-  "n": 2000256
+  "n": 2000256,
+  "gz": 1
  },
  "WITCH_FBX_B64": {
   "d": "WITCH_FBX_B64",
@@ -227,7 +268,8 @@
    "attack",
    "jump"
   ],
-  "n": 2647152
+  "n": 2647152,
+  "gz": 1
  },
  "GEISHA_FBX_B64": {
   "d": "GEISHA_FBX_B64",
@@ -237,7 +279,8 @@
    "attack",
    "jump"
   ],
-  "n": 2627280
+  "n": 2627280,
+  "gz": 1
  },
  "PIRMATE_FBX_B64": {
   "d": "PIRMATE_FBX_B64",
@@ -247,7 +290,8 @@
    "attack",
    "jump"
   ],
-  "n": 2102912
+  "n": 2102912,
+  "gz": 1
  },
  "PIRENG_FBX_B64": {
   "d": "PIRENG_FBX_B64",
@@ -257,7 +301,8 @@
    "attack",
    "jump"
   ],
-  "n": 2624496
+  "n": 2624496,
+  "gz": 1
  },
  "ICEROGUE_FBX_B64": {
   "d": "ICEROGUE_FBX_B64",
@@ -267,7 +312,8 @@
    "attack",
    "jump"
   ],
-  "n": 1821056
+  "n": 1821056,
+  "gz": 1
  },
  "ICEDECK_FBX_B64": {
   "d": "ICEDECK_FBX_B64",
@@ -277,15 +323,18 @@
    "attack",
    "jump"
   ],
-  "n": 2072848
+  "n": 2072848,
+  "gz": 1
  },
  "SAMBOSS_GLB_B64": {
   "f": "SAMBOSS_GLB_B64.bin",
-  "n": 1148444
+  "n": 1148444,
+  "gz": 1
  },
  "SAMBOSS_DEATH_FBX_B64": {
   "f": "SAMBOSS_DEATH_FBX_B64.bin",
-  "n": 694032
+  "n": 694032,
+  "gz": 1
  },
  "BOSS_FBX_B64": {
   "d": "BOSS_FBX_B64",
@@ -302,7 +351,8 @@
    "standup",
    "ulti"
   ],
-  "n": 5329408
+  "n": 5329408,
+  "gz": 1
  },
  "DGOLEM_FBX_B64": {
   "d": "DGOLEM_FBX_B64",
@@ -315,7 +365,8 @@
    "atk3",
    "atk4"
   ],
-  "n": 4008320
+  "n": 4008320,
+  "gz": 1
  },
  "MIDGOLEM_FBX_B64": {
   "d": "MIDGOLEM_FBX_B64",
@@ -329,7 +380,8 @@
    "atk4",
    "melee"
   ],
-  "n": 4248928
+  "n": 4248928,
+  "gz": 1
  },
  "SMALLGOLEM_FBX_B64": {
   "d": "SMALLGOLEM_FBX_B64",
@@ -341,7 +393,8 @@
    "atk2",
    "atk3"
   ],
-  "n": 3431328
+  "n": 3431328,
+  "gz": 1
  },
  "ICEVIK_FBX_B64": {
   "d": "ICEVIK_FBX_B64",
@@ -358,7 +411,8 @@
    "atk4",
    "atk5"
   ],
-  "n": 5914864
+  "n": 5914864,
+  "gz": 1
  },
  "ROBOT_FBX_B64": {
   "d": "ROBOT_FBX_B64",
@@ -380,7 +434,8 @@
    "deathrun",
    "deathback"
   ],
-  "n": 9645504
+  "n": 9645504,
+  "gz": 1
  },
  "RBOTMIN_FBX_B64": {
   "d": "RBOTMIN_FBX_B64",
@@ -390,7 +445,8 @@
    "attack",
    "jump"
   ],
-  "n": 5983008
+  "n": 5983008,
+  "gz": 1
  },
  "MOMIAMIN_FBX_B64": {
   "d": "MOMIAMIN_FBX_B64",
@@ -400,10 +456,12 @@
    "attack",
    "jump"
   ],
-  "n": 2073120
+  "n": 2073120,
+  "gz": 1
  },
  "SNOWBOARD_GLB_B64": {
   "f": "SNOWBOARD_GLB_B64.bin",
-  "n": 9496
+  "n": 9496,
+  "gz": 1
  }
 }

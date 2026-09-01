@@ -2321,18 +2321,28 @@ window.RB_ASSETS = (function(){
     }, 250); }
   }
   function done(name, ok){ active--; state[name] = ok ? 'ok' : null; if(ok) route(name); pump(); }
+  /* ►REPACK-GZ: los binarios viven como NOMBRE.bin.gz (gzip -9, 96 MB -> 41 MB) y se descomprimen aqui con
+     DecompressionStream, asi el peso no depende de que el hosting comprima octet-stream. Si el fichero .gz
+     no esta (asset viejo sin pasar por _repack_gzip.js) o el navegador no sabe descomprimir, cae al .bin. */
+  function plain(url){ return fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }); }
+  function getBuf(url, gz){
+    if(!gz || typeof DecompressionStream !== 'function') return plain(url);
+    return fetch(url+'.gz').then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    }).catch(function(e){ console.warn('[repack] sin gz, pruebo plano', url, e && e.message); return plain(url); });
+  }
   function start(name){
     state[name] = 'pend'; active++;
     var e = man[name];
     if(!e){ done(name, true); return; }
     var p;
     if(e.f){
-      p = fetch('assets/'+e.f).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
-           .then(function(b){ window[name] = b; });
+      p = getBuf('assets/'+e.f, e.gz).then(function(b){ window[name] = b; });
     } else {
       var map = {}; p = Promise.resolve();
       e.keys.forEach(function(k){
-        p = p.then(function(){ return fetch('assets/'+e.d+'/'+k+'.bin').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }).then(function(b){ map[k] = b; }); });
+        p = p.then(function(){ return getBuf('assets/'+e.d+'/'+k+'.bin', e.gz).then(function(b){ map[k] = b; }); });
       });
       p = p.then(function(){ window[name] = map; });
     }
@@ -44972,6 +44982,11 @@ window._net = {
       players[0].kbInput=false; players[0].padIndex=-1;
     }
     running=true; gameOver=false;
+    /* ►NETFIX (02/09/2026, smoke online 1v1): la partida online quedaba TAPADA por el cielo de la home
+       (#titleOverlay.sky) porque solo launchMatch() hacia skyOff(); y el tour BIENVENIDO de un perfil
+       nuevo seguia abierto encima. */
+    try{ skyOff(); }catch(e){}
+    try{ const te=document.getElementById('hdTour'); if(te) te.classList.remove('on'); }catch(e){}
     const ov=document.getElementById('startOverlay'); if(ov) ov.style.display='none';
     const lob=document.getElementById('netLobby'); if(lob) lob.style.display='none';
     const hud=document.getElementById('hud'); if(hud) hud.style.display='';
@@ -45007,6 +45022,10 @@ window._net = {
   clientFrame(dt){
     if(this.sendInput && this.localPlayer){ try{ this.sendInput(this.packInput(readInput(this.localPlayer))); }catch(e){} }
     this.applySnap(dt);
+    /* ►NETFIX: lo cosmetico del frame de host que el cliente tambien necesita (el cartel "ONLINE
+       (invitado)" no se quitaba nunca; particulas, decorado y clima quedaban congelados). */
+    if(bannerT>0){ bannerT-=dt; if(bannerT<=0) banner.classList.remove('show'); }
+    try{ animateDeco(dt); updateParts(dt); updateWeather(dt); }catch(e){}
     updateCamera(dt); updateHUD(); pollMoveSheet(); drawScene();
   },
 };

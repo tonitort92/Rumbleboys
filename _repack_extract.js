@@ -3,7 +3,7 @@
    Uso: node --max-old-space-size=4096 _repack_extract.js fichero1.js fichero2.js ...
    Informa por fichero QUÉ globales define y de qué tipo; solo es seguro quitar el <script> de un
    fichero si TODO lo suyo quedó extraído (el informe lo dice). */
-const fs = require('fs'), path = require('path'), vm = require('vm');
+const fs = require('fs'), path = require('path'), vm = require('vm'), zlib = require('zlib');
 const OUT = 'assets';
 fs.mkdirSync(OUT, { recursive: true });
 const MANIFEST_PATH = path.join(OUT, 'manifest.json');
@@ -22,8 +22,8 @@ for (const file of process.argv.slice(2)) {
   for (const [name, val] of Object.entries(w)) {
     if (typeof val === 'string' && okB64(val)) {
       const buf = Buffer.from(val.replace(/\s+/g, ''), 'base64');
-      fs.writeFileSync(path.join(OUT, name + '.bin'), buf);
-      manifest[name] = { f: name + '.bin', n: buf.length };
+      fs.writeFileSync(path.join(OUT, name + '.bin.gz'), zlib.gzipSync(buf, { level: 9 }));   // REPACK-GZ
+      manifest[name] = { f: name + '.bin', n: buf.length, gz: 1 };
       totalOut += buf.length;
       report.push(name + ' -> ' + name + '.bin (' + magic(buf) + ', ' + (buf.length >> 10) + ' KB)');
     } else if (val && typeof val === 'object' && !Array.isArray(val)) {
@@ -34,10 +34,10 @@ for (const file of process.argv.slice(2)) {
         let bytes = 0, mg = '';
         for (const k of keys) {
           const buf = Buffer.from(val[k].replace(/\s+/g, ''), 'base64');
-          fs.writeFileSync(path.join(dir, k + '.bin'), buf);
+          fs.writeFileSync(path.join(dir, k + '.bin.gz'), zlib.gzipSync(buf, { level: 9 }));   // REPACK-GZ
           bytes += buf.length; mg = magic(buf);
         }
-        manifest[name] = { d: name, keys: keys, n: bytes };
+        manifest[name] = { d: name, keys: keys, n: bytes, gz: 1 };
         totalOut += bytes;
         report.push(name + ' -> ' + name + '/{' + keys.length + ' claves} (' + mg + ', ' + (bytes >> 10) + ' KB)');
       } else {
