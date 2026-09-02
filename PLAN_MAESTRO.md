@@ -68,7 +68,11 @@ Ya no es peso de descarga (45→12 MB gz con hosting), solo parse-time: priorida
 El skip total ya existe (1ª tecla). Decidir si se acortan los holds en visitas repetidas. Último.
 
 ## Dependencias de Toni (lo único que bloquea)
-- A1: elegir hosting (recomendado: GitHub Pages de este repo).
+- A1: elegir hosting (recomendado: GitHub Pages de este repo) + decidir visibilidad: el repo es
+  PRIVADO y Pages gratis exige público.
+- B3-loadout: los ataques de la tienda home (slots C/X: dash/égida/bomba…) se compran pero no
+  tienen ejecución en partida — decidir si se implementan como ataques reales o se retira esa
+  tienda (detectado por 7f al cerrar B3).
 - C: una pasada de gira cronometrada real.
 - D: aprobar el doc de propuestas de gira.
 - E2: prestarse a la prueba online desde otro PC.
