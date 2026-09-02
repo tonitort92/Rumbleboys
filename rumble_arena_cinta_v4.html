@@ -2290,7 +2290,7 @@ window.addEventListener('load', function(){
 <div class="overlay" id="perkOverlay">
   <h2 id="perkTitle">STAGE COMPLETADO</h2>
   <div id="shopTimer">🛒 30s</div>
-  <div id="perkWallet">🛒 TIENDA · tu EXP: <b id="perkXP">0</b> <span id="perkCap">COMPRAS 0/2</span></div>
+  <div id="perkWallet">🛒 TIENDA · tus MONEDAS: <b id="perkXP">0</b> <span id="perkCap">COMPRAS 0/2</span></div>
   <div class="perkGrid" id="perkGrid"></div>
   <!-- ►DRAFT: re-tirada de la mano. Su precio y su estado los pone renderPerks(). -->
   <button type="button" id="perkReroll">🎲 OTRA MANO</button>
@@ -23677,8 +23677,10 @@ function shopPlayer(){ return (typeof P1!=='undefined' && P1 && !P1.isAI) ? P1 :
    Tope 2/stage × 7 tiendas = 14 compras teóricas, pero la 14ª costaría ×51 la base → en la práctica
    son ~6-8 por run. La inflación hace el trabajo; al que juega bien le queda ventaja, pero decreciente. */
 const PERK_INFL = 1.35;      // +35% ACUMULATIVO por cada compra del run
+const COIN_DIV  = 25;        // ►ECONOMIA3: los precios de RUN_PERKS estaban en puntos (350..); en monedas = precio/25 (350→14)
+const SURV_COINS = 5;        // ►ECONOMIA3: monedas por acabar el mundo en pie (calibrar con la gira)
 const BUYS_PER_STAGE = 2;    // tope DURO de cartas por stage
-function perkCost(perk, who){ let c = perk.cost * Math.pow(PERK_INFL, (who && who._buys) || 0); if(perk.costMul && who) c *= perk.costMul(who); return Math.round(c); }   // ►BALANCE: costMul = encarecido PROPIO de la carta (ej: +2 VIDAS sube ×1.7 por cada par ya comprado)
+function perkCost(perk, who){ let c = perk.cost * Math.pow(PERK_INFL, (who && who._buys) || 0); if(perk.costMul && who) c *= perk.costMul(who); return Math.max(1, Math.round(c / COIN_DIV)); }   // ►ECONOMIA3: en monedas   // ►BALANCE: costMul = encarecido PROPIO de la carta (ej: +2 VIDAS sube ×1.7 por cada par ya comprado)
 
 const RUN_PERKS = [
   /* --- GENERALES (para cualquier clase) --- */
@@ -23772,7 +23774,11 @@ function closeStageScores(clave){
     const bon  = surv ? Math.round(raw * SURV_BONUS) : 0;
     if(bon) p.sc.bonus = (p.sc.bonus||0) + bon;                    // → entra en scoreTotal
     p._runXPseen = scoreTotal(p);                                  // marca DESPUÉS del bonus
-    p.runXP = (p.runXP||0) + raw + bon;                            // cartera gastable
+    /* ►ECONOMIA3 (B3, DISENO_PROGRESION §3): los PUNTOS ya no compran nada (son exp del nivel y records);
+       la cartera de la tienda es p.coins (monedas de los minions, B2). Terminar el mundo en pie paga
+       SURV_COINS monedas: el bonus de puntos sigue entrando en scoreTotal como antes. */
+    if(surv) p.coins = (p.coins|0) + SURV_COINS;
+    p.runXP = p.coins|0;                                           // espejo legado (nadie debería leerlo ya)
     rows.push({ label:p.label, charKey:p._charKey, pts:raw+bon, surv, me:(p===P1) });
   }
   rows.sort((a,b)=> b.pts - a.pts);
@@ -23866,7 +23872,7 @@ const DRAFT_ON = true;
 const DRAFT_SIZE = 6;
 const DRAFT_POWER = ['dmg','def','rate','kb'];        // el "por lo menos algo útil" de cada mano
 const REROLL_BASE = 250;                              // coste de la 1ª re-tirada del stage (sube por tirada)
-function rerollCost(who){ return Math.round(REROLL_BASE * ((who && who._rerolls||0) + 1)); }
+function rerollCost(who){ return Math.max(1, Math.round(REROLL_BASE * ((who && who._rerolls||0) + 1) / COIN_DIV)); }   // ►ECONOMIA3: en monedas (10, 20, 30…)
 function _shuffled(arr){                              // Fisher-Yates sobre una copia
   const a = arr.slice();
   for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=a[i]; a[i]=a[j]; a[j]=t; }
@@ -23891,7 +23897,7 @@ function rollOffer(me){
 function renderPerks(){
   const grid=document.getElementById('perkGrid'); if(!grid) return;
   const me = shopPlayer(); if(!me) return;
-  const xpEl=document.getElementById('perkXP'); if(xpEl) xpEl.textContent = Math.round(me.runXP||0);
+  const xpEl=document.getElementById('perkXP'); if(xpEl) xpEl.textContent = Math.round(me.coins||0);   // ►ECONOMIA3
   const capped = (me._buysThisStage||0) >= BUYS_PER_STAGE;
   const cp=document.getElementById('perkCap');
   if(cp){ cp.textContent='COMPRAS '+(me._buysThisStage||0)+'/'+BUYS_PER_STAGE; cp.classList.toggle('full', capped); }
@@ -23909,8 +23915,8 @@ function renderPerks(){
       else{
         const rc = rerollCost(me);
         rb.style.display='';
-        rb.textContent = '🎲 OTRA MANO · ★ '+rc;
-        rb.disabled = (me.runXP||0) < rc || capped;
+        rb.textContent = '🎲 OTRA MANO · 🪙 '+rc;
+        rb.disabled = (me.coins||0) < rc || capped;
         rb.title = capped ? 'Ya has agotado tus compras de este stage' : 'Reparte 6 cartas nuevas';
       }
     } }
@@ -23927,7 +23933,7 @@ function renderPerks(){
     if(perk.cls && !hdCls){ hdCls=true; _head('★ ÚNICA DE TU CLASE'); }
     if(!perk.cls && !hdGen){ hdGen=true; _head('MEJORAS GENERALES'); }
     const cost = perkCost(perk, me);          // ►INTERSTAGE: precio inflado por las compras del run
-    const lvl=perk.lvl(me), owned=_perkOwned(perk,me), afford = !owned && !capped && (me.runXP||0)>=cost;
+    const lvl=perk.lvl(me), owned=_perkOwned(perk,me), afford = !owned && !capped && (me.coins||0)>=cost;   // ►ECONOMIA3
     const card=document.createElement('div');
     card.className='perkCard '+(owned?'owned':(afford?'afford':'locked'));
     const lvlTxt = perk.once ? (owned?'OBTENIDO':'') : (perk.k==='lives' ? '' : ('Nivel '+lvl+'/'+perk.max));
@@ -23936,7 +23942,7 @@ function renderPerks(){
       '<div class="pName" style="color:'+perk.col+'">'+perk.name+'</div>'+
       '<div class="pDesc">'+perk.desc+'</div>'+
       (lvlTxt?'<div class="pLvl">'+lvlTxt+'</div>':'')+
-      '<div class="pCost">'+(owned?'✓':('★ '+cost))+'</div>';
+      '<div class="pCost">'+(owned?'✓':('🪙 '+cost))+'</div>';
     if(afford) card.onclick=()=>buyPerk(perk, card);
     grid.appendChild(card);
   });
@@ -23946,8 +23952,8 @@ function buyPerk(perk, card){
   const me = shopPlayer(); if(!me) return;
   if((me._buysThisStage||0) >= BUYS_PER_STAGE) return;   // ►INTERSTAGE: tope DURO por stage
   const cost = perkCost(perk, me);
-  if((me.runXP||0)<cost || _perkOwned(perk,me)) return;
-  me.runXP -= cost;
+  if((me.coins||0)<cost || _perkOwned(perk,me)) return;
+  me.coins -= cost;   // ►ECONOMIA3
   me._buys = (me._buys||0) + 1;                          // encarece TODA compra futura del run
   me._buysThisStage = (me._buysThisStage||0) + 1;
   perk.apply(me);
@@ -23963,8 +23969,8 @@ function rerollOffer(){
   const me = shopPlayer(); if(!me || !DRAFT_ON) return;
   if((me._buysThisStage||0) >= BUYS_PER_STAGE) return;      // sin compras disponibles, re-tirar no sirve de nada
   const cost = rerollCost(me);
-  if((me.runXP||0) < cost) return;
-  me.runXP -= cost;
+  if((me.coins||0) < cost) return;
+  me.coins -= cost;   // ►ECONOMIA3
   me._rerolls = (me._rerolls||0) + 1;
   me._offer = rollOffer(me);
   try{ sfx.boost && sfx.boost(); }catch(e){}
@@ -45296,6 +45302,7 @@ window.__I18N_DYN=[{"es":"MODO CARRERA · {0} MUNDOS · PREPÁRATE","t":["RACE M
 /* ►NIVEL: barra de nivel, fichas bloqueadas y foganazo de level-up. */
 window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "NUEVO ATAQUE":["NEW ATTACK","NUOVO ATTACCO","NOVO ATAQUE","NOUVELLE ATTAQUE","NEUER ANGRIFF"],
+  "🛒 TIENDA · tus MONEDAS:":["🛒 SHOP · your COINS:","🛒 NEGOZIO · le tue MONETE:","🛒 LOJA · as tuas MOEDAS:","🛒 BOUTIQUE · tes PIÈCES :","🛒 SHOP · deine MÜNZEN:"],
   "DEFINITIVA":["ULTIMATE","DEFINITIVA","DEFINITIVA","ULTIME","ULTIMATE"],
   "CORAZÓN EXTRA":["EXTRA HEART","CUORE EXTRA","CORAÇÃO EXTRA","CŒUR BONUS","EXTRA-HERZ"],
   "CADENCIA":["FIRE RATE","CADENZA","CADÊNCIA","CADENCE","FEUERRATE"],
