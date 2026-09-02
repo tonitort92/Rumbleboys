@@ -23020,6 +23020,122 @@ function updateCapTimers(dt){
   for(const p of players){ const q = p._capQ; if(!q || !q.length) continue;
     for(let i=q.length-1;i>=0;i--){ q[i].t -= dt; if(q[i].t <= 0){ const k = q[i].k; if((p.boost[k]||0) > 0) p.boost[k]--; q.splice(i,1); } } }
 }
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   ►NETWORLD — bloque E-A (03/09/2026): FANTASMAS del mundo del anfitrión en el cliente online. El host
+   empaqueta en hostSend (W: M minions, I items, C cápsulas, K monedas, B jefe) con ids estables (_nid); el
+   cliente crea cada visual con las MISMAS funciones de construcción del juego (gobAttach/droneAttach/
+   buildWeaponModel/buildBoostModel/_coinMesh/startBossArena), interpola la posición hacia el último
+   snapshot, anima con los mismos mixers (gobUpdate, inst.mixer) y retira lo que deja de venir (con el FX de
+   muerte/recogida). El cliente NO simula nada: sin IA, sin física, sin spawns. Lo que aún no viaja:
+   proyectiles, minas, orbes, rayos del jefe, patas del Leviatán (bloque E-A2).
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+let _NID = 0;
+const NETW = { m:new Map(), i:new Map(), c:new Map(), k:new Map(), boss:false, ph:'none', clip:'' };
+function _netGhostMinion(id, type, skin, scale, x, y, z, w, fam){
+  const mn = { type, scale, skin: skin||null, pos:new THREE.Vector3(x,y,z), vel:new THREE.Vector3(), yaw:w, onGround:true, damage:0, hitstun:0, invuln:0,
+    atkPhase:'none', atkT:0, cd:9, hitCD:0, dead:false, target:null, retargetT:0, jumpCD:0, airJump:0, stuck:0, animPhase:Math.random()*Math.PI*2, shootT:0,
+    bodyRoll:0, bodyLean:0, aHead:0, aArmL:0, aArmR:0, aLegL:0, aLegR:0, _ghost:true, _nid:id, _tgt:new THREE.Vector3(x,y,z) };
+  if(fam==='d') mn._drone = true; else if(fam==='b') mn._brute = true; else if(fam==='c') mn._carcher = true;
+  NETW.m.set(id, mn); minions.push(mn); return mn;
+}
+function _netGhostKill(mn){
+  try{ if(!mn.dead) killMinion(mn); }catch(e){}
+  try{ if(mn._gob) gobRemove(mn); }catch(e){}
+  try{ if(mn._dinst) droneRemove(mn); }catch(e){}
+  try{ if(mn._brute && typeof bruteRemove==='function') bruteRemove(mn); }catch(e){}
+  try{ if(mn._carcher && typeof carcherRemove==='function') carcherRemove(mn); }catch(e){}
+  const i = minions.indexOf(mn); if(i >= 0) minions.splice(i, 1);
+}
+function _netItemModel(cat, kind){
+  if(cat==='rainbow') return { m:buildRainbowModel(), col:0xff5fd2 };
+  if(cat==='passive' && PASSIVE_DEFS[kind]) return { m:buildPassiveModel(kind), col:PASSIVE_DEFS[kind].col };
+  if(WEAPON_DEFS[kind]) return { m:buildWeaponModel(kind), col:WEAPON_DEFS[kind].col };
+  return null;
+}
+function _netDropModel(m, halo){
+  try{ if(halo) freeHalo(halo); }catch(e){}
+  try{ unregisterSil(m); }catch(e){}
+  scene.remove(m);
+  try{ if(!m.userData.shared) m.traverse(o => { if(o.isMesh && o.geometry) o.geometry.dispose(); }); }catch(e){}
+}
+function _netWorldApply(W){
+  /* minions */
+  const keep = new Set();
+  for(const e of (W.M||[])){ const [id,type,skin,scale,x,y,z,w,sp,g,a,fam] = e; keep.add(id);
+    let mn = NETW.m.get(id) || _netGhostMinion(id, type, skin, scale, x, y, z, w, fam);
+    mn._tgt.set(x,y,z); mn.yaw = w; mn.onGround = !!g; mn.atkPhase = a ? 'atk' : 'none'; mn.shootT = 0;
+    mn.vel.set(Math.sin(w)*sp, 0, Math.cos(w)*sp); }
+  for(const [id, mn] of NETW.m){ if(!keep.has(id)){ _netGhostKill(mn); NETW.m.delete(id); } }
+  /* objetos */
+  keep.clear();
+  for(const e of (W.I||[])){ const [id,cat,kind,x,y,z,toss,life] = e; keep.add(id);
+    let it = NETW.i.get(id);
+    if(!it){ const mk = _netItemModel(cat, kind); if(!mk) continue; mk.m.traverse(o=>{ if(o.isMesh) o.castShadow = false; });
+      const halo = makeHalo(mk.col, x, y, z); scene.add(mk.m, halo); registerMinionSil(mk.m, true);
+      it = { m:mk.m, halo, tgt:new THREE.Vector3(x,y,z), life, toss:!!toss }; NETW.i.set(id, it); }
+    it.tgt.set(x,y,z); it.life = life; it.toss = !!toss; }
+  for(const [id, it] of NETW.i){ if(!keep.has(id)){ if(it.life > 0.5) try{ burst(it.m.position, 0xffffff, 6, 4, 3, .5); }catch(e){} _netDropModel(it.m, it.halo); NETW.i.delete(id); } }
+  /* cápsulas */
+  keep.clear();
+  for(const e of (W.C||[])){ const [id,ti,x,y,z,life] = e; keep.add(id);
+    let c = NETW.c.get(id);
+    if(!c){ const ty = CAP_TYPES[ti]; if(!ty) continue; const m = buildBoostModel(ty); const halo = makeHalo(ty.col, x, y, z); scene.add(m, halo);
+      c = { m, halo, tgt:new THREE.Vector3(x,y,z), life }; NETW.c.set(id, c); }
+    c.tgt.set(x,y,z); c.life = life; }
+  for(const [id, c] of NETW.c){ if(!keep.has(id)){ if(c.life > 0.5) try{ burst(c.m.position, 0xffffff, 8, 4, 3, .6); }catch(e){} _netDropModel(c.m, c.halo); NETW.c.delete(id); } }
+  /* monedas */
+  keep.clear();
+  for(const e of (W.K||[])){ const [id,x,y,z,val,life] = e; keep.add(id);
+    let c = NETW.k.get(id);
+    if(!c){ const m = _coinMesh(); m.scale.setScalar(val>=3 ? 1.6 : 1.25); c = { m, tgt:new THREE.Vector3(x,y,z), life, spin:Math.random()*6 }; NETW.k.set(id, c); m.position.set(x,y,z); }
+    c.tgt.set(x,y,z); c.life = life; }
+  for(const [id, c] of NETW.k){ if(!keep.has(id)){ if(c.life > 0.5) try{ burst(c.m.position, 0xffd060, 5, 4, 3, .5); sfxEv('sparkle', { pos:c.m.position }); }catch(e){} scene.remove(c.m); _coinPool.push(c.m); NETW.k.delete(id); } }
+  /* jefe */
+  const B = W.B;
+  if(B && B.ph !== 'none'){
+    if(!NETW.boss){ try{ bossActive = true; startBossArena(); NETW.boss = (BOSSFIGHT.phase !== 'none'); }catch(e){ console.warn('[networld] boss', e); } }
+    if(NETW.boss){
+      const inst = BOSSFIGHT.inst;
+      if(inst && inst.root && B.x != null){ inst.root.position.set(B.x, B.y, B.z); inst.root.rotation.y = B.w; inst.root.visible = B.v !== 0;
+        if(B.c && B.c !== inst.cur){ try{ bossAnim(B.c, !/^(muerte|death|deathreact|deathrun|deathback)$/.test(B.c)); }catch(e){} } }
+      try{ if(BOSSFIGHT.bar && BOSSFIGHT.bar.fill) BOSSFIGHT.bar.fill.style.width = (100*B.hp).toFixed(1)+'%'; }catch(e){}
+      if(B.ph !== NETW.ph){ const prev = NETW.ph; NETW.ph = B.ph; BOSSFIGHT.phase = B.ph;
+        try{
+          if(B.ph==='fight' && prev!=='fight'){ if(BOSSFIGHT.bar && BOSSFIGHT.bar.wrap) BOSSFIGHT.bar.wrap.style.display=''; }
+          if(B.ph==='cheer'){ showBanner('¡JEFE ABATIDO!', 2.6); canvas.style.filter = 'brightness(1.3)'; flashT = Math.max(flashT, .2); }
+          if(B.ph==='showdown') showBanner('¡SHOWDOWN! ÚLTIMO EN PIE', 2.6);
+          if(B.ph==='opened'){ BOSSFIGHT.phase = 'cheer'; _bossOpenRing(); }   // colores del aro + cartel (+ trofeo estático)
+        }catch(e){ console.warn('[networld] fase', e); } }
+    }
+  } else if(NETW.boss){ try{ resetBossFight(); }catch(e){} BOSSFIGHT.phase = 'none'; bossActive = false; NETW.boss = false; NETW.ph = 'none'; }
+}
+function _netWorldTick(dt){
+  const k = Math.min(1, dt*12);
+  let boxes = false;
+  for(const mn of NETW.m.values()){
+    mn.pos.lerp(mn._tgt, k);
+    if(mn._drone){ try{ droneAttach(mn); if(mn._dinst){ mn._dinst.root.position.copy(mn.pos); mn._dinst.root.rotation.y = mn.yaw; } }catch(e){} continue; }
+    if(mn._brute){ try{ if(typeof bruteAttach==='function') bruteAttach(mn); const bi = mn._binst; if(bi && bi.root){ bi.root.position.set(mn.pos.x, mn.pos.y + (bi.baseY||0), mn.pos.z); bi.root.rotation.y = mn.yaw; bi.mixer.update(dt); } }catch(e){} continue; }
+    if(mn._carcher){ try{ if(typeof carcherAttach==='function') carcherAttach(mn); }catch(e){} }
+    try{ gobAttach(mn); }catch(e){}
+    if(mn._gob){ try{ gobUpdate(mn, dt); }catch(e){} } else boxes = true;
+  }
+  if(boxes) try{ renderMinionInstances(); }catch(e){}
+  for(const it of NETW.i.values()){ it.m.position.lerp(it.tgt, k); it.halo.position.x = it.m.position.x; it.halo.position.z = it.m.position.z;
+    it.m.visible = it.life > 3 || Math.floor(it.life*8)%2===0; if(it.toss) it.m.rotation.x += 13*dt; else it.m.rotation.y += 1.6*dt; }
+  for(const c of NETW.c.values()){ c.m.position.lerp(c.tgt, k); c.halo.position.x = c.m.position.x; c.halo.position.z = c.m.position.z; c.m.rotation.y += 1.6*dt; c.m.visible = c.life > 3 || Math.floor(c.life*8)%2===0; }
+  for(const c of NETW.k.values()){ c.m.position.lerp(c.tgt, k); c.m.rotation.y += 4.5*dt; c.m.visible = c.life > 3 || Math.floor(c.life*8)%2===0; }
+  if(NETW.boss && BOSSFIGHT.inst && BOSSFIGHT.inst.mixer){ try{ BOSSFIGHT.inst.mixer.update(dt); }catch(e){} }
+}
+function _netWorldReset(){
+  for(const mn of NETW.m.values()){ try{ if(mn._gob) gobRemove(mn); if(mn._dinst) droneRemove(mn); }catch(e){} const i = minions.indexOf(mn); if(i>=0) minions.splice(i,1); }
+  NETW.m.clear();
+  for(const it of NETW.i.values()) _netDropModel(it.m, it.halo); NETW.i.clear();
+  for(const c of NETW.c.values()) _netDropModel(c.m, c.halo); NETW.c.clear();
+  for(const c of NETW.k.values()){ scene.remove(c.m); _coinPool.push(c.m); } NETW.k.clear();
+  if(NETW.boss){ try{ resetBossFight(); }catch(e){} BOSSFIGHT.phase = 'none'; bossActive = false; NETW.boss = false; NETW.ph = 'none'; }
+}
+
 const coins = [];
 const COIN_LIFE = 9, COIN_MAX = 60;
 let _coinGeo = null, _coinMat = null; const _coinPool = [];
@@ -23110,7 +23226,7 @@ function _bossOpenRing(){
     const _mu = BOSSFIGHT.ring.memb && BOSSFIGHT.ring.memb.material.uniforms;
     if(_mu){ _mu.uColA.value.setHex(_pcO[2]); _mu.uColB.value.setHex(_pcO[3]); } }
   for(const p of players){ if(p._medal == null) p._medal = medalFor(lvlXP(p)); }
-  try{ if(P1 && !P1.isAI && players.indexOf(P1)>=0 && P1._medal>0) saveBump(sv=>{ sv.medals = sv.medals||{}; sv.medals[STAGE] = Math.max(sv.medals[STAGE]||0, P1._medal); }); }catch(e){}
+  try{ if(P1 && !P1.isAI && players.indexOf(P1)>=0 && P1._medal>0 && !(window._net && _net.role==='client')) saveBump(sv=>{ sv.medals = sv.medals||{}; sv.medals[STAGE] = Math.max(sv.medals[STAGE]||0, P1._medal); }); }catch(e){}   // ►NETWORLD: en el cliente P1 es el anfitrión
   spawnTrophy();   // ►TROFEOS: el jefe ha caído → el trofeo del mundo sale del aro y vuela al líder
   showBanner('¡EL ARO SE ABRE! ¡CRUZADLO!', 3.0); crowdCheer&&crowdCheer(.8,true);
   if(music) fadeMusic(.4, 1.5);
@@ -45652,6 +45768,7 @@ window._net = {
   tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; if(!this.startPlan) return; if(this.startPlan==='arena' && !this.arena) return; this.started=true; this.startMatch(); },   // ►MODOS UX: arranca cuando el anfitrión ha pulsado EMPEZAR (startPlan = gira|arena)
   applyStg(d){                                                                                   // ►MODOS UX: el invitado salta al mundo/minijuego que abre el anfitrión
     if(this.role!=='client' || !d || d.i==null) return; const e = RUTA[d.i]; if(!e) return; RUTA_I = d.i;
+    try{ _netWorldReset(); }catch(e2){}   // ►NETWORLD: fuera los fantasmas del mundo anterior
     if(e.mini && typeof e.mini==='string'){ lanzarMini(e); return; } const f = window['goToStage'+e.st]; if(typeof f==='function') f(); },
   startMatch(){
     const hostCls = (this.role==='host') ? this._cls() : this.peerCls;
@@ -45694,7 +45811,27 @@ window._net = {
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
         og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
-    try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0 }); }catch(e){}
+    /* ►NETWORLD (E-A, 03/09/2026): el mundo del anfitrión viaja a ~15 Hz para que el cliente lo pinte como FANTASMAS
+       (antes el invitado jugaba en un mundo vacío: solo veía a los jugadores). Ids estables asignados al enviar. */
+    let W = null;
+    this.snapWorld = (this.snapWorld|0) + 1;
+    if(this.snapWorld % 2 === 0){
+      try{
+        const M = []; let nm = 0;
+        for(const mn of minions){ if(mn.dead || mn._boss || mn._levi) continue; if(nm++ >= 48) break; if(mn._nid == null) mn._nid = ++_NID;
+          M.push([mn._nid, mn.type, mn.skin||'', +(mn.scale||1).toFixed(2), +mn.pos.x.toFixed(1), +mn.pos.y.toFixed(1), +mn.pos.z.toFixed(1), +(mn.yaw||0).toFixed(2),
+                  +Math.hypot(mn.vel.x, mn.vel.z).toFixed(1), mn.onGround?1:0, (mn.atkPhase!=='none' || mn.shootT>0)?1:0, mn._drone?'d':mn._brute?'b':mn._carcher?'c':mn._add?'a':'']); }
+        const I = items.map(it => { if(it._nid==null) it._nid=++_NID; return [it._nid, it.cat, it.kind, +it.m.position.x.toFixed(1), +it.m.position.y.toFixed(1), +it.m.position.z.toFixed(1), it.st==='toss'?1:0, +it.life.toFixed(1)]; });
+        const C = capsules.map(c => { if(c._nid==null) c._nid=++_NID; return [c._nid, CAP_TYPES.indexOf(c.ty), +c.m.position.x.toFixed(1), +c.m.position.y.toFixed(1), +c.m.position.z.toFixed(1), +c.life.toFixed(1)]; });
+        const K = []; for(const c of coins){ if(K.length >= 40) break; if(c._nid==null) c._nid=++_NID; K.push([c._nid, +c.pos.x.toFixed(1), +c.pos.y.toFixed(1), +c.pos.z.toFixed(1), c.val, +c.life.toFixed(1)]); }
+        let B = 0;
+        if(BOSSFIGHT.phase !== 'none'){ const inst = BOSSFIGHT.inst, b = BOSSFIGHT.boss;
+          B = { ph:BOSSFIGHT.phase, gi:BOSSFIGHT.golemIdx|0, hp:(b && b.maxHp) ? +Math.max(0, 1 - b.damage/b.maxHp).toFixed(3) : 1 };
+          if(inst && inst.root){ B.x=+inst.root.position.x.toFixed(2); B.y=+inst.root.position.y.toFixed(2); B.z=+inst.root.position.z.toFixed(2); B.w=+inst.root.rotation.y.toFixed(2); B.c=inst.cur||''; B.v=inst.root.visible?1:0; } }
+        W = { M, I, C, K, B };
+      }catch(e){ console.warn('[networld] pack', e); W = null; }
+    }
+    try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0, W }); }catch(e){}
   },
   applySnap(dt){
     const s=this.snap; if(!s) return;
@@ -45719,6 +45856,7 @@ window._net = {
     }
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
     if(s.chaos!=null && s.chaos!==chaosLvl){ chaosLvl=s.chaos; const ch=document.getElementById('chaos'); if(ch) ch.textContent='CAOS '+chaosLvl; }
+    if(s.W){ try{ _netWorldApply(s.W); }catch(e){ console.warn('[networld] apply', e); } }   // ►NETWORLD
   },
   clientFrame(dt){
     if(this.sendInput && this.localPlayer){ try{ this.sendInput(this.packInput(readInput(this.localPlayer))); }catch(e){} }
@@ -45726,6 +45864,7 @@ window._net = {
     /* ►NETFIX: lo cosmetico del frame de host que el cliente tambien necesita (el cartel "ONLINE
        (invitado)" no se quitaba nunca; particulas, decorado y clima quedaban congelados). */
     if(bannerT>0){ bannerT-=dt; if(bannerT<=0) banner.classList.remove('show'); }
+    try{ _netWorldTick(dt); }catch(e){ console.warn('[networld] tick', e); }   // ►NETWORLD: mueve/anima los fantasmas
     try{ animateDeco(dt); updateParts(dt); updateWeather(dt); }catch(e){}
     for(const p of players){ if((p._cliT||0) > 0) p._cliT -= dt;                                  // ►E1: +N flotantes en el cliente (agrupados cada 0,45 s como popXP)
       if((p._cliBuf||0) >= 1 && (p._cliT||0) <= 0){ try{ popKill(p.pos, '+'+Math.round(p._cliBuf), classColor(p)); }catch(e){} p._cliBuf = 0; p._cliT = .45; } }
