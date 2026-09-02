@@ -2,7 +2,8 @@
 
 Redactado con Toni tras jugar la primera versión de la progresión. SUSTITUYE al §1 de
 DISENO_PROGRESION.md (el resto — monedas, economía de 3 capas, medallas, showdown — sigue igual).
-Estado: BORRADOR para revisión de Toni; no pasar a implementación hasta su OK.
+Estado: **APROBADO por Toni el 02/09/2026** («implementa todo lo hablado») — en implementación
+por hitos H1-H6; la sesión 7f implementa, la a9 verifica y publica.
 
 ## 1. Qué se tira de lo implementado y por qué
 
