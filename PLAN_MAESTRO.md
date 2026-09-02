@@ -37,6 +37,15 @@ El juego se parte en DOS MODOS con dos UIs (la gira entera medía ~2 h):
   asistente; y red a 4 jugadores (bloque E futuro).
 - Abierto (Toni): ¿el invitado del lobby PERSONALIZADO puede vetar/cambiar rondas o solo mira?
   (supuesto actual: solo mira).
+- **UX de dos ejes (03/09, petición de Toni a 7f)**: la GIRA también se juega online. Asistente:
+  paso 1 "¿Qué jugamos?" GIRA / ARENA / ENTRENAMIENTO; paso final "¿Con quién?" SOLO (CPUs) /
+  ONLINE (lobby). Fuera el conmutador OFFLINE/ONLINE de la home; JUGAR siempre abre el asistente;
+  "CAMPAÑA"/"MODO CARRERA" pasan a llamarse GIRA solo en textos (MATCH.plan sigue 'campaign').
+  Gira online: 16 paradas desde la 1, sin checkpoint en la alfa; acción de red 'stg' sincroniza
+  el cambio de mundo. LÍMITE anotado para el bloque E: el invitado no ve minions/objetos del
+  anfitrión (solo posiciones) — la gira online es de menú a menú hasta resolver eso. Portada y
+  claim intactos; el tour tenía un paso huérfano (OFFLINE U ONLINE → #hdMode retirado), en
+  arreglo. Implementación 4869dbe, en verificación con sala real antes de publicar.
 
 ## A. HOSTING · sesión a9 · ⚠️ decisión de Toni · BLOQUEANTE para repartir enlaces
 
