@@ -30,9 +30,11 @@ El juego se parte en DOS MODOS con dos UIs (la gira entera medía ~2 h):
   entre vivos tras cada jefe SOLO aquí (un vivo = corona directa). Gana quien más coronas;
   empate → puntos. Trofeos/coronas viven en Arena; la vitrina de campaña pasa a medallas.
 - Red: 2 jugadores en la alfa; 4 después (bloque E futuro).
-- Implementación: C1-C3 ✅ (cc8080a, 51a9a3e) · A1-A2 ✅ (2bcac3e, motor de rondas + podio por
-  coronas) · A3 en curso (lobby de Arena en #netLobby, playMultiBtn directo al lobby, UI de
-  campaña recortada). Todo verificado con humo doble (7f + a9) y publicado.
+- Implementación: C1-C3 ✅ (cc8080a, 51a9a3e) · A1-A2 ✅ (2bcac3e) · A3 ✅ (a0ca227: lobby con
+  aleatorio/otra-tirada/personalizado sincronizado en &lt;100 ms, EMPEZAR del anfitrión, invitado
+  solo mira; el online ya NO arranca al conectar). Verificado con humo doble (7f + a9, sala real
+  de 2 Edge) y publicado. Pendientes menores: rótulo RONDA i/6 en partida, recortar paso 4 del
+  asistente; y red a 4 jugadores (bloque E futuro).
 - Abierto (Toni): ¿el invitado del lobby PERSONALIZADO puede vetar/cambiar rondas o solo mira?
   (supuesto actual: solo mira).
 
