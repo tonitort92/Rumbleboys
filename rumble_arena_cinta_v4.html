@@ -19998,16 +19998,17 @@ function updatePvpShieldFX(){
     .hdStat small{ font-size:8.5px; font-weight:900; letter-spacing:2px; color:#9fb0d6; }
     #hdRole{ font-size:11px; font-weight:900; letter-spacing:3px; color:#9fb0d6; text-shadow:0 2px 6px rgba(0,0,0,.9); margin:-2px 0 2px; text-transform:uppercase; }
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
-    #hdPlay{ margin-top:4px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
+    #hdContinue{ --hc:#3ad06a; } #hdContinue.hidden{ display:none; }   /* ►CHECKPOINT: verde, oculto sin gira guardada */
+    #hdPlay, #hdContinue{ margin-top:4px; cursor:pointer; font-family:inherit; color:#fff; text-align:center; --hc:#ff4d38;
       background:linear-gradient(180deg, color-mix(in srgb, var(--hc) 88%, #fff), color-mix(in srgb, var(--hc) 72%, #000));
       border:2px solid #000; border-radius:18px; padding:6px 36px 8px;   /* DOBLE BORDE NEGRO (Toni 21/08): negro dentro y fuera (box-shadow) */
       box-shadow:0 0 0 3px #000, 0 12px 34px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--hc) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.35);
       transition:transform .13s ease, box-shadow .13s ease, background .25s ease, border-color .25s ease; }
-    #hdPlay:hover, #hdPlay.uinav-focus, #hdPlay:focus-visible{ outline:none; transform:scale(1.04);
+    #hdPlay:hover,, #hdContinue:hover, #hdPlay.uinav-focus,, #hdContinue.uinav-focus, #hdPlay:focus-visible, #hdContinue:focus-visible{ outline:none; transform:scale(1.04);
       box-shadow:0 0 0 3px #000, 0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
-    #hdPlay b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
+    #hdPlay, #hdContinue b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
       -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 6px rgba(0,0,0,.6); }   /* más outline (Toni 21/08) */
-    #hdPlay small{ display:block; margin-top:4px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; -webkit-text-stroke:1px #000; paint-order:stroke fill; text-shadow:0 1px 0 #000; }
+    #hdPlay, #hdContinue small{ display:block; margin-top:4px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; -webkit-text-stroke:1px #000; paint-order:stroke fill; text-shadow:0 1px 0 #000; }
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:900; letter-spacing:3px;
       color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:4px; padding:0; }
     #hdOnline:hover, #hdOnline.uinav-focus{ opacity:1; }
@@ -20287,9 +20288,9 @@ function updatePvpShieldFX(){
     /* la columna del héroe, más a la derecha y compacta */
     #hdLeft{ top:14px; padding-left:244px !important; padding-right:62px !important; }   /* hueco a la derecha para el camino diagonal */
     #hdLeft #cpView{ width:min(250px,20vw); }
-    #hdPlay{ max-width:300px; padding:6px 22px 8px; white-space:nowrap; }
-    #hdPlay b{ font-size:clamp(24px,2.6vw,36px); }
-    #hdPlay small{ font-size:9.5px; letter-spacing:2px; }
+    #hdPlay, #hdContinue{ max-width:300px; padding:6px 22px 8px; white-space:nowrap; }
+    #hdPlay, #hdContinue b{ font-size:clamp(24px,2.6vw,36px); }
+    #hdPlay, #hdContinue small{ font-size:9.5px; letter-spacing:2px; }
     .hdAt{ padding:7px 6px; min-width:56px; font-size:9.5px; }   /* ►ATKPAD */
     #hdMeta{ font-size:11px; gap:4px 10px; }
     /* ---- ►MÁRGENES Y BLOQUES (Toni 21/08): más margen izquierdo e inferior; tres bloques separados
@@ -20342,8 +20343,8 @@ function updatePvpShieldFX(){
     .hdLm .tx b{ font-size:12.5px; } .hdLm .tx span{ font-size:11px; } .hdLm .co{ font-size:12.5px; }
     #hdLogMore{ font-size:12px; padding:6px; }
     #hdLogMiniList{ max-height:clamp(110px, 16vh, 148px); }   /* 3-4 filas: no toca el rail centrado */
-    #hdPlay{ max-width:282px; }   /* un pelo mas estrecho: los nodos grandes se acercan */
-    #hdPlay small{ font-size:9px; letter-spacing:1.2px; }   /* el subtitulo (nowrap) es lo que fija el ancho minimo */
+    #hdPlay, #hdContinue{ max-width:282px; }   /* un pelo mas estrecho: los nodos grandes se acercan */
+    #hdPlay, #hdContinue small{ font-size:9px; letter-spacing:1.2px; }   /* el subtitulo (nowrap) es lo que fija el ancho minimo */
     /* el chip no debe tocar el logo (que vive en la vertical del torno) ni los logros la rejilla de ataques */
     #hdUser{ gap:8px; padding:5px 9px 5px 5px; } #hdUTxt{ min-width:126px; } #hdCoins{ font-size:14px; padding:5px 9px; }
     #hdLogMini{ width:248px; }
@@ -20438,6 +20439,7 @@ function updatePvpShieldFX(){
     r.innerHTML =
         '<div id="hdLeft">'
       +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>MODO CARRERA · ' + ruta().length + ' MUNDOS · PREPÁRATE</small></button>'
+      +   '<button type="button" id="hdContinue" class="hidden"><b>CONTINUAR</b><small>GIRA GUARDADA · MUNDO 8</small></button>'   /* ►CHECKPOINT */
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdNameRow"><button type="button" class="hdNav" id="hdPrev" aria-label="Anterior"></button><div id="hdName"></div><button type="button" class="hdNav" id="hdNext" aria-label="Siguiente"></button></div>'   /* v29: las flechas ‹ › del heroe, a los lados del titulo (Toni 21/08); pulsan las del carrusel */
       +   '<div id="hdRole"></div>'
@@ -20642,7 +20644,16 @@ function updatePvpShieldFX(){
       const sm = $('hdPlay') && $('hdPlay').querySelector('small'); if(sm) sm.textContent = 'CARRERA · ' + ruta().length + ' MUNDOS · ' + (m === 'on' ? 'ONLINE' : 'OFFLINE'); }
     r.querySelectorAll('.hdModeBtn').forEach(b => b.addEventListener('click', ()=>{ saveBump(o => { o.playMode = b.dataset.mode; }); renderMode(); try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){} }));
     renderMode();
+    ckRefreshHome();
+    $('hdContinue').addEventListener('click', ()=>{ try{ sfxEv('ui_apply',{ui:true}); }catch(e){} ckResume(); });   // ►CHECKPOINT
     $('hdPlay').addEventListener('click', ()=>{
+      /* ►CHECKPOINT: con una gira guardada, JUGAR pide una SEGUNDA pulsación (6 s) y entonces la borra */
+      if(ckGet()){
+        if(!window._ckArm){ window._ckArm = true; setTimeout(()=>{ window._ckArm = false; }, 6000);
+          try{ const t = $('hdToast'); if(t){ t.innerHTML = '★ Hay una gira guardada en el mundo 8. Pulsa JUGAR otra vez para empezar de cero.'; t.classList.add('on'); clearTimeout(t._ckT); t._ckT = setTimeout(()=>t.classList.remove('on'), 4500); } }catch(e){}
+          return; }
+        window._ckArm = false; ckClear();
+      }
       window.__hdTrainPick = null;   // ►TRAINPICK: la carrera no arrastra una elección de entrenar
       try{ if(typeof MENU_RUTA_I!=='undefined' && MENU_RUTA_I !== 0){ MENU_RUTA_I = 0; mapSelApply(); } }
       catch(e){ console.warn('[carrera] jugar', e); }
@@ -24390,9 +24401,75 @@ function rutaIndiceDe(st){
 }
 /* ►EL ÚNICO SITIO POR EL QUE SE AVANZA. Llama al siguiente eslabón sea del
    tipo que sea; al final de la lista, coronación. */
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   ►CHECKPOINT — MODOS C3 (Toni 02/09/2026): la campaña de 16 paradas dura ~2 h; al ENTRAR en la parada 8
+   (RUTA_I 7, la Pirámide) se guarda la run en save.checkpoint: parada, clase, modo/CPUs, y de P1 la
+   cartera de monedas, las mejoras de la tienda de run (own/ownPas/flags compradas), los puntos de todos
+   (sc) y el tablero (STAGE_LOG). Morir de la 8 en adelante o salir ofrece CONTINUAR DESDE EL MUNDO 8 (en
+   el fin de partida y en la home); morir de la 1 a la 7 sigue devolviendo al 1. JUGAR con una gira
+   guardada pide una segunda pulsación y la borra. Terminar la gira la borra. El nivel/las cartas no
+   se guardan: se reinician por mundo. Solo campaña local con humano; nunca en Arena/entrenamiento/online.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+const CK_I = 7;
+let _CK_PENDING = null;
+function ckGet(){ try{ const c = saveGet().checkpoint; return (c && c.v===1 && RUTA[c.rutaI]) ? c : null; }catch(e){ return null; } }
+function ckClear(){ saveBump(sv => { sv.checkpoint = null; }); ckRefreshHome(); }
+function ckEligible(){
+  return MATCH.plan==='campaign' && !ARENA_MODE.on && !(typeof TRAIN!=='undefined' && TRAIN.on) && !demo &&
+         !(window._net && _net.role && _net.role!=='local') && P1 && players.indexOf(P1)>=0 && !P1.isAI;
+}
+function ckSave(){
+  if(!ckEligible()) return;
+  const p = P1;
+  const pk = []; for(const k in (p._pkFromShop||{})) if(p._pkFromShop[k]) pk.push(k);
+  const d = { v:1, rutaI:RUTA_I, ts:Date.now(), cls:p._charKey, mode:MATCH.mode, cpus:MATCH.cpus, humans:MATCH.humans,
+              coins:p.coins|0, own:Object.assign({}, p.own||{}), ownPas:Object.assign({}, p.ownPas||{}), pk, buys:p._buys|0,
+              sc: players.map(q => Object.assign({}, q.sc||{})),
+              log: JSON.parse(JSON.stringify(STAGE_LOG)) };
+  saveBump(sv => { sv.checkpoint = d; });
+  try{ showBanner('★ GIRA GUARDADA · MUNDO ' + (CK_I+1), 2.2); }catch(e){}
+}
+function ckApply(d){                                  // tras resetMatch: devuelve a P1 (y los puntos de todos) lo guardado
+  _CK_PENDING = null; if(!d) return;
+  const p = P1;
+  p.coins = d.coins|0; p.runXP = p.coins; p._buys = d.buys|0;
+  p.own = Object.assign(p.own||{}, d.own||{}); p.ownPas = Object.assign(p.ownPas||{}, d.ownPas||{});
+  p._pkFromShop = {}; for(const f of (d.pk||[])){ p[f] = true; p._pkFromShop[f] = true; }
+  if(d.sc) for(let i=0;i<players.length && i<d.sc.length;i++){ if(players[i].sc && d.sc[i]) Object.assign(players[i].sc, d.sc[i]); }
+  p.stocks = 4 + ((p.own.lives||0)*2);
+  if(d.log){ STAGE_LOG.length = 0; for(const e of d.log) STAGE_LOG.push(e); }
+  for(const q of players){ q._runXPseen = scoreTotal(q); q._lvlBase = scoreTotal(q); }   // la exp del mundo 8 empieza en 0
+}
+function ckResume(){
+  const d = ckGet(); if(!d) return;
+  MATCH.plan = 'campaign'; MATCH.mode = d.mode || 'solo'; MATCH.cpus = d.cpus|0; MATCH.humans = d.humans || 1; MATCH.cls = d.cls || MATCH.cls;
+  try{ MENU_RUTA_I = d.rutaI; mapSelApply(); }catch(e){ console.warn('[checkpoint] mapSel', e); }
+  MENU_STAGE = RUTA[d.rutaI].st; MENU_MINI = null;
+  _CK_PENDING = d;
+  try{ closeModal(); }catch(e){}
+  try{ startOverlay.style.display = 'none'; }catch(e){}
+  try{ const eo = document.getElementById('endOverlay'); if(eo) eo.style.display = 'none'; }catch(e){}
+  launchMatch();
+}
+function ckRefreshHome(){
+  const b = document.getElementById('hdContinue'); if(!b) return;
+  const d = ckGet(); b.classList.toggle('hidden', !d);
+  if(d){ const sm = b.querySelector('small'); if(sm) sm.textContent = 'GIRA GUARDADA · MUNDO ' + (d.rutaI+1); }
+}
+function _ckOnEnd(){                                   // fin de partida: ¿REVANCHA o CONTINUAR DESDE EL MUNDO 8?
+  window._ckRetry = false;
+  const rb = document.getElementById('restartBtn'); if(!rb) return;
+  const done = (typeof _bossSeen!=='undefined' && _bossSeen.has(10));
+  if(done && MATCH.plan==='campaign'){ try{ saveBump(sv => { sv.checkpoint = null; }); }catch(e){} }   // gira terminada: el checkpoint ya no vale
+  const d = ckGet();
+  if(ckEligible() && d && RUTA_I >= CK_I && !done){ window._ckRetry = true; rb.textContent = 'CONTINUAR DESDE EL MUNDO ' + (d.rutaI+1); }
+  else rb.textContent = 'REVANCHA';
+}
+
 function rutaSiguiente(){
   if(gameOver) return;
   RUTA_I++;
+  if(RUTA_I === CK_I) ckSave();                    // ►CHECKPOINT (C3): al entrar en la parada 8 se guarda la run
   if(RUTA_I >= RUTA.length){ endGame(); return; }
   const e = RUTA[RUTA_I];
   if(e.mini && typeof e.mini === 'string'){ lanzarMini(e); return; }
@@ -24786,6 +24863,7 @@ const winCelebrate = (function(){
 function endGame(){
   if(gameOver) return;
   gameOver = true;
+  try{ _ckOnEnd(); }catch(e){ console.warn('[checkpoint] end', e); }   // ►CHECKPOINT
   if(!STAGE_LOG.some(e=>e.stage===STAGE)) closeStageScores();   // ►INTERSTAGE: cierra el stage en curso si nadie lo cerró (fin por KO de todos) — idempotente
   fadeClear();                                                  // ►INTERSTAGE: por si el fin pilla un fundido a medias
   if(typeof hideBossUI==='function') hideBossUI();   // la barra/contador del jefe no debe quedarse tras acabar
@@ -42939,6 +43017,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.lvl = 1; p._lvlBase = 0; p._lvlPasI = -1; p._lvlDenyT = 0; p._pkFromShop = null; p._lvFlags = []; lvlBuildReset(p);   // ►NIVEL ►CARTAS
     p.mpow = 0; p.out = false; p.outOrder = 0; p.lastHitBy = null; p._rainbowT = 0; endUlt(p);
   }
+  if(_CK_PENDING) ckApply(_CK_PENDING);    // ►CHECKPOINT: CONTINUAR desde el mundo 8 restaura la run sobre el estado limpio
   for(const q of allPlayers) clearFX(q);   // FX persistente de TODOS (incl. fuera del roster) → no quedan rayos/cúpulas del demo flotando en la partida
   for(let i=shardsFly.length-1;i>=0;i--) killShard(i, null);
   for(let i=items.length-1;i>=0;i--) killItem(i);
@@ -44481,6 +44560,7 @@ function renderHomeWorlds(){
 })();
 document.getElementById('restartBtn').addEventListener('click', ()=>{
   music.volume = .2; if(musicOn && music.paused) music.play().catch(()=>{});
+  if(window._ckRetry){ window._ckRetry = false; ckResume(); return; }   // ►CHECKPOINT
   startMatch();
 });
 /* ---- VOLVER AL MENÚ: sale de la partida (botón final o tecla ESC). Corta intro/online en curso. ---- */
@@ -44491,6 +44571,7 @@ function returnToMenu(){
   if(window._net){ _net.role='local'; _net.room=null; _net.started=false; _net.peerId=null; _net.peerCls=null;
                    _net.remote=null; _net.localPlayer=null; _net.snap=null; _net.sendInput=_net.sendSnap=_net.sendHi=null; }
   cancelEndTally();             // limpia el recuento/leaderboard al salir al menú
+  try{ ckRefreshHome(); }catch(e){}   // ►CHECKPOINT: la home enseña CONTINUAR si hay gira guardada
   if(typeof hideStageCaution==='function') hideStageCaution();   // ►STAGECAUTION: retira el aviso si se sale a mitad de presentación
   narrReset();                  // corta cualquier locución del narrador al salir al menú
   if(typeof resetBossFight==='function') resetBossFight();   // oculta la barra/contador del JEFE y desmonta su arena al salir al menú (si no, la barra se queda flotando)
@@ -45610,6 +45691,11 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "ataque básico más rápido":["faster basic attack","attacco base più rapido","ataque básico mais rápido","attaque de base plus rapide","schnellerer Grundangriff"],
   "una vida más este mundo":["one more life this world","una vita in più in questo mondo","mais uma vida neste mundo","une vie de plus dans ce monde","ein Leben mehr in dieser Welt"],
   "Controles, cómo jugar bien, objetos, vitrina, logros, opciones e idioma. Todo lo demás vive aquí.":["Controls, how to play well, items, trophy case, achievements, options and language. Everything else lives here.", "Controlli, come giocare bene, oggetti, bacheca, obiettivi, opzioni e lingua. Tutto il resto è qui.", "Controlos, como jogar bem, objetos, vitrine, conquistas, opções e idioma. Tudo o resto vive aqui.", "Commandes, bien jouer, objets, vitrine, succès, options et langue. Tout le reste est ici.", "Steuerung, Spieltipps, Gegenstände, Vitrine, Erfolge, Optionen und Sprache. Alles andere findest du hier."],
+  "CONTINUAR":["CONTINUE","CONTINUA","CONTINUAR","CONTINUER","WEITER"],
+  "GIRA GUARDADA · MUNDO 8":["TOUR SAVED · WORLD 8","TOUR SALVATO · MONDO 8","DIGRESSÃO GUARDADA · MUNDO 8","TOURNÉE SAUVÉE · MONDE 8","TOUR GESPEICHERT · WELT 8"],
+  "CONTINUAR DESDE EL MUNDO 8":["CONTINUE FROM WORLD 8","CONTINUA DAL MONDO 8","CONTINUAR DESDE O MUNDO 8","CONTINUER AU MONDE 8","AB WELT 8 WEITERMACHEN"],
+  "★ GIRA GUARDADA · MUNDO 8":["★ TOUR SAVED · WORLD 8","★ TOUR SALVATO · MONDO 8","★ DIGRESSÃO GUARDADA · MUNDO 8","★ TOURNÉE SAUVÉE · MONDE 8","★ TOUR GESPEICHERT · WELT 8"],
+  "★ Hay una gira guardada en el mundo 8. Pulsa JUGAR otra vez para empezar de cero.":["★ There is a tour saved at world 8. Press PLAY again to start over.","★ C'è un tour salvato al mondo 8. Premi di nuovo GIOCA per ricominciare.","★ Há uma digressão guardada no mundo 8. Carrega JOGAR outra vez para começar do zero.","★ Une tournée est sauvée au monde 8. Appuie encore sur JOUER pour repartir de zéro.","★ Es gibt eine gespeicherte Tour bei Welt 8. Drücke erneut SPIELEN, um neu zu starten."],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
