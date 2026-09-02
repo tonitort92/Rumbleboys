@@ -1167,6 +1167,15 @@ window.addEventListener('load', function(){
   }
   .btn:hover { transform:scale(1.06); box-shadow:0 8px 28px rgba(0,0,0,.6); }
   #setup { display:flex; flex-direction:column; gap:9px; margin:4px 0 8px; align-items:center; pointer-events:auto; }
+  /* ►ARENA: lista de rondas y selectores del lobby */
+  .arenaList { list-style:none; padding:0; margin:8px auto 0; display:grid; grid-template-columns:repeat(3,1fr); gap:4px; max-width:440px;
+               font-size:12px; font-weight:800; counter-reset:ar; }
+  .arenaList li { background:rgba(255,255,255,.06); border-radius:8px; padding:5px 6px; text-align:left; }
+  .arenaList li::before { content:counter(ar) ' · '; counter-increment:ar; opacity:.6; }
+  .arenaList li.mini { color:#9fffd8; }
+  .arenaPick { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px auto 0; max-width:440px; }
+  .arenaRow { display:flex; gap:6px; align-items:center; font-weight:900; font-size:12px; }
+  .arenaRow select { flex:1; min-width:0; padding:5px; border-radius:8px; background:rgba(8,11,26,.85); color:#fff; border:1px solid rgba(255,255,255,.25); font-weight:800; pointer-events:auto; }
   .setRow { display:flex; align-items:center; gap:7px; flex-wrap:wrap; justify-content:center; }
   .setLbl { font-size:12px; font-weight:800; letter-spacing:2px; color:#9fe8ff; min-width:92px; text-align:center; }
   .optGroup { display:flex; gap:6px; flex-wrap:wrap; }
@@ -2078,7 +2087,7 @@ window.addEventListener('load', function(){
 <div class="overlay" id="netLobby" style="display:none">
   <div class="modalCard">
     <button class="modalClose" id="netClose" aria-label="Cerrar">✕</button>
-    <h2>🌐 ONLINE <span style="font-size:13px;opacity:.6;font-weight:700">beta · 2 jugadores P2P</span></h2>
+    <h2>🌐 ARENA ONLINE <span style="font-size:13px;opacity:.6;font-weight:700">6 RONDAS · 2 jugadores P2P</span></h2>
     <p style="font-size:13px;opacity:.82;max-width:380px;margin:0 auto 12px">Juega con un colega por internet. <b>Uno crea la sala</b> y comparte el código; <b>el otro se une</b> con ese código. Elegid vuestro personaje antes (carrusel de la home).</p>
     <div style="display:flex;justify-content:center;margin:8px 0">
       <button class="btn" id="netCreate" style="margin-top:0;padding:12px 28px;font-size:16px">CREAR SALA</button>
@@ -2090,6 +2099,19 @@ window.addEventListener('load', function(){
       <button class="opt" id="netJoin" style="pointer-events:auto">UNIRSE</button>
     </div>
     <div id="netStatus" style="font-size:13px;font-weight:800;color:#9fe8ff;margin-top:12px;min-height:18px"></div>
+    <!-- ►ARENA (MODOS A3): al conectar, el anfitrión arma las 6 rondas (mundo, mundo, MINI, mundo, MINI, mundo) al azar
+         o a mano; el invitado ve la lista en vivo; EMPEZAR ARENA arranca a los dos. -->
+    <div id="arenaBox" style="display:none;margin-top:10px">
+      <div id="arenaHostBar" class="setRow">
+        <button type="button" class="opt sel" id="arenaModeRand">🎲 ALEATORIO</button>
+        <button type="button" class="opt" id="arenaModeCustom">🛠 PERSONALIZADO</button>
+        <button type="button" class="opt" id="arenaReroll" title="Otra tirada">↻</button>
+      </div>
+      <div id="arenaPick" class="arenaPick" style="display:none"></div>
+      <ol id="arenaList" class="arenaList"></ol>
+      <div id="arenaGuestMsg" style="font-size:12px;opacity:.7;display:none;margin-top:6px">El anfitrión elige las rondas…</div>
+      <div style="display:flex;justify-content:center;margin-top:8px"><button class="btn" id="arenaStart" disabled>EMPEZAR ARENA</button></div>
+    </div>
   </div>
 </div>
 
@@ -44220,7 +44242,7 @@ function startMatch(){
   }
   function closeModal(){ modal.style.display = 'none'; toHome(); }   // devuelve las cards a la home
   document.getElementById('playSoloBtn').addEventListener('click', ()=> openModal(1));
-  document.getElementById('playMultiBtn').addEventListener('click', ()=> openModal(4));
+  document.getElementById('playMultiBtn').addEventListener('click', ()=>{ MATCH.plan='arena'; MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); closeModal(); if(window._openOnline) _openOnline(); });   // ►ARENA (MODOS A3): ONLINE = lobby de Arena directo; el paso 4 (campaña/survival) queda sin uso
   /* ►F1: el engranaje enseña/esconde idioma+CPU (ajustes, no decisiones de portada) */
   { const g=document.getElementById('cfgGear'), c=document.getElementById('cornerCfg');
     if(g&&c) g.addEventListener('click', ()=>{ c.style.display = c.style.display==='none' ? '' : 'none'; }); }
@@ -45605,20 +45627,25 @@ window._net = {
     const [sInp,gInp]=room.makeAction('inp');
     const [sSnap,gSnap]=room.makeAction('snap');
     const [sHi,gHi]=room.makeAction('hi');
+    const [sArena,gArena]=room.makeAction('arena'); this.sendArena=sArena;                       // ►ARENA: lista de rondas (índices de RUTA) + go
+    gArena(d=>{ this.arena=(d && d.r && d.r.length) ? d.r.slice() : null; try{ if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
     this.sendInput=sInp; this.sendSnap=sSnap; this.sendHi=sHi;
     gInp(d=> this.recvInput(d));
     gSnap(d=> { this.snap=d; });
     gHi(d=> { this.peerCls=d.cls; this.tryStart(); });
-    room.onPeerJoin(id=>{ this.peerId=id; this.status('Conectado. Sincronizando…'); try{ sHi({cls:this._cls()}); }catch(e){} this.tryStart(); });
+    room.onPeerJoin(id=>{ this.peerId=id; this.status(this.role==='host' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. El anfitrión elige las rondas…'); try{ sHi({cls:this._cls()}); }catch(e){}
+      try{ if(window._arenaLobby) _arenaLobby.show(this.role); }catch(e){} this.tryStart(); });   // ►ARENA: el lobby de rondas aparece al conectar
     room.onPeerLeave(()=>{ this.peerId=null; this.status('El otro jugador se desconectó.'); });
     this.status(role==='host' ? ('Sala creada: '+code+'   ·   esperando al rival…') : ('Uniéndote a '+code+'…'));
   },
-  tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; this.started=true; this.startMatch(); },
+  tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; if(!this.arena) return; this.started=true; this.startMatch(); },   // ►ARENA: arranca cuando el anfitrión ha pulsado EMPEZAR (arena = lista de rondas)
   startMatch(){
     const hostCls = (this.role==='host') ? this._cls() : this.peerCls;
     const cliCls  = (this.role==='host') ? this.peerCls : this._cls();
     try{ if(typeof cancelEndTally==='function') cancelEndTally(); }catch(e){}
     demo=false;
+    if(this.arena){ try{ arenaStart({ rounds:this.arena.map(i=>RUTA[i]).filter(Boolean), noLaunch:true }); }catch(e){ console.warn('[arena] start', e); } }   // ►ARENA: fija MENU_STAGE a la ronda 1 y el modo rondas
+    else { MATCH.plan='campaign'; try{ arenaStop(); }catch(e){} }
     setRoster(2, 0);          // 2 jugadores, 0 CPU
     resetMatch();             // spawns + limpia el mundo (no toca los flags de dispositivo)
     players[0]._charKey=hostCls; players[0]._charApplied=false; applySkin(players[0]); players[0].isAI=false;
@@ -45696,7 +45723,46 @@ window._net = {
   const readyMsg=()=> window.NET ? (NET.error?('Red no disponible: '+NET.error):'Listo. Crea una sala o únete con un código.') : 'Cargando red…';
   /* el botón ONLINE de la home ya no existe: ahora la sala se abre desde MULTIJUGADOR → campaña /
      survival, que vive en otro IIFE (setupWizard) → se expone la apertura por window. */
-  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.status(readyMsg()); };   // ►SFXTONI
+  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.arena=null; try{ _arenaLobby.reset(); }catch(e){} _net.status(readyMsg()); };   // ►SFXTONI ►ARENA
+  /* ►ARENA (MODOS A3): lobby de rondas. El anfitrión elige ALEATORIO (otra tirada con ↻) o PERSONALIZADO (6 selectores:
+     mundo, mundo, mini, mundo, mini, mundo); la lista se manda al invitado por la acción 'arena' y EMPEZAR ARENA la
+     manda con go:1 → los dos arrancan con la misma lista. El invitado solo mira. */
+  window._arenaLobby = (function(){
+    let mode = 'rand', sel = [];
+    const box = ()=>$('arenaBox');
+    const W = ()=>RUTA.map((e,i)=>[e,i]).filter(x=>x[0].st && !x[0].mini), M = ()=>RUTA.map((e,i)=>[e,i]).filter(x=>x[0].mini);
+    const label = e => e.st ? ((typeof STAGE_TAG!=='undefined' && STAGE_TAG[e.st]) || ('MUNDO '+e.st)) : (e.tag || String(e.mini).toUpperCase());
+    function randomize(){ const seed = ((Date.now() ^ (Math.random()*1e9))>>>0) || 1; sel = arenaRandomRounds(seed).map(e=>RUTA.indexOf(e)); }
+    function fromSelects(){ sel = Array.from(box().querySelectorAll('select.arenaSel')).map(x=>+x.value); }
+    function buildSelects(){
+      const host = $('arenaPick'); if(!host) return;
+      const rows = ['W','W','M','W','M','W'];
+      host.innerHTML = rows.map((k,i)=>{ const opts = (k==='W'?W():M()).map(([e,idx])=>'<option value="'+idx+'"'+(sel[i]===idx?' selected':'')+'>'+label(e)+'</option>').join('');
+        return '<label class="arenaRow"><b>'+(i+1)+'</b><select class="arenaSel" data-i="'+i+'">'+opts+'</select></label>'; }).join('');
+      host.querySelectorAll('select.arenaSel').forEach(x=>x.addEventListener('change', ()=>{ fromSelects(); render(); }));
+    }
+    function render(){
+      const b = box(); if(!b) return;
+      const isHost = _net.role==='host', list = isHost ? sel : (_net.arena||[]);
+      const ol = $('arenaList'); if(ol) ol.innerHTML = list.map(idx=>{ const e = RUTA[idx]; return '<li'+(e && e.mini ? ' class="mini"' : '')+'>'+(e ? label(e) : '?')+'</li>'; }).join('');
+      const pk = $('arenaPick'); if(pk) pk.style.display = (isHost && mode==='custom') ? '' : 'none';
+      $('arenaModeRand').classList.toggle('sel', mode==='rand'); $('arenaModeCustom').classList.toggle('sel', mode==='custom');
+      $('arenaHostBar').style.display = isHost ? '' : 'none'; $('arenaGuestMsg').style.display = isHost ? 'none' : '';
+      $('arenaStart').style.display = isHost ? '' : 'none'; $('arenaStart').disabled = !isHost || list.length !== ARENA_ROUNDS;
+      if(isHost){ _net.arena = null; try{ _net.sendArena && _net.sendArena({ r:sel }); }catch(e){} }   // el invitado ve la lista en vivo
+    }
+    function show(role){ const b = box(); if(!b) return; b.style.display = ''; if(role==='host'){ if(!sel.length) randomize(); buildSelects(); } render(); }
+    function reset(){ mode = 'rand'; sel = []; const b = box(); if(b) b.style.display = 'none'; }
+    function wire(){
+      $('arenaModeRand').addEventListener('click', ()=>{ mode = 'rand'; randomize(); render(); });
+      $('arenaModeCustom').addEventListener('click', ()=>{ mode = 'custom'; buildSelects(); fromSelects(); render(); });
+      $('arenaReroll').addEventListener('click', ()=>{ randomize(); if(mode==='custom') buildSelects(); render(); });
+      $('arenaStart').addEventListener('click', ()=>{ if(_net.role!=='host' || sel.length!==ARENA_ROUNDS) return;
+        _net.arena = sel.slice(); try{ _net.sendArena && _net.sendArena({ r:sel, go:1 }); }catch(e){} try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
+    }
+    return { show, render, reset, wire, _sel:()=>sel, _mode:()=>mode };
+  })();
+  try{ if($('arenaStart')) _arenaLobby.wire(); }catch(e){ console.warn('[arena] lobby', e); }
   if($('netClose'))  $('netClose').addEventListener('click', ()=>{ const l=$('netLobby'); if(l) l.style.display='none'; });
   if($('netCreate')) $('netCreate').addEventListener('click', ()=> _net.connect(_net.genCode(),'host'));
   if($('netJoin'))   $('netJoin').addEventListener('click', ()=>{ const c=(($('netCode')&&$('netCode').value)||'').trim().toUpperCase(); if(c.length<3){ _net.status('Escribe un código válido.'); return; } _net.connect(c,'client'); });
@@ -45740,6 +45806,14 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "CONTINUAR DESDE EL MUNDO 8":["CONTINUE FROM WORLD 8","CONTINUA DAL MONDO 8","CONTINUAR DESDE O MUNDO 8","CONTINUER AU MONDE 8","AB WELT 8 WEITERMACHEN"],
   "★ GIRA GUARDADA · MUNDO 8":["★ TOUR SAVED · WORLD 8","★ TOUR SALVATO · MONDO 8","★ DIGRESSÃO GUARDADA · MUNDO 8","★ TOURNÉE SAUVÉE · MONDE 8","★ TOUR GESPEICHERT · WELT 8"],
   "★ Hay una gira guardada en el mundo 8. Pulsa JUGAR otra vez para empezar de cero.":["★ There is a tour saved at world 8. Press PLAY again to start over.","★ C'è un tour salvato al mondo 8. Premi di nuovo GIOCA per ricominciare.","★ Há uma digressão guardada no mundo 8. Carrega JOGAR outra vez para começar do zero.","★ Une tournée est sauvée au monde 8. Appuie encore sur JOUER pour repartir de zéro.","★ Es gibt eine gespeicherte Tour bei Welt 8. Drücke erneut SPIELEN, um neu zu starten."],
+  "🎲 ALEATORIO":["🎲 RANDOM","🎲 CASUALE","🎲 ALEATÓRIO","🎲 ALÉATOIRE","🎲 ZUFÄLLIG"],
+  "🛠 PERSONALIZADO":["🛠 CUSTOM","🛠 PERSONALIZZATO","🛠 PERSONALIZADO","🛠 PERSONNALISÉ","🛠 EIGENE"],
+  "EMPEZAR ARENA":["START ARENA","INIZIA L'ARENA","COMEÇAR ARENA","LANCER L'ARÈNE","ARENA STARTEN"],
+  "El anfitrión elige las rondas…":["The host is picking the rounds…","L'host sceglie i round…","O anfitrião escolhe as rondas…","L'hôte choisit les manches…","Der Host wählt die Runden…"],
+  "Conectado. Elige las rondas y pulsa EMPEZAR ARENA.":["Connected. Pick the rounds and press START ARENA.","Connesso. Scegli i round e premi INIZIA L'ARENA.","Ligado. Escolhe as rondas e carrega em COMEÇAR ARENA.","Connecté. Choisis les manches et appuie sur LANCER L'ARÈNE.","Verbunden. Wähle die Runden und drücke ARENA STARTEN."],
+  "Conectado. El anfitrión elige las rondas…":["Connected. The host is picking the rounds…","Connesso. L'host sceglie i round…","Ligado. O anfitrião escolhe as rondas…","Connecté. L'hôte choisit les manches…","Verbunden. Der Host wählt die Runden…"],
+  "🌐 ARENA ONLINE":["🌐 ONLINE ARENA","🌐 ARENA ONLINE","🌐 ARENA ONLINE","🌐 ARÈNE EN LIGNE","🌐 ONLINE-ARENA"],
+  "6 RONDAS · 2 jugadores P2P":["6 ROUNDS · 2 players P2P","6 ROUND · 2 giocatori P2P","6 RONDAS · 2 jogadores P2P","6 MANCHES · 2 joueurs P2P","6 RUNDEN · 2 Spieler P2P"],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
