@@ -9976,6 +9976,7 @@ const CAP_TYPES = [
   { k:'rate',col:0x16e0c8, label:'+CADENCIA',  ic:'⏩' },
   { k:'hp',  col:0xff3399, label:'+SALUD', heal:true, ic:'❤️' },
 ];
+const CAP_DUR = 20, PAS_DUR = 20;             // ►H5 (NIVELES V2 §4): el suelo es SOLO temporal — cápsulas de stat 20 s, pasivos de suelo 20 s (lo comprado no caduca)
 const CAP_HEAL = 50;                            // cuánto daño acumulado quita el corazón
 /* geometrías compartidas: esfera para los stats, corazón 3D para la salud */
 const _capSphere = new THREE.SphereGeometry(.6, 22, 18);
@@ -10805,6 +10806,7 @@ function updateCapsules(dt){
         } else {
           p.sc.boosts++;
           p.boost[c.ty.k]++;
+          if(c.ty.k!=='airj'){ (p._capQ||(p._capQ=[])).push({ k:c.ty.k, t:CAP_DUR }); }   // ►H5: caduca a los 20 s (airj ya es por vida)
           if(c.ty.k==='airj') p.boost.airj = Math.min(p.boost.airj, CAP_AIRJ_MAX);   // ►SALTO EXTRA: cápsulas dan como mucho +3 (→ máx 5 saltos por stage sin tienda); evita HUD con ×99 inservibles
           if(c.ty.k==='jmp')  p.boost.jmp  = Math.min(p.boost.jmp, Math.max(0, JMP_LV_MAX - ((p.own&&p.own.jmp)||0) - ((p.perm&&p.perm.jmp)||0)));   // ►B5: el tope contaba own pero no perm → recortaba en silencio el +1 de la pasiva de nivel   // ►TOPE SALTO: cuenta cápsulas + tienda; el contador no sube por encima de lo que de verdad hace efecto
           showCombo(p, c.ty.label+' x'+p.boost[c.ty.k]);
@@ -11230,6 +11232,7 @@ function giveItem(p, it){
   else if(it.cat==='passive'){
     p.sc.passives++;
     p[PASSIVE_DEFS[it.kind].flag] = true;
+    if(it.kind!=='magnet'){ (p._pasExp||(p._pasExp={}))[it.kind] = PAS_DUR; }   // ►H5: pinchos/eléctrico/minas caducan como el imán
     if(it.kind==='spikes') p.spikeT = 3;
     if(it.kind==='mines')  p.mineT = 3;
     if(it.kind==='magnet') p.magnetT = 20;                 // el imán solo atrae durante 20s
@@ -22967,6 +22970,12 @@ function lvlCardsPaint(p){
   const bar = el.querySelector('.lvTimer i'); if(bar) bar.style.width = Math.max(0, of.t/CARD_T*100).toFixed(1)+'%';
 }
 
+/* ►H5: cápsulas temporales — cada recogida apunta {k,t} y al caducar resta el +1 que sumó (las cartas de nivel viven en
+   el mismo p.boost pero no pasan por aquí, así que no se tocan). */
+function updateCapTimers(dt){
+  for(const p of players){ const q = p._capQ; if(!q || !q.length) continue;
+    for(let i=q.length-1;i>=0;i--){ q[i].t -= dt; if(q[i].t <= 0){ const k = q[i].k; if((p.boost[k]||0) > 0) p.boost[k]--; q.splice(i,1); } } }
+}
 const coins = [];
 const COIN_LIFE = 9, COIN_MAX = 60;
 let _coinGeo = null, _coinMat = null; const _coinPool = [];
@@ -25557,7 +25566,8 @@ function updateFighter(p, dt){
     if(Math.random()<.35) burst(_fxV.set(p.pos.x, p.pos.y+1, p.pos.z), 0xff2244, 1, 1.5, 1, .4); }
   if(hasPas(p,'spikes')){ p.spikeT -= dt; if(p.spikeT<=0){ p.spikeT = 3; emitSpikes(p); } }   // PINCHOS cada 3s
   if(hasPas(p,'elec') && Math.random()<.55) burst(_fxV.set(p.pos.x+(Math.random()-.5)*.7, p.pos.y+.4+Math.random()*1.4, p.pos.z+(Math.random()-.5)*.7), Math.random()<.5?0xffe23a:0xaffaff, 1, 1.2, 1.4, .4);   // ELEC: chispas visibles
-  if(p.pasMagnet){ p.magnetT -= dt; if(p.magnetT<=0) p.pasMagnet = false; }             // ►INTERSTAGE: SOLO caduca el imán RECOGIDO (20s)…
+  if(p.pasMagnet){ p.magnetT -= dt; if(p.magnetT<=0) p.pasMagnet = false; }
+  if(p._pasExp){ for(const kd in p._pasExp){ p._pasExp[kd] -= dt; if(p._pasExp[kd] <= 0){ const fl = _PAS_FLAG[kd]; if(fl) p[fl] = false; delete p._pasExp[kd]; } } }   // ►H5: solo el pasivo RECOGIDO caduca; ownPas (comprado) no             // ►INTERSTAGE: SOLO caduca el imán RECOGIDO (20s)…
   if(hasPas(p,'magnet') && Math.random()<dt*2.5) ring(_fxV.set(p.pos.x, p.pos.y+.15, p.pos.z), 0xe53935, 9, .35);   // …el COMPRADO (ownPas.magnet) no expira nunca (antes moría 1 frame tras comprarlo: nunca se le ponía magnetT)
   if(hasPas(p,'mines')){ p.mineT -= dt;                                                 // MINAS al andar
     if(p.mineT<=0 && p.onGround && (Math.abs(p.vel.x)+Math.abs(p.vel.z))>1.5){ p.mineT = 3; dropMine(p); } }
@@ -41795,6 +41805,7 @@ function stageResetPlayers(){
     /* carril TEMPORAL a cero: las cápsulas y los pasivos del suelo YA NO cruzan (antes SÍ lo hacían) */
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
+    p._capQ = []; p._pasExp = null;   // ►H5
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;
     p.mpow = 0; p.invuln = 1.5; endUlt(p); endBeam(p); clearFX(p);
     if(p._pkPhoenix) p._phoenixCharge = true;            // ►PERK RENACER: 1 revivir por stage
@@ -42566,6 +42577,7 @@ function frame(now){
     else if(CAMPAIGN && !TRAIN.on && STAGE!==13 && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
     updateLevels(dt);                                    // ►NIVEL
     updateCoins(dt);                                     // ►MONEDAS
+    updateCapTimers(dt);                                 // ►H5
     updateBossArena(rawDt);
     /* ►LEVIATAN: fuera de updateBelt a propósito — la pelea PARA la cinta (BELT.on=false) y updateBelt
        sale por su guarda, así que updateStagePir dejaría de correr justo cuando hace falta. */
@@ -42885,6 +42897,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p._rCount = 0;                                                   // ►SUPERR26: la cuenta de R es POR PARTIDA (ciclo 2 normales → 1 SUPER)
     p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
     p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
+    p._capQ = []; p._pasExp = null;   // ►H5
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;   // ►INTERSTAGE: timers de pasivo (antes se quedaban colgados)
     p.runXP = 0; p._runXPseen = 0;   // ►SHOP: cartera de EXP por jugador a cero (XP por RUN)
     p.coins = 0; p._coBuf = 0; p._coT = 0;   // ►MONEDAS: cartera de la run a cero
