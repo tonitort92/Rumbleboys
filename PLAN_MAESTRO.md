@@ -10,6 +10,12 @@ Orden acordado: A hosting → B progresión → C gira entera (V1) → D resto d
 F OBJ fase 2 → G logos. Cada bloque se commitea por hitos con humo headless (http://8181, nunca
 file://).
 
+**ESTADO (02/09/2026, noche):** A ✅ (repo público + Pages: https://tonitort92.github.io/Rumbleboys/;
+publicar avances = fast-forward de main). B ✅ (B1-B5) + **NIVELES V2** ✅ (PLAN_NIVELES_V2.md,
+H1-H5: 20 niveles, cartas 1/2 sin pausa, HUD LoL, suelo temporal) + E1 ✅ (+N en cliente); todo
+publicado hasta cb73036. D: PROPUESTAS_GIRA.md espera los OK/NO de Toni. Quedan: H6 playtest de
+calibración (Toni), C gira entera, E2 online 2 PCs (con Toni), F OBJ fase 2, G logos.
+
 ## A. HOSTING · sesión a9 · ⚠️ decisión de Toni · BLOQUEANTE para repartir enlaces
 
 El github.io actual da 404; por file:// el fetch de assets no funciona. Propuesta: GitHub Pages
