@@ -306,6 +306,8 @@ window.addEventListener('load', function(){
   .rkJ { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#9fffd8; display:flex; align-items:center; gap:2px; }
   .rkJ b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
   .rkJ.none { color:#ff8d8d; }
+  .rkCo { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#ffd84f; display:flex; align-items:center; gap:2px; }   /* ►MONEDAS */
+  .rkCo b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
   .rkHearts { display:flex; gap:2px; padding-left:22px; height:11px; align-items:center; }
   .rkHearts i { width:11px; height:11px; display:block; background:#ff5fa8; clip-path:path('M5.5 10.5 L1.2 6.2 C-0.2 4.8 0.3 2.2 2.3 1.6 C3.5 1.3 4.8 1.9 5.5 2.9 C6.2 1.9 7.5 1.3 8.7 1.6 C10.7 2.2 11.2 4.8 9.8 6.2 Z');
                 filter:drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
@@ -7775,7 +7777,7 @@ function frenzySkin(p, on){
   if(!on && p._frenzySkin){ for(const [m,h,i] of p._frenzySkin){ m.emissive.setHex(h); m.emissiveIntensity = i; } p._frenzySkin = null; }
 }
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.genki || p.rainT>0 || p._rainbowT>0); }   // ►SUPERR: + genkidama
-function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; } }   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
+function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; try{ spawnCoins(mn, k); }catch(e){} } }   // ►MONEDAS: el minion explota en monedas   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
 /* círculo del color de cada jugador, pegado al suelo: ves dónde caes y dónde estás */
 for(const _p of allPlayers){
   _p.groundRing = new THREE.Mesh(new THREE.RingGeometry(.55,.82,30),
@@ -7837,9 +7839,9 @@ function buildRank(){
     r.className = 'rkRow'+(p===P1?' me':'');
     r.style.setProperty('--pc', col);
     r.innerHTML = '<div class="rkL1"><b class="rkPos">'+(i+1)+'</b><i class="rkDot"></i>'+
-                  '<span class="rkName">'+_rankName(p)+'</span><u class="rkXP">0</u><em class="rkDmg">0%</em><span class="rkJ">⏫<b>0</b></span></div>'+
+                  '<span class="rkName">'+_rankName(p)+'</span><u class="rkXP">0</u><em class="rkDmg">0%</em><span class="rkJ">⏫<b>0</b></span><span class="rkCo">🪙<b>0</b></span></div>'+
                   '<div class="rkHearts"></div>';
-    r._dmg = -1; r._stk = -1; r._jr = -1;
+    r._dmg = -1; r._stk = -1; r._jr = -1; r._co = -1;   // ►MONEDAS
     r._pos = -1; r._xp = -1; r._st = 'x'; r._nm = _rankName(p);   // _pos=-1: el primer updateRank() SIEMPRE pinta puesto y clase de líder
     r.style.transform = 'translateY('+(i*RANK_ROW_H)+'px)';   // primer pintado: ya en su sitio (sin deslizar)
     el.appendChild(r); _rankRows.push(r);
@@ -7868,6 +7870,8 @@ function updateRank(){
       const nEl = row.querySelector('.rkXP'); nEl.textContent = xp;
       if(jump >= 5){ nEl.classList.remove('bump'); void nEl.offsetWidth; nEl.classList.add('bump'); }
     }
+    const co = p.coins|0;                                       // ►MONEDAS: cartera de la run (tienda entre mundos en B3)
+    if(row._co !== co){ row._co = co; const cEl = row.querySelector('.rkCo b'); if(cEl) cEl.textContent = co; }
     { /* ►RANKCHIP: daño % y corazones (solo escribe el DOM al cambiar) */
       const d = Math.round(p.damage||0);
       if(row._dmg !== d){ row._dmg = d; const e = row.querySelector('.rkDmg'); e.textContent = d+'%'; e.classList.toggle('hot', d >= 100); }
@@ -22824,6 +22828,80 @@ function lvlPaintBar(p){
   el.lastElementChild.textContent = max ? ('NIVEL '+L+' · MÁX') : ('NIVEL '+L+' · '+xp+'/'+hi);
   el.classList.toggle('max', max);
 }    // Q única por clase
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   ►MONEDAS — progresión B2 (DISENO_PROGRESION.md §2, 02/09/2026): al morir un minion (awardMinion,
+   solo bajas reales, no limpiezas de stage) saltan monedas físicas de la explosión, con valor según
+   el minion (MINION_PTS/10 repartido en 1..5 piezas). Ruedan con la cinta, se DESVANECEN a los 9 s
+   (parpadeo final) y las coge CUALQUIERA que pase (imán: 6 u con pasivo, 2,2 u de serie). Si otro
+   se lleva una moneda de tu baja en los 2,5 s siguientes, sale "¡ROBO!" sobre él: el sabotaje, a la
+   vista. p.coins es la cartera de la RUN (B3: tienda entre mundos). Host-authoritative: en online
+   el cliente recibe p.coins por snapshot (como el resto de drops, que hoy no viajan).
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+const coins = [];
+const COIN_LIFE = 9, COIN_MAX = 60;
+let _coinGeo = null, _coinMat = null; const _coinPool = [];
+function _coinMesh(){
+  if(!_coinGeo){ _coinGeo = new THREE.CylinderGeometry(.3, .3, .09, 14); _coinGeo.rotateX(Math.PI/2);
+    _coinMat = new THREE.MeshStandardMaterial({ color:0xffc93c, emissive:0xff9a00, emissiveIntensity:.55, metalness:.55, roughness:.35 }); }
+  const m = _coinPool.pop() || new THREE.Mesh(_coinGeo, _coinMat);
+  m.visible = true; m.scale.setScalar(1); scene.add(m); return m;
+}
+function _coinFree(c){ scene.remove(c.m); _coinPool.push(c.m); }
+function killCoin(i){ _coinFree(coins[i]); coins.splice(i, 1); }
+function clearCoins(){ for(const c of coins) _coinFree(c); coins.length = 0; }
+function coinValue(mn){ return Math.max(1, Math.round(((typeof MINION_PTS!=='undefined' && MINION_PTS[mn.type]) || 10) / 10)); }
+function spawnCoins(mn, killer){
+  if(!mn || !mn.pos || demo) return;
+  let total = coinValue(mn), n = Math.min(5, total), left = total;
+  const y0 = (mn._groundY != null) ? mn._groundY : mn.pos.y;
+  for(let i=0;i<n;i++){
+    const v = (i===n-1) ? left : Math.max(1, Math.round(total/n)); left -= v;
+    if(coins.length >= COIN_MAX) killCoin(0);
+    const a = Math.random()*Math.PI*2, sp = 2.5 + Math.random()*3;
+    const c = { m:_coinMesh(), pos:mn.pos.clone(), vel:new THREE.Vector3(Math.cos(a)*sp, 9 + Math.random()*4, Math.sin(a)*sp),
+                y0, st:'fly', life:COIN_LIFE, t:0, val:v, owner:killer||null, spin:Math.random()*6 };
+    c.pos.y += .8*(mn.scale||1); c.m.position.copy(c.pos); c.m.scale.setScalar(v>=3 ? 1.35 : 1);
+    coins.push(c);
+  }
+}
+function updateCoins(dt){
+  for(const p of players){ if((p._coT||0) > 0) p._coT -= dt;
+    if((p._coBuf||0) > 0 && (p._coT||0) <= 0 && p.pos){ try{ popKill(p.pos, '+'+p._coBuf+' 🪙', '#ffd84f'); }catch(e){} p._coBuf = 0; p._coT = .4; } }
+  if(!coins.length) return;
+  for(let i=coins.length-1;i>=0;i--){
+    const c = coins[i]; c.t += dt; c.life -= dt;
+    if(c.life <= 0){ killCoin(i); continue; }
+    if(BELT.on){ c.pos.x += BELT.vel*dt; if(c.pos.x > BELT.exitX) c.pos.x -= BELT._span; }
+    if(c.st === 'fly'){
+      c.vel.y -= 30*dt; c.pos.addScaledVector(c.vel, dt);
+      let g = null; try{ g = groundAt(c.pos.x, c.pos.z, c.pos.y - c.vel.y*dt, c.pos.y); }catch(e){}
+      if(g == null && c.vel.y < 0 && c.pos.y <= c.y0){ g = c.y0; }
+      if(g != null && c.vel.y < 0 && c.pos.y <= g + .05){ c.pos.y = g + .35; c.y0 = g; c.bn = (c.bn|0) + 1;
+        if(Math.abs(c.vel.y) > 6.5 && c.bn < 3){ c.vel.y *= -.35; c.vel.x *= .5; c.vel.z *= .5; } else { c.st = 'idle'; c.vel.set(0,0,0); } }   // 2 rebotes máx (caer desde el reposo ya da 4,6 de velocidad)
+      if(c.pos.y < c.y0 - 14){ killCoin(i); continue; }             // se cayó al vacío
+    } else {
+      c.pos.y = c.y0 + .35 + Math.sin(c.t*4 + c.spin)*.08;
+    }
+    c.m.rotation.y += 4.5*dt;
+    c.m.position.copy(c.pos);
+    c.m.visible = c.life > 3 || Math.floor(c.life*8)%2===0;
+    for(const p of players){
+      if(p.out || p.dead || !p.pos) continue;
+      const dx = p.pos.x - c.pos.x, dz = p.pos.z - c.pos.z, d = Math.hypot(dx, dz), dy = p.pos.y - c.pos.y;
+      if(Math.abs(dy) > 2.6) continue;
+      if(c.st === 'idle' && ((typeof hasPas==='function' && hasPas(p,'magnet') && d < 6) || d < 2.2)){
+        c.pos.x += dx*Math.min(1, 6*dt); c.pos.z += dz*Math.min(1, 6*dt); }
+      if(d < 1.1 && Math.abs(dy) < 1.9){
+        p.coins = (p.coins|0) + c.val; p._coBuf = (p._coBuf||0) + c.val;
+        try{ sfxEv('sparkle', { pos:c.pos }); }catch(e){}
+        try{ burst(c.pos, 0xffd060, 5, 4, 3, .5); }catch(e){}
+        if(c.owner && c.owner !== p && c.t < 2.5){ try{ popKill(p.pos, '¡ROBO!', '#ff8d8d'); showCombo(p, '¡ROBO!'); }catch(e){} }
+        killCoin(i); break;
+      }
+    }
+  }
+}
 
 function startAttack(p, kind='hammer'){
   if(p.atk.phase!=='none' || p.hitstun>0 || p.stun>0 || p.hang || p.block || p.beam) return;
@@ -41451,7 +41529,8 @@ function updateS10Wave(dt){
    Sustituye a los 9 bloques calcados de goToStage2..10 (~90 líneas duplicadas).
    ⚠️ closeStageScores() DEBE haber corrido antes: lee p.out/p.dead, y esto los limpia. */
 function stageResetPlayers(){
-  outCount = 0;                                          // el orden de muerte es POR STAGE
+  outCount = 0;
+  clearCoins();                                          // ►MONEDAS: las del mundo anterior no cruzan (la cartera p.coins sí)                                          // el orden de muerte es POR STAGE
   for(const p of players){
     p.stocks = (STAGE===13 ? 2 : 4) + (p.own.lives||0)*2;   // vidas base + las COMPRADAS (carta +2 VIDAS) · ►CUADRIMANIA: 2
     p.out = false; p.outOrder = 0;
@@ -42233,6 +42312,7 @@ function frame(now){
     /* SALVAVIDAS: si la plantilla FBX del jefe no cargó (caché/404), la campaña no puede terminar → 20s de gracia y fin por puntos */
     else if(CAMPAIGN && !TRAIN.on && STAGE!==13 && chaosLvl>=CHAOS_MAX && chaosT>=CHAOS_EVERY+20 && BOSSFIGHT.phase==='none' && !_bossTpl && !gameOver){ showBanner('¡SE ACABÓ EL CAOS!', 2.5); endGame(); }
     updateLevels(dt);                                    // ►NIVEL
+    updateCoins(dt);                                     // ►MONEDAS
     updateBossArena(rawDt);
     /* ►LEVIATAN: fuera de updateBelt a propósito — la pelea PARA la cinta (BELT.on=false) y updateBelt
        sale por su guarda, así que updateStagePir dejaría de correr justo cuando hace falta. */
@@ -42554,6 +42634,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.pasSpikes = p.pasElec = p.pasMagnet = p.pasMines = false;
     p.magnetT = 0; p.spikeT = 0; p.mineT = 0;   // ►INTERSTAGE: timers de pasivo (antes se quedaban colgados)
     p.runXP = 0; p._runXPseen = 0;   // ►SHOP: cartera de EXP por jugador a cero (XP por RUN)
+    p.coins = 0; p._coBuf = 0; p._coT = 0;   // ►MONEDAS: cartera de la run a cero
     p._buys = 0; p._buysThisStage = 0;   // ►INTERSTAGE: compras del run (inflan el precio) y del stage (tope)
     p._offer = null; p._rerolls = 0;     // ►DRAFT: la mano y las re-tiradas son de la run anterior
     p._pkLifesteal = false; p._pkAir = 0;   // ►PERKS: limpia perks generales de flag
@@ -45152,7 +45233,7 @@ window._net = {
       P.push({ i, x:+p.pos.x.toFixed(2), y:+p.pos.y.toFixed(2), z:+p.pos.z.toFixed(2), yaw:+p.yaw.toFixed(2),
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
-        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI) }); }   // ►NIVEL viaja   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
+        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0 }); }   // ►NIVEL y ►MONEDAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0 }); }catch(e){}
   },
@@ -45170,6 +45251,7 @@ window._net = {
       p.onGround = !!ps.og; p._dj = !!ps.dj;                                       // ►NETFIX2
       if(ps.lv!=null){ p._lvlBase = ps.lb|0; if(ps.lp!=null) p._lvlPasI = ps.lp; const _nl = Math.max(1, ps.lv|0), _ol = p.lvl||1;   // ►NIVEL: el cliente no simula, solo pinta el fogonazo
         if(_nl > _ol){ for(let k=_ol+1;k<=_nl;k++) levelUpFx(p, k); } p.lvl = _nl; }
+      if(ps.co != null) p.coins = ps.co|0;                                          // ►MONEDAS
       if(ps.sc && p.sc) Object.assign(p.sc, ps.sc);                                // ►NETFIX2: scoreTotal(p) lee p.sc → HUD y ranking del cliente al dia
       if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; if(p.out) fighterHide(p.gfx); else fighterShow(p.gfx); tagOutlineLayer(p.gfx.root); }   // ►LUZCONSTANTE (idempotente por _ljOff, 30 Hz sin coste)
     }
@@ -45224,6 +45306,7 @@ window.__I18N_DYN = (window.__I18N_DYN || []).concat([
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
   {"es":"NIVEL {0} · MÁX","t":["LEVEL {0} · MAX","LIVELLO {0} · MAX","NÍVEL {0} · MÁX","NIVEAU {0} · MAX","LEVEL {0} · MAX"]},
   {"es":"NIVEL {0} · {1}/{2}","t":["LEVEL {0} · {1}/{2}","LIVELLO {0} · {1}/{2}","NÍVEL {0} · {1}/{2}","NIVEAU {0} · {1}/{2}","LEVEL {0} · {1}/{2}"]},
+  {"es":"¡ROBO!","t":["STOLEN!","FURTO!","ROUBO!","VOLÉ !","GEKLAUT!"]},
   {"es":"{0}  ·  PASIVA: {1}","t":["{0}  ·  PASSIVE: {1}","{0}  ·  PASSIVA: {1}","{0}  ·  PASSIVA: {1}","{0}  ·  PASSIF : {1}","{0}  ·  PASSIV: {1}"]}
 ]);
 /* ►SUPERR: la pestaña SUPER R de la tienda y los carteles en partida. */
