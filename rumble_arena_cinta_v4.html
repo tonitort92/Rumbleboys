@@ -45519,7 +45519,9 @@ window._net = {
         if(_nl > _ol){ for(let k=_ol+1;k<=_nl;k++) levelUpFx(p, k); } p.lvl = _nl; }
       if(ps.co != null) p.coins = ps.co|0;                                          // ►MONEDAS
       if(ps.of !== undefined){ _lvlCardsInit(); p._lvOffer = ps.of ? { a:LVL_CARD_BY_K[ps.of[0]], b:LVL_CARD_BY_K[ps.of[1]]||null, t:+ps.of[2] } : null; if(p._lvOffer && !p._lvOffer.a) p._lvOffer = null; }   // ►CARTAS: solo para pintar; la elección va en el input
-      if(ps.sc && p.sc) Object.assign(p.sc, ps.sc);                                // ►NETFIX2: scoreTotal(p) lee p.sc → HUD y ranking del cliente al dia
+      if(ps.sc && p.sc){ const _b4 = (p._cliScore==null) ? null : p._cliScore; Object.assign(p.sc, ps.sc);
+        const _now = scoreTotal(p); if(_b4!=null && _now > _b4 && _now - _b4 < 600) p._cliBuf = (p._cliBuf||0) + (_now - _b4); p._cliScore = _now; }   // ►E1: el cliente no simula credit(): los +N salen del delta de puntos entre snapshots
+      else if(ps.sc && p.sc) Object.assign(p.sc, ps.sc);
       if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; if(p.out) fighterHide(p.gfx); else fighterShow(p.gfx); tagOutlineLayer(p.gfx.root); }   // ►LUZCONSTANTE (idempotente por _ljOff, 30 Hz sin coste)
     }
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
@@ -45532,6 +45534,8 @@ window._net = {
        (invitado)" no se quitaba nunca; particulas, decorado y clima quedaban congelados). */
     if(bannerT>0){ bannerT-=dt; if(bannerT<=0) banner.classList.remove('show'); }
     try{ animateDeco(dt); updateParts(dt); updateWeather(dt); }catch(e){}
+    for(const p of players){ if((p._cliT||0) > 0) p._cliT -= dt;                                  // ►E1: +N flotantes en el cliente (agrupados cada 0,45 s como popXP)
+      if((p._cliBuf||0) >= 1 && (p._cliT||0) <= 0){ try{ popKill(p.pos, '+'+Math.round(p._cliBuf), classColor(p)); }catch(e){} p._cliBuf = 0; p._cliT = .45; } }
     updateCamera(dt); updateHUD(); pollMoveSheet(); drawScene();
   },
 };
