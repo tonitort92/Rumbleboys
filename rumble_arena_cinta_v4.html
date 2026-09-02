@@ -18804,9 +18804,13 @@ function updateBossArena(rawDt){
           _bossGolemSwap();
           break;
         }
-        if(_showdownStart()) break;                          // ►SHOWDOWN (B4): antes del aro, la final del mundo
-        _bossOpenRing();
+        _bossCheer();                                        // ►RESPIRO (C1): 3 s de celebración antes de nada
       }
+      break;
+    }
+    case 'cheer': {                                          // ►RESPIRO: cámara lenta + "¡JEFE ABATIDO!"; luego showdown (solo Arena) o aro
+      BOSSFIGHT.t += rawDt;
+      if(BOSSFIGHT.t >= CHEER_T){ if(_showdownStart()) break; _bossOpenRing(); }
       break;
     }
     case 'showdown': { _showdownTick(rawDt); break; }        // ►SHOWDOWN: se pelea hasta que queda uno (o 60 s)
@@ -23044,6 +23048,21 @@ function updateCoins(dt){
   }
 }
 
+/* ►RESPIRO (MODOS C1, Toni 02/09/2026): al caer el jefe, ANTES del showdown o del aro, 3 s de celebración para que
+   el jugador cobre la catarsis: cámara lenta (parrySlow), "¡JEFE ABATIDO!", vítores, chispas doradas y los puntos
+   del mundo de cada jugador sobre su cabeza. Antes el showdown/aro entraban en el mismo frame y se comían el momento. */
+const CHEER_T = 3.0;
+function _bossCheer(){
+  BOSSFIGHT.phase = 'cheer'; BOSSFIGHT.t = 0;
+  try{ parrySlow = Math.max(parrySlow, CHEER_T*0.6); }catch(e){}            // parrySlow baja en tiempo real y frena dt a x0,3 mientras dura
+  try{ showBanner('¡JEFE ABATIDO!', 2.6); }catch(e){}
+  try{ crowdCheer && crowdCheer(1, true, true); }catch(e){}
+  try{ narrateAwe(); }catch(e){}
+  try{ canvas.style.filter = 'brightness(1.3)'; flashT = Math.max(flashT, .2); }catch(e){}
+  for(const p of players){ if(p.out || !p.pos) continue;
+    try{ popKill(p.pos, '★ '+lvlXP(p), classColor(p)); burst(p.pos, 0xffd060, 12, 6, 6, .8); }catch(e){} }
+}
+
 /* ►SHOWDOWN: abrir el ARO tras el jefe (antes vivía inline en el case 'dying'; ahora también lo llama
    el final del showdown). De paso sella la MEDALLA del mundo de quien no la tenga aún. */
 function _bossOpenRing(){
@@ -23075,7 +23094,12 @@ const MEDAL_XP = [200, 600, 1200];
 const MEDAL_TXT = ['SIN MEDALLA', '🥉 MEDALLA DE BRONCE', '🥈 MEDALLA DE PLATA', '🥇 MEDALLA DE ORO'];
 function medalFor(xp){ return xp >= MEDAL_XP[2] ? 3 : xp >= MEDAL_XP[1] ? 2 : xp >= MEDAL_XP[0] ? 1 : 0; }
 const SHOWDOWN = { on:false, done:false, t:0, dur:60, intro:2.6, parts:[], shadow:null, winner:null };
+/* ►MODOS (Toni 02/09/2026): el showdown y la corona viven SOLO en ARENA (online, 6 rondas). En CAMPAÑA el mundo acaba
+   con el respiro y el aro; la medalla es la nota. ARENA_MODE.on lo enciende el motor de rondas (bloque A1). Si en
+   Arena solo queda uno en pie, se corona directo: la SOMBRA queda retirada (código conservado, inalcanzable). */
+const ARENA_MODE = { on:false, rounds:[], i:0, seed:0, custom:false };
 function _showdownStart(){
+  if(!ARENA_MODE.on) return false;
   if(SHOWDOWN.on || demo || (typeof TRAIN!=='undefined' && TRAIN.on)) return false;
   if(window._net && _net.role && _net.role!=='local') return false;
   if(!players.some(p=>!p.isAI)) return false;
@@ -23085,9 +23109,9 @@ function _showdownStart(){
   for(const p of players){ p._medal = medalFor(lvlXP(p)); p._crown = false; }
   SHOWDOWN.parts = alive.slice();
   for(const p of alive){ p.damage = 0; p.stocks = 2; p.dead = false; p.invuln = SHOWDOWN.intro; try{ endUlt(p); }catch(e){} }
-  if(alive.length === 1){ const sh = _shadowSpawn(alive[0]); if(sh){ SHOWDOWN.shadow = sh; SHOWDOWN.parts.push(sh); } }
+  if(alive.length === 1){ BOSSFIGHT.phase = 'showdown'; _showdownEnd(alive[0]); return true; }   // ►MODOS: solo/a queda uno → corona directa (sobrevivir es ganar)
   BOSSFIGHT.phase = 'showdown';
-  showBanner(SHOWDOWN.shadow ? '¡SHOWDOWN! TU SOMBRA' : '¡SHOWDOWN! ÚLTIMO EN PIE', 2.6);
+  showBanner('¡SHOWDOWN! ÚLTIMO EN PIE', 2.6);
   try{ narrateAwe(); }catch(e){}
   return true;
 }
