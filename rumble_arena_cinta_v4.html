@@ -146,9 +146,9 @@ window.addEventListener('load', function(){
   /* ►BOTHUD: pila abajo-centro. Botones (arriba) + cards (abajo).
      --hudScale lo fija _applyHudScale() según el tamaño de pantalla (coherencia visual entre escalas). */
   :root { --hudScale:1.1; }
-  #botStack { position:fixed; left:50%; bottom:32px; z-index:23;
-              transform:translateX(-50%) scale(var(--hudScale)); transform-origin:bottom center;
-              display:flex; flex-direction:column; align-items:center; gap:9px; pointer-events:none; max-width:96vw; }
+  #botStack { position:fixed; left:16px; bottom:96px; z-index:23;   /* ►HUDLOL: atajos abajo-IZQUIERDA en horizontal; las fichas van abajo-centro */
+              transform:scale(var(--hudScale)); transform-origin:left bottom;
+              display:flex; flex-direction:column; align-items:flex-start; gap:9px; pointer-events:none; max-width:60vw; }
   /* cards de daño de TODOS los jugadores, en fila y centradas, bajo los botones */
   #cards { display:none !important; }   /* ►NOCARDS (Toni 23/08): el % y las vidas viven en las chips del panel izquierdo */
   #cards_off { display:flex; flex-direction:row; align-items:flex-start; justify-content:center; flex-wrap:wrap;
@@ -189,7 +189,7 @@ window.addEventListener('load', function(){
        del color del mando). Fuera, bajo el círculo, el nombre en pequeño.
      · UTILIDAD (Saltar/Dash): mismo círculo con el anillo tenue y fijo (no tienen cooldown). */
   @property --p { syntax:'<number>'; inherits:false; initial-value:1; }
-  #atkBar { display:flex; align-items:flex-start; justify-content:center; gap:12px; pointer-events:none;
+  #atkBar { display:flex; align-items:flex-start; justify-content:flex-start; gap:12px; pointer-events:none;
             transition:opacity .22s ease, transform .22s ease; font-family:'Segoe UI',system-ui,sans-serif; }
   #atkBar.hidden { opacity:0; transform:translateY(16px); }
   /* ►NIVEL (B1 progresión, 02/09/2026): barra de nivel del mundo sobre la barra de habilidades, fichas
@@ -204,7 +204,7 @@ window.addEventListener('load', function(){
   .hbtn.locked { filter:grayscale(1) brightness(.55); }
   .hbtn.locked .hLab { color:#ffd84f; font-size:11px; }
   .hbtn.locked.deny { animation: pwrDeny .45s; }
-  #lvlCards { position:fixed; left:16px; bottom:120px; z-index:24; pointer-events:none; width:372px;
+  #lvlCards { position:fixed; left:16px; bottom:226px; z-index:24;   /* ►HUDLOL: justo encima de los atajos */ pointer-events:none; width:372px;
               font-family:'Segoe UI',system-ui,sans-serif; transform:scale(var(--hudScale,1)); transform-origin:left bottom; }
   #lvlCards.hidden { display:none; }
   #lvlCards .lvTitle { font:900 15px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; letter-spacing:2px; color:#ffd84f; margin-bottom:6px; text-shadow:0 2px 6px rgba(0,0,0,.9); }
@@ -302,13 +302,15 @@ window.addEventListener('load', function(){
      Una fila por jugador, posicionada en ABSOLUTO y movida con transform → cuando alguien adelanta,
      las filas se DESLIZAN a su nuevo puesto (no saltan). Los eliminados se apagan en gris pero
      siguen en la lista y siguen desplazándose si les adelantan. */
-  #rank { position:fixed; left:16px; top:50%; z-index:23; width:240px; pointer-events:none;   /* ►RANKCHIP: 184→212 para que quepa CABALLERO + % */
-          transform:translateY(-50%) scale(var(--hudScale,1)); transform-origin:left center;
+  /* ►HUDLOL (NIVELES V2 H4): las fichas de los jugadores van ABAJO-CENTRO en horizontal (filas absolutas movidas
+     con translateX); los atajos, a la IZQUIERDA en horizontal con las cartas de nivel encima. */
+  #rank { position:fixed; left:50%; bottom:18px; z-index:23; height:44px; pointer-events:none;
+          transform:translateX(-50%) scale(calc(var(--hudScale,1) * var(--rkScale,1))); transform-origin:bottom center;   /* --rkScale: encoge la fila si no caben las fichas (buildRank) */
           transition:opacity .25s ease; font-family:'Segoe UI',system-ui,sans-serif; }
   #rank.hidden { opacity:0; }
   /* ►RANKCHIP (Toni 23/08): chip de DOS líneas tematizada con el color de clase — línea 1: puesto · clase · EXP · DAÑO %
      (grande, en el color del personaje, a la derecha del todo) · línea 2: VIDAS como corazones rosas. */
-  .rkRow { position:absolute; left:0; top:0; width:100%; height:44px; box-sizing:border-box;
+  .rkRow { position:absolute; left:0; top:0; width:240px; height:44px; box-sizing:border-box;
            display:flex; flex-direction:column; justify-content:center; gap:2px; padding:0 9px 0 7px; border-radius:14px;
            background:linear-gradient(90deg, color-mix(in srgb, var(--pc,#fff) 22%, rgba(8,11,24,.55)), rgba(8,11,24,.42));
            border:1px solid color-mix(in srgb, var(--pc,#fff) 45%, rgba(255,255,255,.09)); backdrop-filter:blur(5px);
@@ -344,7 +346,7 @@ window.addEventListener('load', function(){
           font-style:italic; color:#ffd84f; font-variant-numeric:tabular-nums;
           text-shadow:0 1px 3px rgba(0,0,0,.6); }
   .rkXP.bump { animation:rkBump .28s ease; }
-  .rkHdr { position:absolute; top:-15px; right:84px; font:900 10px/1 'Segoe UI',system-ui,sans-serif; font-style:italic;
+  .rkHdr { position:absolute; top:-15px; left:6px; font:900 10px/1 'Segoe UI',system-ui,sans-serif; font-style:italic;
            letter-spacing:1.5px; color:#ffd84f; text-shadow:0 1px 3px rgba(0,0,0,.8); }
   @keyframes rkBump { 0%{ transform:scale(1) } 45%{ transform:scale(1.22) } 100%{ transform:scale(1) } }
   .rkRow.up { border-color:rgba(122,255,200,.75); box-shadow:0 0 14px rgba(122,255,200,.35), 0 3px 12px rgba(0,0,0,.35); }
@@ -7847,6 +7849,7 @@ function buildHUD(){
    a otro, las dos filas se cruzan DESLIZÁNDOSE (transición CSS) en vez de saltar de sitio.
    El número es scoreTotal(p): el mismo cómputo de EXP que luego cobra la tienda entre stages.
    Un eliminado NO sale de la lista: se queda en gris y sigue desplazándose si le adelantan. */
+const RANK_ROW_W = 248;          // ►HUDLOL: paso horizontal entre fichas (240 px de ancho + 8 de aire)
 const RANK_ROW_H = 48;          // ►RANKCHIP: paso vertical entre filas (44 px de alto + 4 de aire) — cuadra con .rkRow del CSS
 let _rankRows = [];             // fila DOM por jugador, mismo índice que players
 function _rankName(p){ return (CLASS_PICK.find(cc=>cc[0]===p._charKey)||[])[1] || p.label; }
@@ -7864,10 +7867,12 @@ function buildRank(){
                   '<div class="rkHearts"></div>';
     r._dmg = -1; r._stk = -1; r._jr = -1; r._co = -1;   // ►MONEDAS
     r._pos = -1; r._xp = -1; r._st = 'x'; r._nm = _rankName(p);   // _pos=-1: el primer updateRank() SIEMPRE pinta puesto y clase de líder
-    r.style.transform = 'translateY('+(i*RANK_ROW_H)+'px)';   // primer pintado: ya en su sitio (sin deslizar)
+    r.style.transform = 'translateX('+(i*RANK_ROW_W)+'px)';   // primer pintado: ya en su sitio (sin deslizar) · ►HUDLOL: en horizontal
     el.appendChild(r); _rankRows.push(r);
   }
-  el.style.height = (players.length*RANK_ROW_H)+'px';
+  el.style.width = (players.length*RANK_ROW_W - 8)+'px';   // ►HUDLOL
+  try{ const hs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hudScale'))||1;
+       el.style.setProperty('--rkScale', Math.min(1, (innerWidth-40)/(players.length*RANK_ROW_W*hs)).toFixed(3)); }catch(e){}   // ►HUDLOL: 6-8 fichas no caben a escala 1
 }
 const _rankOrder = [];
 function updateRank(){
@@ -7880,7 +7885,7 @@ function updateRank(){
     if(row._pos !== k){                                        // ha cambiado de puesto → se desliza
       if(k < row._pos){ row.classList.add('up'); clearTimeout(row._upT); row._upT = setTimeout(()=>row.classList.remove('up'), 750); }   // ha ADELANTADO: destello verde
       row._pos = k;
-      row.style.transform = 'translateY('+(k*RANK_ROW_H)+'px)';
+      row.style.transform = 'translateX('+(k*RANK_ROW_W)+'px)';   // ►HUDLOL
       row.querySelector('.rkPos').textContent = (k+1);
       row.classList.toggle('lead', k===0);
     }
