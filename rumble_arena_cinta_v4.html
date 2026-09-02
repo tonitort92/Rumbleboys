@@ -20747,7 +20747,7 @@ function updatePvpShieldFX(){
       { sel:'#hdAtk',                t:'SUS GOLPES',      d:'Estas fichas son sus golpes y el botón de cada uno. Pasa por encima para ver cómo se hacen.' },
       { sel:'.hdNode',               t:'LA RUTA',         d:'Dieciséis mundos en orden. Se desbloquean ganando; pulsa uno para verlo en la ventana.' },
       { sel:['#hdCard','#hdTrain'],  t:'FICHA DEL MUNDO', d:'Tu mejor marca, puntos y trofeos de este mundo. ENTRENAR es práctica libre: aquí no se ganan trofeos.' },
-      { sel:'#hdMode',               t:'OFFLINE U ONLINE', d:'Offline juegas tú solo o con CPUs en este PC. Online, con amigos por internet en una sala.' },
+      { sel:'#hdPlay',               t:'GIRA O ARENA',     d:'Al pulsar JUGAR eliges qué (la GIRA de 16 mundos o la ARENA de 6 rondas) y con quién (tú solo con CPUs, u online con amigos).' },   // ►MODOS UX
       { sel:'#hdRailBox',            t:'EL CARRIL',       d:'Controles, cómo jugar bien, objetos, vitrina, logros, opciones e idioma. Todo lo demás vive aquí.' },
       { sel:'#hdPlay',               t:'A JUGAR',         d:'Gana el que MÁS PUNTOS suma: oleadas, objetos… y tumbar rivales es lo que más da. La carrera empieza en el mundo 1: ¡a por el primer trofeo!' },
     ];
@@ -24610,7 +24610,7 @@ function buildRoadmap(elId){
      roadmap, closeStageScores() ya ha marcado el stage actual como completado → `s===STAGE` nunca
      acertaría y los futuros quedarían todos igual de grises (sin indicar el destino). */
   let nowDone = true;
-  let h='<div class="roadCap">RUTA DE LA CAMPAÑA</div><div class="road">';
+  let h='<div class="roadCap">RUTA DE LA GIRA</div><div class="road">';   // ►MODOS UX
   CAMPAIGN_STAGES.forEach((s,i)=>{
     const e = STAGE_LOG.find(x=>x.stage===s), b = e && e.best;
     let cls;
@@ -45853,6 +45853,9 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "EMPEZAR GIRA":["START TOUR","INIZIA IL TOUR","COMEÇAR DIGRESSÃO","LANCER LA TOURNÉE","TOUR STARTEN"],
   "🌐 GIRA ONLINE":["🌐 ONLINE TOUR","🌐 TOUR ONLINE","🌐 DIGRESSÃO ONLINE","🌐 TOURNÉE EN LIGNE","🌐 ONLINE-TOUR"],
   "16 MUNDOS · 2 jugadores P2P":["16 WORLDS · 2 players P2P","16 MONDI · 2 giocatori P2P","16 MUNDOS · 2 jogadores P2P","16 MONDES · 2 joueurs P2P","16 WELTEN · 2 Spieler P2P"],
+  "RUTA DE LA GIRA":["TOUR ROUTE", "PERCORSO DELLA TOUR", "ROTA DA DIGRESSÃO", "PARCOURS DE LA TOURNÉE", "TOURN-ROUTE"],
+  "GIRA O ARENA":["TOUR OR ARENA","TOUR O ARENA","DIGRESSÃO OU ARENA","TOURNÉE OU ARÈNE","TOUR ODER ARENA"],
+  "Al pulsar JUGAR eliges qué (la GIRA de 16 mundos o la ARENA de 6 rondas) y con quién (tú solo con CPUs, u online con amigos).":["When you press PLAY you choose what (the 16-world TOUR or the 6-round ARENA) and with whom (solo vs CPUs, or online with friends).","Premendo GIOCA scegli cosa (il TOUR di 16 mondi o l'ARENA di 6 round) e con chi (da solo contro le CPU o online con gli amici).","Ao carregar em JOGAR escolhes o quê (a DIGRESSÃO de 16 mundos ou a ARENA de 6 rondas) e com quem (sozinho contra CPUs ou online com amigos).","En appuyant sur JOUER tu choisis quoi (la TOURNÉE de 16 mondes ou l'ARÈNE de 6 manches) et avec qui (seul contre des IA ou en ligne avec des amis).","Mit SPIELEN wählst du was (die 16-Welten-TOUR oder die 6-Runden-ARENA) und mit wem (allein gegen CPUs oder online mit Freunden)."],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
