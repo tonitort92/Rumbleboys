@@ -22754,8 +22754,14 @@ function classQ(p){ return (classKit(p).q||barbAxeQ)(p); }
    gira entera (C del plan maestro). Fuera de partida (demo de la home, entrenamiento, torre 13)
    no aplica: todo desbloqueado. Las CPUs pasan por las mismas puertas (classSuper/classF/classUlt).
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
-const LEVEL_XP  = [0, 200, 600, 1200];            // exp del mundo para nivel 1..4 (calibrar)
+/* ►NIVELES V2 (PLAN_NIVELES_V2.md, H1): 20 umbrales sobre la curva medida (~3.400 pts por mundo).
+   Curva 53·(n-1)^1,5: subidas cada ~10-15 s al principio (n2 = 50 pts ≈ 1-2 minions), boss a n16-18
+   (3.090-3.720), n20 (4.400) solo si lo bordas. Calibración final en H6. */
+const LEVEL_XP  = [0, 50, 150, 280, 420, 590, 780, 980, 1200, 1430, 1680, 1940, 2210, 2490, 2780, 3090, 3400, 3720, 4060, 4400];
 const LEVEL_MAX = LEVEL_XP.length;
+/* ►NIVELES V2 (H2): botones con desbloqueo FIJO — básico+Q+E desde n1; escudo n4, cuarto ataque (F) n8,
+   la R n14. Movilidad (salto/dash/agarrar) intocable. */
+const LEVEL_FIXED = { 4:'shield', 8:'f', 14:'r' };
 const LEVEL_PAS = [                                // pasiva del nivel 3 (va en p.boost: se borra sola al cambiar de mundo)
   { n:'VELOCIDAD',     fn:p=>{ p.boost.spd  = (p.boost.spd||0)  + 2; } },
   { n:'CADENCIA',      fn:p=>{ p.boost.rate = (p.boost.rate||0) + 2; } },
@@ -22765,7 +22771,7 @@ const LEVEL_PAS = [                                // pasiva del nivel 3 (va en 
 function lvlOn(){ return !demo && running && !(typeof TRAIN!=='undefined' && TRAIN.on) && STAGE!==13; }
 function lvlXP(p){ return Math.max(0, scoreTotal(p) - (p._lvlBase||0)); }
 function lvlOf(xp){ let l = 1; for(let i=1;i<LEVEL_XP.length;i++) if(xp >= LEVEL_XP[i]) l = i+1; return l; }
-function lvlNeed(slot){ return slot==='e' ? 2 : slot==='f' ? 3 : slot==='r' ? 4 : 1; }
+function lvlNeed(slot){ return slot==='shield' ? 4 : slot==='f' ? 8 : slot==='r' ? 14 : 1; }
 function lvlHas(p, slot){ if(!p || !lvlOn()) return true; return (p.lvl||1) >= lvlNeed(slot); }
 function lvlLocal(p){ return (window._net && _net.localPlayer) ? p===_net.localPlayer : p===P1; }
 function lvlSeal(p){ p._lvlBase = scoreTotal(p); p.lvl = 1; p._lvlPasI = -1; p._lvlDenyT = 0; }
@@ -22775,14 +22781,19 @@ function lvlDeny(p, slot){                          // el humano pulsa algo bloq
   const b = document.getElementById('atkb_'+slot); if(b){ b.classList.remove('deny'); void b.offsetWidth; b.classList.add('deny'); }
 }
 function levelUpApply(p, L){                        // efecto de juego (solo simulación = host)
-  if(L===3){ const i = Math.floor(Math.random()*LEVEL_PAS.length); p._lvlPasI = i; try{ LEVEL_PAS[i].fn(p); }catch(e){} }
+  p.damage = Math.max(0, (p.damage||0) - CAP_HEAL);  // ►NIVELES V2: subir cura (y NADA más automático: el build sale de las cartas, H3)
 }
 let _luT = null;
 function levelUpFx(p, L){                           // fogonazo: pop en el mundo para todos; flash+jingle+cartel grande solo para el local
   try{ if(p.pos) popKill(p.pos, '¡NIVEL '+L+'!', '#ffd84f'); }catch(e){}
   if(!lvlLocal(p)) return;
+  const slot = LEVEL_FIXED[L];
+  if(!slot){ try{ sfxEv('sparkle', { pos:p.pos }); }catch(e){} return; }   // nivel sin botón: pop + chispa (la elección de cartas llega en H3)
   const mv = CLASS_MOVES[p._charKey] || CLASS_MOVES.voxelhero;
-  const info = L===2 ? { t:'NUEVO ATAQUE', key:'E', n:mv.e } : L===3 ? { t:'NUEVO ATAQUE', key:'F', n:mv.f } : { t:'DEFINITIVA', key:'R', n:mv.r };
+  const slotDef = (typeof ATK_SLOTS!=='undefined' && ATK_SLOTS.find(x=>x.slot===slot)) || {};
+  const info = slot==='shield' ? { t:'NUEVO BOTÓN', key:slotDef.key||'T', n:'ESCUDO' }
+             : slot==='f'      ? { t:'NUEVO ATAQUE', key:slotDef.key||'F', n:mv.f }
+             :                   { t:'DEFINITIVA',   key:slotDef.key||'R', n:mv.r };
   try{ canvas.style.filter = 'brightness(1.35)'; flashT = Math.max(flashT, .18); }catch(e){}
   try{ sfx.combo(); }catch(e){}
   try{ showBanner('¡NIVEL '+L+'!', 1.4); }catch(e){}
@@ -22790,8 +22801,7 @@ function levelUpFx(p, L){                           // fogonazo: pop en el mundo
   el.querySelector('.luTitle').textContent = '¡NIVEL '+L+'!';
   el.querySelector('.luKey').textContent = info.key;
   el.querySelector('.luMove').textContent = info.n;
-  const pas = (L===3 && p._lvlPasI>=0 && LEVEL_PAS[p._lvlPasI]) ? LEVEL_PAS[p._lvlPasI].n : '';
-  el.querySelector('.luSub').textContent = info.t + (pas ? '  ·  PASIVA: ' + pas : '');
+  el.querySelector('.luSub').textContent = info.t;
   el.classList.remove('hidden'); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
   if(_luT) clearTimeout(_luT); _luT = setTimeout(()=>{ el.classList.remove('on'); el.classList.add('hidden'); }, 2300);
 }
@@ -22804,8 +22814,8 @@ function updateLevels(dt){                          // tick del host: sube nivel
     if(L > cur){ for(let k=cur+1;k<=L;k++){ levelUpApply(p, k); levelUpFx(p, k); } p.lvl = L; }
   }
 }
-function lvlPaintLocks(p){                          // fichas E/F/R en gris con "N2/N3/N4" hasta que se estrenan
-  for(const slot of ['e','f','r']){
+function lvlPaintLocks(p){                          // fichas escudo/F/R en gris con "N4/N8/N14" hasta que se estrenan
+  for(const slot of ['e','shield','f','r']){
     const b = document.getElementById('atkb_'+slot); if(!b) continue;
     const locked = !lvlHas(p, slot);
     if(b.classList.contains('locked') !== locked) b.classList.toggle('locked', locked);
@@ -25494,7 +25504,8 @@ function updateFighter(p, dt){
     {
       const libre = !_held && !p.counter && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.beam && !p.spin && !p.hang;
       const tap = inp.block && !p._blockHeld;   // FLANCO: pulsar, no mantener
-      if(!p.shieldT && tap && libre && p.shieldCD<=0 && p.onGround){
+      if(tap && !lvlHas(p,'shield')) lvlDeny(p,'shield');   // ►NIVELES V2: el escudo se estrena en el nivel 4
+      if(!p.shieldT && tap && libre && p.shieldCD<=0 && p.onGround && lvlHas(p,'shield')){
         p.shieldT = 1; p.block = true; p.shieldTick = 0; p.blockT = 0; p._crackLvl = 0; p.shieldWear = 0;
         p.shieldFlash = .25; p._shieldPoseT = .45; sfx.parry();   // _shieldPoseT: anim de alzar el escudo 1 vez (x2)
       } else if(p.shieldT && !libre) endShield(p);
@@ -45411,6 +45422,8 @@ window.__I18N_DYN=[{"es":"MODO CARRERA · {0} MUNDOS · PREPÁRATE","t":["RACE M
 /* ►NIVEL: barra de nivel, fichas bloqueadas y foganazo de level-up. */
 window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "NUEVO ATAQUE":["NEW ATTACK","NUOVO ATTACCO","NOVO ATAQUE","NOUVELLE ATTAQUE","NEUER ANGRIFF"],
+  "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
+  "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
   "¡SHOWDOWN! ÚLTIMO EN PIE":["SHOWDOWN! LAST ONE STANDING","SHOWDOWN! L'ULTIMO IN PIEDI","SHOWDOWN! O ÚLTIMO EM PÉ","SHOWDOWN ! DERNIER DEBOUT","SHOWDOWN! LETZTER STEHT"],
   "TU SOMBRA":["YOUR SHADOW","LA TUA OMBRA","A TUA SOMBRA","TON OMBRE","DEIN SCHATTEN"],
