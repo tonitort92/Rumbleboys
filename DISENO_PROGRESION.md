@@ -1,8 +1,7 @@
-# DISEÑO: progresión, nivel y economía (cerrado con Toni el 01/09/2026)
+# DISEÑO: progresión, nivel y economía (cerrado con Toni el 01–02/09/2026)
 
 Decisiones de diseño tomadas en conversación. Esto NO está implementado: es la referencia para
-cuando se implemente (después de cerrar el 4b de la alfa). El punto 4 (victoria/showdown/coronas)
-está aprobado en concepto pero SIN cerrar los detalles — no se anota aquí todavía.
+cuando se implemente (después de cerrar el 4b de la alfa).
 
 ## 1. Nivel dentro del mundo
 
@@ -39,10 +38,25 @@ está aprobado en concepto pero SIN cerrar los detalles — no se anota aquí to
 - **Loadout**: los ataques son un set fijo; con lo comprado en la home, antes de empezar la run
   eliges qué ataques llevas. Los desbloqueos por nivel dentro del mundo van sobre ese loadout.
 
+## 4. Victoria: medallas, showdown y coronas (cerrado 02/09/2026)
+
+- **Medalla del mundo**: la dan los PUNTOS acumulados en todo el mundo (oleadas + boss) contra
+  3 umbrales fijos por mundo → bronce / plata / oro. Es la nota personal: no compites contra
+  nadie, funciona igual solo o en multi. Cifras concretas a calibrar al implementar.
+- **Corona del mundo**: SHOWDOWN tras morir el boss — los jugadores vivos se pelean entre
+  ellos, cada uno con el kit ganado en ese mundo (nivel, ataques, pasivas). El último en pie
+  se corona. La progresión del mundo es tu arsenal en la final; el sabotaje, a la vista.
+- **Si solo queda uno (o juegas solo)**: peleas contra una SOMBRA de ti mismo — tu mismo nivel
+  y kit, un poco nerfeada (solo un poco). Si pierdes, tampoco hay corona: la corona SIEMPRE se
+  gana peleando, nunca por pasearse.
+- **La gira** la gana quien acumule más coronas a lo largo de los 16 mundos.
+- **Alcance alfa**: multi real queda como visión; en la alfa el showdown vivo es el duelo
+  contra la sombra.
+- Pendientes de implementación (no de diseño): nerf exacto de la sombra, umbrales por mundo,
+  y qué monedas suelta el boss antes del showdown (ojo con inflar la tienda de run).
+
 ## Pendiente
 
-- **Punto 4 (victoria)**: showdown tras el boss + coronas por mundo, aprobado en concepto,
-  detalles en debate. Se anotará aquí cuando se cierre.
 - **Punto 5 (bosses)**: se quedan los actuales tal cual; se trabajarán en el futuro.
 - **Reauditar TODOS los objetos** y crear nuevos en base a estas decisiones (los objetos ahora
   conviven con pasivas de nivel y monedas: revisar solapes y huecos).
