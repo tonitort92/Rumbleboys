@@ -87,13 +87,21 @@ Con los datos de C: diferenciar snowboard (13) del sandboard; hazard para jungla
 cámara por defecto más cerca; revisar goteo 0,5/s. Primero doc corto con propuestas → decisión
 de Toni → implementar.
 
-## E. ONLINE · reparto: +N cliente (7f, es código de simulación) · prueba 2 PCs (a9 + Toni)
+## E. ONLINE/RED · sesión 7f (único editor del HTML) · EN CURSO desde 03/09 ("aplica los cambios")
 
-1. **+N flotantes en el cliente**: credit()/vigilante viven en el host — enviar eventos de puntos
-   o derivar deltas de p.sc en applySnap.
-2. **Prueba entre DOS PCs reales (NAT)** — solo probado en localhost. Necesita a Toni y la URL
-   del bloque A. Anotar conexión, Hz, latencia percibida.
-3. Playtest online propio antes de enseñarlo en grupo (V3 del plan alfa).
+1. ✅ +N flotantes en el cliente (cb73036).
+2. **E-A Replicación del mundo host→cliente**: minions, jefe, objetos, monedas y proyectiles como
+   "fantasmas" pintados desde el snapshot — el cliente deja de estar en un mundo vacío. Es EL
+   límite anotado de la gira/arena online.
+3. **E-B**: 4 jugadores por sala (la alfa iba a 2).
+4. **E-C**: prueba entre DOS PCs reales (NAT) — a9 + Toni, con la URL pública.
+Pendientes menores APARCADOS hasta después del playtest de Toni: rótulo RONDA i/6, recortar el
+paso sobrante del asistente, OBJ fase 2 (bloque F), rasgo escaparate del mundo 1.
+
+**Carril de Toni ahora mismo**: (1) playtest H6 — 2-3 mundos: ¿cuándo llega la R, algún build
+roto, cartas legibles en 5 s, HUD?; probar el checkpoint (llegar al 8, morir en el 9, CONTINUAR);
+(2) decidir si reparte YA la alfa en solitario a 8-10 personas con el enlace público;
+(3) OK/NO a PROPUESTAS_GIRA.md.
 
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 
