@@ -32,11 +32,12 @@ cuando se implemente (después de cerrar el 4b de la alfa).
 - **Puntos** = exp del nivel + records. Motor durante el mundo. Ya no compran nada.
 - **Monedas** = compras DENTRO de la run: la tienda entre stages (la actual) vende
   **permanentes de run** que se pierden al acabar la run.
-- **Tienda de la home** = pequeñas mejoras permanentes al personaje: ataques nuevos a elegir,
-  arma nueva y super R. Decisión de Toni: da un poco de ventaja por llevar más tiempo jugando,
-  pero solo un poco — vigilar que se quede en "un poco".
-- **Loadout**: los ataques son un set fijo; con lo comprado en la home, antes de empezar la run
-  eliges qué ataques llevas. Los desbloqueos por nivel dentro del mundo van sobre ese loadout.
+- **Tienda de la home**: ~~mejoras leves permanentes + loadout~~ **RETIRADA de la alfa
+  (decisión de Toni, 02/09/2026 noche)**: con NIVELES V2 su papel quedó vacío (los ataques se
+  ganan por nivel, el build por cartas, y "todos empiezan cada mundo iguales" no admite ventaja
+  permanente comprada). Se oculta la tienda de la home CONSERVANDO los datos de guardado.
+  Futuro: reintroducirla como tienda de COSMÉTICOS sin poder (skins/tintes/gestos/personajes);
+  la ventaja por veteranía muere del todo — trofeos y récords cumplen esa función.
 
 ## 4. Victoria: medallas, showdown y coronas (cerrado 02/09/2026)
 
