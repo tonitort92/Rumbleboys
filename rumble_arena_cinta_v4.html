@@ -20325,6 +20325,7 @@ function updatePvpShieldFX(){
     #hdUName{ font-size:14px; } #hdUName small{ font-size:12px; }
     #hdULvl{ font-size:12.5px; } #hdUXp{ font-size:12px; }
     #hdCoins{ font-size:15px; padding:6px 12px; }
+    #hdCoins{ display:none !important; }   /* ►TIENDA-OFF: la moneda de logros alimentaba la tienda; sin tienda, sin contador */
     #hdAva{ width:48px; height:48px; font-size:24px; }
     /* toggle */
     .hdModeBtn{ width:176px; padding:8px 11px; }
@@ -20453,7 +20454,9 @@ function updatePvpShieldFX(){
       +   '<button type="button" class="hdModeBtn" data-mode="on"><b>JUGAR ONLINE</b><small>Con amigos por internet: crea o únete a una sala.</small></button>'
       + '</div>'
       + '<div id="hdRail"><div id="hdRailBox">'
-      +   '<button type="button" class="hdRb" data-act="shop"   data-lbl="TIENDA"     title="Tienda de mejoras">🛒</button>'   /* ►TIENDA26: primero y en grupo propio — es el único del rail que GASTA algo */
+      /* ►TIENDA-OFF (Toni 02/09/2026): la tienda de la home se RETIRA de la alfa (con NIVELES V2 su papel quedó vacío y no
+         admite ventaja permanente comprada). El botón desaparece; el modal, el save (perm/superR/slots/hab) y __hdShopOpen
+         se conservan intactos para que nadie pierda nada y para volver como tienda de cosméticos sin poder. */   /* ►TIENDA26: primero y en grupo propio — es el único del rail que GASTA algo */
       +   '<button type="button" class="hdRb sep" data-act="ctl" data-lbl="CONTROLES"  title="Controles">🎮</button>'
       +   '<button type="button" class="hdRb" data-act="tuto"   data-lbl="CÓMO JUGAR BIEN"   title="Cómo jugar bien">🎓</button>'
       +   '<button type="button" class="hdRb" data-act="guide"  data-lbl="OBJETOS Y MEJORAS"    title="Objetos y mejoras">📦</button>'
@@ -20649,7 +20652,7 @@ function updatePvpShieldFX(){
     function renderLogMini(){
       const ls = logrosState(), box = $('hdLogMiniList'), more = $('hdLogMore'); if(!box) return;
       const pend = LOGROS.filter(l => !ls.got[l.id]);
-      { const _co = $('hdLogMiniCo'); if(_co) _co.textContent = '🪙 ' + ls.coins; }   // (las monedas ya no van en el título — Toni 23/08)
+      { const _co = $('hdLogMiniCo'); if(_co) _co.textContent = ''; }   // ►TIENDA-OFF: contador de monedas de la home oculto (el save sigue sumando)
       box.innerHTML = pend.length ? pend.slice(0, _lmN).map(l => '<div class="hdLm"><div class="ic">' + l.ic + '</div><div class="tx"><b>' + l.t + '</b><span>' + l.d + '</span></div><div class="co">+' + l.co + '</div></div>').join('')
         : '<div class="hdLm"><div class="tx"><b>¡TODO DESBLOQUEADO!</b></div></div>';
       if(more) more.style.display = 'none';   // VER MAS retirado (Toni 23/08): la lista hace scroll
@@ -20704,7 +20707,7 @@ function updatePvpShieldFX(){
       { sel:'.hdNode',               t:'LA RUTA',         d:'Dieciséis mundos en orden. Se desbloquean ganando; pulsa uno para verlo en la ventana.' },
       { sel:['#hdCard','#hdTrain'],  t:'FICHA DEL MUNDO', d:'Tu mejor marca, puntos y trofeos de este mundo. ENTRENAR es práctica libre: aquí no se ganan trofeos.' },
       { sel:'#hdMode',               t:'OFFLINE U ONLINE', d:'Offline juegas tú solo o con CPUs en este PC. Online, con amigos por internet en una sala.' },
-      { sel:'#hdRailBox',            t:'EL CARRIL',       d:'Tienda, controles, cómo jugar bien, objetos, vitrina, logros, opciones e idioma. Todo lo demás vive aquí.' },
+      { sel:'#hdRailBox',            t:'EL CARRIL',       d:'Controles, cómo jugar bien, objetos, vitrina, logros, opciones e idioma. Todo lo demás vive aquí.' },
       { sel:'#hdPlay',               t:'A JUGAR',         d:'Gana el que MÁS PUNTOS suma: oleadas, objetos… y tumbar rivales es lo que más da. La carrera empieza en el mundo 1: ¡a por el primer trofeo!' },
     ];
     let tourEl = null, tourI = 0;
