@@ -16,6 +16,26 @@ H1-H5: 20 niveles, cartas 1/2 sin pausa, HUD LoL, suelo temporal) + E1 ✅ (+N e
 publicado hasta cb73036. D: PROPUESTAS_GIRA.md espera los OK/NO de Toni. Quedan: H6 playtest de
 calibración (Toni), C gira entera, E2 online 2 PCs (con Toni), F OBJ fase 2, G logos.
 
+## MODOS (decidido por Toni con 7f el 02/09 noche; pendiente ratificación formal por escrito)
+
+El juego se parte en DOS MODOS con dos UIs (la gira entera medía ~2 h):
+- **CAMPAÑA (offline, 16 mundos)**: oleadas → jefe → respiro ~3 s (slow-mo, ¡JEFE ABATIDO!) →
+  aro. Nota personal = medalla por puntos. SIN showdown/corona (la sombra se retira del juego).
+  **Checkpoint al ENTRAR en la parada 8 de la ruta (RUTA_I 7, Pirámide)** — guarda mundo,
+  monedas, perks de run y corazones; morir de la 8 en adelante ofrece CONTINUAR (también botón
+  en la home, JUGAR con gira guardada pide segunda pulsación); morir antes → al mundo 1;
+  terminar la gira borra el checkpoint. La puntuación se conserva al continuar.
+- **ARENA (online, ~45-50 min)**: 6 rondas M·M·mini·M·mini·M; ALEATORIO (semilla del anfitrión,
+  determinista) o PERSONALIZADO (el anfitrión elige, el invitado lo ve en vivo). Showdown real
+  entre vivos tras cada jefe SOLO aquí (un vivo = corona directa). Gana quien más coronas;
+  empate → puntos. Trofeos/coronas viven en Arena; la vitrina de campaña pasa a medallas.
+- Red: 2 jugadores en la alfa; 4 después (bloque E futuro).
+- Implementación: C1-C3 ✅ (cc8080a, 51a9a3e) · A1-A2 ✅ (2bcac3e, motor de rondas + podio por
+  coronas) · A3 en curso (lobby de Arena en #netLobby, playMultiBtn directo al lobby, UI de
+  campaña recortada). Todo verificado con humo doble (7f + a9) y publicado.
+- Abierto (Toni): ¿el invitado del lobby PERSONALIZADO puede vetar/cambiar rondas o solo mira?
+  (supuesto actual: solo mira).
+
 ## A. HOSTING · sesión a9 · ⚠️ decisión de Toni · BLOQUEANTE para repartir enlaces
 
 El github.io actual da 404; por file:// el fetch de assets no funciona. Propuesta: GitHub Pages
