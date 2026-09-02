@@ -45644,7 +45644,7 @@ window._net = {
     gInp(d=> this.recvInput(d));
     gSnap(d=> { this.snap=d; });
     gHi(d=> { this.peerCls=d.cls; this.tryStart(); });
-    room.onPeerJoin(id=>{ this.peerId=id; this.status(this.role==='host' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. El anfitrión elige las rondas…'); try{ sHi({cls:this._cls()}); }catch(e){}
+    room.onPeerJoin(id=>{ this.peerId=id; this.status(this.role==='host' ? (MATCH.plan==='arena' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. Pulsa EMPEZAR GIRA.') : (MATCH.plan==='arena' ? 'Conectado. El anfitrión elige las rondas…' : 'Conectado. Esperando al anfitrión…')); try{ sHi({cls:this._cls()}); }catch(e){}
       try{ if(window._arenaLobby) _arenaLobby.show(this.role); }catch(e){} this.tryStart(); });   // ►ARENA: el lobby de rondas aparece al conectar
     room.onPeerLeave(()=>{ this.peerId=null; this.status('El otro jugador se desconectó.'); });
     this.status(role==='host' ? ('Sala creada: '+code+'   ·   esperando al rival…') : ('Uniéndote a '+code+'…'));
@@ -45856,6 +45856,8 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "RUTA DE LA GIRA":["TOUR ROUTE","PERCORSO DEL TOUR","ROTA DA DIGRESSÃO","PARCOURS DE LA TOURNÉE","TOUR-ROUTE"],
   "GIRA O ARENA":["TOUR OR ARENA","TOUR O ARENA","DIGRESSÃO OU ARENA","TOURNÉE OU ARÈNE","TOUR ODER ARENA"],
   "Al pulsar JUGAR eliges qué (la GIRA de 16 mundos o la ARENA de 6 rondas) y con quién (tú solo con CPUs, u online con amigos).":["When you press PLAY you choose what (the 16-world TOUR or the 6-round ARENA) and with whom (solo vs CPUs, or online with friends).","Premendo GIOCA scegli cosa (il TOUR di 16 mondi o l'ARENA di 6 round) e con chi (da solo contro le CPU o online con gli amici).","Ao carregar em JOGAR escolhes o quê (a DIGRESSÃO de 16 mundos ou a ARENA de 6 rondas) e com quem (sozinho contra CPUs ou online com amigos).","En appuyant sur JOUER tu choisis quoi (la TOURNÉE de 16 mondes ou l'ARÈNE de 6 manches) et avec qui (seul contre des IA ou en ligne avec des amis).","Mit SPIELEN wählst du was (die 16-Welten-TOUR oder die 6-Runden-ARENA) und mit wem (allein gegen CPUs oder online mit Freunden)."],
+  "Conectado. Pulsa EMPEZAR GIRA.":["Connected. Press START TOUR.","Connesso. Premi INIZIA IL TOUR.","Ligado. Carrega em COMEÇAR DIGRESSÃO.","Connecté. Appuie sur LANCER LA TOURNÉE.","Verbunden. Drücke TOUR STARTEN."],
+  "Conectado. Esperando al anfitrión…":["Connected. Waiting for the host…","Connesso. In attesa dell'host…","Ligado. À espera do anfitrião…","Connecté. En attente de l'hôte…","Verbunden. Warte auf den Host…"],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
