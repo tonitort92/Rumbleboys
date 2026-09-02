@@ -60,3 +60,26 @@ cuando se implemente (después de cerrar el 4b de la alfa).
 - **Punto 5 (bosses)**: se quedan los actuales tal cual; se trabajarán en el futuro.
 - **Reauditar TODOS los objetos** y crear nuevos en base a estas decisiones (los objetos ahora
   conviven con pasivas de nivel y monedas: revisar solapes y huecos).
+
+## 5b. Auditoría de objetos de suelo (B5, 02/09/2026) — hecho y decisiones pendientes
+
+Estado tras implementar B1-B4 (nivel, monedas, economía, showdown). Auditoría completa en la memoria
+de la sesión; aquí lo que importa.
+
+**Aplicado (ajustes medidos, sin cambiar diseño):**
+- Densidad: items simultáneos 12 → 6 y cápsulas 14 → 7. Antes podía haber 86 objetos en el suelo
+  y las monedas eran lo más pequeño y lo único sin halo. Monedas algo más grandes (1,25 / 1,6).
+- Topes: el daño acumulaba cápsulas sin límite (y ×5 con el arcoíris) → tope de 8 cápsulas; la
+  defensa llegaba a −82% con 14 cápsulas + eléctrico → suelo del 30%.
+- Bug: el tope de salto descontaba lo comprado en la run pero no lo permanente, y recortaba en
+  silencio el +1 de la pasiva SALTO del nivel 3.
+
+**Decisiones de Toni (cerradas el 02/09/2026 y aplicadas):**
+1. Cápsula de VELOCIDAD retirada de CAP_TYPES (duplicaba la pasiva de nivel 3 y saturaba el clamp).
+2. Recoger un objeto pasa de +15 a +5 puntos (scoreTotal, mérito de la nota y pop): la exp es de matar.
+3. Loadout: la pestaña HABILIDADES de la tienda de la home se retira hasta que los ataques tengan
+   ejecución real en partida (post-alfa). Lo comprado antes queda guardado en el save, sin efecto.
+
+**Huecos anotados para después de la alfa:** ningún objeto interactúa con las monedas salvo el imán;
+no hay objeto de robo/sabotaje; el jefe no suelta monedas (la tienda de run vive de la horda + 5 por
+sobrevivir).

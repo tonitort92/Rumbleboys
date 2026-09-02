@@ -7770,7 +7770,7 @@ function scoreTotal(p){
   /* ►16 PARADAS: `mini` son los puntos que traes de un minijuego MODULO (descensos, tubo). Van en
      su propia categoria y no mezclados en `bonus`, que es el x1.3 de superviviente: asi el recuento
      del tablero sigue diciendo la verdad de donde salio cada punto. */
-  const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*15 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0) + (s.mini||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
+  const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*5 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0) + (s.mini||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 /* ►FRENZYSKIN · piel incandescente del bárbaro en Frenesí: emissive rojo en todos sus materiales, se restaura al acabar */
 function frenzySkin(p, on){
@@ -9832,10 +9832,10 @@ function jmpMul(p){
   return base * (1 + .07*lv)
        * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1);   // ►S10ZEROG: empujón extra fuera del clamp
 }
-function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*bst(p,'dmg')) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p.rainbowT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1); }   // ►PERK BERSERKER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
+function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*Math.min(8, bst(p,'dmg'))) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p.rainbowT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1); }   // ►PERK BERSERKER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
 function dmgMul(p){   return _dmgBase(p) * clsStat(p,'dmg'); }      // básicos / golpes físicos
 function spellMul(p){ return _dmgBase(p) * clsStat(p,'spell'); }   // HECHIZOS (rayo arcano del mago, etc.)
-function defMul(p){ return Math.pow(.9, bst(p,'def')) * (hasPas(p,'elec')?.78:1) * clsStat(p,'def') * ((p.buffDefT>0)?(p.buffDefV||0.5):1); }   // electricidad -22%; boost de defensa temporal (cura) con magnitud variable
+function defMul(p){ return Math.max(.30, Math.pow(.9, bst(p,'def'))) * (hasPas(p,'elec')?.78:1) * clsStat(p,'def') * ((p.buffDefT>0)?(p.buffDefV||0.5):1); }   // electricidad -22%; boost de defensa temporal (cura) con magnitud variable
 function kbMul(p){
   let e = 0, w = 1;
   const n = bst(p,'kb');
@@ -9947,7 +9947,7 @@ const CAP_TYPES = [
   { k:'dmg', col:0xff1822, label:'+DAÑO',      ic:'👊' },
   { k:'def', col:0x2277ff, label:'+DEFENSA',   ic:'🛡️' },
   { k:'kb',  col:0xff8800, label:'+EMPUJE',    ic:'➡️' },
-  { k:'spd', col:0x1ed94a, label:'+VELOCIDAD', ic:'🏃' },
+  /* ►B5 (Toni, 02/09/2026): la cápsula +VELOCIDAD se retira — duplicaba exacto la pasiva de nivel 3 y saturaba contra el clamp 1,8 */
   { k:'jmp', col:0x00cfff, label:'+SALTO',     ic:'⤒' },     // ►MUELLE: hereda el icono del pasivo MUELLE (retirado: era lo mismo que esta cápsula)
   { k:'airj',col:0x9b6bff, label:'+SALTO EXTRA', ic:'🪽' },   // ►SALTO EXTRA (cápsula): +1 salto aéreo esta vida, clampado en airJumps a MAX_AIR_JUMPS (4 en total)
   { k:'rate',col:0x16e0c8, label:'+CADENCIA',  ic:'⏩' },
@@ -10729,7 +10729,7 @@ function updateCapsules(dt){
   capT -= dt;
   if(capT<=0){
     const boss = inBossArena();                             // ►BOSSDROP: corazones escasos en la arena del jefe
-    if(capsules.length < (boss?2:14)) spawnCapsule();
+    if(capsules.length < (boss?2:7)) spawnCapsule();   // ►B5: 14→7 para que las MONEDAS se lean en el suelo
     capT = boss ? (7 + Math.random()*6)                     // un corazón cada ~7-13s (máx 2 a la vez)
                 : (Math.max(0.8, 3 - chaosLvl*.25)/1.5)*(0.6+Math.random()*.6);   // muchísimas más, y más con el caos (con tope simultáneo)
   }
@@ -10774,7 +10774,7 @@ function updateCapsules(dt){
       if(p.dead) continue;
       const d = Math.hypot(p.pos.x-c.m.position.x, p.pos.z-c.m.position.z);
       if(d<1.05 && Math.abs(p.pos.y-c.y0)<1.6){
-        p.sc.items++; p._xpBuf = (p._xpBuf||0) + 15;
+        p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5;   // ►B5 (Toni): +15→+5, la exp es de matar
         if(c.ty.heal){                           // corazón: cura el daño acumulado
           p.damage = Math.max(0, p.damage - CAP_HEAL);
           showCombo(p, '+SALUD');
@@ -10783,7 +10783,7 @@ function updateCapsules(dt){
           p.sc.boosts++;
           p.boost[c.ty.k]++;
           if(c.ty.k==='airj') p.boost.airj = Math.min(p.boost.airj, CAP_AIRJ_MAX);   // ►SALTO EXTRA: cápsulas dan como mucho +3 (→ máx 5 saltos por stage sin tienda); evita HUD con ×99 inservibles
-          if(c.ty.k==='jmp')  p.boost.jmp  = Math.min(p.boost.jmp, Math.max(0, JMP_LV_MAX - ((p.own&&p.own.jmp)||0)));   // ►TOPE SALTO: cuenta cápsulas + tienda; el contador no sube por encima de lo que de verdad hace efecto
+          if(c.ty.k==='jmp')  p.boost.jmp  = Math.min(p.boost.jmp, Math.max(0, JMP_LV_MAX - ((p.own&&p.own.jmp)||0) - ((p.perm&&p.perm.jmp)||0)));   // ►B5: el tope contaba own pero no perm → recortaba en silencio el +1 de la pasiva de nivel   // ►TOPE SALTO: cuenta cápsulas + tienda; el contador no sube por encima de lo que de verdad hace efecto
           showCombo(p, c.ty.label+' x'+p.boost[c.ty.k]);
           sfx.boost();
         }
@@ -11199,7 +11199,7 @@ function killItem(i){
   items.splice(i,1);
 }
 function giveItem(p, it){
-  p.sc.items++; p._xpBuf = (p._xpBuf||0) + 15;
+  p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5;   // ►B5 (Toni): +15→+5
   p._oneShot = 'pickup'; p._oneShotT = 0.5;                 // humanoide: animación de recoger
   try{ const c0 = p.pos.clone().add(new THREE.Vector3(0,1,0)); burst(c0, p.color, 8, 5, 4, .7); ring(c0, 0xffffff, 10, .3); jiggle(p, 8); hitSpark(c0, new THREE.Vector3(0,1,0), p.color, .8); }catch(e){}   // ►JUICE: recoger se ve
 
@@ -11235,7 +11235,7 @@ function dropWeapon(p){
 }
 function updateItems(dt){
   itemT -= dt;
-  if(itemT<=0){ if(!inBossArena() && STAGE!==13 && items.length < 12) spawnItem(); itemT = (Math.max(0.9, 3.5 - chaosLvl*.3)/1.5)*(0.6+Math.random()*.6); }   // ►BOSSDROP: NADA de armas/pasivos/arcoíris en la arena del jefe · ►CUADRIMANIA: ni en la torre (petición de Toni) · muchas más fuera, y más con el caos (con tope simultáneo)
+  if(itemT<=0){ if(!inBossArena() && STAGE!==13 && items.length < 6 /* ►B5: 12→6 */) spawnItem(); itemT = (Math.max(0.9, 3.5 - chaosLvl*.3)/1.5)*(0.6+Math.random()*.6); }   // ►BOSSDROP: NADA de armas/pasivos/arcoíris en la arena del jefe · ►CUADRIMANIA: ni en la torre (petición de Toni) · muchas más fuera, y más con el caos (con tope simultáneo)
   for(let i=items.length-1;i>=0;i--){
     const it = items[i];
     it.t += dt;
@@ -20478,7 +20478,7 @@ function updatePvpShieldFX(){
       document.body.appendChild(sm);
 
       let shopTab = 'attr';
-      const TABS = [ ['attr','ATRIBUTOS'], ['super','SUPER R'], ['hab','HABILIDADES'] ];
+      const TABS = [ ['attr','ATRIBUTOS'], ['super','SUPER R'] ];   // ►B5 (Toni): la pestaña HABILIDADES se retira hasta que los ataques tengan ejecución en partida (post-alfa)
       const shopChar = ()=> (typeof MATCH!=='undefined' && MATCH.cls) || 'voxelhero';
       const shopCharName = ()=>{ const k = shopChar(), pk = (typeof CLASS_PICK!=='undefined' ? CLASS_PICK : []).find(c => c[0]===k); return pk ? pk[1] : k; };
       const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -22858,7 +22858,7 @@ function spawnCoins(mn, killer){
     const a = Math.random()*Math.PI*2, sp = 2.5 + Math.random()*3;
     const c = { m:_coinMesh(), pos:mn.pos.clone(), vel:new THREE.Vector3(Math.cos(a)*sp, 9 + Math.random()*4, Math.sin(a)*sp),
                 y0, st:'fly', life:COIN_LIFE, t:0, val:v, owner:killer||null, spin:Math.random()*6 };
-    c.pos.y += .8*(mn.scale||1); c.m.position.copy(c.pos); c.m.scale.setScalar(v>=3 ? 1.35 : 1);
+    c.pos.y += .8*(mn.scale||1); c.m.position.copy(c.pos); c.m.scale.setScalar(v>=3 ? 1.6 : 1.25);   // ►B5: algo más grandes (eran lo más pequeño del suelo)
     coins.push(c);
   }
 }
@@ -23719,7 +23719,7 @@ function gradeFor(p){
   const s = p.sc || {};
   const REF = 150;                                  // duración de referencia en seg (ajustable)
   const T = Math.max(30, matchT);                   // suelo 30s: no inflar partidas muy cortas
-  const merit = s.dmg + s.mk*24 + s.items*15 + s.kills*210 + s.specials*60;   // combate (sin surv ni bonus por puesto)
+  const merit = s.dmg + s.mk*24 + s.items*5 + s.kills*210 + s.specials*60;   // combate (sin surv ni bonus por puesto)
   const q = merit * (REF / T) - (s.deaths||0)*70;   // ← proporcional a la duración
   for(const t of GRADE_TIERS){ if(q>=t[0]) return { label:t[1], color:t[2] }; }
   return { label:'D-', color:'#ff8d8d' };

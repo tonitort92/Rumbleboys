@@ -34,6 +34,12 @@ convención vieja — su fase 2 está pendiente; añade OBJ nuevos como los exis
 
 ## Cómo se valida aquí
 
+**Antes de commitear el HTML: `node _check_parse.js`.** Parsea todos los `<script>` inline; un paréntesis
+o un comentario `//` a mitad de línea deja muerto el script principal entero y el juego arranca sin
+modelos, sin audio y sin entrada (pasó el 02/09/2026 y el 8181 lo sirvió en vivo). Nunca insertes
+`// comentario` en medio de una línea de código: usa `/* */` o ponlo al final.
+
+
 Hay navegador headless disponible (Edge + CDP desde Node): se puede arrancar el juego de verdad,
 capturar el canvas y comparar A/B. Antes de dar por buena una mejora visual o de rendimiento,
 **mídela** — en esta sesión eso ha desmontado tres hipótesis que parecían obvias. La receta está en
