@@ -306,6 +306,9 @@ window.addEventListener('load', function(){
   .rkJ { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#9fffd8; display:flex; align-items:center; gap:2px; }
   .rkJ b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
   .rkJ.none { color:#ff8d8d; }
+  #lbMedal { font:900 17px/1.3 'Segoe UI',system-ui,sans-serif; color:#ffd84f; text-align:center; letter-spacing:2px; margin:6px 0 2px;
+             text-shadow:0 2px 6px rgba(0,0,0,.9); }   /* ►SHOWDOWN */
+  #lbMedal.crown { color:#fff; text-shadow:0 0 14px rgba(255,216,79,.9), 0 2px 6px rgba(0,0,0,.9); }
   .rkCo { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#ffd84f; display:flex; align-items:center; gap:2px; }   /* ►MONEDAS */
   .rkCo b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
   .rkHearts { display:flex; gap:2px; padding-left:22px; height:11px; align-items:center; }
@@ -18775,18 +18778,12 @@ function updateBossArena(rawDt){
           _bossGolemSwap();
           break;
         }
-        BOSSFIGHT.phase='opened'; BOSSFIGHT.sealed=false;   // último gólem → se abre el ARO
-        if(BOSSFIGHT.ring){ const _pcO = portalPalette();   // ►PORTALCOL: al abrirse CONSERVA el color del mundo (antes se forzaba a verde) — solo BRILLA más para señalar que ya se cruza
-          BOSSFIGHT.ring.torus.material.color.setHex(_pcO[0]); BOSSFIGHT.ring.torus.material.emissive.setHex(_pcO[1]);
-          BOSSFIGHT.ring.torus.material.emissiveIntensity = 1.9;
-          const _mu = BOSSFIGHT.ring.memb && BOSSFIGHT.ring.memb.material.uniforms;
-          if(_mu){ _mu.uColA.value.setHex(_pcO[2]); _mu.uColB.value.setHex(_pcO[3]); } }
-        spawnTrophy();   // ►TROFEOS: el jefe ha caído → el trofeo del mundo sale del aro y vuela al líder
-        showBanner('¡EL ARO SE ABRE! ¡CRUZADLO!', 3.0); crowdCheer&&crowdCheer(.8,true);
-        if(music) fadeMusic(.4, 1.5);
+        if(_showdownStart()) break;                          // ►SHOWDOWN (B4): antes del aro, la final del mundo
+        _bossOpenRing();
       }
       break;
     }
+    case 'showdown': { _showdownTick(rawDt); break; }        // ►SHOWDOWN: se pelea hasta que queda uno (o 60 s)
     case 'opened': {
       for(const p of players){ if(p.dead||p.out) continue;
         const crossed = RING_FWD<0 ? (p.pos.z < bossRZ+2) : (p.pos.z > bossRZ-2);
@@ -22903,6 +22900,111 @@ function updateCoins(dt){
   }
 }
 
+/* ►SHOWDOWN: abrir el ARO tras el jefe (antes vivía inline en el case 'dying'; ahora también lo llama
+   el final del showdown). De paso sella la MEDALLA del mundo de quien no la tenga aún. */
+function _bossOpenRing(){
+  BOSSFIGHT.phase='opened'; BOSSFIGHT.sealed=false;   // último gólem → se abre el ARO
+  if(BOSSFIGHT.ring){ const _pcO = portalPalette();   // ►PORTALCOL: al abrirse CONSERVA el color del mundo (antes se forzaba a verde) — solo BRILLA más para señalar que ya se cruza
+    BOSSFIGHT.ring.torus.material.color.setHex(_pcO[0]); BOSSFIGHT.ring.torus.material.emissive.setHex(_pcO[1]);
+    BOSSFIGHT.ring.torus.material.emissiveIntensity = 1.9;
+    const _mu = BOSSFIGHT.ring.memb && BOSSFIGHT.ring.memb.material.uniforms;
+    if(_mu){ _mu.uColA.value.setHex(_pcO[2]); _mu.uColB.value.setHex(_pcO[3]); } }
+  for(const p of players){ if(p._medal == null) p._medal = medalFor(lvlXP(p)); }
+  try{ if(P1 && !P1.isAI && players.indexOf(P1)>=0 && P1._medal>0) saveBump(sv=>{ sv.medals = sv.medals||{}; sv.medals[STAGE] = Math.max(sv.medals[STAGE]||0, P1._medal); }); }catch(e){}
+  spawnTrophy();   // ►TROFEOS: el jefe ha caído → el trofeo del mundo sale del aro y vuela al líder
+  showBanner('¡EL ARO SE ABRE! ¡CRUZADLO!', 3.0); crowdCheer&&crowdCheer(.8,true);
+  if(music) fadeMusic(.4, 1.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   ►SHOWDOWN + MEDALLAS — progresión B4 (DISENO_PROGRESION.md §4, 02/09/2026).
+   MEDALLA del mundo = puntos del mundo contra los mismos umbrales del nivel (bronce n2, plata n3, oro
+   n4): nota personal, igual solo o en multi; se sella al empezar el showdown (antes de los ×150 del PvP).
+   SHOWDOWN: al morir el jefe, antes de abrir el aro, los que siguen en pie se pelean en la arena del
+   cielo (horda apagada, cinta parada) con el kit del mundo; 2 vidas cada uno, daño a cero. Si solo
+   queda uno (o juegas solo) aparece TU SOMBRA: mismo personaje, nivel y pasivas, tintada oscura, con
+   un 30% de daño de salida como único nerf. Último en pie = CORONA (se guarda en save.crowns[STAGE]);
+   la sombra no se corona. Tope 60 s: gana quien tenga más vidas y menos daño. Al acabar se revive a los
+   caídos con 1 vida para que puedan cruzar el aro. No corre en demo/entrenamiento/online-cliente.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+const MEDAL_XP = [200, 600, 1200];
+const MEDAL_TXT = ['SIN MEDALLA', '🥉 MEDALLA DE BRONCE', '🥈 MEDALLA DE PLATA', '🥇 MEDALLA DE ORO'];
+function medalFor(xp){ return xp >= MEDAL_XP[2] ? 3 : xp >= MEDAL_XP[1] ? 2 : xp >= MEDAL_XP[0] ? 1 : 0; }
+const SHOWDOWN = { on:false, done:false, t:0, dur:60, intro:2.6, parts:[], shadow:null, winner:null };
+function _showdownStart(){
+  if(SHOWDOWN.on || demo || (typeof TRAIN!=='undefined' && TRAIN.on)) return false;
+  if(window._net && _net.role && _net.role!=='local') return false;
+  if(!players.some(p=>!p.isAI)) return false;
+  const alive = players.filter(p=>!p.out);
+  if(!alive.length) return false;
+  SHOWDOWN.on = true; SHOWDOWN.done = false; SHOWDOWN.t = 0; SHOWDOWN.winner = null; SHOWDOWN.shadow = null;
+  for(const p of players){ p._medal = medalFor(lvlXP(p)); p._crown = false; }
+  SHOWDOWN.parts = alive.slice();
+  for(const p of alive){ p.damage = 0; p.stocks = 2; p.dead = false; p.invuln = SHOWDOWN.intro; try{ endUlt(p); }catch(e){} }
+  if(alive.length === 1){ const sh = _shadowSpawn(alive[0]); if(sh){ SHOWDOWN.shadow = sh; SHOWDOWN.parts.push(sh); } }
+  BOSSFIGHT.phase = 'showdown';
+  showBanner(SHOWDOWN.shadow ? '¡SHOWDOWN! TU SOMBRA' : '¡SHOWDOWN! ÚLTIMO EN PIE', 2.6);
+  try{ narrateAwe(); }catch(e){}
+  return true;
+}
+function _shadowSpawn(src){
+  const sh = allPlayers.find(q => players.indexOf(q) < 0); if(!sh) return null;
+  sh._charKey = src._charKey; sh.isAI = true; sh.label = 'TU SOMBRA'; sh._isShadow = true; sh._tinted = false;
+  sh.out = false; sh.outOrder = 0; sh.dead = false; sh.stocks = 2; sh.damage = 30; sh.invuln = SHOWDOWN.intro; sh.mpow = 0;
+  sh.lvl = src.lvl||1; sh._lvlBase = 0; sh._lvlPasI = -1;
+  sh.boost = Object.assign({}, src.boost||{}); sh.own = Object.assign({}, src.own||{});
+  sh.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 };
+  sh.pos.copy(src.pos); sh.pos.x += (src.pos.x < 0 ? 6 : -6); sh.vel.set(0,0,0); sh.yaw = (src.yaw||0) + Math.PI;
+  if(!sh.ai) sh.ai = { think:0, dir:new THREE.Vector3(), atkDelay:0, blockWant:false, blockTimer:0, blockDelay:-1 };
+  players.push(sh);
+  try{ applySkin(sh); }catch(e){ console.warn('[showdown] skin', e); }
+  try{ if(sh.gfx){ fighterShow(sh.gfx); if(sh.gfx.root) sh.gfx.root.position.copy(sh.pos); } }catch(e){}
+  try{ buildHUD(); buildRank(); }catch(e){}
+  return sh;
+}
+function _shadowTint(sh){   // el modelo puede llegar un frame después de applySkin: tinta cuando esté
+  if(sh._tinted || !sh.gfx || !sh.gfx.root) return;
+  if(sh._appliedKey !== undefined && sh._appliedKey !== sh._charKey) return;
+  let n = 0;
+  sh.gfx.root.traverse(o => { if(o.isMesh && o.material && !o.userData._origMat){
+    o.userData._origMat = o.material; const m = o.material.clone();
+    if(m.color) m.color.multiplyScalar(.3); if(m.emissive){ m.emissive.setHex(0x5a2bd0); m.emissiveIntensity = .9; }
+    o.material = m; n++; } });
+  if(n) sh._tinted = true;
+}
+function _shadowRemove(){
+  const sh = SHOWDOWN.shadow; if(!sh) return;
+  const i = players.indexOf(sh); if(i >= 0) players.splice(i, 1);
+  try{ if(sh.gfx && sh.gfx.root) sh.gfx.root.traverse(o => { if(o.userData && o.userData._origMat){ o.material = o.userData._origMat; delete o.userData._origMat; } }); }catch(e){}
+  sh._isShadow = false; sh.out = true; sh.dead = true; sh.label = '';
+  try{ clearFX(sh); fighterHide(sh.gfx); }catch(e){}
+  try{ buildHUD(); buildRank(); }catch(e){}
+  SHOWDOWN.shadow = null;
+}
+function _showdownTick(dt){
+  SHOWDOWN.t += dt;
+  if(SHOWDOWN.ending){ if(SHOWDOWN.t >= 2.5){ SHOWDOWN.ending = false; _bossOpenRing(); } return; }   // que el cartel de la corona se lea antes del aro
+  if(SHOWDOWN.shadow) _shadowTint(SHOWDOWN.shadow);
+  const alive = SHOWDOWN.parts.filter(p => !p.out);
+  let w = null, end = false;
+  if(alive.length <= 1){ end = true; w = alive[0] || null; }
+  else if(SHOWDOWN.t >= SHOWDOWN.dur){ end = true; w = alive.slice().sort((a,b)=> (b.stocks-a.stocks) || (a.damage-b.damage))[0]; }
+  if(end) _showdownEnd(w);
+}
+function _showdownEnd(w){
+  SHOWDOWN.on = false; SHOWDOWN.done = true; SHOWDOWN.winner = w;
+  const real = w && !w._isShadow;
+  if(real){ w._crown = true;
+    try{ popKill(w.pos, '👑 ¡CORONA!', '#ffd84f'); showCombo(w, '¡CORONA!'); }catch(e){}
+    if(w === P1 && !P1.isAI) saveBump(sv => { sv.crowns = sv.crowns||{}; sv.crowns[STAGE] = (sv.crowns[STAGE]||0) + 1; }); }
+  showBanner(real ? ('👑 ' + (w.label||'') + ' SE CORONA') : 'SIN CORONA', 2.5);
+  _shadowRemove();
+  for(const p of SHOWDOWN.parts){ if(p._isShadow || players.indexOf(p) < 0) continue;
+    if(p.out){ p.out = false; p.dead = false; p.outOrder = 0; p.stocks = 1; p.damage = 0; try{ respawn(p); }catch(e){} }
+    p.invuln = 2; }
+  SHOWDOWN.ending = true; SHOWDOWN.t = 0;   // _showdownTick abre el aro a los 2,5 s
+}
+
 function startAttack(p, kind='hammer'){
   if(p.atk.phase!=='none' || p.hitstun>0 || p.stun>0 || p.hang || p.block || p.beam) return;
   const rm = rateMul(p);   // CADENCIA: acorta preparación y recuperación → pegas más seguido
@@ -24248,6 +24350,11 @@ function showBoardScreen(){
     if(nm && best){ const wn=(CLASS_PICK.find(cc=>cc[0]===best.charKey)||[])[1] || best.label || '???';
       nm.textContent='🏆 GANADOR DEL STAGE: '+wn+' · ★'+best.pts; }
     if(wl) wl.classList.add('shown');
+    /* ►SHOWDOWN: la MEDALLA del mundo y la CORONA (o su ausencia) del humano, bajo el ganador */
+    try{ const md = P1._medal|0, cr = !!P1._crown; let el = document.getElementById('lbMedal');
+      if(!el){ el = document.createElement('div'); el.id = 'lbMedal'; if(nm && nm.parentNode) nm.parentNode.insertBefore(el, nm.nextSibling); }
+      el.textContent = MEDAL_TXT[md] + (cr ? '  ·  👑 CORONA' : (SHOWDOWN.done ? '  ·  SIN CORONA' : ''));
+      el.classList.toggle('crown', cr); }catch(e){}
   }catch(e){ console.warn('[lbWinLabel]', e); }
   buildRoadmap('lbRoad');
   const ranked = players.slice().sort((a,b)=> scoreTotal(b)-scoreTotal(a));   // clasificación por PUNTOS del run
@@ -41554,7 +41661,9 @@ function stageResetPlayers(){
     p.mpow = 0; p.invuln = 1.5; endUlt(p); endBeam(p); clearFX(p);
     if(p._pkPhoenix) p._phoenixCharge = true;            // ►PERK RENACER: 1 revivir por stage
     lvlSeal(p);                                          // ►NIVEL: cada mundo empieza en nivel 1 (la exp del mundo cuenta desde aquí)
+    p._medal = null; p._crown = false;                   // ►SHOWDOWN
   }
+  SHOWDOWN.on = false; SHOWDOWN.done = false; SHOWDOWN.ending = false; SHOWDOWN.parts = []; _shadowRemove();
 }
 
 /* ===== CAMPAÑA: transición REAL al Stage 2 al cruzar el portal del jefe 1 =====
@@ -45302,6 +45411,16 @@ window.__I18N_DYN=[{"es":"MODO CARRERA · {0} MUNDOS · PREPÁRATE","t":["RACE M
 /* ►NIVEL: barra de nivel, fichas bloqueadas y foganazo de level-up. */
 window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "NUEVO ATAQUE":["NEW ATTACK","NUOVO ATTACCO","NOVO ATAQUE","NOUVELLE ATTAQUE","NEUER ANGRIFF"],
+  "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
+  "¡SHOWDOWN! ÚLTIMO EN PIE":["SHOWDOWN! LAST ONE STANDING","SHOWDOWN! L'ULTIMO IN PIEDI","SHOWDOWN! O ÚLTIMO EM PÉ","SHOWDOWN ! DERNIER DEBOUT","SHOWDOWN! LETZTER STEHT"],
+  "TU SOMBRA":["YOUR SHADOW","LA TUA OMBRA","A TUA SOMBRA","TON OMBRE","DEIN SCHATTEN"],
+  "SIN CORONA":["NO CROWN","SENZA CORONA","SEM COROA","PAS DE COURONNE","KEINE KRONE"],
+  "👑 ¡CORONA!":["👑 CROWN!","👑 CORONA!","👑 COROA!","👑 COURONNE !","👑 KRONE!"],
+  "¡CORONA!":["CROWN!","CORONA!","COROA!","COURONNE !","KRONE!"],
+  "SIN MEDALLA":["NO MEDAL","SENZA MEDAGLIA","SEM MEDALHA","PAS DE MÉDAILLE","KEINE MEDAILLE"],
+  "🥉 MEDALLA DE BRONCE":["🥉 BRONZE MEDAL","🥉 MEDAGLIA DI BRONZO","🥉 MEDALHA DE BRONZE","🥉 MÉDAILLE DE BRONZE","🥉 BRONZEMEDAILLE"],
+  "🥈 MEDALLA DE PLATA":["🥈 SILVER MEDAL","🥈 MEDAGLIA D'ARGENTO","🥈 MEDALHA DE PRATA","🥈 MÉDAILLE D'ARGENT","🥈 SILBERMEDAILLE"],
+  "🥇 MEDALLA DE ORO":["🥇 GOLD MEDAL","🥇 MEDAGLIA D'ORO","🥇 MEDALHA DE OURO","🥇 MÉDAILLE D'OR","🥇 GOLDMEDAILLE"],
   "🛒 TIENDA · tus MONEDAS:":["🛒 SHOP · your COINS:","🛒 NEGOZIO · le tue MONETE:","🛒 LOJA · as tuas MOEDAS:","🛒 BOUTIQUE · tes PIÈCES :","🛒 SHOP · deine MÜNZEN:"],
   "DEFINITIVA":["ULTIMATE","DEFINITIVA","DEFINITIVA","ULTIME","ULTIMATE"],
   "CORAZÓN EXTRA":["EXTRA HEART","CUORE EXTRA","CORAÇÃO EXTRA","CŒUR BONUS","EXTRA-HERZ"],
@@ -45313,6 +45432,9 @@ window.__I18N_DYN = (window.__I18N_DYN || []).concat([
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
   {"es":"NIVEL {0} · MÁX","t":["LEVEL {0} · MAX","LIVELLO {0} · MAX","NÍVEL {0} · MÁX","NIVEAU {0} · MAX","LEVEL {0} · MAX"]},
   {"es":"NIVEL {0} · {1}/{2}","t":["LEVEL {0} · {1}/{2}","LIVELLO {0} · {1}/{2}","NÍVEL {0} · {1}/{2}","NIVEAU {0} · {1}/{2}","LEVEL {0} · {1}/{2}"]},
+  {"es":"👑 {0} SE CORONA","t":["👑 {0} TAKES THE CROWN","👑 {0} SI INCORONA","👑 {0} É COROADO","👑 {0} EST COURONNÉ","👑 {0} WIRD GEKRÖNT"]},
+  {"es":"{0}  ·  👑 CORONA","t":["{0}  ·  👑 CROWN","{0}  ·  👑 CORONA","{0}  ·  👑 COROA","{0}  ·  👑 COURONNE","{0}  ·  👑 KRONE"]},
+  {"es":"{0}  ·  SIN CORONA","t":["{0}  ·  NO CROWN","{0}  ·  SENZA CORONA","{0}  ·  SEM COROA","{0}  ·  PAS DE COURONNE","{0}  ·  KEINE KRONE"]},
   {"es":"¡ROBO!","t":["STOLEN!","FURTO!","ROUBO!","VOLÉ !","GEKLAUT!"]},
   {"es":"{0}  ·  PASIVA: {1}","t":["{0}  ·  PASSIVE: {1}","{0}  ·  PASSIVA: {1}","{0}  ·  PASSIVA: {1}","{0}  ·  PASSIF : {1}","{0}  ·  PASSIV: {1}"]}
 ]);
