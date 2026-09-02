@@ -204,6 +204,23 @@ window.addEventListener('load', function(){
   .hbtn.locked { filter:grayscale(1) brightness(.55); }
   .hbtn.locked .hLab { color:#ffd84f; font-size:11px; }
   .hbtn.locked.deny { animation: pwrDeny .45s; }
+  #lvlCards { position:fixed; left:16px; bottom:120px; z-index:24; pointer-events:none; width:372px;
+              font-family:'Segoe UI',system-ui,sans-serif; transform:scale(var(--hudScale,1)); transform-origin:left bottom; }
+  #lvlCards.hidden { display:none; }
+  #lvlCards .lvTitle { font:900 15px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; letter-spacing:2px; color:#ffd84f; margin-bottom:6px; text-shadow:0 2px 6px rgba(0,0,0,.9); }
+  #lvlCards .lvRow { display:flex; gap:10px; }
+  .lvCard { position:relative; flex:1; background:rgba(8,11,26,.86); border:2px solid rgba(255,255,255,.35); border-radius:12px; padding:10px 10px 9px; color:#fff;
+            box-shadow:0 4px 14px rgba(0,0,0,.55); animation: lvCardIn .22s ease-out; }
+  .lvCard.atk { border-color:#ff9a3c; } .lvCard.stat { border-color:#5fd0ff; }
+  .lvCard .lvHint { position:absolute; top:-12px; left:8px; display:flex; gap:4px; align-items:center; }
+  .lvCard .lvHint b { display:inline-flex; width:22px; height:22px; border-radius:6px; background:#fff; color:#111; font:900 13px/1 'Segoe UI',system-ui,sans-serif; align-items:center; justify-content:center; box-shadow:0 2px 0 #999; }
+  .lvCard .lvHint i { font-style:normal; font-size:12px; color:#9fb0d6; }
+  .lvCard .lvIc { font-size:26px; line-height:1; margin-top:4px; }
+  .lvCard .lvName { font:900 13px/1.1 'Segoe UI',system-ui,sans-serif; letter-spacing:1px; margin-top:4px; }
+  .lvCard .lvDesc { font:600 11px/1.25 'Segoe UI',system-ui,sans-serif; color:#c9d3ea; margin-top:3px; }
+  #lvlCards .lvTimer { height:5px; margin-top:6px; background:rgba(255,255,255,.14); border-radius:3px; overflow:hidden; }
+  #lvlCards .lvTimer i { display:block; height:100%; width:100%; background:#ffd84f; box-shadow:0 0 8px #ffd84f; }
+  @keyframes lvCardIn { from{ transform:translateY(12px); opacity:0; } to{ transform:none; opacity:1; } }
   #lvlUp { position:fixed; left:50%; top:30%; transform:translate(-50%,-50%); opacity:0; z-index:36; pointer-events:none;
            text-align:center; font-family:'Segoe UI',system-ui,sans-serif; }
   #lvlUp.on { animation: lvlUpPop 2.2s ease-out forwards; }
@@ -1602,6 +1619,7 @@ window.addEventListener('load', function(){
   <button id="endNowBtn">TERMINAR PARTIDA</button>
   <div id="specBar"></div>
   <div id="xpPops"></div>
+  <div id="lvlCards" class="hidden"></div><!-- ►CARTAS: elección de nivel (1/2 · cruceta) -->
   <div id="lvlUp" class="hidden"><div class="luTitle"></div><div class="luKey"></div><div class="luMove"></div><div class="luSub"></div></div><!-- ►NIVEL: fogonazo de level-up -->
 </div>
 
@@ -7756,8 +7774,8 @@ const MINION_PTS = { small:10, shooter:25, large:50, brute:120, drone:40 };   //
 const MPOW_MAX = 300;                                    // barra de minions llena (ajustable)
 const ULT_WIND = 2, ULT_DUR = 4, ULT_RMAX = 20, ULT_DMG = 60;   // definitiva (ajustable)
 const ULT_SUPER_DUR = 6.5, ULT_SUPER_RMAX = 32;   // ►SUPERR bruja: la doble expansión dura más y llega a 32
-function addMpow(p, amt){ p.mpow = Math.min(MPOW_MAX, (p.mpow||0)+amt*((p&&p._pkUltCharge)?1.5:1)); }   // ►PERK CARGA VELOZ: la definitiva se llena 50% más rápido
-function credit(p, d){ if(p && p.sc){ p.sc.dmg += d; p._xpBuf = (p._xpBuf||0) + d; } if(p && p._pkLifesteal && d>0 && !p.dead){ p.damage = Math.max(0, p.damage - d*0.15); }   /* ►PERK ROBO DE VIDA: recupera el 15% del daño causado */ noteHit(p); if(d>=12) charVoice(p,'hehe',0.4); }   // pegada fuerte → "hehe"
+function addMpow(p, amt){ p.mpow = Math.min(MPOW_MAX, (p.mpow||0)+amt*((p&&p._pkUltCharge)?1.5:1)*((p&&p._lvR)||1)); }   /* ►CARTAS: R CARGA VELOZ */   // ►PERK CARGA VELOZ: la definitiva se llena 50% más rápido
+function credit(p, d){ if(p && p.sc){ p.sc.dmg += d; p._xpBuf = (p._xpBuf||0) + d; } if(p && (p._pkLifesteal || p._lvSteal) && d>0 && !p.dead){ p.damage = Math.max(0, p.damage - d*0.15); }   /* ►PERK ROBO DE VIDA: recupera el 15% del daño causado */ noteHit(p); if(d>=12) charVoice(p,'hehe',0.4); }   // pegada fuerte → "hehe"
 function nearestPlayer(p){ let best=null, bd=Infinity;
   for(const o of players){ if(o===p||o.dead) continue; const d=p.pos.distanceToSquared(o.pos); if(d<bd){ bd=d; best=o; } }
   return best; }
@@ -19184,7 +19202,7 @@ function startSpin(p){
   if(p.spin || p.spinCD>0 || p.atk.phase!=='none' || p.beam || p.ult || p.charge ||
      p.hang || p.block || p.hitstun>0 || p.stun>0 || p.dead || !p.onGround) return false;
   p.spin = { t:0, tick:0, mtick:0 };
-  p.spinCD = SPIN_CD;
+  p.spinCD = SPIN_CD*(p._lvF||1);   /* ►CARTAS */
   p.sc.specials++;                                  // cuenta como especial (puntos)
   if(!p.spinGfx) p.spinGfx = buildSpinGfx(p.color);
   scene.add(p.spinGfx.g);
@@ -19251,7 +19269,7 @@ function updateSpin(p, dt){
 
 /* ===== ESCUDO: burbuja de empuje (los timers/p.block se llevan en updateFighter) ===== */
 /* ►ESCUDO3: TODO fin de escudo (agotado, golpe, otra acción) pone el CD y limpia el desgaste. */
-function endShield(p){ if(p.shieldT>0){ p.shieldT = 0; p.shieldCD = SHIELD_CD; } p.shieldWear = 0; p._crackLvl = 0; }
+function endShield(p){ if(p.shieldT>0){ p.shieldT = 0; p.shieldCD = SHIELD_CD*(p._lvSh||1); }   /* ►CARTAS: ESCUDO VELOZ */ p.shieldWear = 0; p._crackLvl = 0; }
 function updateShield(p, dt){
   if(p.dead || p.shieldT<=0) return;
   p.shieldTick -= dt;
@@ -21353,6 +21371,7 @@ function updateHUD(){
   }
   /* barra de PUNTOS del humano: se llena por tramos y se intensifica al subir */
   lvlPaintBar((window._net && _net.localPlayer) ? _net.localPlayer : P1);   // ►NIVEL: barra de nivel del mundo
+  lvlCardsPaint((window._net && _net.localPlayer) ? _net.localPlayer : P1);  // ►CARTAS
   const xb = document.getElementById('xpbar');
   if(xb){ const N = scoreTotal(P1);
     if(xb._N !== N){ xb._N = N;                       // ►PERF2: solo re-estiliza cuando cambian los puntos
@@ -22168,7 +22187,7 @@ function priestHeal(p){
   if(p.dead) return true;
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.hitstun>0 || p.stun>0) return false;   // golpeado: el buffer reintenta hasta que puedas
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   const tgt = supportTarget(p);
   tgt.damage = Math.max(0, tgt.damage - HEAL_AMT); tgt.hitFlash = .15;
   const vc = tgt.pos.clone().add(new THREE.Vector3(0,1,0));
@@ -22181,7 +22200,7 @@ function mageEmpower(p){
   if(p.dead) return true;
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.hitstun>0 || p.stun>0) return false;   // golpeado: el buffer reintenta hasta que puedas
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   const tgt = supportTarget(p);
   tgt.buffDmgT = BUFF_DUR;
   const vc = tgt.pos.clone().add(new THREE.Vector3(0,1,0));
@@ -22193,7 +22212,7 @@ function knightGuard(p){
   if(p.dead) return true;
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.hitstun>0 || p.stun>0) return false;   // golpeado: el buffer reintenta hasta que puedas
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   const tgt = supportTarget(p);
   tgt.buffDefT = BUFF_DUR; tgt.shieldFlash = .3;
   const vc = tgt.pos.clone().add(new THREE.Vector3(0,1,0));
@@ -22238,7 +22257,7 @@ function barbSlamTick(p, dt){
 function barbLeapSlam(p){
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.atk.phase!=='none' || p.beam || p.hang || p.hitstun>0 || p.stun>0 || !p.onGround) return false;
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   p.vel.y = Math.max(p.vel.y, 8); p.onGround=false;        // saltito teatral
   p._slamPoseT = .95;                                      // ►SLAM3: pose larga (clip a media velocidad)
   showCombo(p,'¡PISOTÓN!'); sfx.charge();
@@ -22253,7 +22272,7 @@ function samuraiIaido(p){
   if(p.atk.phase!=='none' || p.beam || p.hang || p.hitstun>0 || p.stun>0) return false;
   /* dirección: hacia el rival más cercano si lo hay; si no, hacia donde miras (sin moverse del sitio) */
   const foe = nearestFoe(p, 30); if(foe) p.yaw = Math.atan2(foe.pos.x-p.pos.x, foe.pos.z-p.pos.z);
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   p._iaidoT = .4;   // pose de corte (la lee updateFighter) — ya NO hay sprint/i-frames ni empuje propio
   spawnSlashLine(p);
   if(p._pkTwinSlash){ const _y=p.yaw; p.yaw=_y+0.42; spawnSlashLine(p); p.yaw=_y-0.42; spawnSlashLine(p); p.yaw=_y; }   // ►PERK DOBLE IAIDO: 3 líneas de corte en abanico
@@ -22369,7 +22388,7 @@ function _spawnArrow(p, yaw, vmul, life){
 function archerFan(p){
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.dead||p.hitstun>0||p.stun>0||p.hang||p.beam||p.atk.phase!=='none') return false;
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   const foe=nearestFoe(p,40); if(foe) p.yaw=Math.atan2(foe.pos.x-p.pos.x, foe.pos.z-p.pos.z);
   const _fan = p._pkFanWide ? [-0.52,-0.39,-0.26,-0.13,0,0.13,0.26,0.39,0.52] : [-0.32,-0.16,0,0.16,0.32];   // ►PERK MULTIDISPARO DENSO: abanico de 9
   for(const off of _fan) _spawnArrow(p, p.yaw+off, 27, 2.2);
@@ -22470,7 +22489,7 @@ const ZONE_DUR = 3, ZONE_R = 6, ZONE_TICK = 0.35, ZONE_DMG = 13;
 function mageZoneE(p){
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.atk.phase!=='none' || p.beam || p.hang || p.hitstun>0 || p.stun>0) return false;
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   const foe = nearestFoe(p, 24);
   const zx = foe ? foe.pos.x : p.pos.x + Math.sin(p.yaw)*6;
   const zz = foe ? foe.pos.z : p.pos.z + Math.cos(p.yaw)*6;
@@ -22508,7 +22527,7 @@ const FSHIELD_DUR = 3.2, FSHIELD_R = 2.5, FSHIELD_TICK = 0.3, FSHIELD_DMG = 7;  
 function knightFireShield(p){
   if(p.superCD>0){ sfx.deny(); return true; }
   if(p.atk.phase!=='none' || p.hitstun>0 || p.stun>0 || p.dead) return false;
-  p.superCD = SUPER_CD; p.sc.specials++;
+  p.superCD = SUPER_CD*(p._lvE||1); p.sc.specials++;
   p.fireShield = { t:0, tick:0 }; p._eShieldPoseT = .5;   // _eShieldPoseT = pose de invocación (anim knight; = KNIGHT_WIN.eshield)
   ring(p.pos.clone().add(new THREE.Vector3(0,.3,0)), 0xff7a1a, FSHIELD_R*5, .5);
   showCombo(p,'¡ESCUDO DE FUEGO!'); sfx.charge();
@@ -22588,8 +22607,8 @@ function updateHealDisc(p,dt){
    Q = a distancia/utilidad (enfriamiento en p.qCD). Contrato como las E:
    en cooldown→deny+return true; bloqueo transitorio→return false (el buffer reintenta); al salir→fija CD. */
 function _abilGate(p){ return !(p.atk.phase!=='none'||p.beam||p.hang||p.hitstun>0||p.stun>0||p.dead||p.block||p.spin||p.ult||p.storm||p.bastion||p.counter||p.parryT>0||p.charge); }
-function _setF(p,cd){ p.spinCD=cd; p._fMax=cd; p.sc.specials++; }
-function _setQ(p,cd){ p.qCD=cd; p._qMax=cd; }
+function _setF(p,cd){ cd *= (p._lvF||1); p.spinCD=cd; p._fMax=cd; p.sc.specials++; }   // ►CARTAS: F VELOZ
+function _setQ(p,cd){ cd *= (p._lvQ||1); p.qCD=cd; p._qMax=cd; }   // ►CARTAS: Q VELOZ
 function _aim(p,rng){ const foe=nearestFoe(p,rng||40); if(foe) p.yaw=Math.atan2(foe.pos.x-p.pos.x, foe.pos.z-p.pos.z); }
 function _corridor(p,f,LEN,W,fn){   // golpea a todo (jugadores+minions) en el pasillo de un sprint
   for(const o of players){ if(o===p||o.dead||o.invuln>0)continue; const rel=new THREE.Vector3(o.pos.x-p.pos.x,0,o.pos.z-p.pos.z); const al=rel.dot(f); if(al<-1||al>LEN)continue; if(rel.addScaledVector(f,-al).length()>W)continue; fn(o,false); }
@@ -22600,7 +22619,7 @@ function _radial(p,R,fn){   // golpea a todo en un radio (nova)
   for(const mn of minions){ if(mn.dead)continue; const dx=mn.pos.x-p.pos.x,dz=mn.pos.z-p.pos.z; if(Math.hypot(dx,dz)>R)continue; fn(mn,true,dx,dz); }
 }
 /* ---- F (tecla F) ---- */
-function barbSpinF(p){ if(p.spinCD>0){ sfx.deny(); return true; } if(!p.onGround||!_abilGate(p)) return false; p._fMax=SPIN_CD; return startSpin(p); }   // Bárbaro: GIRO (whirlwind sostenido)
+function barbSpinF(p){ if(p.spinCD>0){ sfx.deny(); return true; } if(!p.onGround||!_abilGate(p)) return false; p._fMax=SPIN_CD*(p._lvF||1); return startSpin(p); }   // Bárbaro: GIRO (whirlwind sostenido)
 function samuraiOrbF(p){   // Samurái F: ORBE DE ENERGÍA lila — esfera lenta que castiga la zona (x3 a minions)
   if(p.spinCD>0){ sfx.deny(); return true; } if(!_abilGate(p)) return false;
   _aim(p,45); _setF(p,5);
@@ -22693,10 +22712,10 @@ function qShoot(p, rate, opts){
   _aim(p, opts.aim||40);
   const first = (p.qAmmo>=Q_AMMO);                 // banner solo en la 1ª bala de la ráfaga (no spamea)
   spawnProj(p, p.yaw, opts);
-  p.qAmmo = Math.max(0, p.qAmmo-1); p.qCD = rate; p.throwT = .2;
+  p.qAmmo = Math.max(0, p.qAmmo-1); p.qCD = rate*(p._lvQ||1); p.throwT = .2;   // ►CARTAS: Q VELOZ
   if(opts.snd && sfx[opts.snd]) sfx[opts.snd]();
   if(first && opts.name) showCombo(p, opts.name);
-  if(p.qAmmo<=0) p.qReload = Q_RELOAD;              // cargador vacío → recarga
+  if(p.qAmmo<=0) p.qReload = Q_RELOAD*(p._lvQ||1);   /* ►CARTAS */              // cargador vacío → recarga
   return true;
 }
 function barbAxeQ(p){      const before=p.qAmmo; const cs=(p.gfx&&p.gfx.root)?(p.gfx.root.scale.x||1):1; const opts={axe:true, scl:AXE_LEN*cs, color:0xff5a2a, qcol:0xff5a2a, qkind:'axe', size:.15, speed:20, life:1.45, dmg:11, kbK:1.4,           aim:30,snd:'throwQ',    name:'¡HACHAS!'}; const r=qShoot(p,.22,opts); if(r && p.qAmmo<before){ p._axePoseT=.3; p._animKick=(p._animKick||0)+1; if(p._pkTwinAxe) spawnProj(p, p.yaw+0.20, opts); } return r; }   // _axePoseT = pose de lanzamiento; HACHA REAL girando · ►PERK HACHAS GEMELAS: hacha extra en abanico
@@ -22760,8 +22779,8 @@ function classQ(p){ return (classKit(p).q||barbAxeQ)(p); }
 const LEVEL_XP  = [0, 50, 150, 280, 420, 590, 780, 980, 1200, 1430, 1680, 1940, 2210, 2490, 2780, 3090, 3400, 3720, 4060, 4400];
 const LEVEL_MAX = LEVEL_XP.length;
 /* ►NIVELES V2 (H2): botones con desbloqueo FIJO — básico+Q+E desde n1; escudo n4, cuarto ataque (F) n8,
-   la R n14. Movilidad (salto/dash/agarrar) intocable. */
-const LEVEL_FIXED = { 4:'shield', 8:'f', 14:'r' };
+   la R n11 (mitad de mundo, decisión de Toni). Movilidad (salto/dash/agarrar) intocable. */
+const LEVEL_FIXED = { 4:'shield', 8:'f', 11:'r' };   // R a n11 = mitad de mundo (decisión de Toni 02/09)
 const LEVEL_PAS = [                                // pasiva del nivel 3 (va en p.boost: se borra sola al cambiar de mundo)
   { n:'VELOCIDAD',     fn:p=>{ p.boost.spd  = (p.boost.spd||0)  + 2; } },
   { n:'CADENCIA',      fn:p=>{ p.boost.rate = (p.boost.rate||0) + 2; } },
@@ -22771,10 +22790,10 @@ const LEVEL_PAS = [                                // pasiva del nivel 3 (va en 
 function lvlOn(){ return !demo && running && !(typeof TRAIN!=='undefined' && TRAIN.on) && STAGE!==13; }
 function lvlXP(p){ return Math.max(0, scoreTotal(p) - (p._lvlBase||0)); }
 function lvlOf(xp){ let l = 1; for(let i=1;i<LEVEL_XP.length;i++) if(xp >= LEVEL_XP[i]) l = i+1; return l; }
-function lvlNeed(slot){ return slot==='shield' ? 4 : slot==='f' ? 8 : slot==='r' ? 14 : 1; }
+function lvlNeed(slot){ return slot==='shield' ? 4 : slot==='f' ? 8 : slot==='r' ? 11 : 1; }
 function lvlHas(p, slot){ if(!p || !lvlOn()) return true; return (p.lvl||1) >= lvlNeed(slot); }
 function lvlLocal(p){ return (window._net && _net.localPlayer) ? p===_net.localPlayer : p===P1; }
-function lvlSeal(p){ p._lvlBase = scoreTotal(p); p.lvl = 1; p._lvlPasI = -1; p._lvlDenyT = 0; }
+function lvlSeal(p){ p._lvlBase = scoreTotal(p); p.lvl = 1; p._lvlPasI = -1; p._lvlDenyT = 0; lvlBuildReset(p); }
 function lvlDeny(p, slot){                          // el humano pulsa algo bloqueado: sonido + sacudida de la ficha (con freno)
   if(!lvlLocal(p) || (p._lvlDenyT||0) > 0) return;
   p._lvlDenyT = .5; try{ sfx.deny(); }catch(e){}
@@ -22811,7 +22830,8 @@ function updateLevels(dt){                          // tick del host: sube nivel
   for(const p of players){
     if(p.out) continue;
     const L = lvlOf(lvlXP(p)), cur = p.lvl||1;
-    if(L > cur){ for(let k=cur+1;k<=L;k++){ levelUpApply(p, k); levelUpFx(p, k); } p.lvl = L; }
+    if(L > cur){ for(let k=cur+1;k<=L;k++){ levelUpApply(p, k); levelUpFx(p, k); if(!LEVEL_FIXED[k]) lvlQueueOffer(p); } p.lvl = L; }
+    lvlOfferTick(p, dt);
   }
 }
 function lvlPaintLocks(p){                          // fichas escudo/F/R en gris con "N4/N8/N14" hasta que se estrenan
@@ -22845,6 +22865,103 @@ function lvlPaintBar(p){
    vista. p.coins es la cartera de la RUN (B3: tienda entre mundos). Host-authoritative: en online
    el cliente recibe p.coins por snapshot (como el resto de drops, que hoy no viajan).
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   ►CARTAS — NIVELES V2 H3 (PLAN_NIVELES_V2.md §3): cada subida sin botón fijo ofrece 2 cartas ~5 s SIN
+   parar el juego: SIEMPRE mejora-de-ataque (izq) VS boost-de-stat (dcha). Teclado 1/2, mando cruceta
+   IZQ/DCHA; sin elegir, a los 5 s entra la primera. Misma carta máx 2 veces por mundo (únicas de clase 1);
+   salto/dash jamás; velocidad solo dentro del clamp 1,8. El build (p._build) vive un mundo: lvlBuildReset
+   en lvlSeal. Las únicas de clase reutilizan las cartas de RUN_PERKS (mismos flags _pk*); para no borrar
+   una COMPRADA al cambiar de mundo, buyPerk apunta en _pkFromShop qué flags vienen de la tienda.
+   Host-authoritative: la oferta viaja en el snapshot (of) y la elección en el input (pk).
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+const CARD_T = 5, CARD_MAX = 2;
+const LVL_CARDS = [
+  { k:'qfast',  kind:'atk', ic:'⚡', name:'Q VELOZ',        desc:'la Q recarga y enfría un 30% más rápido', apply:p=>{ p._lvQ  = (p._lvQ ||1)*.7; } },
+  { k:'efast',  kind:'atk', ic:'🌀', name:'E VELOZ',        desc:'la E enfría un 30% más rápido',            apply:p=>{ p._lvE  = (p._lvE ||1)*.7; } },
+  { k:'ffast',  kind:'atk', ic:'💨', name:'F VELOZ',        desc:'la F enfría un 30% más rápido',            ok:p=>(p.lvl||1)>=8,  apply:p=>{ p._lvF  = (p._lvF ||1)*.7; } },
+  { k:'rcharge',kind:'atk', ic:'🔥', name:'R CARGA VELOZ',  desc:'la R se carga un 50% más rápido',          apply:p=>{ p._lvR  = (p._lvR ||1)*1.5; } },
+  { k:'shfast', kind:'atk', ic:'🛡️', name:'ESCUDO VELOZ',   desc:'el escudo enfría un 40% más rápido',       ok:p=>(p.lvl||1)>=4,  apply:p=>{ p._lvSh = (p._lvSh||1)*.6; } },
+  { k:'steal',  kind:'atk', ic:'🩸', name:'ROBO DE VIDA',   desc:'cada golpe te cura el 15% del daño que haces', max:1, apply:p=>{ p._lvSteal = true; } },
+  { k:'dmg',    kind:'stat', ic:'👊', name:'+DAÑO',      desc:'+12% de daño',                 apply:p=>{ p.boost.dmg  = (p.boost.dmg ||0)+1; } },
+  { k:'def',    kind:'stat', ic:'🛡', name:'+DEFENSA',   desc:'−10% de daño recibido',        apply:p=>{ p.boost.def  = (p.boost.def ||0)+1; } },
+  { k:'kb',     kind:'stat', ic:'➡️', name:'+EMPUJE',    desc:'tus golpes empujan más',       apply:p=>{ p.boost.kb   = (p.boost.kb  ||0)+1; } },
+  { k:'rate',   kind:'stat', ic:'⏩', name:'+CADENCIA',  desc:'ataque básico más rápido',     apply:p=>{ p.boost.rate = (p.boost.rate||0)+1; } },
+  { k:'heart',  kind:'stat', ic:'❤️', name:'+CORAZÓN',   desc:'una vida más este mundo',      apply:p=>{ p.stocks = (p.stocks|0)+1; } },
+  { k:'spd',    kind:'stat', ic:'🏃', name:'+VELOCIDAD', desc:'+8% de velocidad',             ok:p=>{ try{ return spdMul(p) < 1.75; }catch(e){ return true; } }, apply:p=>{ p.boost.spd = (p.boost.spd||0)+1; } },
+];
+/* únicas de clase: las 12 cartas cls de RUN_PERKS (2 por héroe), 1 vez por mundo. RUN_PERKS se declara más
+   abajo (TDZ), así que se añaden perezosamente en la primera oferta. */
+let _lvlClsDone = false;
+function _lvlCardsInit(){
+  if(_lvlClsDone) return; if(typeof RUN_PERKS === 'undefined') return; _lvlClsDone = true;
+  try{ for(const rp of RUN_PERKS){ if(!rp.cls) continue;
+  LVL_CARDS.push({ k:'cls:'+rp.k, kind:'atk', ic:rp.ic, name:rp.name, desc:rp.desc, cls:rp.cls, max:1,
+    apply:p=>{ const before = {}; for(const kk in p) if(/^_pk/.test(kk)) before[kk] = p[kk];
+               rp.apply(p);
+               for(const kk in p){ if(/^_pk/.test(kk) && p[kk]===true && !before[kk]){ (p._lvFlags||(p._lvFlags=[])).push(kk); } } } }); LVL_CARD_BY_K['cls:'+rp.k] = LVL_CARDS[LVL_CARDS.length-1]; } }catch(e){ console.warn('[cartas] cls', e); }
+}
+const LVL_CARD_BY_K = {}; for(const c of LVL_CARDS) LVL_CARD_BY_K[c.k] = c;
+function lvlBuildReset(p){
+  p._build = {}; p._lvOffer = null; p._lvQueue = 0; p._pickHeld = false;
+  p._lvQ = p._lvE = p._lvF = p._lvR = p._lvSh = 1; p._lvSteal = false;
+  if(p._lvFlags){ for(const f of p._lvFlags) p[f] = !!(p._pkFromShop && p._pkFromShop[f]); p._lvFlags = []; }
+}
+function lvlCardOk(p, c){
+  if(c.cls && c.cls !== p._charKey) return false;
+  if((p._build && p._build[c.k]||0) >= (c.max||CARD_MAX)) return false;
+  if(c.ok && !c.ok(p)) return false;
+  return true;
+}
+function lvlPickRandom(arr){ return arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
+function lvlMakeOffer(p){
+  _lvlCardsInit();
+  const atk = LVL_CARDS.filter(c => c.kind==='atk' && lvlCardOk(p, c));
+  const st  = LVL_CARDS.filter(c => c.kind==='stat' && lvlCardOk(p, c));
+  let a = lvlPickRandom(atk), b = lvlPickRandom(st);
+  if(!a && !b) return null;
+  if(!a){ a = b; b = lvlPickRandom(st.filter(c => c !== a)); }          // sin ataques que ofrecer: dos stats (o una)
+  else if(!b){ b = lvlPickRandom(atk.filter(c => c !== a)); }
+  return { a, b, t: CARD_T };
+}
+function lvlQueueOffer(p){ p._lvQueue = (p._lvQueue|0) + 1; }
+function lvlOfferTick(p, dt){
+  if(p.out || p.dead) return;
+  if(!p._lvOffer && (p._lvQueue|0) > 0){
+    p._lvQueue--; const of = lvlMakeOffer(p); if(!of) return;
+    if(p.isAI){ lvlApplyCard(p, Math.random() < .5 ? of.a : (of.b||of.a)); return; }   // la CPU elige al vuelo
+    p._lvOffer = of; if(lvlLocal(p)){ try{ sfxEv('sparkle', { pos:p.pos }); }catch(e){} }
+    return;
+  }
+  if(p._lvOffer){ p._lvOffer.t -= dt; if(p._lvOffer.t <= 0) lvlPick(p, 1); }
+}
+function lvlApplyCard(p, c){
+  if(!c) return;
+  try{ c.apply(p); }catch(e){ console.warn('[cartas] apply', c.k, e); }
+  p._build = p._build || {}; p._build[c.k] = (p._build[c.k]||0) + 1;
+  try{ if(p.pos) popKill(p.pos, c.ic+' '+c.name, '#9fffd8'); }catch(e){}
+  if(lvlLocal(p)){ try{ sfx.boost && sfx.boost(); }catch(e){} }
+}
+function lvlPick(p, n){
+  const of = p._lvOffer; if(!of) return;
+  const c = (n===2 && of.b) ? of.b : of.a;
+  p._lvOffer = null;
+  lvlApplyCard(p, c);
+}
+/* UI: dos cartas junto a los atajos (izquierda-abajo), con tecla/cruceta y barra de tiempo */
+let _lcKey = '';
+function lvlCardsPaint(p){
+  const el = document.getElementById('lvlCards'); if(!el) return;
+  const of = p && p._lvOffer && lvlOn() ? p._lvOffer : null;
+  if(!of){ if(!el.classList.contains('hidden')){ el.classList.add('hidden'); _lcKey = ''; } return; }
+  const key = of.a.k + '|' + (of.b ? of.b.k : '');
+  if(key !== _lcKey){ _lcKey = key;
+    const card = (c, i) => c ? '<div class="lvCard '+c.kind+'"><div class="lvHint"><b>'+i+'</b><i>'+(i===1?'◀':'▶')+'</i></div>'+
+      '<div class="lvIc">'+c.ic+'</div><div class="lvName">'+c.name+'</div><div class="lvDesc">'+c.desc+'</div></div>' : '';
+    el.innerHTML = '<div class="lvTitle">¡NIVEL '+(p.lvl||1)+'! ELIGE</div><div class="lvRow">'+card(of.a,1)+card(of.b,2)+'</div><div class="lvTimer"><i></i></div>';
+    el.classList.remove('hidden'); }
+  const bar = el.querySelector('.lvTimer i'); if(bar) bar.style.width = Math.max(0, of.t/CARD_T*100).toFixed(1)+'%';
+}
+
 const coins = [];
 const COIN_LIFE = 9, COIN_MAX = 60;
 let _coinGeo = null, _coinMat = null; const _coinPool = [];
@@ -22963,6 +23080,8 @@ function _shadowSpawn(src){
   sh.out = false; sh.outOrder = 0; sh.dead = false; sh.stocks = 2; sh.damage = 30; sh.invuln = SHOWDOWN.intro; sh.mpow = 0;
   sh.lvl = src.lvl||1; sh._lvlBase = 0; sh._lvlPasI = -1;
   sh.boost = Object.assign({}, src.boost||{}); sh.own = Object.assign({}, src.own||{});
+  lvlBuildReset(sh); sh._build = Object.assign({}, src._build||{}); sh._lvQ = src._lvQ||1; sh._lvE = src._lvE||1; sh._lvF = src._lvF||1; sh._lvR = src._lvR||1; sh._lvSh = src._lvSh||1; sh._lvSteal = !!src._lvSteal;
+  for(const f of (src._lvFlags||[])){ sh[f] = true; (sh._lvFlags||(sh._lvFlags=[])).push(f); }   // ►CARTAS: la sombra lleva TU build
   sh.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 };
   sh.pos.copy(src.pos); sh.pos.x += (src.pos.x < 0 ? 6 : -6); sh.vel.set(0,0,0); sh.yaw = (src.yaw||0) + Math.PI;
   if(!sh.ai) sh.ai = { think:0, dir:new THREE.Vector3(), atkDelay:0, blockWant:false, blockTimer:0, blockDelay:-1 };
@@ -22986,7 +23105,7 @@ function _shadowRemove(){
   const sh = SHOWDOWN.shadow; if(!sh) return;
   const i = players.indexOf(sh); if(i >= 0) players.splice(i, 1);
   try{ if(sh.gfx && sh.gfx.root) sh.gfx.root.traverse(o => { if(o.userData && o.userData._origMat){ o.material = o.userData._origMat; delete o.userData._origMat; } }); }catch(e){}
-  sh._isShadow = false; sh.out = true; sh.dead = true; sh.label = '';
+  sh._isShadow = false; sh.out = true; sh.dead = true; sh.label = ''; sh._pkFromShop = null; lvlBuildReset(sh);
   try{ clearFX(sh); fighterHide(sh.gfx); }catch(e){}
   try{ buildHUD(); buildRank(); }catch(e){}
   SHOWDOWN.shadow = null;
@@ -24069,6 +24188,7 @@ function buyPerk(perk, card){
   me._buys = (me._buys||0) + 1;                          // encarece TODA compra futura del run
   me._buysThisStage = (me._buysThisStage||0) + 1;
   perk.apply(me);
+  me._pkFromShop = me._pkFromShop||{}; for(const k in me){ if(/^_pk/.test(k) && me[k]===true) me._pkFromShop[k] = true; }   // ►CARTAS: origen de cada flag
   try{ sfx.boost && sfx.boost(); }catch(e){}
   if(card){ card.classList.add('bought'); }
   renderPerks();   // refresca cartera + tope + qué cartas quedan pagables / bloqueadas / obtenidas
@@ -25054,9 +25174,9 @@ const camFwd = new THREE.Vector3(), camRight = new THREE.Vector3();
 function readInput(p){
   /* ►INTERSTAGE: mientras el speaker presenta el stage, NADIE responde (caen y aterrizan por física,
      pero no actúan) — mismo patrón de input neutro que ya usan ?fly y el online. */
-  if(stageIntroT>0) return { move:new THREE.Vector3(), jump:false, dash:false, atk:false, brk:false, block:false, drop:false, throw:false, sup:false, heal:false, ult:false, spin:false, parry:false };
+  if(stageIntroT>0) return { move:new THREE.Vector3(), jump:false, dash:false, atk:false, brk:false, block:false, drop:false, throw:false, sup:false, heal:false, ult:false, spin:false, parry:false, pick:0 };
   /* ►TOOLS ?fly: mientras vuelas, el teclado es de la CÁMARA → el jugador de teclado queda quieto */
-  if(_fly.on && p.kbInput) return { move:new THREE.Vector3(), jump:false, dash:false, atk:false, brk:false, block:false, drop:false, throw:false, sup:false, heal:false, ult:false, spin:false, parry:false };
+  if(_fly.on && p.kbInput) return { move:new THREE.Vector3(), jump:false, dash:false, atk:false, brk:false, block:false, drop:false, throw:false, sup:false, heal:false, ult:false, spin:false, parry:false, pick:0 };
   /* ONLINE: en el HOST, al jugador remoto lo mueve el input que llega por la red (no dispositivos locales) */
   if(window._net && _net.role==='host' && p===_net.remote){
     return (_net.remoteInput && performance.now()-(_net.riStamp||0) < 500) ? _net.remoteInput : _net.neutral();
@@ -25104,6 +25224,7 @@ function readInput(p){
     heal:  (kb && !!keys['KeyH']) || B(12),                                          // cruceta ARRIBA (D-pad up) — CURA por clase
     ult:   !_sinEsp13 && ((kb && !!keys['KeyR']) || B(3)),                           // Y (definitiva)
     spin:  !_sinEsp13 && ((kb && !!keys['KeyF']) || B(10)),                          // L3 (clic stick izq.)
+    pick:  kb ? (keys['Digit1']?1:(keys['Digit2']?2:0)) : (B(14)?1:(B(15)?2:0)),   // ►CARTAS: elegir carta 1/2 · cruceta IZQ/DCHA
     parry: false,                                                                   // PARRY/CONTRA eliminado (antes P · R3)
   };
 }
@@ -25454,6 +25575,7 @@ function updateFighter(p, dt){
 
   if(!p.isAI){
     const inp = readInput(p);                     // teclado (P1) y/o mando del jugador
+    if(inp.pick && !p._pickHeld && p._lvOffer) lvlPick(p, inp.pick); p._pickHeld = !!inp.pick;   // ►CARTAS: flanco de 1/2 · cruceta (humano local y remoto; la CPU elige sola)
     move = inp.move;
     wantJump = inp.jump && !p._spaceHeld;
     p._spaceHeld = inp.jump;
@@ -42769,7 +42891,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p._pkQuake = p._pkTwinSlash = p._pkFanWide = p._pkTwinOrb = p._pkTwinJavelin = p._pkBigNova = false;   // ►PERKS: 2ª carta única por clase
     p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 };
     p._scSnap = null;   // ►LBREDO: la foto por categoría del stage anterior no cruza de partida
-    p.lvl = 1; p._lvlBase = 0; p._lvlPasI = -1; p._lvlDenyT = 0;   // ►NIVEL
+    p.lvl = 1; p._lvlBase = 0; p._lvlPasI = -1; p._lvlDenyT = 0; p._pkFromShop = null; p._lvFlags = []; lvlBuildReset(p);   // ►NIVEL ►CARTAS
     p.mpow = 0; p.out = false; p.outOrder = 0; p.lastHitBy = null; p._rainbowT = 0; endUlt(p);
   }
   for(const q of allPlayers) clearFX(q);   // FX persistente de TODOS (incl. fuera del roster) → no quedan rayos/cúpulas del demo flotando en la partida
@@ -45297,13 +45419,13 @@ window._net = {
   genCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=A[(Math.random()*A.length)|0]; return s; },
   status(t){ const e=document.getElementById('netStatus'); if(e) e.textContent=t; },
   neutral(){ const v=this._riVec||(this._riVec=new THREE.Vector3()); v.set(0,0,0);
-    return this._neutral || (this._neutral={ move:v, jump:false,dash:false,atk:false,brk:false,block:false,drop:false,throw:false,sup:false,heal:false,ult:false,spin:false,parry:false }); },
+    return this._neutral || (this._neutral={ move:v, jump:false,dash:false,atk:false,brk:false,block:false,drop:false,throw:false,sup:false,heal:false,ult:false,spin:false,parry:false,pick:0 }); },
   packInput(inp){ return { x:+inp.move.x.toFixed(3), z:+inp.move.z.toFixed(3),
     j:inp.jump?1:0, da:inp.dash?1:0, a:inp.atk?1:0, br:inp.brk?1:0, bl:inp.block?1:0, dr:inp.drop?1:0,
-    th:inp.throw?1:0, su:inp.sup?1:0, he:inp.heal?1:0, u:inp.ult?1:0, sp:inp.spin?1:0, pa:inp.parry?1:0 }; },
+    th:inp.throw?1:0, su:inp.sup?1:0, he:inp.heal?1:0, u:inp.ult?1:0, sp:inp.spin?1:0, pa:inp.parry?1:0, pk:inp.pick|0 }; },
   recvInput(d){ const v=this._riVec||(this._riVec=new THREE.Vector3()); v.set(d.x||0,0,d.z||0);
     this.remoteInput={ move:v, jump:!!d.j,dash:!!d.da,atk:!!d.a,brk:!!d.br,block:!!d.bl,drop:!!d.dr,
-      throw:!!d.th,sup:!!d.su,heal:!!d.he,ult:!!d.u,spin:!!d.sp,parry:!!d.pa };
+      throw:!!d.th,sup:!!d.su,heal:!!d.he,ult:!!d.u,spin:!!d.sp,parry:!!d.pa, pick:d.pk|0 };
     this.riStamp=performance.now(); },
   connect(code, role){
     if(!window.NET || !NET.joinRoom){ if(window.NET && NET.error){ this.status('Red no disponible: '+NET.error); return; } this._pending={code,role}; this.status('Cargando red…'); return; }
@@ -45359,7 +45481,7 @@ window._net = {
       P.push({ i, x:+p.pos.x.toFixed(2), y:+p.pos.y.toFixed(2), z:+p.pos.z.toFixed(2), yaw:+p.yaw.toFixed(2),
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
-        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0 }); }   // ►NIVEL y ►MONEDAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
+        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0 }); }catch(e){}
   },
@@ -45378,6 +45500,7 @@ window._net = {
       if(ps.lv!=null){ p._lvlBase = ps.lb|0; if(ps.lp!=null) p._lvlPasI = ps.lp; const _nl = Math.max(1, ps.lv|0), _ol = p.lvl||1;   // ►NIVEL: el cliente no simula, solo pinta el fogonazo
         if(_nl > _ol){ for(let k=_ol+1;k<=_nl;k++) levelUpFx(p, k); } p.lvl = _nl; }
       if(ps.co != null) p.coins = ps.co|0;                                          // ►MONEDAS
+      if(ps.of !== undefined){ _lvlCardsInit(); p._lvOffer = ps.of ? { a:LVL_CARD_BY_K[ps.of[0]], b:LVL_CARD_BY_K[ps.of[1]]||null, t:+ps.of[2] } : null; if(p._lvOffer && !p._lvOffer.a) p._lvOffer = null; }   // ►CARTAS: solo para pintar; la elección va en el input
       if(ps.sc && p.sc) Object.assign(p.sc, ps.sc);                                // ►NETFIX2: scoreTotal(p) lee p.sc → HUD y ranking del cliente al dia
       if(p.gfx && p.gfx.root){ p.gfx.root.position.copy(p.pos); p.gfx.root.rotation.y=p.yaw; if(p.out) fighterHide(p.gfx); else fighterShow(p.gfx); tagOutlineLayer(p.gfx.root); }   // ►LUZCONSTANTE (idempotente por _ljOff, 30 Hz sin coste)
     }
@@ -45422,6 +45545,21 @@ window.__I18N_DYN=[{"es":"MODO CARRERA · {0} MUNDOS · PREPÁRATE","t":["RACE M
 /* ►NIVEL: barra de nivel, fichas bloqueadas y foganazo de level-up. */
 window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "NUEVO ATAQUE":["NEW ATTACK","NUOVO ATTACCO","NOVO ATAQUE","NOUVELLE ATTAQUE","NEUER ANGRIFF"],
+  "Q VELOZ":["FAST Q","Q RAPIDA","Q RÁPIDO","Q RAPIDE","SCHNELLES Q"],
+  "E VELOZ":["FAST E","E RAPIDA","E RÁPIDO","E RAPIDE","SCHNELLES E"],
+  "F VELOZ":["FAST F","F RAPIDA","F RÁPIDO","F RAPIDE","SCHNELLES F"],
+  "R CARGA VELOZ":["FAST R CHARGE","R CARICA RAPIDA","R CARREGA RÁPIDO","R CHARGE RAPIDE","SCHNELLE R-LADUNG"],
+  "ESCUDO VELOZ":["FAST SHIELD","SCUDO RAPIDO","ESCUDO RÁPIDO","BOUCLIER RAPIDE","SCHNELLER SCHILD"],
+  "+CORAZÓN":["+HEART","+CUORE","+CORAÇÃO","+CŒUR","+HERZ"],
+  "la Q recarga y enfría un 30% más rápido":["Q reloads and cools 30% faster","la Q ricarica e si raffredda il 30% più in fretta","o Q recarrega e arrefece 30% mais depressa","le Q recharge et refroidit 30% plus vite","Q lädt und kühlt 30% schneller"],
+  "la E enfría un 30% más rápido":["E cools 30% faster","la E si raffredda il 30% più in fretta","o E arrefece 30% mais depressa","le E refroidit 30% plus vite","E kühlt 30% schneller"],
+  "la F enfría un 30% más rápido":["F cools 30% faster","la F si raffredda il 30% più in fretta","o F arrefece 30% mais depressa","le F refroidit 30% plus vite","F kühlt 30% schneller"],
+  "la R se carga un 50% más rápido":["R charges 50% faster","la R si carica il 50% più in fretta","o R carrega 50% mais depressa","le R se charge 50% plus vite","R lädt 50% schneller"],
+  "el escudo enfría un 40% más rápido":["shield cools 40% faster","lo scudo si raffredda il 40% più in fretta","o escudo arrefece 40% mais depressa","le bouclier refroidit 40% plus vite","Schild kühlt 40% schneller"],
+  "cada golpe te cura el 15% del daño que haces":["each hit heals you 15% of the damage dealt","ogni colpo ti cura il 15% del danno inflitto","cada golpe cura-te 15% do dano causado","chaque coup te soigne 15% des dégâts infligés","jeder Treffer heilt dich um 15% des Schadens"],
+  "tus golpes empujan más":["your hits push harder","i tuoi colpi spingono di più","os teus golpes empurram mais","tes coups repoussent plus","deine Treffer stoßen stärker"],
+  "ataque básico más rápido":["faster basic attack","attacco base più rapido","ataque básico mais rápido","attaque de base plus rapide","schnellerer Grundangriff"],
+  "una vida más este mundo":["one more life this world","una vita in più in questo mondo","mais uma vida neste mundo","une vie de plus dans ce monde","ein Leben mehr in dieser Welt"],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
@@ -45442,6 +45580,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "VELOCIDAD":["SPEED","VELOCITÀ","VELOCIDADE","VITESSE","TEMPO"]
 });
 window.__I18N_DYN = (window.__I18N_DYN || []).concat([
+  {"es":"¡NIVEL {0}! ELIGE","t":["LEVEL {0}! CHOOSE","LIVELLO {0}! SCEGLI","NÍVEL {0}! ESCOLHE","NIVEAU {0} ! CHOISIS","LEVEL {0}! WÄHLE"]},
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
   {"es":"NIVEL {0} · MÁX","t":["LEVEL {0} · MAX","LIVELLO {0} · MAX","NÍVEL {0} · MÁX","NIVEAU {0} · MAX","LEVEL {0} · MAX"]},
   {"es":"NIVEL {0} · {1}/{2}","t":["LEVEL {0} · {1}/{2}","LIVELLO {0} · {1}/{2}","NÍVEL {0} · {1}/{2}","NIVEAU {0} · {1}/{2}","LEVEL {0} · {1}/{2}"]},
