@@ -7648,6 +7648,7 @@ function _rbBuf(v){
 window._rbAssetArrived = function(name){
   try{
     if(name === 'GOBLIN_PARTS_B64' && typeof _goblinBoot === 'function'){ _goblinBoot(); }
+    if(/^GOBLIN[123]_GLB_B64$/.test(name) && typeof gobLoadKinds === 'function'){ try{ gobLoadKinds(['small','shooter','large']); }catch(e){} }   // ►REPACK: los tipos base se visten en cuanto llega su GLB
     if(name === 'BOSS_FBX_B64' && typeof _bossBoot === 'function'){ _bossBoot(); }
     if((name === 'SAMBOSS_GLB_B64' || name === 'SAMBOSS_DEATH_FBX_B64') && typeof _sambossBoot === 'function'){ _sambossBoot(); }
     _charAssetsBoot();
@@ -13099,7 +13100,7 @@ function _gobArmScaled(root, weapon, cfg, baseScale){
 }
 const _s2Tmp = new THREE.Color();   // ►TINTMIX: scratch del lavado rojo del mundo 2
 function gobAttach(mn){
-  if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobLoaded[mn.skin]) gobLoadKinds([mn.skin]);   // ►LAZY: red de seguridad (se vestirá cuando termine de parsear)
+  { const _k0 = (mn.skin && GOBLIN_KINDS[mn.skin]) ? mn.skin : mn.type; if(GOBLIN_KINDS[_k0] && !_gobLoaded[_k0] && !_gobTpl[_k0]) gobLoadKinds([_k0]); }   // ►LAZY: red de seguridad TAMBIÉN para los tipos base (small/shooter/large): tras el REPACK el GLB puede llegar después del gobLoadKinds de arranque y nadie reintentaba → goblins INVISIBLES (visto en el arnés online 03/09)
   if(mn.skin && GOBLIN_KINDS[mn.skin] && !_gobTpl[mn.skin]) return;   // ►GOBFANTASMA: la piel aún no está → ESPERAR (antes vestía el goblin base y luego cambiaba)
   const kin = (mn.skin && GOBLIN_KINDS[mn.skin]) ? mn.skin : mn.type;   // ►F3: piel visual (esqueleto/golem) con el comportamiento del type base
   const cfg = GOBLIN_KINDS[kin]; if(!cfg) return;
@@ -45790,7 +45791,7 @@ window._net = {
       players[1].kbInput=true;  players[1].padIndex=0;    // el invitado controla al índice 1 (solo para ENVIAR su input)
       players[0].kbInput=false; players[0].padIndex=-1;
     }
-    running=true; gameOver=false;
+    running=true; gameOver=false; this._goDone=false;
     /* ►NETFIX (02/09/2026, smoke online 1v1): la partida online quedaba TAPADA por el cielo de la home
        (#titleOverlay.sky) porque solo launchMatch() hacia skyOff(); y el tour BIENVENIDO de un perfil
        nuevo seguia abierto encima. */
@@ -45803,6 +45804,7 @@ window._net = {
   },
   hostSend(){
     if(!this.sendSnap) return;
+    if(demo) return;                                     // ►NETWORLD: el attract de la home tras el fin de partida no se emite
     if((this.snapAccum=(this.snapAccum+1)%2)) return;    // ~30 Hz (1 de cada 2 frames)
     const P=[];
     for(let i=0;i<players.length;i++){ const p=players[i]; if(!p) continue;
@@ -45815,7 +45817,7 @@ window._net = {
        (antes el invitado jugaba en un mundo vacío: solo veía a los jugadores). Ids estables asignados al enviar. */
     let W = null;
     this.snapWorld = (this.snapWorld|0) + 1;
-    if(this.snapWorld % 2 === 0){
+    if(this.snapWorld % 2 === 0 && running && !gameOver){
       try{
         const M = []; let nm = 0;
         for(const mn of minions){ if(mn.dead || mn._boss || mn._levi) continue; if(nm++ >= 48) break; if(mn._nid == null) mn._nid = ++_NID;
@@ -45857,6 +45859,7 @@ window._net = {
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
     if(s.chaos!=null && s.chaos!==chaosLvl){ chaosLvl=s.chaos; const ch=document.getElementById('chaos'); if(ch) ch.textContent='CAOS '+chaosLvl; }
     if(s.W){ try{ _netWorldApply(s.W); }catch(e){ console.warn('[networld] apply', e); } }   // ►NETWORLD
+    if(s.go && !this._goDone){ this._goDone = true; try{ _netWorldReset(); }catch(e){} if(!gameOver){ try{ endGame(); }catch(e){ console.warn('[net] endGame', e); } } }   // ►NETWORLD: el fin de partida del anfitrión cierra también al invitado
   },
   clientFrame(dt){
     if(this.sendInput && this.localPlayer){ try{ this.sendInput(this.packInput(readInput(this.localPlayer))); }catch(e){} }
