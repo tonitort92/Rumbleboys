@@ -2087,7 +2087,7 @@ window.addEventListener('load', function(){
 <div class="overlay" id="netLobby" style="display:none">
   <div class="modalCard">
     <button class="modalClose" id="netClose" aria-label="Cerrar">✕</button>
-    <h2>🌐 ARENA ONLINE <span style="font-size:13px;opacity:.6;font-weight:700">6 RONDAS · 2 jugadores P2P</span></h2>
+    <h2 id="netTitle">🌐 ARENA ONLINE <span id="netSub" style="font-size:13px;opacity:.6;font-weight:700">6 RONDAS · 2 jugadores P2P</span></h2>
     <p style="font-size:13px;opacity:.82;max-width:380px;margin:0 auto 12px">Juega con un colega por internet. <b>Uno crea la sala</b> y comparte el código; <b>el otro se une</b> con ese código. Elegid vuestro personaje antes (carrusel de la home).</p>
     <div style="display:flex;justify-content:center;margin:8px 0">
       <button class="btn" id="netCreate" style="margin-top:0;padding:12px 28px;font-size:16px">CREAR SALA</button>
@@ -2234,10 +2234,14 @@ window.addEventListener('load', function(){
          ⚠ CAMPAÑA y SURVIVAL son FACHADA por ahora: las dos arrancan la partida normal de siempre
          (MATCH.mode='solo'). Lo único que las distingue es MATCH.plan, que aún no lee nadie — está
          puesto para que el día que existan los checkpoints haya dónde engancharlos. -->
+    <!-- ►MODOS UX (Toni 03/09/2026): dos ejes independientes. Paso 1 = QUÉ (GIRA de 16 mundos con checkpoint en el 8 /
+         ARENA de 6 rondas con coronas / ENTRENAMIENTO). Paso 4 = CON QUIÉN (SOLO con CPUs / ONLINE con amigos). Internamente
+         GIRA sigue siendo MATCH.plan='campaign' (no se renombran variables, solo textos). -->
     <div class="setupStep" data-step="1">
-      <h2 class="modalH">Jugar solo</h2>
+      <h2 class="modalH">¿Qué jugamos?</h2>
       <div class="modeRow">
-        <button class="bigOpt" id="modeCampaign">🏰<span>CAMPAÑA</span><small>Guardado automático: sigues en la pantalla a la que llegaste</small></button>
+        <button class="bigOpt" id="modeCampaign">🏰<span>GIRA</span><small>16 mundos · guardado en el mundo 8 · medallas</small></button>
+        <button class="bigOpt" id="modeArena">⚔️<span>ARENA</span><small>6 rondas: 4 mundos + 2 minijuegos · coronas</small></button>
         <button class="bigOpt" id="modeSurvival" style="display:none">💀<span>SURVIVAL</span><small>Sin guardados: una tirada, a por el récord</small></button><!-- ►NOSURVIVAL (Toni 23/08): solo CARRERA o ENTRENAMIENTO -->
         <button class="bigOpt" id="modeTrain">🎯<span>ENTRENAMIENTO</span><small>Practica solo con minions</small></button>
       </div>
@@ -2245,11 +2249,12 @@ window.addEventListener('load', function(){
     <!-- paso 4: modos de MULTIJUGADOR. Las dos llevan a la MISMA sala online (el lobby de siempre);
          de momento solo se anota la intención en MATCH.plan. -->
     <div class="setupStep" data-step="4" hidden>
-      <h2 class="modalH">Multijugador</h2>
+      <h2 class="modalH">¿Con quién?</h2>
       <div class="modeRow">
-        <button class="bigOpt" id="mpCampaign">🏰<span>CAMPAÑA</span><small>Avanzáis juntos por las pantallas</small></button>
-        <button class="bigOpt" id="mpSurvival" style="display:none">💀<span>SURVIVAL</span><small>Aguantad todo lo que podáis</small></button><!-- ►NOSURVIVAL -->
+        <button class="bigOpt" id="withSolo">🎮<span>SOLO</span><small>Tú contra 1-3 CPUs en este PC</small></button>
+        <button class="bigOpt" id="withOnline">🌐<span>ONLINE</span><small>Con amigos por internet: crea o únete a una sala</small></button>
       </div>
+      <div class="modalNav"><button class="navBtn" id="withBack">‹ Atrás</button></div>
     </div>
     <!-- paso 2: cuántas CPUs -->
     <div class="setupStep" data-step="2" hidden>
@@ -20460,7 +20465,7 @@ function updatePvpShieldFX(){
        FIRST_PICK) está oculto, y el CTA principal debe ser lo primero que enfoque el mando */
     r.innerHTML =
         '<div id="hdLeft">'
-      +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>MODO CARRERA · ' + ruta().length + ' MUNDOS · PREPÁRATE</small></button>'
+      +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>GIRA · ' + ruta().length + ' MUNDOS · O ARENA</small></button>'
       +   '<button type="button" id="hdContinue" class="hidden"><b>CONTINUAR</b><small>GIRA GUARDADA · MUNDO 8</small></button>'   /* ►CHECKPOINT */
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdNameRow"><button type="button" class="hdNav" id="hdPrev" aria-label="Anterior"></button><div id="hdName"></div><button type="button" class="hdNav" id="hdNext" aria-label="Siguiente"></button></div>'   /* v29: las flechas ‹ › del heroe, a los lados del titulo (Toni 21/08); pulsan las del carrusel */
@@ -20478,8 +20483,7 @@ function updatePvpShieldFX(){
       + '</div><div id="hdCoins">🪙 <span id="hdCoinN">0</span></div></div>'
       + '<div id="hdToast"></div>'
       + '<div id="hdMode" role="group" aria-label="Modo de juego">'
-      +   '<button type="button" class="hdModeBtn" data-mode="off"><b>JUGAR OFFLINE</b><small>Tú solo o con CPUs en este PC. Cuenta para trofeos y logros.</small></button>'
-      +   '<button type="button" class="hdModeBtn" data-mode="on"><b>JUGAR ONLINE</b><small>Con amigos por internet: crea o únete a una sala.</small></button>'
+      /* ►MODOS UX (03/09/2026): el conmutador OFFLINE/ONLINE desaparece — lo pregunta el asistente (SOLO / ONLINE) */
       + '</div>'
       + '<div id="hdRail"><div id="hdRailBox">'
       /* ►TIENDA-OFF (Toni 02/09/2026): la tienda de la home se RETIRA de la alfa (con NIVELES V2 su papel quedó vacío y no
@@ -20663,7 +20667,7 @@ function updatePvpShieldFX(){
     /* ►MODO (Toni 21/08): OFFLINE (asistente de siempre) u ONLINE (sala multijugador). Se recuerda en el save. */
     const modeGet = ()=> (saveGet().playMode === 'on' ? 'on' : 'off');
     function renderMode(){ const m = modeGet(); r.querySelectorAll('.hdModeBtn').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
-      const sm = $('hdPlay') && $('hdPlay').querySelector('small'); if(sm) sm.textContent = 'CARRERA · ' + ruta().length + ' MUNDOS · ' + (m === 'on' ? 'ONLINE' : 'OFFLINE'); }
+      const sm = $('hdPlay') && $('hdPlay').querySelector('small'); if(sm) sm.textContent = 'GIRA · ' + ruta().length + ' MUNDOS · O ARENA'; }   // ►MODOS UX
     r.querySelectorAll('.hdModeBtn').forEach(b => b.addEventListener('click', ()=>{ saveBump(o => { o.playMode = b.dataset.mode; }); renderMode(); try{ if(typeof sfx!=='undefined' && sfx.cap) sfx.cap(); }catch(e){} }));
     renderMode();
     ckRefreshHome();
@@ -20679,7 +20683,7 @@ function updatePvpShieldFX(){
       window.__hdTrainPick = null;   // ►TRAINPICK: la carrera no arrastra una elección de entrenar
       try{ if(typeof MENU_RUTA_I!=='undefined' && MENU_RUTA_I !== 0){ MENU_RUTA_I = 0; mapSelApply(); } }
       catch(e){ console.warn('[carrera] jugar', e); }
-      const b = $(modeGet() === 'on' ? 'playMultiBtn' : 'playSoloBtn'); if(b) b.click();
+      const b = $('playSoloBtn'); if(b) b.click();   // ►MODOS UX: siempre el asistente (QUÉ → CON QUIÉN)
     });
     /* ►LOGROS MINI: los pendientes, de 3 en 3 (VER MÁS) y con scroll; la ficha completa sigue en el rail */
     let _lmN = 6;
@@ -24523,6 +24527,7 @@ function arenaNext(){
   if(ARENA_MODE.i >= ARENA_MODE.rounds.length){ endGame(); return; }
   const e = ARENA_MODE.rounds[ARENA_MODE.i];
   const ri = RUTA.indexOf(e); if(ri >= 0) RUTA_I = ri;                      // rótulos/tablero siguen cuadrando
+  try{ if(window._net && _net.role==='host' && _net.sendStg && ri >= 0) _net.sendStg({ i:ri }); }catch(e2){}   // ►MODOS UX
   if(e.mini && typeof e.mini === 'string'){ lanzarMini(e); return; }
   const f = window['goToStage' + e.st];
   if(typeof f === 'function') f(); else { console.warn('[arena] sin goToStage' + e.st); endGame(); }
@@ -24533,6 +24538,7 @@ function rutaSiguiente(){
   if(gameOver) return;
   if(ARENA_MODE.on){ arenaNext(); return; }         // ►ARENA: la lista de rondas manda
   RUTA_I++;
+  try{ if(window._net && _net.role==='host' && _net.sendStg && RUTA_I < RUTA.length) _net.sendStg({ i:RUTA_I }); }catch(e){}   // ►MODOS UX: el invitado sigue al anfitrión
   if(RUTA_I === CK_I) ckSave();                    // ►CHECKPOINT (C3): al entrar en la parada 8 se guarda la run
   if(RUTA_I >= RUTA.length){ endGame(); return; }
   const e = RUTA[RUTA_I];
@@ -44242,22 +44248,25 @@ function startMatch(){
   }
   function closeModal(){ modal.style.display = 'none'; toHome(); }   // devuelve las cards a la home
   document.getElementById('playSoloBtn').addEventListener('click', ()=> openModal(1));
-  document.getElementById('playMultiBtn').addEventListener('click', ()=>{ MATCH.plan='arena'; MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); closeModal(); if(window._openOnline) _openOnline(); });   // ►ARENA (MODOS A3): ONLINE = lobby de Arena directo; el paso 4 (campaña/survival) queda sin uso
+  document.getElementById('playMultiBtn').addEventListener('click', ()=> openModal(1));   // ►MODOS UX: el mismo asistente (QUÉ → CON QUIÉN)
   /* ►F1: el engranaje enseña/esconde idioma+CPU (ajustes, no decisiones de portada) */
   { const g=document.getElementById('cfgGear'), c=document.getElementById('cornerCfg');
     if(g&&c) g.addEventListener('click', ()=>{ c.style.display = c.style.display==='none' ? '' : 'none'; }); }
   document.getElementById('setupClose').addEventListener('click', closeModal);
   /* CAMPAÑA y SURVIVAL: de momento, la partida de siempre. Solo cambia MATCH.plan (aún sin efecto) */
   const solo = plan => ()=>{ MATCH.mode='solo'; MATCH.plan=plan; MATCH.humans=1; refreshSetup(); showStep(2); };
-  document.getElementById('modeCampaign').addEventListener('click', solo('campaign'));
+  const pickWhat = plan => ()=>{ MATCH.plan=plan; MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); showStep(4); };   // ►MODOS UX: QUÉ → CON QUIÉN
+  document.getElementById('modeCampaign').addEventListener('click', pickWhat('campaign'));   // GIRA
+  document.getElementById('modeArena').addEventListener('click', pickWhat('arena'));         // ARENA
+  document.getElementById('withSolo').addEventListener('click', ()=>{ MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); showStep(2); });
+  document.getElementById('withOnline').addEventListener('click', ()=>{ MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); closeModal(); if(window._openOnline) _openOnline(); });
+  document.getElementById('withBack').addEventListener('click', ()=> showStep(1));
   document.getElementById('modeSurvival').addEventListener('click', solo('survival'));
   /* MULTIJUGADOR: elegido el plan, se cierra el asistente y se abre la sala online de siempre */
   const multi = plan => ()=>{ MATCH.plan=plan; MATCH.mode='solo'; MATCH.humans=1; refreshSetup(); closeModal();
                               if(window._openOnline) _openOnline(); };
-  document.getElementById('mpCampaign').addEventListener('click', multi('campaign'));
-  document.getElementById('mpSurvival').addEventListener('click', multi('survival'));
   document.getElementById('modeTrain').addEventListener('click', ()=>{ MATCH.mode='training'; MATCH.humans=1; MATCH.cpus=0; refreshSetup(); showStep(3); });   // entrenamiento: sin CPUs, directo a elegir personaje
-  document.getElementById('cpusBack').addEventListener('click', ()=> showStep(1));
+  document.getElementById('cpusBack').addEventListener('click', ()=> showStep(4));   // ►MODOS UX: atrás = CON QUIÉN
   document.getElementById('cpusNext').addEventListener('click', ()=> showStep(3));
   document.getElementById('charBack').addEventListener('click', ()=>{ toHome(); showStep(MATCH.mode==='training' ? 1 : 2); });   // en entrenamiento no hay paso de CPUs
   document.getElementById('startGameBtn').addEventListener('click', ()=>{
@@ -45628,7 +45637,9 @@ window._net = {
     const [sSnap,gSnap]=room.makeAction('snap');
     const [sHi,gHi]=room.makeAction('hi');
     const [sArena,gArena]=room.makeAction('arena'); this.sendArena=sArena;                       // ►ARENA: lista de rondas (índices de RUTA) + go
-    gArena(d=>{ this.arena=(d && d.r && d.r.length) ? d.r.slice() : null; try{ if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
+    gArena(d=>{ this.startPlan=(d && d.plan) || 'arena'; this.arena=(d && d.r && d.r.length) ? d.r.slice() : null; try{ if(this.role==='client') MATCH.plan=this.startPlan; if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
+    const [sStg,gStg]=room.makeAction('stg'); this.sendStg=sStg;                                     // ►MODOS UX: el anfitrión avisa del cambio de mundo; el invitado lo sigue
+    gStg(d=>{ try{ this.applyStg(d); }catch(e){ console.warn('[net] stg', e); } });
     this.sendInput=sInp; this.sendSnap=sSnap; this.sendHi=sHi;
     gInp(d=> this.recvInput(d));
     gSnap(d=> { this.snap=d; });
@@ -45638,14 +45649,17 @@ window._net = {
     room.onPeerLeave(()=>{ this.peerId=null; this.status('El otro jugador se desconectó.'); });
     this.status(role==='host' ? ('Sala creada: '+code+'   ·   esperando al rival…') : ('Uniéndote a '+code+'…'));
   },
-  tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; if(!this.arena) return; this.started=true; this.startMatch(); },   // ►ARENA: arranca cuando el anfitrión ha pulsado EMPEZAR (arena = lista de rondas)
+  tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; if(!this.startPlan) return; if(this.startPlan==='arena' && !this.arena) return; this.started=true; this.startMatch(); },   // ►MODOS UX: arranca cuando el anfitrión ha pulsado EMPEZAR (startPlan = gira|arena)
+  applyStg(d){                                                                                   // ►MODOS UX: el invitado salta al mundo/minijuego que abre el anfitrión
+    if(this.role!=='client' || !d || d.i==null) return; const e = RUTA[d.i]; if(!e) return; RUTA_I = d.i;
+    if(e.mini && typeof e.mini==='string'){ lanzarMini(e); return; } const f = window['goToStage'+e.st]; if(typeof f==='function') f(); },
   startMatch(){
     const hostCls = (this.role==='host') ? this._cls() : this.peerCls;
     const cliCls  = (this.role==='host') ? this.peerCls : this._cls();
     try{ if(typeof cancelEndTally==='function') cancelEndTally(); }catch(e){}
     demo=false;
-    if(this.arena){ try{ arenaStart({ rounds:this.arena.map(i=>RUTA[i]).filter(Boolean), noLaunch:true }); }catch(e){ console.warn('[arena] start', e); } }   // ►ARENA: fija MENU_STAGE a la ronda 1 y el modo rondas
-    else { MATCH.plan='campaign'; try{ arenaStop(); }catch(e){} }
+    if(this.startPlan==='arena' && this.arena){ try{ arenaStart({ rounds:this.arena.map(i=>RUTA[i]).filter(Boolean), noLaunch:true }); }catch(e){ console.warn('[arena] start', e); } }   // ►ARENA: fija MENU_STAGE a la ronda 1 y el modo rondas
+    else { MATCH.plan='campaign'; try{ arenaStop(); MENU_RUTA_I = 0; mapSelApply(); }catch(e){} }   // ►MODOS UX: GIRA online = las 16 paradas desde la 1 (sin checkpoint en la alfa)
     setRoster(2, 0);          // 2 jugadores, 0 CPU
     resetMatch();             // spawns + limpia el mundo (no toca los flags de dispositivo)
     players[0]._charKey=hostCls; players[0]._charApplied=false; applySkin(players[0]); players[0].isAI=false;
@@ -45723,7 +45737,7 @@ window._net = {
   const readyMsg=()=> window.NET ? (NET.error?('Red no disponible: '+NET.error):'Listo. Crea una sala o únete con un código.') : 'Cargando red…';
   /* el botón ONLINE de la home ya no existe: ahora la sala se abre desde MULTIJUGADOR → campaña /
      survival, que vive en otro IIFE (setupWizard) → se expone la apertura por window. */
-  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.arena=null; try{ _arenaLobby.reset(); }catch(e){} _net.status(readyMsg()); };   // ►SFXTONI ►ARENA
+  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.arena=null; _net.startPlan=null; try{ _arenaLobby.reset(); _arenaLobby.title(); }catch(e){} _net.status(readyMsg()); };   // ►SFXTONI ►ARENA ►MODOS UX
   /* ►ARENA (MODOS A3): lobby de rondas. El anfitrión elige ALEATORIO (otra tirada con ↻) o PERSONALIZADO (6 selectores:
      mundo, mundo, mini, mundo, mini, mundo); la lista se manda al invitado por la acción 'arena' y EMPEZAR ARENA la
      manda con go:1 → los dos arrancan con la misma lista. El invitado solo mira. */
@@ -45741,26 +45755,39 @@ window._net = {
         return '<label class="arenaRow"><b>'+(i+1)+'</b><select class="arenaSel" data-i="'+i+'">'+opts+'</select></label>'; }).join('');
       host.querySelectorAll('select.arenaSel').forEach(x=>x.addEventListener('change', ()=>{ fromSelects(); render(); }));
     }
+    function title(){ const arena = MATCH.plan==='arena'; const t = $('netTitle'), su = $('netSub'); if(!t) return;
+      t.firstChild.textContent = arena ? '🌐 ARENA ONLINE ' : '🌐 GIRA ONLINE '; if(su) su.textContent = arena ? '6 RONDAS · 2 jugadores P2P' : (RUTA.length + ' MUNDOS · 2 jugadores P2P'); }
     function render(){
-      const b = box(); if(!b) return;
-      const isHost = _net.role==='host', list = isHost ? sel : (_net.arena||[]);
+      const b = box(); if(!b) return; title();
+      const isHost = _net.role==='host', arena = MATCH.plan==='arena';
+      if(!arena){                                                                              // ►MODOS UX: GIRA online = lista fija de las 16 paradas, solo EMPEZAR
+        const ol = $('arenaList'); if(ol) ol.innerHTML = RUTA.map(e=>'<li'+(e.mini?' class="mini"':'')+'>'+label(e)+'</li>').join('');
+        $('arenaHostBar').style.display = 'none'; const pk = $('arenaPick'); if(pk) pk.style.display = 'none';
+        $('arenaGuestMsg').style.display = isHost ? 'none' : ''; $('arenaStart').style.display = isHost ? '' : 'none';
+        $('arenaStart').disabled = !isHost; $('arenaStart').textContent = 'EMPEZAR GIRA';
+        if(isHost){ try{ _net.sendArena && _net.sendArena({ plan:'campaign' }); }catch(e){} }
+        return; }
+      $('arenaStart').textContent = 'EMPEZAR ARENA';
+      const list = isHost ? sel : (_net.arena||[]);
       const ol = $('arenaList'); if(ol) ol.innerHTML = list.map(idx=>{ const e = RUTA[idx]; return '<li'+(e && e.mini ? ' class="mini"' : '')+'>'+(e ? label(e) : '?')+'</li>'; }).join('');
       const pk = $('arenaPick'); if(pk) pk.style.display = (isHost && mode==='custom') ? '' : 'none';
       $('arenaModeRand').classList.toggle('sel', mode==='rand'); $('arenaModeCustom').classList.toggle('sel', mode==='custom');
       $('arenaHostBar').style.display = isHost ? '' : 'none'; $('arenaGuestMsg').style.display = isHost ? 'none' : '';
       $('arenaStart').style.display = isHost ? '' : 'none'; $('arenaStart').disabled = !isHost || list.length !== ARENA_ROUNDS;
-      if(isHost){ _net.arena = null; try{ _net.sendArena && _net.sendArena({ r:sel }); }catch(e){} }   // el invitado ve la lista en vivo
+      if(isHost){ _net.arena = null; try{ _net.sendArena && _net.sendArena({ plan:'arena', r:sel }); }catch(e){} }   // el invitado ve la lista en vivo
     }
-    function show(role){ const b = box(); if(!b) return; b.style.display = ''; if(role==='host'){ if(!sel.length) randomize(); buildSelects(); } render(); }
+    function show(role){ const b = box(); if(!b) return; b.style.display = ''; if(role==='host' && MATCH.plan==='arena'){ if(!sel.length) randomize(); buildSelects(); } render(); }
     function reset(){ mode = 'rand'; sel = []; const b = box(); if(b) b.style.display = 'none'; }
     function wire(){
       $('arenaModeRand').addEventListener('click', ()=>{ mode = 'rand'; randomize(); render(); });
       $('arenaModeCustom').addEventListener('click', ()=>{ mode = 'custom'; buildSelects(); fromSelects(); render(); });
       $('arenaReroll').addEventListener('click', ()=>{ randomize(); if(mode==='custom') buildSelects(); render(); });
-      $('arenaStart').addEventListener('click', ()=>{ if(_net.role!=='host' || sel.length!==ARENA_ROUNDS) return;
-        _net.arena = sel.slice(); try{ _net.sendArena && _net.sendArena({ r:sel, go:1 }); }catch(e){} try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
+      $('arenaStart').addEventListener('click', ()=>{ if(_net.role!=='host') return;
+        const arena = MATCH.plan==='arena'; if(arena && sel.length!==ARENA_ROUNDS) return;
+        _net.startPlan = arena ? 'arena' : 'campaign'; _net.arena = arena ? sel.slice() : null;
+        try{ _net.sendArena && _net.sendArena({ plan:_net.startPlan, r:(arena ? sel : []), go:1 }); }catch(e){} try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
     }
-    return { show, render, reset, wire, _sel:()=>sel, _mode:()=>mode };
+    return { show, render, reset, wire, title, _sel:()=>sel, _mode:()=>mode };
   })();
   try{ if($('arenaStart')) _arenaLobby.wire(); }catch(e){ console.warn('[arena] lobby', e); }
   if($('netClose'))  $('netClose').addEventListener('click', ()=>{ const l=$('netLobby'); if(l) l.style.display='none'; });
@@ -45814,6 +45841,18 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "Conectado. El anfitrión elige las rondas…":["Connected. The host is picking the rounds…","Connesso. L'host sceglie i round…","Ligado. O anfitrião escolhe as rondas…","Connecté. L'hôte choisit les manches…","Verbunden. Der Host wählt die Runden…"],
   "🌐 ARENA ONLINE":["🌐 ONLINE ARENA","🌐 ARENA ONLINE","🌐 ARENA ONLINE","🌐 ARÈNE EN LIGNE","🌐 ONLINE-ARENA"],
   "6 RONDAS · 2 jugadores P2P":["6 ROUNDS · 2 players P2P","6 ROUND · 2 giocatori P2P","6 RONDAS · 2 jogadores P2P","6 MANCHES · 2 joueurs P2P","6 RUNDEN · 2 Spieler P2P"],
+  "¿Qué jugamos?":["What are we playing?","Cosa giochiamo?","O que jogamos?","On joue à quoi ?","Was spielen wir?"],
+  "¿Con quién?":["With whom?","Con chi?","Com quem?","Avec qui ?","Mit wem?"],
+  "GIRA":["TOUR","TOUR","DIGRESSÃO","TOURNÉE","TOUR"],
+  "ARENA":["ARENA","ARENA","ARENA","ARÈNE","ARENA"],
+  "SOLO":["SOLO","DA SOLO","SOZINHO","SOLO","SOLO"],
+  "16 mundos · guardado en el mundo 8 · medallas":["16 worlds · saved at world 8 · medals","16 mondi · salvataggio al mondo 8 · medaglie","16 mundos · guardado no mundo 8 · medalhas","16 mondes · sauvegarde au monde 8 · médailles","16 Welten · Speicherpunkt bei Welt 8 · Medaillen"],
+  "6 rondas: 4 mundos + 2 minijuegos · coronas":["6 rounds: 4 worlds + 2 minigames · crowns","6 round: 4 mondi + 2 minigiochi · corone","6 rondas: 4 mundos + 2 minijogos · coroas","6 manches : 4 mondes + 2 mini-jeux · couronnes","6 Runden: 4 Welten + 2 Minispiele · Kronen"],
+  "Tú contra 1-3 CPUs en este PC":["You vs 1-3 CPUs on this PC","Tu contro 1-3 CPU su questo PC","Tu contra 1-3 CPUs neste PC","Toi contre 1-3 IA sur ce PC","Du gegen 1-3 CPUs an diesem PC"],
+  "Con amigos por internet: crea o únete a una sala":["With friends online: create or join a room","Con amici online: crea o entra in una stanza","Com amigos online: cria ou entra numa sala","Avec des amis en ligne : crée ou rejoins un salon","Mit Freunden online: Raum erstellen oder beitreten"],
+  "EMPEZAR GIRA":["START TOUR","INIZIA IL TOUR","COMEÇAR DIGRESSÃO","LANCER LA TOURNÉE","TOUR STARTEN"],
+  "🌐 GIRA ONLINE":["🌐 ONLINE TOUR","🌐 TOUR ONLINE","🌐 DIGRESSÃO ONLINE","🌐 TOURNÉE EN LIGNE","🌐 ONLINE-TOUR"],
+  "16 MUNDOS · 2 jugadores P2P":["16 WORLDS · 2 players P2P","16 MONDI · 2 giocatori P2P","16 MUNDOS · 2 jogadores P2P","16 MONDES · 2 joueurs P2P","16 WELTEN · 2 Spieler P2P"],
   "NUEVO BOTÓN":["NEW BUTTON","NUOVO PULSANTE","NOVO BOTÃO","NOUVEAU BOUTON","NEUE TASTE"],
   "ESCUDO":["SHIELD","SCUDO","ESCUDO","BOUCLIER","SCHILD"],
   "¡SHOWDOWN! TU SOMBRA":["SHOWDOWN! YOUR SHADOW","SHOWDOWN! LA TUA OMBRA","SHOWDOWN! A TUA SOMBRA","SHOWDOWN ! TON OMBRE","SHOWDOWN! DEIN SCHATTEN"],
@@ -45834,6 +45873,7 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "VELOCIDAD":["SPEED","VELOCITÀ","VELOCIDADE","VITESSE","TEMPO"]
 });
 window.__I18N_DYN = (window.__I18N_DYN || []).concat([
+  {"es":"GIRA · {0} MUNDOS · O ARENA","t":["TOUR · {0} WORLDS · OR ARENA","TOUR · {0} MONDI · O ARENA","DIGRESSÃO · {0} MUNDOS · OU ARENA","TOURNÉE · {0} MONDES · OU ARÈNE","TOUR · {0} WELTEN · ODER ARENA"]},
   {"es":"¡NIVEL {0}! ELIGE","t":["LEVEL {0}! CHOOSE","LIVELLO {0}! SCEGLI","NÍVEL {0}! ESCOLHE","NIVEAU {0} ! CHOISIS","LEVEL {0}! WÄHLE"]},
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
   {"es":"NIVEL {0} · MÁX","t":["LEVEL {0} · MAX","LIVELLO {0} · MAX","NÍVEL {0} · MÁX","NIVEAU {0} · MAX","LEVEL {0} · MAX"]},
