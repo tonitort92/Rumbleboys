@@ -98,6 +98,10 @@ de Toni → implementar.
 3. ✅ E-B 4 jugadores por sala (51772eb + bae85f7, HUD del cliente con SU clase; verificado con
    3 Edge: inputs por par, desconexión limpia a los 7 s, 17 Hz / 29 ms).
 4. **E-C**: prueba entre PCs reales (NAT) — a9 + Toni, con la URL pública, ya con 3-4 jugadores.
+5. **E-VOZ (petición de Toni 03/09)**: chat de voz por PROXIMIDAD en gira y arena — micro por
+   trystero addStream/onPeerStream, volumen por distancia entre muñecos (100% a <8 u → 0 a
+   ~28 u, calibrable), 100% fijo en lobby/tablero, mute con tecla M + botón, icono 🎤 sobre el
+   que habla, muertos se oyen entre sí. Micro abierto por defecto (no push-to-talk).
 Pendientes menores APARCADOS hasta después del playtest de Toni: rótulo RONDA i/6, recortar el
 paso sobrante del asistente, OBJ fase 2 (bloque F), rasgo escaparate del mundo 1.
 
