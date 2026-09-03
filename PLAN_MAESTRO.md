@@ -91,8 +91,10 @@ de Toni → implementar.
 
 1. ✅ +N flotantes en el cliente (cb73036).
 2. ✅ E-A replicación del mundo host→cliente (3cf88f7 + 04764cd, que además arregla la horda
-   invisible del REPACK — gobLoadKinds sin reintento). Falta E-A2: proyectiles, minas, orbes,
-   rayos del jefe y patas del Leviatán al cliente.
+   invisible del REPACK — gobLoadKinds sin reintento). ✅ E-A2 (372e9bf): proyectiles de jugador
+   y minion, cristales, minas, orbes, FX de impacto (65 ms) y tipo de ataque/combo al cliente.
+   Anotado para después: láser del dron, rayo/torbellino del jefe, Leviatán (STAGE 12), poses
+   por timers de clase.
 3. ✅ E-B 4 jugadores por sala (51772eb + bae85f7, HUD del cliente con SU clase; verificado con
    3 Edge: inputs por par, desconexión limpia a los 7 s, 17 Hz / 29 ms).
 4. **E-C**: prueba entre PCs reales (NAT) — a9 + Toni, con la URL pública, ya con 3-4 jugadores.
