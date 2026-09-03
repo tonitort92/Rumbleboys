@@ -25484,8 +25484,8 @@ function readInput(p){
   /* ►TOOLS ?fly: mientras vuelas, el teclado es de la CÁMARA → el jugador de teclado queda quieto */
   if(_fly.on && p.kbInput) return { move:new THREE.Vector3(), jump:false, dash:false, atk:false, brk:false, block:false, drop:false, throw:false, sup:false, heal:false, ult:false, spin:false, parry:false, pick:0 };
   /* ONLINE: en el HOST, al jugador remoto lo mueve el input que llega por la red (no dispositivos locales) */
-  if(window._net && _net.role==='host' && p===_net.remote){
-    return (_net.remoteInput && performance.now()-(_net.riStamp||0) < 500) ? _net.remoteInput : _net.neutral();
+  if(window._net && _net.role==='host' && p._netPeer){   // ►NET4: cada remoto lee el input de su par
+    return _net.inputFor(p);
   }
   const kb = p.kbInput;                           // ¿este jugador lee teclado/ratón?
   let pad = null;
@@ -44760,7 +44760,8 @@ function returnToMenu(){
   stageIntroAbort();   // ►CARGA: corta una carga o una presentación a medias (voz, cuenta, aviso)
   try{ if(window._net && _net.room && _net.room.leave) _net.room.leave(); }catch(e){}   // ONLINE: abandona la sala P2P
   if(window._net){ _net.role='local'; _net.room=null; _net.started=false; _net.peerId=null; _net.peerCls=null;
-                   _net.remote=null; _net.localPlayer=null; _net.snap=null; _net.sendInput=_net.sendSnap=_net.sendHi=null; }
+                   _net.remote=null; _net.localPlayer=null; _net.snap=null; _net.sendInput=_net.sendSnap=_net.sendHi=null;
+                   _net.peers={}; _net.roster=null; _net.myIdx=1; _net.startPlan=null; _net.arena=null; }   // ►NET4
   cancelEndTally();             // limpia el recuento/leaderboard al salir al menú
   try{ arenaStop(); }catch(e){}   // ►ARENA
   try{ ckRefreshHome(); }catch(e){}   // ►CHECKPOINT: la home enseña CONTINUAR si hay gira guardada
@@ -45731,6 +45732,12 @@ renderHomeRecords();
 <script>
 window._net = {
   role:'local', room:null, peerId:null, peerCls:null, started:false, _pending:null, code:'',
+  /* ►NET4 (E-B, 03/09/2026): hasta 4 jugadores por sala. El anfitrión lleva peers = { peerId → { idx, cls, input, stamp } }
+     (índices 1..3 por orden de llegada); cada cliente recibe su índice (you) y el roster de clases en el mensaje de
+     arranque. Los inputs llegan con el peerId del emisor y se aplican a players[idx] en readInput. */
+  peers:{}, myIdx:1, roster:null, MAXP:4,
+  peerCount(){ return Object.keys(this.peers).length; },
+  readyPeers(){ let n=0; for(const k in this.peers) if(this.peers[k].cls) n++; return n; },
   remote:null, localPlayer:null, remoteInput:null, riStamp:0, snap:null, snapAccum:0, _riVec:null, _neutral:null,
   sendInput:null, sendSnap:null, sendHi:null,
   _cls(){ return (typeof MATCH!=='undefined' && MATCH && MATCH.cls) || 'voxelhero'; },
@@ -45741,10 +45748,16 @@ window._net = {
   packInput(inp){ return { x:+inp.move.x.toFixed(3), z:+inp.move.z.toFixed(3),
     j:inp.jump?1:0, da:inp.dash?1:0, a:inp.atk?1:0, br:inp.brk?1:0, bl:inp.block?1:0, dr:inp.drop?1:0,
     th:inp.throw?1:0, su:inp.sup?1:0, he:inp.heal?1:0, u:inp.ult?1:0, sp:inp.spin?1:0, pa:inp.parry?1:0, pk:inp.pick|0 }; },
-  recvInput(d){ const v=this._riVec||(this._riVec=new THREE.Vector3()); v.set(d.x||0,0,d.z||0);
-    this.remoteInput={ move:v, jump:!!d.j,dash:!!d.da,atk:!!d.a,brk:!!d.br,block:!!d.bl,drop:!!d.dr,
+  recvInput(d, pid){
+    const pr = (pid && this.peers[pid]) || null;
+    const v = pr ? (pr._vec||(pr._vec=new THREE.Vector3())) : (this._riVec||(this._riVec=new THREE.Vector3())); v.set(d.x||0,0,d.z||0);
+    const inp = { move:v, jump:!!d.j,dash:!!d.da,atk:!!d.a,brk:!!d.br,block:!!d.bl,drop:!!d.dr,
       throw:!!d.th,sup:!!d.su,heal:!!d.he,ult:!!d.u,spin:!!d.sp,parry:!!d.pa, pick:d.pk|0 };
-    this.riStamp=performance.now(); },
+    if(pr){ pr.input = inp; pr.stamp = performance.now(); }
+    this.remoteInput = inp; this.riStamp = performance.now(); },   // ►NET4: por par (remoteInput queda como espejo del último)
+  inputFor(p){                                                     // ►NET4: input del jugador remoto p en el host
+    const pid = p && p._netPeer, pr = pid && this.peers[pid];
+    return (pr && pr.input && performance.now()-(pr.stamp||0) < 500) ? pr.input : this.neutral(); },
   connect(code, role){
     if(!window.NET || !NET.joinRoom){ if(window.NET && NET.error){ this.status('Red no disponible: '+NET.error); return; } this._pending={code,role}; this.status('Cargando red…'); return; }
     this.role=role; this.code=code;
@@ -45754,43 +45767,52 @@ window._net = {
     const [sSnap,gSnap]=room.makeAction('snap');
     const [sHi,gHi]=room.makeAction('hi');
     const [sArena,gArena]=room.makeAction('arena'); this.sendArena=sArena;                       // ►ARENA: lista de rondas (índices de RUTA) + go
-    gArena(d=>{ this.startPlan=(d && d.plan) || 'arena'; this.arena=(d && d.r && d.r.length) ? d.r.slice() : null; try{ if(this.role==='client') MATCH.plan=this.startPlan; if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
+    gArena(d=>{ this.startPlan=(d && d.plan) || 'arena'; this.arena=(d && d.r && d.r.length) ? d.r.slice() : null;
+      if(d && d.you!=null){ this.myIdx=d.you|0; this.roster=(d.roster||[]).slice(); }   // ►NET4: mi índice y las clases de todos
+      try{ if(this.role==='client') MATCH.plan=this.startPlan; if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
     const [sStg,gStg]=room.makeAction('stg'); this.sendStg=sStg;                                     // ►MODOS UX: el anfitrión avisa del cambio de mundo; el invitado lo sigue
     gStg(d=>{ try{ this.applyStg(d); }catch(e){ console.warn('[net] stg', e); } });
     this.sendInput=sInp; this.sendSnap=sSnap; this.sendHi=sHi;
-    gInp(d=> this.recvInput(d));
+    gInp((d,pid)=> this.recvInput(d, pid));
     gSnap(d=> { this.snap=d; });
-    gHi(d=> { this.peerCls=d.cls; this.tryStart(); });
-    room.onPeerJoin(id=>{ this.peerId=id; this.status(this.role==='host' ? (MATCH.plan==='arena' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. Pulsa EMPEZAR GIRA.') : (MATCH.plan==='arena' ? 'Conectado. El anfitrión elige las rondas…' : 'Conectado. Esperando al anfitrión…')); try{ sHi({cls:this._cls()}); }catch(e){}
+    gHi((d,pid)=> { this.peerCls=d.cls; if(this.role==='host' && pid && this.peers[pid]) this.peers[pid].cls=d.cls; try{ if(window._arenaLobby) _arenaLobby.render(); }catch(e){} this.tryStart(); });
+    room.onPeerJoin(id=>{ this.peerId=id;
+      if(this.role==='host'){ if(this.peerCount() >= this.MAXP-1 || this.started){ this.status('Sala llena.'); return; }
+        const used = Object.values(this.peers).map(q=>q.idx); let idx=1; while(used.indexOf(idx)>=0) idx++; this.peers[id] = { idx, cls:null, input:null, stamp:0 }; }   // ►NET4
+      this.status(this.role==='host' ? (MATCH.plan==='arena' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. Pulsa EMPEZAR GIRA.') : (MATCH.plan==='arena' ? 'Conectado. El anfitrión elige las rondas…' : 'Conectado. Esperando al anfitrión…')); try{ sHi({cls:this._cls()}); }catch(e){}
       try{ if(window._arenaLobby) _arenaLobby.show(this.role); }catch(e){} this.tryStart(); });   // ►ARENA: el lobby de rondas aparece al conectar
-    room.onPeerLeave(()=>{ this.peerId=null; this.status('El otro jugador se desconectó.'); });
+    room.onPeerLeave(id=>{
+      if(this.role==='host' && this.peers[id]){ const pr=this.peers[id]; delete this.peers[id];
+        if(this.started){ const p=players[pr.idx]; if(p){ p.out=true; p.dead=true; p.stocks=0; try{ fighterHide(p.gfx); }catch(e){} } }   // ►NET4: el que se va queda fuera, la partida sigue
+        try{ if(window._arenaLobby) _arenaLobby.render(); }catch(e){} }
+      if(this.peerCount()===0) this.peerId=null;
+      this.status(this.role==='host' ? ('Un jugador se desconectó (' + this.peerCount() + ' en sala).') : 'El anfitrión se desconectó.'); });
     this.status(role==='host' ? ('Sala creada: '+code+'   ·   esperando al rival…') : ('Uniéndote a '+code+'…'));
   },
-  tryStart(){ if(this.started) return; if(!this.peerId || !this.peerCls) return; if(!this.startPlan) return; if(this.startPlan==='arena' && !this.arena) return; this.started=true; this.startMatch(); },   // ►MODOS UX: arranca cuando el anfitrión ha pulsado EMPEZAR (startPlan = gira|arena)
+  tryStart(){ if(this.started) return;
+    if(this.role==='host'){ if(this.readyPeers() < 1) return; } else { if(!this.roster) return; }   // ►NET4: host: ≥1 par con clase; cliente: roster+índice recibidos
+    if(!this.startPlan) return; if(this.startPlan==='arena' && !this.arena) return; this.started=true; this.startMatch(); },   // ►MODOS UX: arranca cuando el anfitrión ha pulsado EMPEZAR (startPlan = gira|arena)
   applyStg(d){                                                                                   // ►MODOS UX: el invitado salta al mundo/minijuego que abre el anfitrión
     if(this.role!=='client' || !d || d.i==null) return; const e = RUTA[d.i]; if(!e) return; RUTA_I = d.i;
     try{ _netWorldReset(); }catch(e2){}   // ►NETWORLD: fuera los fantasmas del mundo anterior
     if(e.mini && typeof e.mini==='string'){ lanzarMini(e); return; } const f = window['goToStage'+e.st]; if(typeof f==='function') f(); },
   startMatch(){
-    const hostCls = (this.role==='host') ? this._cls() : this.peerCls;
-    const cliCls  = (this.role==='host') ? this.peerCls : this._cls();
+    /* ►NET4: roster = [clase del host, clase del par idx1, idx2, idx3]; el host lo construye de peers, el cliente lo recibe */
+    let roster;
+    if(this.role==='host'){ roster=[this._cls()]; for(const pid in this.peers){ const pr=this.peers[pid]; roster[pr.idx]=pr.cls||'voxelhero'; } for(let i=0;i<roster.length;i++) if(!roster[i]) roster[i]='voxelhero'; this.roster=roster; }
+    else { roster=(this.roster && this.roster.length) ? this.roster.slice() : [this.peerCls||'voxelhero', this._cls()]; if(this.myIdx>=roster.length) roster[this.myIdx]=this._cls(); }
+    const nP = Math.max(2, Math.min(this.MAXP, roster.length));
     try{ if(typeof cancelEndTally==='function') cancelEndTally(); }catch(e){}
     demo=false;
     if(this.startPlan==='arena' && this.arena){ try{ arenaStart({ rounds:this.arena.map(i=>RUTA[i]).filter(Boolean), noLaunch:true }); }catch(e){ console.warn('[arena] start', e); } }   // ►ARENA: fija MENU_STAGE a la ronda 1 y el modo rondas
     else { MATCH.plan='campaign'; try{ arenaStop(); MENU_RUTA_I = 0; mapSelApply(); }catch(e){} }   // ►MODOS UX: GIRA online = las 16 paradas desde la 1 (sin checkpoint en la alfa)
-    setRoster(2, 0);          // 2 jugadores, 0 CPU
+    setRoster(nP, 0);         // ►NET4: N humanos, 0 CPU
     resetMatch();             // spawns + limpia el mundo (no toca los flags de dispositivo)
-    players[0]._charKey=hostCls; players[0]._charApplied=false; applySkin(players[0]); players[0].isAI=false;
-    players[1]._charKey=cliCls;  players[1]._charApplied=false; applySkin(players[1]); players[1].isAI=false;
-    if(this.role==='host'){
-      this.remote=players[1]; this.localPlayer=players[0];
-      players[0].kbInput=true;  players[0].padIndex=0;    // el anfitrión juega en local
-      players[1].kbInput=false; players[1].padIndex=-1;   // al rival lo mueve la red
-    } else {
-      this.localPlayer=players[1]; this.remote=null;
-      players[1].kbInput=true;  players[1].padIndex=0;    // el invitado controla al índice 1 (solo para ENVIAR su input)
-      players[0].kbInput=false; players[0].padIndex=-1;
-    }
+    const me = (this.role==='host') ? 0 : this.myIdx;
+    for(let i=0;i<nP;i++){ const q=players[i]; if(!q) continue; q._charKey=roster[i]||'voxelhero'; q._charApplied=false; applySkin(q); q.isAI=false; q._netPeer=null;
+      const local = (i===me); q.kbInput=local; q.padIndex=local?0:-1; }
+    this.localPlayer=players[me]; this.remote=(this.role==='host') ? players[1] : null;
+    if(this.role==='host'){ for(const pid in this.peers){ const q=players[this.peers[pid].idx]; if(q) q._netPeer=pid; } }   // ►NET4: cada remoto sabe de qué par lee
     running=true; gameOver=false; this._goDone=false;
     /* ►NETFIX (02/09/2026, smoke online 1v1): la partida online quedaba TAPADA por el cielo de la home
        (#titleOverlay.sky) porque solo launchMatch() hacia skyOff(); y el tour BIENVENIDO de un perfil
@@ -45898,15 +45920,16 @@ window._net = {
       host.querySelectorAll('select.arenaSel').forEach(x=>x.addEventListener('change', ()=>{ fromSelects(); render(); }));
     }
     function title(){ const arena = MATCH.plan==='arena'; const t = $('netTitle'), su = $('netSub'); if(!t) return;
-      t.firstChild.textContent = arena ? '🌐 ARENA ONLINE ' : '🌐 GIRA ONLINE '; if(su) su.textContent = arena ? '6 RONDAS · 2 jugadores P2P' : (RUTA.length + ' MUNDOS · 2 jugadores P2P'); }
+      t.firstChild.textContent = arena ? '🌐 ARENA ONLINE ' : '🌐 GIRA ONLINE '; if(su) su.textContent = arena ? '6 RONDAS · hasta 4 jugadores P2P' : (RUTA.length + ' MUNDOS · hasta 4 jugadores P2P'); }
     function render(){
       const b = box(); if(!b) return; title();
       const isHost = _net.role==='host', arena = MATCH.plan==='arena';
+      try{ const st=$('netStatus'); if(st && isHost){ const n=_net.peerCount(); st.textContent = 'Jugadores en sala: ' + (n+1) + '/' + _net.MAXP + (n ? (arena ? ' · elige las rondas y pulsa EMPEZAR ARENA' : ' · pulsa EMPEZAR GIRA') : ' · esperando…'); } }catch(e){}   // ►NET4
       if(!arena){                                                                              // ►MODOS UX: GIRA online = lista fija de las 16 paradas, solo EMPEZAR
         const ol = $('arenaList'); if(ol) ol.innerHTML = RUTA.map(e=>'<li'+(e.mini?' class="mini"':'')+'>'+label(e)+'</li>').join('');
         $('arenaHostBar').style.display = 'none'; const pk = $('arenaPick'); if(pk) pk.style.display = 'none';
         $('arenaGuestMsg').style.display = isHost ? 'none' : ''; $('arenaStart').style.display = isHost ? '' : 'none';
-        $('arenaStart').disabled = !isHost; $('arenaStart').textContent = 'EMPEZAR GIRA';
+        $('arenaStart').disabled = !isHost || _net.readyPeers() < 1; $('arenaStart').textContent = 'EMPEZAR GIRA';
         if(isHost){ try{ _net.sendArena && _net.sendArena({ plan:'campaign' }); }catch(e){} }
         return; }
       $('arenaStart').textContent = 'EMPEZAR ARENA';
@@ -45915,7 +45938,7 @@ window._net = {
       const pk = $('arenaPick'); if(pk) pk.style.display = (isHost && mode==='custom') ? '' : 'none';
       $('arenaModeRand').classList.toggle('sel', mode==='rand'); $('arenaModeCustom').classList.toggle('sel', mode==='custom');
       $('arenaHostBar').style.display = isHost ? '' : 'none'; $('arenaGuestMsg').style.display = isHost ? 'none' : '';
-      $('arenaStart').style.display = isHost ? '' : 'none'; $('arenaStart').disabled = !isHost || list.length !== ARENA_ROUNDS;
+      $('arenaStart').style.display = isHost ? '' : 'none'; $('arenaStart').disabled = !isHost || list.length !== ARENA_ROUNDS || _net.readyPeers() < 1;
       if(isHost){ _net.arena = null; try{ _net.sendArena && _net.sendArena({ plan:'arena', r:sel }); }catch(e){} }   // el invitado ve la lista en vivo
     }
     function show(role){ const b = box(); if(!b) return; b.style.display = ''; if(role==='host' && MATCH.plan==='arena'){ if(!sel.length) randomize(); buildSelects(); } render(); }
@@ -45927,7 +45950,10 @@ window._net = {
       $('arenaStart').addEventListener('click', ()=>{ if(_net.role!=='host') return;
         const arena = MATCH.plan==='arena'; if(arena && sel.length!==ARENA_ROUNDS) return;
         _net.startPlan = arena ? 'arena' : 'campaign'; _net.arena = arena ? sel.slice() : null;
-        try{ _net.sendArena && _net.sendArena({ plan:_net.startPlan, r:(arena ? sel : []), go:1 }); }catch(e){} try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
+        /* ►NET4: a cada par su índice + el roster de clases (mensaje dirigido); luego el host arranca */
+        const roster=[_net._cls()]; for(const pid in _net.peers){ const pr=_net.peers[pid]; roster[pr.idx]=pr.cls||'voxelhero'; } for(let i=0;i<roster.length;i++) if(!roster[i]) roster[i]='voxelhero';
+        try{ for(const pid in _net.peers){ _net.sendArena && _net.sendArena({ plan:_net.startPlan, r:(arena ? sel : []), go:1, you:_net.peers[pid].idx, roster }, pid); } }catch(e){}
+        try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
     }
     return { show, render, reset, wire, title, _sel:()=>sel, _mode:()=>mode };
   })();
@@ -45982,7 +46008,10 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "Conectado. Elige las rondas y pulsa EMPEZAR ARENA.":["Connected. Pick the rounds and press START ARENA.","Connesso. Scegli i round e premi INIZIA L'ARENA.","Ligado. Escolhe as rondas e carrega em COMEÇAR ARENA.","Connecté. Choisis les manches et appuie sur LANCER L'ARÈNE.","Verbunden. Wähle die Runden und drücke ARENA STARTEN."],
   "Conectado. El anfitrión elige las rondas…":["Connected. The host is picking the rounds…","Connesso. L'host sceglie i round…","Ligado. O anfitrião escolhe as rondas…","Connecté. L'hôte choisit les manches…","Verbunden. Der Host wählt die Runden…"],
   "🌐 ARENA ONLINE":["🌐 ONLINE ARENA","🌐 ARENA ONLINE","🌐 ARENA ONLINE","🌐 ARÈNE EN LIGNE","🌐 ONLINE-ARENA"],
-  "6 RONDAS · 2 jugadores P2P":["6 ROUNDS · 2 players P2P","6 ROUND · 2 giocatori P2P","6 RONDAS · 2 jogadores P2P","6 MANCHES · 2 joueurs P2P","6 RUNDEN · 2 Spieler P2P"],
+  "6 RONDAS · hasta 4 jugadores P2P":["6 ROUNDS · up to 4 players P2P","6 ROUND · fino a 4 giocatori P2P","6 RONDAS · até 4 jogadores P2P","6 MANCHES · jusqu'à 4 joueurs P2P","6 RUNDEN · bis zu 4 Spieler P2P"],
+  "16 MUNDOS · hasta 4 jugadores P2P":["16 WORLDS · up to 4 players P2P","16 MONDI · fino a 4 giocatori P2P","16 MUNDOS · até 4 jogadores P2P","16 MONDES · jusqu'à 4 joueurs P2P","16 WELTEN · bis zu 4 Spieler P2P"],
+  "Sala llena.":["Room is full.","Stanza piena.","Sala cheia.","Salon complet.","Raum voll."],
+  "El anfitrión se desconectó.":["The host disconnected.","L'host si è disconnesso.","O anfitrião desligou-se.","L'hôte s'est déconnecté.","Der Host hat die Verbindung getrennt."],
   "¿Qué jugamos?":["What are we playing?","Cosa giochiamo?","O que jogamos?","On joue à quoi ?","Was spielen wir?"],
   "¿Con quién?":["With whom?","Con chi?","Com quem?","Avec qui ?","Mit wem?"],
   "GIRA":["TOUR","TOUR","DIGRESSÃO","TOURNÉE","TOUR"],
@@ -46020,6 +46049,10 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "VELOCIDAD":["SPEED","VELOCITÀ","VELOCIDADE","VITESSE","TEMPO"]
 });
 window.__I18N_DYN = (window.__I18N_DYN || []).concat([
+  {"es":"Jugadores en sala: {0}/{1} · pulsa EMPEZAR GIRA","t":["Players in room: {0}/{1} · press START TOUR","Giocatori in stanza: {0}/{1} · premi INIZIA IL TOUR","Jogadores na sala: {0}/{1} · carrega em COMEÇAR DIGRESSÃO","Joueurs dans le salon : {0}/{1} · appuie sur LANCER LA TOURNÉE","Spieler im Raum: {0}/{1} · drücke TOUR STARTEN"]},
+  {"es":"Jugadores en sala: {0}/{1} · elige las rondas y pulsa EMPEZAR ARENA","t":["Players in room: {0}/{1} · pick the rounds and press START ARENA","Giocatori in stanza: {0}/{1} · scegli i round e premi INIZIA L'ARENA","Jogadores na sala: {0}/{1} · escolhe as rondas e carrega em COMEÇAR ARENA","Joueurs dans le salon : {0}/{1} · choisis les manches et appuie sur LANCER L'ARÈNE","Spieler im Raum: {0}/{1} · wähle die Runden und drücke ARENA STARTEN"]},
+  {"es":"Jugadores en sala: {0}/{1} · esperando…","t":["Players in room: {0}/{1} · waiting…","Giocatori in stanza: {0}/{1} · in attesa…","Jogadores na sala: {0}/{1} · à espera…","Joueurs dans le salon : {0}/{1} · en attente…","Spieler im Raum: {0}/{1} · warte…"]},
+  {"es":"Un jugador se desconectó ({0} en sala).","t":["A player disconnected ({0} in room).","Un giocatore si è disconnesso ({0} in stanza).","Um jogador desligou-se ({0} na sala).","Un joueur s'est déconnecté ({0} dans le salon).","Ein Spieler hat die Verbindung getrennt ({0} im Raum)."]},
   {"es":"GIRA · {0} MUNDOS · O ARENA","t":["TOUR · {0} WORLDS · OR ARENA","TOUR · {0} MONDI · O ARENA","DIGRESSÃO · {0} MUNDOS · OU ARENA","TOURNÉE · {0} MONDES · OU ARÈNE","TOUR · {0} WELTEN · ODER ARENA"]},
   {"es":"¡NIVEL {0}! ELIGE","t":["LEVEL {0}! CHOOSE","LIVELLO {0}! SCEGLI","NÍVEL {0}! ESCOLHE","NIVEAU {0} ! CHOISIS","LEVEL {0}! WÄHLE"]},
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
