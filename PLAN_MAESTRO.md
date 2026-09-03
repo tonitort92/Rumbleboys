@@ -90,11 +90,12 @@ de Toni → implementar.
 ## E. ONLINE/RED · sesión 7f (único editor del HTML) · EN CURSO desde 03/09 ("aplica los cambios")
 
 1. ✅ +N flotantes en el cliente (cb73036).
-2. **E-A Replicación del mundo host→cliente**: minions, jefe, objetos, monedas y proyectiles como
-   "fantasmas" pintados desde el snapshot — el cliente deja de estar en un mundo vacío. Es EL
-   límite anotado de la gira/arena online.
-3. **E-B**: 4 jugadores por sala (la alfa iba a 2).
-4. **E-C**: prueba entre DOS PCs reales (NAT) — a9 + Toni, con la URL pública.
+2. ✅ E-A replicación del mundo host→cliente (3cf88f7 + 04764cd, que además arregla la horda
+   invisible del REPACK — gobLoadKinds sin reintento). Falta E-A2: proyectiles, minas, orbes,
+   rayos del jefe y patas del Leviatán al cliente.
+3. ✅ E-B 4 jugadores por sala (51772eb + bae85f7, HUD del cliente con SU clase; verificado con
+   3 Edge: inputs por par, desconexión limpia a los 7 s, 17 Hz / 29 ms).
+4. **E-C**: prueba entre PCs reales (NAT) — a9 + Toni, con la URL pública, ya con 3-4 jugadores.
 Pendientes menores APARCADOS hasta después del playtest de Toni: rótulo RONDA i/6, recortar el
 paso sobrante del asistente, OBJ fase 2 (bloque F), rasgo escaparate del mundo 1.
 
