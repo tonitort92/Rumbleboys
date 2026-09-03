@@ -207,7 +207,7 @@ window.addEventListener('load', function(){
   #voiceTags { position:fixed; inset:0; pointer-events:none; z-index:34; }
   #voiceTags .vt { position:absolute; transform:translate(-50%,-100%); font-size:22px; line-height:1; filter:drop-shadow(0 2px 3px rgba(0,0,0,.9)); animation:vtPulse .6s ease-in-out infinite; }
   @keyframes vtPulse { 0%,100%{ transform:translate(-50%,-100%) scale(1); } 50%{ transform:translate(-50%,-100%) scale(1.18); } }
-  #voiceHud { position:fixed; right:16px; top:14px; z-index:24; pointer-events:none; font-size:22px; line-height:1; padding:6px 9px; border-radius:12px;
+  #voiceHud { position:fixed; right:16px; top:64px; z-index:24; pointer-events:none;   /* debajo del botón de música (arriba-derecha), que lo tapaba */ font-size:22px; line-height:1; padding:6px 9px; border-radius:12px;
               background:rgba(8,11,26,.7); border:1px solid rgba(255,255,255,.25); box-shadow:0 2px 8px rgba(0,0,0,.5); }
   #voiceHud.hidden { display:none; } #voiceHud.off { filter:grayscale(1) brightness(.6); } #voiceHud.talk { border-color:#9fffd8; box-shadow:0 0 12px rgba(159,255,216,.8); }
   #lvlCards { position:fixed; left:16px; bottom:226px; z-index:24;   /* ►HUDLOL: justo encima de los atajos */ pointer-events:none; width:372px;
