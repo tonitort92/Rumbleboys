@@ -21436,9 +21436,9 @@ function updateHUD(){
       xb.lastElementChild.textContent = '★ ' + N + ' PTS' + (lvl>0 ? (' · NIVEL '+(lvl+1)) : '');
     }
   }
-  updateAtkBar(P1);
+  updateAtkBar(hudP());   // ►NET4
   updateRank();     // ►RANKXP: puestos + EXP del ranking de la izquierda
-  updateGear(P1);   // ►GEAR: stickers de lo que llevas, a la derecha
+  updateGear(hudP());   // ►GEAR: stickers de lo que llevas, a la derecha · ►NET4
 }
 /* ---------- ►GEAR · stickers de lo que llevas (columna derecha) ----------
    Una pegatina por cosa: arma (con munición), arcoíris (con segundos), cápsula de stat (con nivel)
@@ -22887,6 +22887,8 @@ function updateLevels(dt){                          // tick del host: sube nivel
     lvlOfferTick(p, dt);
   }
 }
+/* ►NET4: jugador cuyo HUD se pinta — el local del online (players[myIdx] en el cliente) o P1 */
+function hudP(){ return (window._net && _net.role && _net.role!=='local' && _net.localPlayer) ? _net.localPlayer : (typeof P1!=='undefined' ? P1 : null); }
 function lvlPaintLocks(p){                          // fichas escudo/F/R en gris con "N4/N8/N14" hasta que se estrenan
   for(const slot of ['e','shield','f','r']){
     const b = document.getElementById('atkb_'+slot); if(!b) continue;
@@ -25625,7 +25627,7 @@ function _padGlyph(pad){   // A/B/X/Y = círculo (round); el resto = pastilla
 }
 function renderAtkBar(){
   const el = document.getElementById('atkBar'); if(!el) return;
-  const k  = (typeof P1!=='undefined' && P1 && P1._charKey) || 'voxelhero';
+  const _hp = hudP(); const k  = (_hp && _hp._charKey) || 'voxelhero'   // ►NET4: el HUD es del jugador LOCAL (en el cliente no es P1);
   const mv = CLASS_MOVES[k] || CLASS_MOVES.voxelhero;
   /* ►CDRING: círculo con ANILLO de enfriamiento (--p lo escribe updateAtkBar) + tecla y mando DENTRO */
   const cd = s =>
@@ -25669,7 +25671,7 @@ function pollMoveSheet(){
   _selPrev = sel;
   const ab = document.getElementById('atkBar');
   const show = _ctrlBarOn && running && !gameOver && !demo;
-  if(show && (typeof P1!=='undefined') && P1 && P1._charKey!==_ctrlBarKey){ _ctrlBarKey = P1._charKey; renderAtkBar(); }   // re-pinta la fila de botones al cambiar de clase
+  if(show && hudP() && hudP()._charKey!==_ctrlBarKey){ _ctrlBarKey = hudP()._charKey; renderAtkBar(); }   // ►NET4   // re-pinta la fila de botones al cambiar de clase
   if(ab) ab.classList.toggle('hidden', !show);   // la fila de botones se oculta/muestra con TAB/SELECT
   /* ►RANKXP/►GEAR: ranking y stickers viven con la PARTIDA (no con TAB: no son chuletas de controles) */
   const inMatch = running && !gameOver && !demo;
