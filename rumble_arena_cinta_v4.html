@@ -10903,7 +10903,7 @@ function _energyLanceMesh(color, len){
 function _orbPulse(m){ if(!m || !m._halo || !m._haloBase) return;
   const b = m._haloBase, k = 1 + .17*Math.sin(t*22 + m.id);
   m._halo.scale.set(b.x*k, m._lance ? b.y : b.y*k, b.z*k); }
-function orbPop(pos, color){   // ESTALLIDO en el color de la bola
+function orbPop(pos, color){ _netFx('pop', pos, color, 0);   // ESTALLIDO en el color de la bola
   burst(pos, color, 12, 6, 4.5, .8); ring(pos, color, 15, .32);
 }
 /* BÁSICO por clase: MAGO y BRUJA lanzan BOLAS DE ENERGÍA de su color de marca aclarado (mismo
@@ -11597,7 +11597,7 @@ function fireBazooka(p){
 /* ►QTOON · CHOQUE de una Q arrojadiza: flash/estrellas/esquirlas toon en el color de clase (toonHit, el mismo
    que usa el cuerpo a cuerpo), chispa orientada, anillo y un sonido propio (metálico para shuriken y lanza,
    sordo para el hacha). `f` = fuerza (0.5 suelo · 0.8 minion · 0.9 jugador). Respaldo en cubos si el toon está apagado. */
-function qImpactFX(pos, s, dir, f){
+function qImpactFX(pos, s, dir, f){ _netFx('q', pos, (s && (s.qcol||s.col)) || 0xffffff, f);
   const c = s.qcol || s.col || 0xffffff;
   const P = new THREE.Vector3(pos.x, pos.y, pos.z);
   if(!toonHit(P, c, f, dir)) burst(P, c, 6, 4, 3, .6);
@@ -11614,7 +11614,7 @@ function killWproj(i, spark){
   else { s.m.geometry.dispose(); if(s.m.material) s.m.material.dispose(); }
   wprojs.splice(i,1);
 }
-function missileExplode(s){
+function missileExplode(s){ _netFx('blast', s.m.position, 0xffa040, 1);
   const c = s.m.position.clone();
   burst(c, 0xff7a18, 26, 9, 7, 1.3); burst(c, 0x222222, 10, 6, 4, 1);
   ring(c, 0xff8a2a, 26, .55); shake=Math.max(shake,.85); fovKick=Math.max(fovKick,.9);
@@ -11646,7 +11646,7 @@ function missileExplode(s){
 }
 /* EXPLOSIÓN de flecha (ráfaga 360° de la arquera): AoE de daño alto + buen empuje al impactar */
 const ABLAST_R = 3.4, ABLAST_DMG = 20;
-function arrowBlast(c, s){
+function arrowBlast(c, s){ _netFx('blast', c, 0xffd060, 1);
   const owner=s.owner, R=s.blastR||ABLAST_R, D=s.blastDmg||ABLAST_DMG, big=R>4;   // ►SUPERR: la flecha gigante y la genkidama traen su radio/daño; las grandes NO se bloquean
   burst(c, 0xb6ff7a, 20, 8, 6, 1.1); burst(c, 0xeafff0, 8, 5, 4, .8); ring(c, 0x9cff5a, 22, .45);
   shake=Math.max(shake,.38); fovKick=Math.max(fovKick,.38); sfx.crack();
@@ -11828,7 +11828,7 @@ function dropMine(p){
   mines.push({ m, owner:p, t:0 }); sfx.shardC();
 }
 function killMine(i){ const mn=mines[i]; scene.remove(mn.m); mn.m.visible=false; _minePool.push(mn.m); mines.splice(i,1); }
-function explodeMine(mn){
+function explodeMine(mn){ _netFx('blast', mn.m.position, 0xff4040, 1);
   const c = mn.m.position.clone();
   burst(c, 0xff7a2a, 18, 7, 5, 1); ring(c, 0xff8a3a, 16, .4); shake=Math.max(shake,.4); sfx.crack();
   for(const p of players){
@@ -23033,7 +23033,45 @@ function updateCapTimers(dt){
    proyectiles, minas, orbes, rayos del jefe, patas del Leviatán (bloque E-A2).
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 let _NID = 0;
-const NETW = { m:new Map(), i:new Map(), c:new Map(), k:new Map(), boss:false, ph:'none', clip:'' };
+const NETW = { m:new Map(), i:new Map(), c:new Map(), k:new Map(), j:new Map(), boss:false, ph:'none', clip:'' };
+const _netFxQ = [];
+function _netFx(k, pos, col, f){   // ►E-A2: el host apunta el impacto; viaja en el siguiente snapshot
+  if(!(window._net && _net.role==='host') || !pos || _netFxQ.length > 40) return;
+  _netFxQ.push([k, +pos.x.toFixed(1), +pos.y.toFixed(1), +pos.z.toFixed(1), col|0, +((f||0)).toFixed(1)]);
+}
+const _nfxP = new THREE.Vector3(), _nfxD = new THREE.Vector3(0,0,1);
+function _netFxReplay(F){
+  for(const e of F){ const [k,x,y,z,col,f] = e; _nfxP.set(x,y,z);
+    try{
+      if(k==='hit'){ hitSpark(_nfxP, _nfxD, 0xffffff, 1); burst(_nfxP, col, 10, 6, 5, .8); ring(_nfxP, col, 10, .3); }
+      else if(k==='smash'){ burst(_nfxP, 0xffffff, 18, 9, 7, 1.1); ring(_nfxP, 0xffffff, 16, .35); flashT = Math.max(flashT, .06); canvas.style.filter = 'brightness(1.12)'; }
+      else if(k==='pop'){ orbPop(_nfxP, col); }
+      else { burst(_nfxP, col, 14, 7, 6, .9); ring(_nfxP, col, 14, .4); }
+    }catch(err){}
+  }
+}
+const _NP_UPY = new THREE.Vector3(0,1,0), _NP_UPZ = new THREE.Vector3(0,0,1), _npD = new THREE.Vector3();
+function _netProjMesh(k, col, scl){
+  let m = null;
+  try{
+    if(k==='ar') m = _arrowMesh(scl); else if(k==='ax') m = _axeMesh(scl); else if(k==='sp') m = _spearMesh(scl);
+    else if(k==='or' || k==='eo') m = _energyOrbMesh(col, (scl||1)*1.35); else if(k==='la') m = _energyLanceMesh(col, 1.1);
+    else if(k==='su') m = _shurikenMesh('q');
+    else if(k==='sd') m = new THREE.Mesh(shardFlyGeo, new THREE.MeshBasicMaterial({ color:col }));
+  }catch(e){ m = null; }
+  if(!m) m = new THREE.Mesh(_mprojGeo, new THREE.MeshStandardMaterial({ color:col, emissive:col, emissiveIntensity:.8 }));   // sf/mn/cy/sh/wv/mi y fallbacks
+  if(['sd','sf','mn','cy','sh','wv','mi','su'].indexOf(k) >= 0) m.scale.setScalar(k==='mn' ? 1 : (scl||1));
+  m.visible = true; return m;
+}
+function _netProjOrient(g){
+  const m = g.m; _npD.set(g.dx, g.dy, g.dz); if(_npD.lengthSq() < .01) return;
+  if(g.k==='ar' || g.k==='sp' || g.k==='la' || g.k==='sd' || g.k==='cy') m.quaternion.setFromUnitVectors(_NP_UPY, _npD);
+  else if(g.k==='su' || g.k==='sh' || g.k==='wv') m.quaternion.setFromUnitVectors(_NP_UPZ, _npD);
+}
+function _netProjDrop(g){
+  const m = g.m; scene.remove(m);
+  if(m._pool){ m._pool.push(m); } else { try{ m.traverse(o => { if(o.isMesh){ if(o.geometry && o.geometry !== _mprojGeo && o.geometry !== shardFlyGeo) o.geometry.dispose(); if(o.material && o.material.dispose) o.material.dispose(); } }); }catch(e){} }
+}
 function _netGhostMinion(id, type, skin, scale, x, y, z, w, fam){
   const mn = { type, scale, skin: skin||null, pos:new THREE.Vector3(x,y,z), vel:new THREE.Vector3(), yaw:w, onGround:true, damage:0, hitstun:0, invuln:0,
     atkPhase:'none', atkT:0, cd:9, hitCD:0, dead:false, target:null, retargetT:0, jumpCD:0, airJump:0, stuck:0, animPhase:Math.random()*Math.PI*2, shootT:0,
@@ -23093,6 +23131,13 @@ function _netWorldApply(W){
     if(!c){ const m = _coinMesh(); m.scale.setScalar(val>=3 ? 1.6 : 1.25); c = { m, tgt:new THREE.Vector3(x,y,z), life, spin:Math.random()*6 }; NETW.k.set(id, c); m.position.set(x,y,z); }
     c.tgt.set(x,y,z); c.life = life; }
   for(const [id, c] of NETW.k){ if(!keep.has(id)){ if(c.life > 0.5) try{ burst(c.m.position, 0xffd060, 5, 4, 3, .5); sfxEv('sparkle', { pos:c.m.position }); }catch(e){} scene.remove(c.m); _coinPool.push(c.m); NETW.k.delete(id); } }
+  /* proyectiles / minas / orbes (E-A2) */
+  keep.clear();
+  for(const e of (W.J||[])){ const [id,k,x,y,z,dx,dy,dz,col,scl,spin] = e; keep.add(id);
+    let g = NETW.j.get(id);
+    if(!g){ const m = _netProjMesh(k, col, scl); m.position.set(x,y,z); scene.add(m); g = { m, k, tgt:new THREE.Vector3(x,y,z), dx, dy, dz, spin:!!spin }; NETW.j.set(id, g); _netProjOrient(g); }
+    else { g.tgt.set(x,y,z); g.dx = dx; g.dy = dy; g.dz = dz; if(g.tgt.distanceToSquared(g.m.position) > 36) g.m.position.copy(g.tgt); } }
+  for(const [id, g] of NETW.j){ if(!keep.has(id)){ _netProjDrop(g); NETW.j.delete(id); } }
   /* jefe */
   const B = W.B;
   if(B && B.ph !== 'none'){
@@ -23129,6 +23174,9 @@ function _netWorldTick(dt){
   for(const c of NETW.c.values()){ c.m.position.lerp(c.tgt, k); c.halo.position.x = c.m.position.x; c.halo.position.z = c.m.position.z; c.m.rotation.y += 1.6*dt; c.m.visible = c.life > 3 || Math.floor(c.life*8)%2===0; }
   for(const c of NETW.k.values()){ c.m.position.lerp(c.tgt, k); c.m.rotation.y += 4.5*dt; c.m.visible = c.life > 3 || Math.floor(c.life*8)%2===0; }
   if(NETW.boss && BOSSFIGHT.inst && BOSSFIGHT.inst.mixer){ try{ BOSSFIGHT.inst.mixer.update(dt); }catch(e){} }
+  const kj = Math.min(1, dt*20);
+  for(const g of NETW.j.values()){ g.m.position.lerp(g.tgt, kj); if(g.k==='mi' || g.k==='eo') _netProjOrient(g);
+    if(g.spin || g.k==='su') g.m.rotation.z += 18*dt; else if(g.k==='ax') g.m.rotation.x += 14*dt; else if(g.k==='eo' || g.k==='or' || g.k==='mn') g.m.rotation.y += 4*dt; }
 }
 function _netWorldReset(){
   for(const mn of NETW.m.values()){ try{ if(mn._gob) gobRemove(mn); if(mn._dinst) droneRemove(mn); }catch(e){} const i = minions.indexOf(mn); if(i>=0) minions.splice(i,1); }
@@ -23136,6 +23184,7 @@ function _netWorldReset(){
   for(const it of NETW.i.values()) _netDropModel(it.m, it.halo); NETW.i.clear();
   for(const c of NETW.c.values()) _netDropModel(c.m, c.halo); NETW.c.clear();
   for(const c of NETW.k.values()){ scene.remove(c.m); _coinPool.push(c.m); } NETW.k.clear();
+  for(const g of NETW.j.values()) _netProjDrop(g); NETW.j.clear();
   if(NETW.boss){ try{ resetBossFight(); }catch(e){} BOSSFIGHT.phase = 'none'; bossActive = false; NETW.boss = false; NETW.ph = 'none'; }
 }
 
@@ -23538,7 +23587,7 @@ function hitDI(vic, dir){
   return _diOut.set(dir.x*c + dir.z*s, 0, -dir.x*s + dir.z*c);
 }
 /* impacto brutal estilo Smash: hit-stop, sacudida, zoom, achuchón exagerado y bateo metálico */
-function smashFX(vc, vic){
+function smashFX(vc, vic){ _netFx('smash', vc, 0xffffff, 0);
   shake = Math.max(shake, 1.0);
   fovKick = Math.max(fovKick, 1.1);
   /* el hit-stop del golpazo ahora es LOCAL: lo fija el remate vía localHitstop(att,vic) + bigHitFX(víctima) */
@@ -23552,7 +23601,7 @@ function smashFX(vc, vic){
    más exagerado es el efecto (partículas, onda, sacudida, freeze, FOV). Se SUMA a
    los FX base de cada ataque y usa Math.max para no rebajar nada de lo ya afinado.
    ►►► AJUSTA: el divisor (≈32) marca con cuánto daño se llega al efecto pleno ◄◄◄ */
-function bigHitFX(vc, vic, dmg, color){
+function bigHitFX(vc, vic, dmg, color){ _netFx('hit', vc, color, dmg);
   if(typeof sfx !== 'undefined'){ sfx._lastPos = vc; sfx._lastPosT = performance.now(); }   // ►SFXPOS
   const f = Math.min(1.35, dmg / 32);                  // 0..~1.35 según el daño del golpe
   if(f <= .05) return f;                                // golpes flojos: sin extra
@@ -45835,7 +45884,7 @@ window._net = {
       P.push({ i, x:+p.pos.x.toFixed(2), y:+p.pos.y.toFixed(2), z:+p.pos.z.toFixed(2), yaw:+p.yaw.toFixed(2),
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
-        og:p.onGround?1:0, dj:p._dj?1:0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
+        og:p.onGround?1:0, dj:p._dj?1:0, ak:(p.atk&&p.atk.kind)||'', cs:p.comboStage|0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     /* ►NETWORLD (E-A, 03/09/2026): el mundo del anfitrión viaja a ~15 Hz para que el cliente lo pinte como FANTASMAS
        (antes el invitado jugaba en un mundo vacío: solo veía a los jugadores). Ids estables asignados al enviar. */
@@ -45854,10 +45903,22 @@ window._net = {
         if(BOSSFIGHT.phase !== 'none'){ const inst = BOSSFIGHT.inst, b = BOSSFIGHT.boss;
           B = { ph:BOSSFIGHT.phase, gi:BOSSFIGHT.golemIdx|0, hp:(b && b.maxHp) ? +Math.max(0, 1 - b.damage/b.maxHp).toFixed(3) : 1 };
           if(inst && inst.root){ B.x=+inst.root.position.x.toFixed(2); B.y=+inst.root.position.y.toFixed(2); B.z=+inst.root.position.z.toFixed(2); B.w=+inst.root.rotation.y.toFixed(2); B.c=inst.cur||''; B.v=inst.root.visible?1:0; } }
-        W = { M, I, C, K, B };
+        /* ►NETWORLD E-A2: proyectiles de jugador/minion, cristales, minas y orbes → J = [id, tipo, pos, dir, color, escala, giro] */
+        const J = []; const pj = (m, kind, col, scl, v, spin) => { if(!m || J.length >= 60) return; if(m._nid == null) m._nid = ++_NID;
+          const L = v ? (Math.hypot(v.x, v.y, v.z) || 1) : 1;
+          J.push([m._nid, kind, +m.position.x.toFixed(1), +m.position.y.toFixed(1), +m.position.z.toFixed(1), v ? +(v.x/L).toFixed(2) : 0, v ? +(v.y/L).toFixed(2) : 0, v ? +(v.z/L).toFixed(2) : 1, col|0, +((scl||1)).toFixed(2), spin?1:0]); };
+        for(const q of wprojs){ const m = q.m; const k = m._pool===_arrowPool?'ar' : m._pool===_axePool?'ax' : m._pool===_spearPool?'sp' : m._pool===_orbPool?'or' : m._pool===_lancePool?'la' : m._pool===_shieldPool?'sh' : m._pool===_wavePool?'wv' : m._pool===_misPool?'mi' : m._spin?'su' : 'cy';
+          pj(m, k, (q.qcol||q.col||0x88ff88), m.scale.x, q.v, !!m._spin); }
+        for(const q of mprojs){ const m = q.m; const k = m._pool===_arrowPool?'ar' : (q.spin||m._spin)?'su' : 'sf'; let col = 0xff4a4a; try{ if(m.material && m.material.color) col = m.material.color.getHex(); }catch(e){}
+          pj(m, k, col, m.scale.x, q.v, !!q.spin); }
+        for(const q of shardsFly) pj(q.m, q.orb?'or':'sd', q.col, q.m.scale.x, q.v, false);
+        for(const q of mines) pj(q.m, 'mn', 0xff4040, 1, null, false);
+        for(const q of orbs) pj(q.g, 'eo', (q.owner && q.owner.color) || 0x9fffd8, 1, q.vel, false);
+        W = { M, I, C, K, B, J };
       }catch(e){ console.warn('[networld] pack', e); W = null; }
     }
-    try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0, W }); }catch(e){}
+    const F = _netFxQ.length ? _netFxQ.splice(0) : 0;   // ►NETWORLD E-A2: eventos de impacto (cola vaciada en cada snapshot)
+    try{ this.sendSnap({ P, belt:+belt.toFixed(2), chaos:chaosLvl, run:running?1:0, go:gameOver?1:0, W, F }); }catch(e){}
   },
   applySnap(dt){
     const s=this.snap; if(!s) return;
@@ -45866,7 +45927,7 @@ window._net = {
       p.pos.x+=(ps.x-p.pos.x)*k; p.pos.y+=(ps.y-p.pos.y)*k; p.pos.z+=(ps.z-p.pos.z)*k;
       p.yaw=ps.yaw; p.vel.x=ps.vx; p.vel.z=ps.vz;
       p.damage=ps.dmg; p.stocks=ps.st; p.dead=!!ps.d; p.out=!!ps.o;
-      if(!p.atk) p.atk={}; p.atk.phase=ps.ap||'none';
+      if(!p.atk) p.atk={}; p.atk.phase=ps.ap||'none'; p.atk.kind = ps.ak || undefined; p.comboStage = ps.cs|0;   // ►E-A2: charToken elige la animación de espada/hacha por kind+combo
       p.beam = ps.bm ? (p.beam||true) : null;
       p.ult  = ps.ul ? (p.ult||true)  : null;
       p.hitstun = ps.hs||0;
@@ -45883,6 +45944,7 @@ window._net = {
     if(s.belt!=null && BELT.segs){ for(let i=0;i<BELT.segs.length;i++){ let x=BELT.startX+i*BELT.stride+s.belt; while(x>BELT.exitX) x-=BELT._span; BELT.segs[i].x=x; _applySegX(BELT.segs[i]); } }
     if(s.chaos!=null && s.chaos!==chaosLvl){ chaosLvl=s.chaos; const ch=document.getElementById('chaos'); if(ch) ch.textContent='CAOS '+chaosLvl; }
     if(s.W){ try{ _netWorldApply(s.W); }catch(e){ console.warn('[networld] apply', e); } }   // ►NETWORLD
+    if(s.F){ try{ _netFxReplay(s.F); }catch(e){ console.warn('[networld] fx', e); } }        // ►NETWORLD E-A2
     if(s.go && !this._goDone){ this._goDone = true; try{ _netWorldReset(); }catch(e){} if(!gameOver){ try{ endGame(); }catch(e){ console.warn('[net] endGame', e); } } }   // ►NETWORLD: el fin de partida del anfitrión cierra también al invitado
   },
   clientFrame(dt){
