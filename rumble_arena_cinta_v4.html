@@ -204,6 +204,12 @@ window.addEventListener('load', function(){
   .hbtn.locked { filter:grayscale(1) brightness(.55); }
   .hbtn.locked .hLab { color:#ffd84f; font-size:11px; }
   .hbtn.locked.deny { animation: pwrDeny .45s; }
+  #voiceTags { position:fixed; inset:0; pointer-events:none; z-index:34; }
+  #voiceTags .vt { position:absolute; transform:translate(-50%,-100%); font-size:22px; line-height:1; filter:drop-shadow(0 2px 3px rgba(0,0,0,.9)); animation:vtPulse .6s ease-in-out infinite; }
+  @keyframes vtPulse { 0%,100%{ transform:translate(-50%,-100%) scale(1); } 50%{ transform:translate(-50%,-100%) scale(1.18); } }
+  #voiceHud { position:fixed; right:16px; top:14px; z-index:24; pointer-events:none; font-size:22px; line-height:1; padding:6px 9px; border-radius:12px;
+              background:rgba(8,11,26,.7); border:1px solid rgba(255,255,255,.25); box-shadow:0 2px 8px rgba(0,0,0,.5); }
+  #voiceHud.hidden { display:none; } #voiceHud.off { filter:grayscale(1) brightness(.6); } #voiceHud.talk { border-color:#9fffd8; box-shadow:0 0 12px rgba(159,255,216,.8); }
   #lvlCards { position:fixed; left:16px; bottom:226px; z-index:24;   /* ►HUDLOL: justo encima de los atajos */ pointer-events:none; width:372px;
               font-family:'Segoe UI',system-ui,sans-serif; transform:scale(var(--hudScale,1)); transform-origin:left bottom; }
   #lvlCards.hidden { display:none; }
@@ -1631,6 +1637,7 @@ window.addEventListener('load', function(){
   <div id="specBar"></div>
   <div id="xpPops"></div>
   <div id="lvlCards" class="hidden"></div><!-- ►CARTAS: elección de nivel (1/2 · cruceta) -->
+  <div id="voiceTags"></div><div id="voiceHud" class="hidden">🎤</div><!-- ►VOZ: quién habla (sobre la cabeza) + estado del micro (M) -->
   <div id="lvlUp" class="hidden"><div class="luTitle"></div><div class="luKey"></div><div class="luMove"></div><div class="luSub"></div></div><!-- ►NIVEL: fogonazo de level-up -->
 </div>
 
@@ -2099,6 +2106,8 @@ window.addEventListener('load', function(){
       <button class="opt" id="netJoin" style="pointer-events:auto">UNIRSE</button>
     </div>
     <div id="netStatus" style="font-size:13px;font-weight:800;color:#9fe8ff;margin-top:12px;min-height:18px"></div>
+    <!-- ►VOZ (Toni 03/09/2026): chat de voz por proximidad en todo el online; el micro se pide al entrar al lobby -->
+    <div class="setRow" style="margin-top:8px"><button type="button" class="opt" id="voiceBtn">🎤 MICRO: …</button><span id="voiceStatus" style="font-size:11px;opacity:.7"></span></div>
     <!-- ►ARENA (MODOS A3): al conectar, el anfitrión arma las 6 rondas (mundo, mundo, MINI, mundo, MINI, mundo) al azar
          o a mano; el invitado ve la lista en vivo; EMPEZAR ARENA arranca a los dos. -->
     <div id="arenaBox" style="display:none;margin-top:10px">
@@ -19507,6 +19516,7 @@ const PREVENT = ['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
 addEventListener('keydown', e=>{
   if(PREVENT.includes(e.code)) e.preventDefault();
   keys[e.code] = true;
+  if(e.code==='KeyM' && !e.repeat && window._voice && window._net && _net.role!=='local'){ try{ _voice.toggle(); }catch(err){} }   // ►VOZ: micro on/off
 });
 addEventListener('keyup', e=>{ keys[e.code] = false; });
 /* si la ventana pierde el foco (alt-tab, diálogo de Sticky Keys, click fuera…)
@@ -21425,6 +21435,7 @@ function updateHUD(){
   /* barra de PUNTOS del humano: se llena por tramos y se intensifica al subir */
   lvlPaintBar((window._net && _net.localPlayer) ? _net.localPlayer : P1);   // ►NIVEL: barra de nivel del mundo
   lvlCardsPaint((window._net && _net.localPlayer) ? _net.localPlayer : P1);  // ►CARTAS
+  if(window._voice){ try{ _voice.tick(); }catch(e){} }                          // ►VOZ: volumen por distancia + 🎤
   const xb = document.getElementById('xpbar');
   if(xb){ const N = scoreTotal(P1);
     if(xb._N !== N){ xb._N = N;                       // ►PERF2: solo re-estiliza cuando cambian los puntos
@@ -44812,7 +44823,8 @@ function returnToMenu(){
   try{ if(window._net && _net.room && _net.room.leave) _net.room.leave(); }catch(e){}   // ONLINE: abandona la sala P2P
   if(window._net){ _net.role='local'; _net.room=null; _net.started=false; _net.peerId=null; _net.peerCls=null;
                    _net.remote=null; _net.localPlayer=null; _net.snap=null; _net.sendInput=_net.sendSnap=_net.sendHi=null;
-                   _net.peers={}; _net.roster=null; _net.myIdx=1; _net.startPlan=null; _net.arena=null; }   // ►NET4
+                   _net.peers={}; _net.roster=null; _net.myIdx=1; _net.startPlan=null; _net.arena=null; _net.pidIdx=null; }   // ►NET4
+  try{ if(window._voice) _voice.stop(); }catch(e){}   // ►VOZ
   cancelEndTally();             // limpia el recuento/leaderboard al salir al menú
   try{ arenaStop(); }catch(e){}   // ►ARENA
   try{ ckRefreshHome(); }catch(e){}   // ►CHECKPOINT: la home enseña CONTINUAR si hay gira guardada
@@ -45814,12 +45826,13 @@ window._net = {
     this.role=role; this.code=code;
     let room; try{ room = NET.joinRoom({ appId:'rumbleboys-mvp1' }, code); }catch(e){ this.status('Error al abrir la sala: '+e); this.role='local'; return; }
     this.room=room;
+    try{ if(window._voice) _voice.onRoom(room); }catch(e){ console.warn('[voz] room', e); }   // ►VOZ
     const [sInp,gInp]=room.makeAction('inp');
     const [sSnap,gSnap]=room.makeAction('snap');
     const [sHi,gHi]=room.makeAction('hi');
     const [sArena,gArena]=room.makeAction('arena'); this.sendArena=sArena;                       // ►ARENA: lista de rondas (índices de RUTA) + go
-    gArena(d=>{ this.startPlan=(d && d.plan) || 'arena'; this.arena=(d && d.r && d.r.length) ? d.r.slice() : null;
-      if(d && d.you!=null){ this.myIdx=d.you|0; this.roster=(d.roster||[]).slice(); }   // ►NET4: mi índice y las clases de todos
+    gArena((d,pid)=>{ this.startPlan=(d && d.plan) || 'arena'; this.arena=(d && d.r && d.r.length) ? d.r.slice() : null;
+      if(d && d.you!=null){ this.myIdx=d.you|0; this.roster=(d.roster||[]).slice(); this.pidIdx = Object.assign({}, d.ids||{}); if(pid) this.pidIdx[pid] = 0; }   // ►NET4: mi índice y las clases de todos · ►VOZ: mapa par→índice (el emisor es el host = 0)
       try{ if(this.role==='client') MATCH.plan=this.startPlan; if(window._arenaLobby) _arenaLobby.render(); }catch(e){} if(d && d.go) this.tryStart(); });
     const [sStg,gStg]=room.makeAction('stg'); this.sendStg=sStg;                                     // ►MODOS UX: el anfitrión avisa del cambio de mundo; el invitado lo sigue
     gStg(d=>{ try{ this.applyStg(d); }catch(e){ console.warn('[net] stg', e); } });
@@ -45827,7 +45840,7 @@ window._net = {
     gInp((d,pid)=> this.recvInput(d, pid));
     gSnap(d=> { this.snap=d; });
     gHi((d,pid)=> { this.peerCls=d.cls; if(this.role==='host' && pid && this.peers[pid]) this.peers[pid].cls=d.cls; try{ if(window._arenaLobby) _arenaLobby.render(); }catch(e){} this.tryStart(); });
-    room.onPeerJoin(id=>{ this.peerId=id;
+    room.onPeerJoin(id=>{ this.peerId=id; try{ if(window._voice) _voice.onPeerJoin(id); }catch(e){}   // ►VOZ: al nuevo par también le va mi micro
       if(this.role==='host'){ if(this.peerCount() >= this.MAXP-1 || this.started){ this.status('Sala llena.'); return; }
         const used = Object.values(this.peers).map(q=>q.idx); let idx=1; while(used.indexOf(idx)>=0) idx++; this.peers[id] = { idx, cls:null, input:null, stamp:0 }; }   // ►NET4
       this.status(this.role==='host' ? (MATCH.plan==='arena' ? 'Conectado. Elige las rondas y pulsa EMPEZAR ARENA.' : 'Conectado. Pulsa EMPEZAR GIRA.') : (MATCH.plan==='arena' ? 'Conectado. El anfitrión elige las rondas…' : 'Conectado. Esperando al anfitrión…')); try{ sHi({cls:this._cls()}); }catch(e){}
@@ -45965,7 +45978,84 @@ window._net = {
   const readyMsg=()=> window.NET ? (NET.error?('Red no disponible: '+NET.error):'Listo. Crea una sala o únete con un código.') : 'Cargando red…';
   /* el botón ONLINE de la home ya no existe: ahora la sala se abre desde MULTIJUGADOR → campaña /
      survival, que vive en otro IIFE (setupWizard) → se expone la apertura por window. */
-  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.arena=null; _net.startPlan=null; try{ _arenaLobby.reset(); _arenaLobby.title(); }catch(e){} _net.status(readyMsg()); };   // ►SFXTONI ►ARENA ►MODOS UX
+  window._openOnline = ()=>{ sfxEv('ui_open',{ui:true}); const l=$('netLobby'); if(l) l.style.display='flex'; _net.arena=null; _net.startPlan=null; try{ _arenaLobby.reset(); _arenaLobby.title(); }catch(e){} _net.status(readyMsg()); try{ _voice.request(); }catch(e){} };   // ►SFXTONI ►ARENA ►MODOS UX ►VOZ
+  /* ►VOZ (Toni 03/09/2026): chat de voz por PROXIMIDAD en todo el online. Micro pedido al entrar al lobby (si se
+     deniega, se juega sin voz); trystero lleva el stream (addStream/onPeerStream); un GainNode + StereoPanner por par
+     con volumen por distancia entre players[idx del par] y el jugador local (100% a < VOICE_NEAR u, cae a 0 a
+     VOICE_FAR u; en lobby/tablero/fin, 100%); muerto: oye a todos al 100% y solo le oyen otros muertos (regla del
+     oyente); 🎤 sobre la cabeza de quien habla (AnalyserNode); tecla M o botón = mute (micro abierto por defecto). */
+  window._voice = (function(){
+    const NEAR = 8, FAR = 28, TALK_RMS = 0.045;
+    const V = { stream:null, ctx:null, peers:{}, on:false, denied:false, asked:false, muted:false, selfAn:null, selfTalk:false, _t:0 };
+    const $$ = id => document.getElementById(id);
+    function ctx(){ try{ return V.ctx || (V.ctx = audio()); }catch(e){ return null; } }
+    function status(t){ const e=$$('voiceStatus'); if(e) e.textContent = t; }
+    function paintBtn(){ const b=$$('voiceBtn'); if(b) b.textContent = V.denied ? '🎤 MICRO: SIN PERMISO' : (!V.stream ? '🎤 MICRO: …' : (V.muted ? '🎤 MICRO: OFF' : '🎤 MICRO: ON'));
+      const h=$$('voiceHud'); if(h){ h.classList.toggle('hidden', !(V.stream && _net.role!=='local' && running)); h.classList.toggle('off', V.muted); } }
+    async function request(){
+      if(V.stream || V.asked) { paintBtn(); return; } V.asked = true;
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ V.denied = true; status('Sin micro en este navegador'); paintBtn(); return; }
+      try{ V.stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false });
+        V.muted = false; status('Voz por proximidad activa · M silencia');
+        try{ const c = ctx(); if(c){ const src = c.createMediaStreamSource(V.stream); V.selfAn = c.createAnalyser(); V.selfAn.fftSize = 512; src.connect(V.selfAn); } }catch(e){}
+        if(_net.room){ try{ _net.room.addStream(V.stream); }catch(e){ console.warn('[voz] addStream', e); } }
+      }catch(e){ V.denied = true; V.asked = true; status('Micro denegado: se juega sin voz'); console.warn('[voz] getUserMedia', e && e.name); }
+      paintBtn();
+    }
+    function onRoom(room){
+      try{ room.onPeerStream((stream, pid)=>{ attach(pid, stream); }); }catch(e){ console.warn('[voz] onPeerStream', e); }
+      if(V.stream){ try{ room.addStream(V.stream); }catch(e){} }
+    }
+    function onPeerJoin(pid){ if(V.stream && _net.room){ try{ _net.room.addStream(V.stream, pid); }catch(e){} } }
+    function attach(pid, stream){
+      detach(pid);
+      const c = ctx(); const el = document.createElement('audio'); el.srcObject = stream; el.muted = true; el.playsInline = true; el.autoplay = true;   // Chromium: el MediaStream remoto necesita un <audio> para que WebAudio reciba datos
+      document.body.appendChild(el); try{ el.play().catch(()=>{}); }catch(e){}
+      const pr = { pid, stream, el, gain:null, pan:null, an:null, talk:false, vol:1 };
+      if(c){ try{ const src = c.createMediaStreamSource(stream); pr.gain = c.createGain(); pr.gain.gain.value = 1; pr.an = c.createAnalyser(); pr.an.fftSize = 512;
+        let node = src; if(c.createStereoPanner){ pr.pan = c.createStereoPanner(); node.connect(pr.pan); node = pr.pan; } node.connect(pr.gain); pr.gain.connect(c.destination); src.connect(pr.an);
+        if(c.state === 'suspended') c.resume().catch(()=>{}); }catch(e){ console.warn('[voz] nodos', e); } }
+      V.peers[pid] = pr;
+    }
+    function detach(pid){ const pr = V.peers[pid]; if(!pr) return; try{ pr.gain && pr.gain.disconnect(); }catch(e){} try{ pr.el.srcObject = null; pr.el.remove(); }catch(e){} delete V.peers[pid]; }
+    function stop(){ for(const pid in V.peers) detach(pid); if(V.stream){ try{ V.stream.getTracks().forEach(t=>t.stop()); }catch(e){} } V.stream = null; V.asked = false; V.selfAn = null; V.muted = false; const tg=$$('voiceTags'); if(tg) tg.innerHTML=''; paintBtn(); }
+    function toggle(){ if(!V.stream) return; V.muted = !V.muted; V.stream.getAudioTracks().forEach(t=>{ t.enabled = !V.muted; }); paintBtn(); try{ showBanner(V.muted ? '🎤 MICRO OFF' : '🎤 MICRO ON', .9); }catch(e){} }
+    function idxOf(pid){ if(_net.role==='host'){ const pr=_net.peers[pid]; return pr ? pr.idx : -1; } const m=_net.pidIdx||{}; return (m[pid]!=null) ? m[pid] : -1; }
+    const _buf = new Uint8Array(256);
+    function rms(an){ if(!an) return 0; an.getByteTimeDomainData(_buf); let s=0; for(let i=0;i<_buf.length;i++){ const v=(_buf[i]-128)/128; s+=v*v; } return Math.sqrt(s/_buf.length); }
+    function inMenus(){ const lb=$$('lbOverlay'), pk=$$('perkOverlay'), eo=$$('endOverlay'), nl=$$('netLobby');
+      return !running || demo || (lb && lb.style.display==='flex') || (pk && pk.style.display==='flex') || (eo && eo.style.display==='flex') || (nl && nl.style.display==='flex'); }
+    const _pv = new THREE.Vector3();
+    function tick(){
+      if(_net.role==='local') return;
+      const me = _net.localPlayer, menus = inMenus(); const tags = $$('voiceTags');
+      for(const pid in V.peers){ const pr = V.peers[pid]; const idx = idxOf(pid); const q = (idx>=0) ? players[idx] : null;
+        let vol = 1;
+        if(!menus && me && q && q.pos && me.pos){
+          const d = me.pos.distanceTo(q.pos); vol = (d <= NEAR) ? 1 : (d >= FAR ? 0 : 1 - (d-NEAR)/(FAR-NEAR));
+          if(me.out || me.dead) vol = 1;                                   // muerto: oye a todos
+          if((q.out || q.dead) && !(me.out || me.dead)) vol = 0;           // los muertos solo se oyen entre ellos
+          if(pr.pan){ try{ _pv.copy(q.pos).sub(me.pos); const cx = camera.matrixWorld.elements; const rx = cx[0]*_pv.x + cx[1]*_pv.y + cx[2]*_pv.z; pr.pan.pan.value = Math.max(-1, Math.min(1, rx/14)); }catch(e){} }
+        } else if(pr.pan){ pr.pan.pan.value = 0; }
+        if(pr.gain && Math.abs(pr.gain.gain.value - vol) > .01) pr.gain.gain.value = vol;
+        pr.talk = rms(pr.an) > TALK_RMS;
+        pr.vol = vol;
+      }
+      V.selfTalk = !V.muted && rms(V.selfAn) > TALK_RMS;
+      const h=$$('voiceHud'); if(h){ h.classList.toggle('talk', V.selfTalk); h.classList.toggle('hidden', !(V.stream && running)); }
+      if(!tags) return;
+      if((V._t = (V._t|0)+1) % 2) return;   // etiquetas a 30 Hz
+      let html = '';
+      const put = (q, extra) => { if(!q || !q.pos || menus) return; _pv.copy(q.pos); _pv.y += 2.6; _pv.project(camera); if(_pv.z > 1) return;
+        html += '<div class="vt" style="left:'+((_pv.x*.5+.5)*innerWidth).toFixed(0)+'px;top:'+((-_pv.y*.5+.5)*innerHeight).toFixed(0)+'px">🎤</div>'; };
+      for(const pid in V.peers){ const pr = V.peers[pid]; if(pr.talk && pr.vol > 0){ const idx = idxOf(pid); put(idx>=0 ? players[idx] : null); } }
+      if(V.selfTalk) put(me);
+      if(tags.innerHTML !== html) tags.innerHTML = html;
+    }
+    function wire(){ const b=$$('voiceBtn'); if(b) b.addEventListener('click', ()=>{ if(!V.stream && !V.denied){ V.asked=false; request(); return; } toggle(); }); paintBtn(); }
+    return { request, onRoom, onPeerJoin, attach, detach, stop, toggle, tick, state:V, NEAR, FAR };
+  })();
+  try{ _voice.wire(); }catch(e){}
   /* ►ARENA (MODOS A3): lobby de rondas. El anfitrión elige ALEATORIO (otra tirada con ↻) o PERSONALIZADO (6 selectores:
      mundo, mundo, mini, mundo, mini, mundo); la lista se manda al invitado por la acción 'arena' y EMPEZAR ARENA la
      manda con go:1 → los dos arrancan con la misma lista. El invitado solo mira. */
@@ -46016,7 +46106,8 @@ window._net = {
         _net.startPlan = arena ? 'arena' : 'campaign'; _net.arena = arena ? sel.slice() : null;
         /* ►NET4: a cada par su índice + el roster de clases (mensaje dirigido); luego el host arranca */
         const roster=[_net._cls()]; for(const pid in _net.peers){ const pr=_net.peers[pid]; roster[pr.idx]=pr.cls||'voxelhero'; } for(let i=0;i<roster.length;i++) if(!roster[i]) roster[i]='voxelhero';
-        try{ for(const pid in _net.peers){ _net.sendArena && _net.sendArena({ plan:_net.startPlan, r:(arena ? sel : []), go:1, you:_net.peers[pid].idx, roster }, pid); } }catch(e){}
+        const ids={}; for(const pid in _net.peers) ids[pid]=_net.peers[pid].idx;   // ►VOZ: para que cada cliente sepa qué par es qué jugador
+        try{ for(const pid in _net.peers){ _net.sendArena && _net.sendArena({ plan:_net.startPlan, r:(arena ? sel : []), go:1, you:_net.peers[pid].idx, roster, ids }, pid); } }catch(e){}
         try{ sfxEv('ui_apply',{ui:true}); }catch(e){} _net.tryStart(); });
     }
     return { show, render, reset, wire, title, _sel:()=>sel, _mode:()=>mode };
@@ -46074,6 +46165,14 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
   "🌐 ARENA ONLINE":["🌐 ONLINE ARENA","🌐 ARENA ONLINE","🌐 ARENA ONLINE","🌐 ARÈNE EN LIGNE","🌐 ONLINE-ARENA"],
   "6 RONDAS · hasta 4 jugadores P2P":["6 ROUNDS · up to 4 players P2P","6 ROUND · fino a 4 giocatori P2P","6 RONDAS · até 4 jogadores P2P","6 MANCHES · jusqu'à 4 joueurs P2P","6 RUNDEN · bis zu 4 Spieler P2P"],
   "16 MUNDOS · hasta 4 jugadores P2P":["16 WORLDS · up to 4 players P2P","16 MONDI · fino a 4 giocatori P2P","16 MUNDOS · até 4 jogadores P2P","16 MONDES · jusqu'à 4 joueurs P2P","16 WELTEN · bis zu 4 Spieler P2P"],
+  "🎤 MICRO: ON":["🎤 MIC: ON","🎤 MICROFONO: ON","🎤 MICRO: ON","🎤 MICRO : ON","🎤 MIKRO: AN"],
+  "🎤 MICRO: OFF":["🎤 MIC: OFF","🎤 MICROFONO: OFF","🎤 MICRO: OFF","🎤 MICRO : OFF","🎤 MIKRO: AUS"],
+  "🎤 MICRO: SIN PERMISO":["🎤 MIC: NO PERMISSION","🎤 MICROFONO: SENZA PERMESSO","🎤 MICRO: SEM PERMISSÃO","🎤 MICRO : REFUSÉ","🎤 MIKRO: KEINE ERLAUBNIS"],
+  "🎤 MICRO OFF":["🎤 MIC OFF","🎤 MICROFONO OFF","🎤 MICRO OFF","🎤 MICRO OFF","🎤 MIKRO AUS"],
+  "🎤 MICRO ON":["🎤 MIC ON","🎤 MICROFONO ON","🎤 MICRO ON","🎤 MICRO ON","🎤 MIKRO AN"],
+  "Voz por proximidad activa · M silencia":["Proximity voice on · M mutes","Voce di prossimità attiva · M silenzia","Voz por proximidade ativa · M silencia","Voix de proximité active · M coupe le micro","Nähe-Voice aktiv · M stummschalten"],
+  "Micro denegado: se juega sin voz":["Mic denied: playing without voice","Microfono negato: si gioca senza voce","Micro negado: joga-se sem voz","Micro refusé : on joue sans voix","Mikro verweigert: Spiel ohne Voice"],
+  "Sin micro en este navegador":["No mic in this browser","Nessun microfono in questo browser","Sem micro neste navegador","Pas de micro dans ce navigateur","Kein Mikro in diesem Browser"],
   "Sala llena.":["Room is full.","Stanza piena.","Sala cheia.","Salon complet.","Raum voll."],
   "El anfitrión se desconectó.":["The host disconnected.","L'host si è disconnesso.","O anfitrião desligou-se.","L'hôte s'est déconnecté.","Der Host hat die Verbindung getrennt."],
   "¿Qué jugamos?":["What are we playing?","Cosa giochiamo?","O que jogamos?","On joue à quoi ?","Was spielen wir?"],
