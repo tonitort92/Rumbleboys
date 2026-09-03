@@ -146,9 +146,9 @@ window.addEventListener('load', function(){
   /* ►BOTHUD: pila abajo-centro. Botones (arriba) + cards (abajo).
      --hudScale lo fija _applyHudScale() según el tamaño de pantalla (coherencia visual entre escalas). */
   :root { --hudScale:1.1; }
-  #botStack { position:fixed; left:16px; bottom:96px; z-index:23;   /* ►HUDLOL: atajos abajo-IZQUIERDA en horizontal; las fichas van abajo-centro */
-              transform:scale(var(--hudScale)); transform-origin:left bottom;
-              display:flex; flex-direction:column; align-items:flex-start; gap:9px; pointer-events:none; max-width:60vw; }
+  #botStack { position:fixed; left:50%; bottom:92px; z-index:23;   /* ►HUD2 (Toni 03/09, jugado): atajos al CENTRO-abajo, encima de la fila de fichas y un poco más arriba */
+              transform:translateX(-50%) scale(var(--hudScale)); transform-origin:bottom center;
+              display:flex; flex-direction:column; align-items:center; gap:9px; pointer-events:none; max-width:96vw; }
   /* cards de daño de TODOS los jugadores, en fila y centradas, bajo los botones */
   #cards { display:none !important; }   /* ►NOCARDS (Toni 23/08): el % y las vidas viven en las chips del panel izquierdo */
   #cards_off { display:flex; flex-direction:row; align-items:flex-start; justify-content:center; flex-wrap:wrap;
@@ -189,7 +189,7 @@ window.addEventListener('load', function(){
        del color del mando). Fuera, bajo el círculo, el nombre en pequeño.
      · UTILIDAD (Saltar/Dash): mismo círculo con el anillo tenue y fijo (no tienen cooldown). */
   @property --p { syntax:'<number>'; inherits:false; initial-value:1; }
-  #atkBar { display:flex; align-items:flex-start; justify-content:flex-start; gap:12px; pointer-events:none;
+  #atkBar { display:flex; align-items:flex-start; justify-content:center; gap:14px; pointer-events:none;
             transition:opacity .22s ease, transform .22s ease; font-family:'Segoe UI',system-ui,sans-serif; }
   #atkBar.hidden { opacity:0; transform:translateY(16px); }
   /* ►NIVEL (B1 progresión, 02/09/2026): barra de nivel del mundo sobre la barra de habilidades, fichas
@@ -210,21 +210,21 @@ window.addEventListener('load', function(){
   #voiceHud { position:fixed; right:16px; top:64px; z-index:24; pointer-events:none;   /* debajo del botón de música (arriba-derecha), que lo tapaba */ font-size:22px; line-height:1; padding:6px 9px; border-radius:12px;
               background:rgba(8,11,26,.7); border:1px solid rgba(255,255,255,.25); box-shadow:0 2px 8px rgba(0,0,0,.5); }
   #voiceHud.hidden { display:none; } #voiceHud.off { filter:grayscale(1) brightness(.6); } #voiceHud.talk { border-color:#9fffd8; box-shadow:0 0 12px rgba(159,255,216,.8); }
-  #lvlCards { position:fixed; left:16px; bottom:226px; z-index:24;   /* ►HUDLOL: justo encima de los atajos */ pointer-events:none; width:372px;
-              font-family:'Segoe UI',system-ui,sans-serif; transform:scale(var(--hudScale,1)); transform-origin:left bottom; }
+  #lvlCards { position:fixed; left:50%; top:34%; z-index:24; pointer-events:none; width:440px;   /* ►HUD2 (Toni 03/09): al CENTRO, translúcidas, por encima del muñeco (que va abajo-centro) */
+              font-family:'Segoe UI',system-ui,sans-serif; transform:translate(-50%,-50%) scale(var(--hudScale,1)); transform-origin:center; }
   #lvlCards.hidden { display:none; }
-  #lvlCards .lvTitle { font:900 15px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; letter-spacing:2px; color:#ffd84f; margin-bottom:6px; text-shadow:0 2px 6px rgba(0,0,0,.9); }
+  #lvlCards .lvTitle { font:900 17px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; letter-spacing:2px; color:#ffd84f; margin-bottom:8px; text-align:center; text-shadow:0 2px 6px rgba(0,0,0,.9); }
   #lvlCards .lvRow { display:flex; gap:10px; }
-  .lvCard { position:relative; flex:1; background:rgba(8,11,26,.86); border:2px solid rgba(255,255,255,.35); border-radius:12px; padding:10px 10px 9px; color:#fff;
-            box-shadow:0 4px 14px rgba(0,0,0,.55); animation: lvCardIn .22s ease-out; }
+  .lvCard { position:relative; flex:1; background:rgba(8,11,26,.36); backdrop-filter:blur(2px); border:2px solid rgba(255,255,255,.5); border-radius:12px; padding:10px 10px 9px; color:#fff;
+            box-shadow:0 4px 14px rgba(0,0,0,.35); text-shadow:0 1px 3px rgba(0,0,0,.95); animation: lvCardIn .22s ease-out; }   /* ►HUD2: translúcida, no tapa el juego */
   .lvCard.atk { border-color:#ff9a3c; } .lvCard.stat { border-color:#5fd0ff; }
   .lvCard .lvHint { position:absolute; top:-12px; left:8px; display:flex; gap:4px; align-items:center; }
   .lvCard .lvHint b { display:inline-flex; width:22px; height:22px; border-radius:6px; background:#fff; color:#111; font:900 13px/1 'Segoe UI',system-ui,sans-serif; align-items:center; justify-content:center; box-shadow:0 2px 0 #999; }
   .lvCard .lvHint i { font-style:normal; font-size:12px; color:#9fb0d6; }
   .lvCard .lvIc { font-size:26px; line-height:1; margin-top:4px; }
   .lvCard .lvName { font:900 13px/1.1 'Segoe UI',system-ui,sans-serif; letter-spacing:1px; margin-top:4px; }
-  .lvCard .lvDesc { font:600 11px/1.25 'Segoe UI',system-ui,sans-serif; color:#c9d3ea; margin-top:3px; }
-  #lvlCards .lvTimer { height:5px; margin-top:6px; background:rgba(255,255,255,.14); border-radius:3px; overflow:hidden; }
+  .lvCard .lvDesc { font:700 11.5px/1.25 'Segoe UI',system-ui,sans-serif; color:#eef2ff; margin-top:3px; }
+  #lvlCards .lvTimer { height:8px; margin-top:8px; background:rgba(255,255,255,.18); border-radius:4px; overflow:hidden; border:1px solid rgba(255,255,255,.35); }   /* ►HUD2: barrita más visible */
   #lvlCards .lvTimer i { display:block; height:100%; width:100%; background:#ffd84f; box-shadow:0 0 8px #ffd84f; }
   @keyframes lvCardIn { from{ transform:translateY(12px); opacity:0; } to{ transform:none; opacity:1; } }
   #lvlUp { position:fixed; left:50%; top:30%; transform:translate(-50%,-50%); opacity:0; z-index:36; pointer-events:none;
@@ -238,12 +238,13 @@ window.addEventListener('load', function(){
   #lvlUp .luSub { font-size:15px; font-weight:800; color:#9fffd8; letter-spacing:2px; margin-top:4px; }
   @keyframes lvlUpPop { 0%{ opacity:0; transform:translate(-50%,-50%) scale(.6); } 12%{ opacity:1; transform:translate(-50%,-50%) scale(1.12); }
                         22%{ transform:translate(-50%,-50%) scale(1); } 80%{ opacity:1; } 100%{ opacity:0; transform:translate(-50%,-50%) scale(1); } }
-  .atkGroup { display:flex; gap:9px; align-items:flex-start; }
+  .atkGroup { display:flex; gap:16px; align-items:flex-start; }   /* ►HUD2: más aire entre marcadores */
   .atkGroup.util { opacity:.7; }
   .atkSep { align-self:stretch; width:1px; margin:8px 3px 16px; background:rgba(255,255,255,.14); border-radius:1px; }
 
   /* botón = columna: disco (círculo + anillo) y nombre pequeño debajo */
-  .hbtn { position:relative; width:56px; display:flex; flex-direction:column; align-items:center; gap:4px;
+  .hbtn.basic { zoom:.85; } .hbtn.basic .hKey { font-size:10px; text-align:center; white-space:nowrap; }   /* ►HUD2: el clic/ataque básico, más pequeño y centrado */
+  .hbtn { zoom:.8; position:relative; width:56px; display:flex; flex-direction:column; align-items:center; gap:4px;   /* ►HUD2: todos un 20% más pequeños */
           transition:transform .15s ease; }
   .hDisc { position:relative; width:54px; height:54px; border-radius:50%; box-sizing:border-box;
            display:flex; align-items:center; justify-content:center;
@@ -22940,7 +22941,7 @@ function lvlPaintBar(p){
    una COMPRADA al cambiar de mundo, buyPerk apunta en _pkFromShop qué flags vienen de la tienda.
    Host-authoritative: la oferta viaja en el snapshot (of) y la elección en el input (pk).
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
-const CARD_T = 5, CARD_MAX = 2;
+const CARD_T = 10, CARD_MAX = 2;   // ►HUD2 (Toni 03/09, jugado): 5 → 10 s con cuenta visible; pasaban desapercibidas
 const LVL_CARDS = [
   { k:'qfast',  kind:'atk', ic:'⚡', name:'Q VELOZ',        desc:'la Q recarga y enfría un 30% más rápido', apply:p=>{ p._lvQ  = (p._lvQ ||1)*.7; } },
   { k:'efast',  kind:'atk', ic:'🌀', name:'E VELOZ',        desc:'la E enfría un 30% más rápido',            apply:p=>{ p._lvE  = (p._lvE ||1)*.7; } },
@@ -23026,6 +23027,8 @@ function lvlCardsPaint(p){
     el.innerHTML = '<div class="lvTitle">¡NIVEL '+(p.lvl||1)+'! ELIGE</div><div class="lvRow">'+card(of.a,1)+card(of.b,2)+'</div><div class="lvTimer"><i></i></div>';
     el.classList.remove('hidden'); }
   const bar = el.querySelector('.lvTimer i'); if(bar) bar.style.width = Math.max(0, of.t/CARD_T*100).toFixed(1)+'%';
+  const tt = el.querySelector('.lvTitle'), sec = Math.max(0, Math.ceil(of.t)); const tw = '¡NIVEL '+(p.lvl||1)+'! ELIGE · '+sec+' s';   // ►HUD2: cuenta atrás visible
+  if(tt && tt._sec !== sec){ tt._sec = sec; tt.textContent = tw; }
 }
 
 /* ►H5: cápsulas temporales — cada recogida apunta {k,t} y al caducar resta el +1 que sumó (las cartas de nivel viven en
@@ -25699,8 +25702,8 @@ function renderAtkBar(){
       '</div>'+
       '<span class="hName">'+(s.name||mv[s.slot]||s.slot)+'</span>'+
     '</div>';
-  const ut = u =>                                   // utilidad: mismo círculo, anillo tenue fijo
-    '<div class="hbtn util" style="--pc:'+(PAD_COL[u.pad]||'#8ea6cf')+'">'+
+  const ut = (u, cls) =>                            // utilidad: mismo círculo, anillo tenue fijo
+    '<div class="hbtn util'+(cls ? ' '+cls : '')+'" style="--pc:'+(PAD_COL[u.pad]||'#8ea6cf')+'">'+
       '<div class="hDisc">'+
         '<i class="hFill"></i>'+
         '<div class="hInner">'+_padGlyph(u.pad)+'<span class="hKey">'+u.key+'</span></div>'+
@@ -25710,14 +25713,14 @@ function renderAtkBar(){
   let atk='', util='';
   /* ►RATONUI (playtest 31/08): el ataque básico POR FIN en la barra — es la acción más usada y no
      salía; se enseña el RATÓN (clic izq.), que es lo que se usa de verdad (J queda de alias mudo). */
-  atk += ut({ pad:'X', key:'Clic izq.', name:(mv.basic||'Golpe') });
+  atk += ut({ pad:'X', key:'Clic izq.', name:(mv.basic||'Golpe') }, 'basic');
   /* ►CUADRIMANIA: en la torre los personajes van SOLO con el ataque básico (petición de Toni), así
      que sus cuatro especiales de clase (E/Q/F/R) no se pintan — el kit común (empujón, escudo,
      cura, salto, dash) sí se queda: eso lo tienen todos, no es "un especial". Ver readInput. */
   const _sinEsp = (typeof STAGE!=='undefined' && STAGE===13);
   for(const s of ATK_SLOTS){ if(_sinEsp && (s.slot==='e'||s.slot==='q'||s.slot==='f'||s.slot==='r')) continue; atk += cd(s); }
-  for(const u of MS_COMMON){ if(u.pad==='LB' || u.pad==='LT' || u.pad==='↑') continue; util += ut(u); }   // Escudo(T)/Empujón(LT)/Cura(H) ya viven en el grupo CON relleno; aquí solo quedan Saltar/Dash
-  el.innerHTML = '<div class="atkGroup">'+atk+'</div><div class="atkSep"></div><div class="atkGroup util">'+util+'</div>';
+  /* ►HUD2 (Toni 03/09): Saltar y Dash FUERA de la barra (son de siempre, enseñarlos sobra); el grupo util queda vacío */
+  el.innerHTML = '<div class="atkGroup">'+atk+'</div>';
 }
 let _ctrlBarOn = true, _ctrlBarKey = null, _selPrev = false;
 function pollMoveSheet(){
@@ -46217,6 +46220,7 @@ window.__I18N_DYN = (window.__I18N_DYN || []).concat([
   {"es":"Jugadores en sala: {0}/{1} · esperando…","t":["Players in room: {0}/{1} · waiting…","Giocatori in stanza: {0}/{1} · in attesa…","Jogadores na sala: {0}/{1} · à espera…","Joueurs dans le salon : {0}/{1} · en attente…","Spieler im Raum: {0}/{1} · warte…"]},
   {"es":"Un jugador se desconectó ({0} en sala).","t":["A player disconnected ({0} in room).","Un giocatore si è disconnesso ({0} in stanza).","Um jogador desligou-se ({0} na sala).","Un joueur s'est déconnecté ({0} dans le salon).","Ein Spieler hat die Verbindung getrennt ({0} im Raum)."]},
   {"es":"GIRA · {0} MUNDOS · O ARENA","t":["TOUR · {0} WORLDS · OR ARENA","TOUR · {0} MONDI · O ARENA","DIGRESSÃO · {0} MUNDOS · OU ARENA","TOURNÉE · {0} MONDES · OU ARÈNE","TOUR · {0} WELTEN · ODER ARENA"]},
+  {"es":"¡NIVEL {0}! ELIGE · {1} s","t":["LEVEL {0}! CHOOSE · {1} s","LIVELLO {0}! SCEGLI · {1} s","NÍVEL {0}! ESCOLHE · {1} s","NIVEAU {0} ! CHOISIS · {1} s","LEVEL {0}! WÄHLE · {1} s"]},
   {"es":"¡NIVEL {0}! ELIGE","t":["LEVEL {0}! CHOOSE","LIVELLO {0}! SCEGLI","NÍVEL {0}! ESCOLHE","NIVEAU {0} ! CHOISIS","LEVEL {0}! WÄHLE"]},
   {"es":"¡NIVEL {0}!","t":["LEVEL {0}!","LIVELLO {0}!","NÍVEL {0}!","NIVEAU {0} !","LEVEL {0}!"]},
   {"es":"NIVEL {0} · MÁX","t":["LEVEL {0} · MAX","LIVELLO {0} · MAX","NÍVEL {0} · MÁX","NIVEAU {0} · MAX","LEVEL {0} · MAX"]},
