@@ -139,8 +139,14 @@ Plan aprobado por Toni (`~/.claude/plans/vale-perfecto-pues-preparemos-greedy-he
   esquiva saltando); en mano: ancla (1 uso, 8 s anclado) y plátano (3 usos); temporizador 10/15/15/60. HUD, IA y guía.
 - JEFES: presa fija 5 s con robo por daño (6 % de vida en ~2 s) y marcador rojo; cámara vuelve a mirar al jefe con bounce
   back de la órbita; giro ×2 en el windup del melee. GUÍA de la home 2 con los objetos RENDERIZADOS en 3D (no emojis).
-PENDIENTE: prueba real host + 2 Edge en red (objetos/agarre/auras en el invitado); afinar HAND_FITS de ancla/plátano/rayo;
-el marcador de presa no viaja al cliente; que Toni juegue 2 mundos y un jefe y diga qué números ajustar.
+- JEFES (2ª pasada, 04/09 noche): jefe 1 MEDIDO (quieto 26 %, 10/13 golpes tocan); robot MEDIDO por estados (quieto 38 %, la
+  mitad es el láser telegrafiado, 7/7 patadas tocan → se deja). PRESA y RUNA replicadas en el invitado (B.py/B.rh en W.B).
+  IA contra el jefe 1: los bots RODEAN hasta la espalda (rama _runeFront, punto trasero a 4 u o al alcance de tiro), los de
+  distancia también; el brinco de esquiva solo cuando el golpe va a caer (antes brincaban sin parar: 69 % en el aire). El gólem
+  con runa gira a BOSS1_RUNE_TURN=1.0 rad/s (a 4 los humanos tampoco le ganaban la espalda). Medido con 2 bots 25 s: detrás
+  30 %/39 %, daño al jefe 0,2 % → 1,6 % (×8, sigue siendo poco: la presa nunca ataca y la monja dispara poco). Toni decide.
+PENDIENTE: prueba real host + 2 Edge en red (objetos/agarre/auras/presa/runa en el invitado); afinar HAND_FITS de ancla/plátano/rayo;
+que Toni juegue 2 mundos y el jefe 1 con bots y diga qué números ajustar (BOSS1_RUNE_TURN, BOSS_PREY_STEAL).
 
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 

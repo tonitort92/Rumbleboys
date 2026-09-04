@@ -14495,6 +14495,7 @@ const BOSS_BREAK_ON     = false;
    brillante. De frente entra casi nada. Se decide en updateBoss con el daño del frame y la posición del
    que pega (mn.lastHitBy): detrás = dentro del cono trasero (dot con su frente < BOSS1_RUNE_DOT). ►►► AJUSTA ◄◄◄ */
 const BOSS1_RUNE_ON    = true;
+const BOSS1_RUNE_TURN  = 1.0;   // ►RUNA (04/09): rad/s de giro del jefe 1 hacia su presa en reposo (los demás jefes: 4). Con 4 nadie le gana la espalda a pie; a 1.0 un jugador corriendo PEGADO (≈1.4 rad/s a 4 u; a 6 u ya no) sí: hay que acercarse para rodearlo. ►AJUSTA
 const BOSS1_RUNE_FRONT = 0.04;    // fracción del daño que entra de frente/lados (casi 0)
 const BOSS1_RUNE_DOT   = -0.30;   // cos: 'detrás' si el atacante está a más de ~107° de su frente (cono trasero de ~145°)  // ►Toni 04/09/2026: el DERRUMBE (estado 'broken', cámara lenta, ×2.4 de daño) NO gusta → apagado para TODOS los jefes. La guardia sigue calculándose pero nunca rompe y su barra va oculta.
 const BOSS_ARENA_Y = 120;           // ►PORTAL-BOSS: la arena del jefe FLOTA en el cielo (mismo X/Z, solo Y) — se llega cayendo por el portal
@@ -17563,8 +17564,9 @@ function bossPreyMark(mn, prey, announce){
 }
 function bossPreyMarkTick(dt){
   const g = BOSSFIGHT._preyMark; if(!g) return;
-  const b = BOSSFIGHT.boss, p = b && b._prey;
-  if(!p || !b || b.dead || BOSSFIGHT.phase!=='fight' || p.dead || p.out){ g.visible = false; return; }
+  const _cli = !!(window._net && _net.role==='client');
+  const b = BOSSFIGHT.boss, p = _cli ? (typeof NETW!=='undefined' && NETW.prey) : (b && b._prey);
+  if(!p || (!_cli && (!b || b.dead)) || BOSSFIGHT.phase!=='fight' || p.dead || p.out){ g.visible = false; return; }
   g.visible = true; const t = performance.now()*.001;
   g.position.set(p.pos.x, p.pos.y + 3.1 + Math.sin(t*5)*.18, p.pos.z); g.rotation.y = t*2.2;
 }
@@ -17661,7 +17663,7 @@ function updateBoss(mn, dt){
   if(tgt && mn.state!=='charge' && mn.state!=='jumps' && mn.state!=='leap' && mn.state!=='hurricane' && mn.state!=='hop' && mn.state!=='leapplat' && mn.state!=='leapdown' && mn.state!=='beam' && mn.state!=='knightr' && mn.state!=='chargelaser' && mn.state!=='broken'){   // ►S3HK/►S4HOP/►S3AIR/►G3R/►ROBOTBOSS: huracán/saltos/rayo/torbellino/sobrecarga conducen su propio giro · ►BREAK: derrumbado ni te sigue con la mirada
     const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z;
     if(dx*dx+dz*dz>0.01){ let d=Math.atan2(dx,dz)-mn.yaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;   // ►PRESA: delta acotado (antes podía girar por el lado largo)
-      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : 4;   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot)
+      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : ((BOSS1_RUNE_ON && STAGE===1 && BOSSFIGHT.boss===mn) ? BOSS1_RUNE_TURN : 4);   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot) · jefe 1 con runa: lento
       mn.yaw += d*Math.min(1, tr*dt); }
   }
   switch(mn.state){
@@ -18419,7 +18421,7 @@ function updateBrute(mn, dt){
   if(tgt && mn.state!=='charge' && mn.state!=='jumps'){
     const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z;
     if(dx*dx+dz*dz>0.01){ let d=Math.atan2(dx,dz)-mn.yaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;   // ►PRESA: delta acotado (antes podía girar por el lado largo)
-      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : 4;   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot)
+      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : ((BOSS1_RUNE_ON && STAGE===1 && BOSSFIGHT.boss===mn) ? BOSS1_RUNE_TURN : 4);   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot) · jefe 1 con runa: lento
       mn.yaw += d*Math.min(1, tr*dt); }
   }
   let airborne = false;
@@ -23522,7 +23524,10 @@ function _netWorldApply(W){
     if(!NETW.boss){ try{ bossActive = true; startBossArena(); NETW.boss = (BOSSFIGHT.phase !== 'none'); }catch(e){ console.warn('[networld] boss', e); } }
     if(NETW.boss){
       const inst = BOSSFIGHT.inst;
+      NETW.prey = (B.py!=null && B.py>=0) ? players[B.py]||null : null;   // ►PRESA-NET: marcador sobre la presa también en el invitado
+      if(NETW.prey && NETW.prey!==NETW._preyPrev){ try{ bossPreyMark(null, NETW.prey, !!NETW._preyPrev); }catch(e){} } NETW._preyPrev = NETW.prey;
       if(inst && inst.root && B.x != null){ inst.root.position.set(B.x, B.y, B.z); inst.root.rotation.y = B.w; inst.root.visible = B.v !== 0;
+        if(BOSSFIGHT._rune && B.ph==='fight'){ try{ _runeTick({ pos:inst.root.position, yaw:B.w, scale:BOSS_HIT_SCALE*(((inst._spec||{}).sizeMul)||1), dead:false, state:'', _runeHitT:B.rh?.2:0 }, inst, 1/30); }catch(e){} }   // ►RUNA-NET
         if(B.c && B.c !== inst.cur){ try{ bossAnim(B.c, !/^(muerte|death|deathreact|deathrun|deathback)$/.test(B.c)); }catch(e){} } }
       try{ if(BOSSFIGHT.bar && BOSSFIGHT.bar.fill) BOSSFIGHT.bar.fill.style.width = (100*B.hp).toFixed(1)+'%'; }catch(e){}
       if(B.ph !== NETW.ph){ const prev = NETW.ph; NETW.ph = B.ph; BOSSFIGHT.phase = B.ph;
@@ -23537,6 +23542,7 @@ function _netWorldApply(W){
 }
 function _netWorldTick(dt){
   const k = Math.min(1, dt*12);
+  try{ bossPreyMarkTick(dt); }catch(e){}   // ►PRESA-NET
   let boxes = false;
   for(const mn of NETW.m.values()){
     mn.pos.lerp(mn._tgt, k);
@@ -25641,7 +25647,13 @@ function aiThink(p, dt){
     if(ph==='fight' && B && !B.dead){
       const bdx = B.pos.x-me.pos.x, bdz = B.pos.z-me.pos.z, bd = Math.hypot(bdx,bdz);
       /* ESQUIVA: saltos/giro son AoE groundOnly → SALTAR los evita por completo; la embestida se esquiva de lado */
-      if((B.state==='jumps' || B.state==='spin') && bd < 7 && me.onGround && Math.random()<0.5*D.acc) aiJump(me);   // ►AIDIFF: en FÁCIL falla la esquiva a menudo; en DURO casi nunca
+      /* ►RUNA-IA (04/09): la esquiva del AoE es UN brinco cuando el golpe VA A CAER (gólem descendiendo a menos de 4 u del suelo,
+         o giro a punto de barrer), no un brincar continuo mientras dure el patrón (medido: el bot pasaba el 69 % del tiempo en el
+         aire y ni rodeaba ni pegaba). */
+      ai.hopCD = Math.max(0, (ai.hopCD||0) - dt);
+      const _bAir = B.pos.y - (typeof bossFloorYAt==='function' ? bossFloorYAt(B.pos.x, B.pos.z) : B.pos.y), _bDesc = ai.bPy!=null && B.pos.y < ai.bPy - .03; ai.bPy = B.pos.y;
+      const _slamSoon = (B.state==='jumps' && _bDesc && _bAir > .6 && _bAir < 4.5) || (B.state==='spin' && (B._sub||0) > .36);
+      if(_slamSoon && bd < 7 && me.onGround && ai.hopCD<=0 && Math.random()<0.75*D.acc){ aiJump(me); ai.hopCD = .9; }   // ►AIDIFF: en FÁCIL falla la esquiva a menudo; en DURO casi nunca
       else if(B.state==='charge'){
         const f = new THREE.Vector3(Math.sin(B.yaw), 0, Math.cos(B.yaw));
         const rel = me.pos.clone().sub(B.pos); rel.y = 0;
@@ -25682,8 +25694,11 @@ function aiThink(p, dt){
           }
           return ai.dir;
         }
-        if(prof.kite>0 && bd < bRange*0.75){
-          /* KITING contra el jefe: retrocede encarándolo y sigue castigando con la Q */
+        const _runeFront = BOSS1_RUNE_ON && STAGE===1 && B._boss && bd < 20 && ((bdx*Math.sin(B.yaw)+bdz*Math.cos(B.yaw))/bd) < -(BOSS1_RUNE_DOT+.12);   // ►RUNA-IA: ¿estoy de frente/lado al jefe 1?
+        const _runeBack = Math.max(4.0, Math.min(9, prof.kite>0 ? (prof.range||4)*.8 : 4));   // punto trasero: los cuerpo a cuerpo a 4 u, los de distancia a su alcance de tiro
+        if(prof.kite>0 && bd < bRange*0.75 && !_runeFront){
+          /* KITING contra el jefe: retrocede encarándolo y sigue castigando con la Q · ►RUNA-IA: de frente al jefe 1, antes rodea */
+          if(window._dbgRodeo!=null){ const k='kite'+players.indexOf(me); (window._dbgBr||(window._dbgBr={}))[k]=(window._dbgBr[k]||0)+1; }
           me.yaw = Math.atan2(bdx, bdz);
           const s = Math.sin(t*1.9)*0.4;
           ai.dir.set(-to.x + to.z*s, 0, -to.z - to.x*s).normalize();
@@ -25691,8 +25706,23 @@ function aiThink(p, dt){
           if(me.dashCD<=0 && bd < bRange*0.45 && Math.random()<0.5*D.acc) aiDash(me, ai.dir);
           const kx = me.pos.x+ai.dir.x*2.6, kz = me.pos.z+ai.dir.z*2.6;
           if(me.onGround && !overAnyPlatform(kx,kz)) ai.dir.copy(to);   // sin sitio para retroceder: aguanta
+        } else if(_runeFront){
+          /* ►RUNA-IA (04/09): al jefe 1 solo se le hiere por la ESPALDA — el bot RODEA hasta el cono trasero (a 4.0 u,
+             dentro del alcance melee) en vez de pegar de frente al 4 %. Con el jefe comprometido (salto/embestida/giro)
+             el rodeo entra directo; en reposo rodea tangente para que el gólem, que gira despacio (BOSS1_RUNE_TURN), no le siga. */
+          if(window._dbgRodeo!=null){ window._dbgRodeo++; (window._dbgBr||(window._dbgBr={}))['rodeo'+players.indexOf(me)]=((window._dbgBr||{})['rodeo'+players.indexOf(me)]||0)+1; }   // instrumentación de arnés
+          const fx=Math.sin(B.yaw), fz=Math.cos(B.yaw);
+          const to2 = new THREE.Vector3(B.pos.x - fx*_runeBack - me.pos.x, 0, B.pos.z - fz*_runeBack - me.pos.z); const d2 = to2.length()||1; to2.multiplyScalar(1/d2);
+          const side = new THREE.Vector3(-bdz, 0, bdx).multiplyScalar(1/bd); if(side.dot(to2) < 0) side.negate();   // tangente: no atraviesa al jefe
+          const committed = /^(charge|jumps|jump|spin|leap|hurricane|beam|chargelaser|knightr|ulti|broken|hop|leapplat|perch|leapdown)$/.test(B.state);
+          ai.dir.copy(to2).lerp(side, (bd < 6 && !committed) ? .7 : .25).normalize();
+          me.yaw = Math.atan2(ai.dir.x, ai.dir.z);
+          if(me.dashCD<=0 && d2 > 7 && Math.random()<.3*D.acc) aiDash(me, ai.dir);
+          const nx = me.pos.x+ai.dir.x*2.2, nz = me.pos.z+ai.dir.z*2.2;
+          if(me.onGround && !overAnyPlatform(nx,nz)) ai.dir.set(0,0,0);
         } else if(bd > bRange){
           /* acercarse castigando a distancia, con la ventana y las ganas de SU clase */
+          if(window._dbgRodeo!=null){ const k='approach'+players.indexOf(me); (window._dbgBr||(window._dbgBr={}))[k]=(window._dbgBr[k]||0)+1; }
           if(bd>prof.qMin && bd<prof.qMax && me.qCD<=0 && Math.random()<prof.qChance*D.aggr) classQ(me);
           if(me.superCD<=0 && me.onGround && bd<prof.supMax && Math.random()<prof.supChance*0.75*D.aggr){
             me.yaw = Math.atan2(bdx, bdz); classSuper(me); ai.dir.set(0,0,0); return ai.dir;
@@ -25706,7 +25736,15 @@ function aiThink(p, dt){
           if(me.onGround && !overAnyPlatform(nx,nz)) aiJump(me);
         } else {
           /* a melee: misma cadencia de golpeo que contra jugadores (hitMinions ya alcanza al jefe: reach escala con mn.scale) */
+          if(window._dbgRodeo!=null){ const k='melee'+players.indexOf(me); (window._dbgBr||(window._dbgBr={}))[k]=(window._dbgBr[k]||0)+1; }
           ai.dir.set(0,0,0);
+          if(BOSS1_RUNE_ON && STAGE===1 && B._boss && !/^(charge|jumps|jump|spin|leap|hurricane|beam|chargelaser|knightr|ulti|broken|hop|leapplat|perch|leapdown)$/.test(B.state)){
+            /* ►RUNA-IA: ya en la espalda, sigue DESPLAZÁNDOSE en tangente mientras pega (2,5 rad/s a 4 u > el giro del gólem) */
+            const fx=Math.sin(B.yaw), fz=Math.cos(B.yaw), back=new THREE.Vector3(B.pos.x - fx*4.0 - me.pos.x, 0, B.pos.z - fz*4.0 - me.pos.z);
+            const side=new THREE.Vector3(-bdz, 0, bdx).multiplyScalar(1/bd); if(side.dot(back) < 0) side.negate();
+            ai.dir.copy(side).lerp(back.normalize(), .35).normalize();
+            const nx = me.pos.x+ai.dir.x*2.2, nz = me.pos.z+ai.dir.z*2.2; if(me.onGround && !overAnyPlatform(nx,nz)) ai.dir.set(0,0,0);
+          }
           ai.atkDelay -= .15;
           if(me.comboWindow>0 && me.atk.phase==='none' && Math.random()<.8){ me.yaw = Math.atan2(bdx, bdz); aiMelee(me); }
           else if(ai.atkDelay<=0 && me.atk.phase==='none'){ ai.atkDelay = (.3 + Math.random()*.5) * D.react; me.yaw = Math.atan2(bdx, bdz); aiMelee(me); }
@@ -46304,7 +46342,8 @@ window._net = {
         let B = 0;
         if(BOSSFIGHT.phase !== 'none'){ const inst = BOSSFIGHT.inst, b = BOSSFIGHT.boss;
           B = { ph:BOSSFIGHT.phase, gi:BOSSFIGHT.golemIdx|0, hp:(b && b.maxHp) ? +Math.max(0, 1 - b.damage/b.maxHp).toFixed(3) : 1 };
-          if(inst && inst.root){ B.x=+inst.root.position.x.toFixed(2); B.y=+inst.root.position.y.toFixed(2); B.z=+inst.root.position.z.toFixed(2); B.w=+inst.root.rotation.y.toFixed(2); B.c=inst.cur||''; B.v=inst.root.visible?1:0; } }
+          if(inst && inst.root){ B.x=+inst.root.position.x.toFixed(2); B.y=+inst.root.position.y.toFixed(2); B.z=+inst.root.position.z.toFixed(2); B.w=+inst.root.rotation.y.toFixed(2); B.c=inst.cur||''; B.v=inst.root.visible?1:0; }
+          const _bb = BOSSFIGHT.boss; B.py = (_bb && _bb._prey) ? players.indexOf(_bb._prey) : -1; B.rh = (_bb && _bb._runeHitT>0) ? 1 : 0; }   // ►PRESA-NET / ►RUNA-NET
         /* ►NETWORLD E-A2: proyectiles de jugador/minion, cristales, minas y orbes → J = [id, tipo, pos, dir, color, escala, giro] */
         const J = []; const pj = (m, kind, col, scl, v, spin) => { if(!m || J.length >= 60) return; if(m._nid == null) m._nid = ++_NID;
           const L = v ? (Math.hypot(v.x, v.y, v.z) || 1) : 1;
