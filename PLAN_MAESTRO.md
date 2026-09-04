@@ -112,6 +112,12 @@ de Toni → implementar.
   jefe; cada bruja viva le cura 0,4 %/s y le quita un 8,5 % del daño (10 vivas → recibe el 15 %); respawn
   de 1 en 1 cada 5 s. Constantes en STAGE_BOSSES[2].coven. Pendiente que Toni lo VEA (pose del brazo y
   ritmo de la cura) — el cliente online no ve los hilos (solo las brujas replicadas).
+- JEFE 1 (prado, gólem) · RUNA EN LA ESPALDA (Toni 04/09, verificado en headless): solo se le daña por
+  detrás (cono trasero ~145°, BOSS1_RUNE_DOT); de frente o de lado entra el 4 % (BOSS1_RUNE_FRONT) y sale
+  "¡POR LA ESPALDA!". Runa magenta (halo + anillo) recolocada cada frame tras el jefe; cartel de pista al
+  empezar. Se decide por la POSICIÓN del que pega (mn.lastHitBy), también con proyectiles. Anotado: el rig
+  del gólem no tiene hueso Spine → la runa va a altura fija (3 u) tras el root, no sigue las flexiones;
+  los BOTS no saben rodearlo (pegan al 4 %); el cliente online no ve la runa.
 Pendientes menores APARCADOS hasta después del playtest de Toni: rótulo RONDA i/6, recortar el
 paso sobrante del asistente, OBJ fase 2 (bloque F), rasgo escaparate del mundo 1.
 

@@ -14313,7 +14313,13 @@ const BOSS_BREAK_DMG    = 2.4;    // multiplicador de daño recibido mientras es
 const BOSS_POISE_GRACE  = 1.2;    // s sin recibir daño antes de empezar a recomponerse
 const BOSS_POISE_REGEN  = 0.22;   // fracción de la guardia recuperada por segundo (≈4.5s para llenarla)
 const BOSS_BREAK_CD     = 7.0;    // s mínimos entre una ruptura y la siguiente (no encadenables)
-const BOSS_BREAK_ON     = false;  // ►Toni 04/09/2026: el DERRUMBE (estado 'broken', cámara lenta, ×2.4 de daño) NO gusta → apagado para TODOS los jefes. La guardia sigue calculándose pero nunca rompe y su barra va oculta.
+const BOSS_BREAK_ON     = false;
+/* ►RUNA (Toni 04/09/2026) · JEFE 1 (prado, gólem): SOLO se le daña por la ESPALDA, donde lleva una runa
+   brillante. De frente entra casi nada. Se decide en updateBoss con el daño del frame y la posición del
+   que pega (mn.lastHitBy): detrás = dentro del cono trasero (dot con su frente < BOSS1_RUNE_DOT). ►►► AJUSTA ◄◄◄ */
+const BOSS1_RUNE_ON    = true;
+const BOSS1_RUNE_FRONT = 0.04;    // fracción del daño que entra de frente/lados (casi 0)
+const BOSS1_RUNE_DOT   = -0.30;   // cos: 'detrás' si el atacante está a más de ~107° de su frente (cono trasero de ~145°)  // ►Toni 04/09/2026: el DERRUMBE (estado 'broken', cámara lenta, ×2.4 de daño) NO gusta → apagado para TODOS los jefes. La guardia sigue calculándose pero nunca rompe y su barra va oculta.
 const BOSS_ARENA_Y = 120;           // ►PORTAL-BOSS: la arena del jefe FLOTA en el cielo (mismo X/Z, solo Y) — se llega cayendo por el portal
 const BOSS_PORTAL_TIME = 30;        // ►PORTAL-BOSS: segundos del portal de ENTRADA (se encoge; al agotarse: -1 vida y absorción)
 const ARENA_C = new THREE.Vector3(0, 0, 0);   // centro de la arena
@@ -15005,6 +15011,35 @@ function _frostWeapon(holder){
 /* ►ICEBOSS: engancha el MARTILLO del vikingo en la mano derecha, orientado AL FRENTE como el bárbaro
    (pasa el ROOT como modelo → _aimHolder alinea +Y con el forward), y lo recolorea a hielo. Reutilizado
    por el jefe primario y por los 2 colosos añadidos (►ICEADD). */
+function _attachBackRune(inst){   // ►RUNA: dos discos magenta (halo + núcleo) en la ESPALDA; se recolocan cada frame en _runeTick
+  if(!inst || !inst.root || BOSSFIGHT._rune) return;
+  let spine=null; inst.root.traverse(o=>{ if(!spine && o.name && /spine1$/i.test(o.name)) spine=o; });
+  if(!spine) inst.root.traverse(o=>{ if(!spine && o.name && /spine$/i.test(o.name)) spine=o; });
+  inst._spine = spine;
+  const g=new THREE.Group();
+  const halo=new THREE.Mesh(new THREE.CircleGeometry(.95, 28), new THREE.MeshBasicMaterial({ color:0xff2bd0, transparent:true, opacity:.28, side:THREE.DoubleSide, depthWrite:false }));
+  const core=new THREE.Mesh(new THREE.RingGeometry(.28, .55, 28), new THREE.MeshBasicMaterial({ color:0xff5be6, transparent:true, opacity:.95, side:THREE.DoubleSide, depthWrite:false }));
+  const dot=new THREE.Mesh(new THREE.CircleGeometry(.16, 16), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.9, side:THREE.DoubleSide, depthWrite:false }));
+  g.add(halo); g.add(core); g.add(dot); g._halo=halo; g._core=core; g.frustumCulled=false; g.visible=false;
+  scene.add(g); BOSSFIGHT._rune=g;
+}
+const _runeV=new THREE.Vector3(), _runeF=new THREE.Vector3();
+function _runeTick(mn, inst, dt){
+  const g=BOSSFIGHT._rune; if(!g) return;
+  if(mn.dead || mn.state==='dead' || BOSSFIGHT.phase!=='fight'){ g.visible=false; return; }
+  if(!BOSSFIGHT._runeHinted){ BOSSFIGHT._runeHinted=true; showBanner('¡SOLO POR LA ESPALDA: BUSCA SU RUNA!', 2.6); }
+  const sz=(mn.scale||BOSS_HIT_SCALE)/BOSS_HIT_SCALE;
+  if(inst && inst._spine) inst._spine.getWorldPosition(_runeV); else _runeV.set(mn.pos.x, mn.pos.y+3.0*sz, mn.pos.z);
+  _runeF.set(Math.sin(mn.yaw), 0, Math.cos(mn.yaw));
+  g.position.copy(_runeV).addScaledVector(_runeF, -0.85*sz);
+  g.lookAt(g.position.x-_runeF.x, g.position.y, g.position.z-_runeF.z);
+  const t=performance.now()*.001, hit=(mn._runeHitT||0)>0, pulse=1+.1*Math.sin(t*6);
+  g.scale.setScalar(sz*(hit ? 1.35 : pulse));
+  g._halo.material.opacity = hit ? .6 : .22+.1*Math.sin(t*6);
+  g._core.material.color.setHex(hit ? 0xffffff : 0xff5be6);
+  mn._runeHitT=Math.max(0,(mn._runeHitT||0)-dt);
+  g.visible=true;
+}
 function _attachVikHammer(root, inst, spec){
   if(!(spec && spec.weapon==='vikhammer' && _vikHammerTpl && root && inst)) return null;
   let hand=null; root.traverse(o=>{ if(!hand && o.name && /right.*hand$/i.test(o.name)) hand=o; });
@@ -15039,6 +15074,7 @@ function bossSpawnInst(){
     else console.warn('[samboss] sin hueso de mano para la katana');
   }
   _attachVikHammer(root, BOSSFIGHT.inst, spec);   // ►ICEBOSS/►ICEHAMMER: martillo helado orientado como el bárbaro
+  if(BOSS1_RUNE_ON && STAGE===1) _attachBackRune(BOSSFIGHT.inst);   // ►RUNA: jefe 1 → runa en la espalda
   return BOSSFIGHT.inst;
 }
 function bossAnim(name, loop, inst){
@@ -17329,6 +17365,7 @@ function updateBoss(mn, dt){
   const bossAnim=(n,l)=>_abI(n,l,inst), bossClip=(n)=>_cbI(n,inst), bossPlaceInst=(m)=>_pbI(m,inst);   // ►ICEADD: cierres ligados a la instancia activa
   if(BOSSFIGHT.phase==='lost'){ bossPlaceInst(mn); return; }   // derrota por tiempo: el jefe se detiene
   mn.hitstun=Math.max(0, mn.hitstun-dt);
+  if(BOSSFIGHT._rune && BOSSFIGHT.boss===mn) _runeTick(mn, inst, dt);   // ►RUNA: recoloca la runa en la espalda
   mn.hitCD=Math.max(0, (mn.hitCD||0)-dt);   // sin esto el jefe quedaría inmune al cuerpo a cuerpo (hitMinions pone hitCD=.3)
   mn.invuln=Math.max(0, (mn.invuln||0)-dt);
   _bossGruntCD=Math.max(0, _bossGruntCD-dt);
@@ -17338,7 +17375,20 @@ function updateBoss(mn, dt){
   { const dd0 = mn.damage - (mn._lastDmg||0), cap = BOSS_HIT_CAP_FRAC * mn.maxHp;
     if(dd0 > cap) mn.damage = (mn._lastDmg||0) + cap; }
   // PEGAR AL JEFE rellena la DEFINITIVA (mpow) del que golpea (centralizado: cualquier fuente de daño)
-  const dd = mn.damage - (mn._lastDmg||0);
+  let dd = mn.damage - (mn._lastDmg||0);
+  /* ►RUNA (jefe 1): si el que pega NO está en el cono trasero, el daño del frame se queda en casi nada.
+     Va aquí porque es donde el daño del frame ya es real y mn.lastHitBy ya apunta al atacante. */
+  if(BOSS1_RUNE_ON && STAGE===1 && BOSSFIGHT.boss===mn && dd>0 && mn.lastHitBy && mn.lastHitBy.pos){
+    const fx=Math.sin(mn.yaw), fz=Math.cos(mn.yaw), ax=mn.lastHitBy.pos.x-mn.pos.x, az=mn.lastHitBy.pos.z-mn.pos.z, al=Math.hypot(ax,az)||1;
+    if((ax*fx+az*fz)/al < BOSS1_RUNE_DOT){   // por la ESPALDA: entra entero + chispazo en la runa
+      mn._runeHitT=.22;
+      if(!(mn._runeGoodT>0)){ mn._runeGoodT=.35; const rp=BOSSFIGHT._rune ? BOSSFIGHT._rune.position.clone() : mn.pos.clone(); burst(rp, 0xff5be6, 10, 5, 4, .6); }
+    } else {                                  // de frente/lado: casi nada, y se lo decimos
+      const keep=dd*BOSS1_RUNE_FRONT; mn.damage=(mn._lastDmg||0)+keep; dd=keep;
+      if(!(mn._runeMsgT>0)){ mn._runeMsgT=1.6; popKill(mn.pos.clone().add(new THREE.Vector3(0,3.4*((mn.scale||BOSS_HIT_SCALE)/BOSS_HIT_SCALE),0)), '¡POR LA ESPALDA!', 0xaab0c0); }
+    }
+  }
+  mn._runeMsgT=Math.max(0,(mn._runeMsgT||0)-dt); mn._runeGoodT=Math.max(0,(mn._runeGoodT||0)-dt);
   if(dd>0 && mn.lastHitBy && !mn.lastHitBy.out && !(typeof ultActive==='function' && ultActive(mn.lastHitBy))) addMpow(mn.lastHitBy, dd*BOSS_MPOW_K);
   mn._lastDmg = mn.damage;
   /* ►BREAK · GUARDIA. Va justo aquí porque `dd` ya es el daño REAL de este frame (después del tope) y
@@ -18952,7 +19002,8 @@ function _bossGolemSwap(){
 
 /* limpieza al reiniciar partida (lo llama el reinicio del roster) */
 function resetBossFight(){
-  try{ covenClear(); }catch(e){}   // ►COVEN: hilos de magia y brujas fuera
+  try{ covenClear(); }catch(e){}
+  if(BOSSFIGHT._rune){ scene.remove(BOSSFIGHT._rune); BOSSFIGHT._rune=null; } BOSSFIGHT._runeHinted=false;   // ►RUNA   // ►COVEN: hilos de magia y brujas fuera
   s4BossLookOff();                                                              // ►S4LIGHT: devuelve luz/sombras del stage (no-op si no se aplicó)
   if(BOSSFIGHT.boss){ if(BOSSFIGHT.boss._beam) _bossBeamEnd(BOSSFIGHT.boss); if(BOSSFIGHT.boss._whirl) _bossWhirlEnd(BOSSFIGHT.boss); }   // ►G3R: rayo/torbellino colgados de scene → fuera si la pelea acaba en pleno especial
   if(BOSSFIGHT._robotOrb){ scene.remove(BOSSFIGHT._robotOrb); BOSSFIGHT._robotOrb=null; }   // ►ROBOTBOSS: orbe de sobrecarga colgado de scene → fuera si la pelea acaba en plena carga
