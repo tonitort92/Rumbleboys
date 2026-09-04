@@ -161,6 +161,12 @@ a 100× puntos (10248 vs 85) y catarata de "+N" sin dueño → la carrera está 
 feedback visible; (4) tecla de USO junto al objeto en mano (3 plátanos sin usar); (5) cámara lejos + popups + cartas tapan al
 personaje; (6) 6 decisiones + tour de 8 pasos hasta jugar, home con botones de MANDO en teclado, "Agarrar" vs "EMPUJÓN";
 (7) "¡NUEVO RÉCORD!" tras quedar último; (8) ENTRENAR debe gritar que no es la partida real.
+HECHO el 05/09 sin pedir permiso (Toni: "haz lo que quieras"): (1) cartel de muerte con CAUSA ("¡TE HA SACADO <RIVAL>!" /
+"¡LA HORDA TE HA SACADO!" / "¡EL JEFE TE HA SACADO!" / "¡TE HAS CAÍDO!") + flash rojo; (4) la ficha del básico se llama como el
+objeto en mano con sus usos ("PLÁTANO ×3", en dorado); (7) el récord solo si quedas 1º o 2º; (8) ENTRENAR con rótulo fijo
+"ENTRENAMIENTO" y cartel "sin rivales ni trofeos · ESC para salir"; agarre junto a un goblin → "AGARRE: solo a rivales".
+QUEDAN para decidir: (2) puntos de los CPUs a 100× y catarata de "+N"; (3) feedback del escudo; (5) cámara/popups/cartas;
+(6) decisiones hasta jugar y botones de mando en la home con teclado.
 
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 
