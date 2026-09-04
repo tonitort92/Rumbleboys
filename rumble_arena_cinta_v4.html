@@ -6323,6 +6323,7 @@ function makePlayer(color, darker, spawnX, isAI){
     atk:{ t:0, phase:'none', didHit:false, kind:'hammer', wind:.1, hit:.12, rec:.2, amp:2.2 },
     charge:null, _atkHeld:false, _atkHoldT:0,
     weapon:null, rainbowT:0, bleedT:0, bleedFrom:null, wpnCD:0,
+    _frenzyT:0, smashT:0, metalT:0, sandalT:0, capeT:0, giantT:0, anchorT:0, slipT:0,   // ►OBJETOS2: frenesí del bárbaro + súper (martillo/metal/sandalias/capa/seta) + debuffs (ancla/plátano)
     block:false, blockT:9, shieldFlash:0, stun:0, hitFlash:0, _noDmgT:0,   // ►ANTICAMP: s sin recibir daño
     comboStage:0, comboWindow:0, lastKind:'hammer',
     hitstun:0, hitstopT:0,
@@ -7828,11 +7829,55 @@ function scoreTotal(p){
   const s=p.sc; return Math.round(s.dmg + s.mk*20 + s.items*5 + s.kills*150 + s.specials*40 + s.surv*0.5 + (s.bonus||0) + (s.mini||0)); }   // ►INTERSTAGE: + el ×1.3 de SUPERVIVIENTE por stage (sc.bonus) → cartera, HUD, roadmap y coronación cuadran solos
 /* ¿hay una DEFINITIVA (R) en marcha? cubre todas las clases: genérica/priest (ult), frenesí barbarian (_rainbowT), samurai (storm), knight (bastion), archer (rainT), mage (beam) */
 /* ►FRENZYSKIN · piel incandescente del bárbaro en Frenesí: emissive rojo en todos sus materiales, se restaura al acabar */
-function frenzySkin(p, on){
+/* ►TINT (OBJETOS2, 04/09): tinte de CUALQUIER piel (GLB/FBX/muñeco) para los estados que todo el mundo tiene que
+   ver: 'rainbow' = ESTRELLA (emissive HSL cíclico con desfase por malla) · 'frenzy' = frenesí del bárbaro (rojo
+   pulsante) · 'metal' = jugador de METAL (metalness 1, gris acero) · null = restaurar. CLONA los materiales (los GLB
+   los comparten entre clones de la misma clase: mutar el compartido teñía a otro jugador) y guarda el original en
+   userData._tintOrig. Sustituye a frenzySkin (que solo se aplicaba al muñeco de cajas). Lo llama el host desde
+   updateFighter y el CLIENTE desde clientFrame (el cliente no ejecuta updateFighter). */
+function tintPlayer(p, mode){
   const root = p && p.gfx && p.gfx.root; if(!root) return;
-  if(on && !p._frenzySkin){ p._frenzySkin = []; root.traverse(o=>{ if(o.isMesh && o.material && !o.userData.__ink){ const ms = Array.isArray(o.material)?o.material:[o.material]; ms.forEach(m=>{ if(m.emissive){ p._frenzySkin.push([m, m.emissive.getHex(), m.emissiveIntensity]); m.emissive.setHex(0xff2a10); m.emissiveIntensity = .9; } }); } }); }
-  if(on && p._frenzySkin){ const k = .7 + .3*Math.abs(Math.sin(performance.now()*.012)); for(const [m] of p._frenzySkin) m.emissiveIntensity = k; }   // late
-  if(!on && p._frenzySkin){ for(const [m,h,i] of p._frenzySkin){ m.emissive.setHex(h); m.emissiveIntensity = i; } p._frenzySkin = null; }
+  if(p._tintRoot !== root || p._tintMode !== mode){
+    if(p._tintMats){ for(const o of p._tintMats.meshes){ if(o.userData._tintOrig){ o.material = o.userData._tintOrig; delete o.userData._tintOrig; } } }
+    p._tintMats = null; p._tintMode = mode; p._tintRoot = root;
+    if(mode){ const meshes=[], mats=[];
+      root.traverse(o=>{ if(!o.isMesh || !o.material || o.userData.__ink || o.userData._tintOrig) return;
+        o.userData._tintOrig = o.material;
+        const arr = Array.isArray(o.material) ? o.material.map(m=>m.clone()) : o.material.clone();
+        o.material = arr; meshes.push(o); (Array.isArray(arr)?arr:[arr]).forEach(m=>mats.push(m)); });
+      p._tintMats = { meshes, mats };
+      if(mode==='metal') for(const m of mats){ if(m.metalness!=null){ m.metalness=1; m.roughness=.22; } if(m.color) m.color.lerp(new THREE.Color(0xdfe6f0), .55); if(m.emissive){ m.emissive.setHex(0x334455); m.emissiveIntensity=.25; } if(m.map) m.map=null; m.needsUpdate=true; }
+      if(mode==='frenzy') for(const m of mats) if(m.emissive){ m.emissive.setHex(0xff2a10); m.emissiveIntensity=.9; }
+    }
+  }
+  if(!mode || !p._tintMats) return;
+  const k = performance.now();
+  if(mode==='rainbow'){ const h=(k*.00045)%1; p._tintMats.mats.forEach((m,i)=>{ if(m.emissive){ m.emissive.setHSL((h+i*.04)%1, 1, .5); m.emissiveIntensity=.85; } }); }
+  else if(mode==='frenzy'){ const e=.7+.3*Math.abs(Math.sin(k*.012)); for(const m of p._tintMats.mats) if(m.emissive) m.emissiveIntensity=e; }
+}
+function tintTick(p){ tintPlayer(p, p.rainbowT>0 ? 'rainbow' : (p._frenzyT>0 ? 'frenzy' : (p.metalT>0 ? 'metal' : null))); }
+/* ►ESTRELLA (OBJETOS2): con el arcoíris eres la estrella de Mario — invulnerable (p.invuln lo pone el tick) y quien
+   te toca sale volando (tick de 0,4 s por víctima). Minions: daño + empujón; el jefe queda fuera. */
+function starTouch(p, dt){
+  if(p.dead || p.out) return;
+  const tk = p._starTick || (p._starTick = new Map());
+  for(const [k,v] of tk){ const nv=v-dt; if(nv<=0) tk.delete(k); else tk.set(k,nv); }
+  for(const q of players){
+    if(q===p || q.dead || q.out || q.invuln>0 || tk.has(q)) continue;
+    const dx=q.pos.x-p.pos.x, dz=q.pos.z-p.pos.z; if(Math.abs(q.pos.y-p.pos.y)>1.5 || dx*dx+dz*dz>1.35*1.35) continue;
+    const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(Math.sin(p.yaw),0,Math.cos(p.yaw)); dir.normalize();
+    tk.set(q, .4);
+    applyHit(p, q, { base:12, dir, kbBase:8, kbScale:.1, up:6, hitstun:.3, hitstunMin:true, flash:.16, powAttFlat:4 });
+    burst(q.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffe34a, 10, 6, 4, .7); jiggle(q, 10); sfx.hit(q.damage, undefined, undefined, q);
+  }
+  for(const mn of minions){
+    if(mn.dead || mn.invuln>0 || mn.hitCD>0 || mn._boss || mn.type==='boss') continue;
+    const dx=mn.pos.x-p.pos.x, dz=mn.pos.z-p.pos.z, r=1.6*Math.max(1,mn.scale||1); if(Math.abs(mn.pos.y-p.pos.y)>1.8 || dx*dx+dz*dz>r*r) continue;
+    mn.hitCD=.3; const d=Math.hypot(dx,dz)||1;
+    hurtEnemy(mn, 14*dmgMul(p), false); mn.lastHitBy=p;
+    if(mn.vel){ mn.vel.x += dx/d*9; mn.vel.z += dz/d*9; mn.vel.y=Math.max(mn.vel.y, 5); } mn.hitstun=Math.max(mn.hitstun||0,.3); mn.onGround=false;
+    burst(mn.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffe34a, 8, 5, 4, .6);
+  }
 }
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.genki || p.rainT>0 || p._rainbowT>0); }   // ►SUPERR: + genkidama
 function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; try{ spawnCoins(mn, k); }catch(e){} } }   // ►MONEDAS: el minion explota en monedas   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
@@ -9876,7 +9921,7 @@ function clsStat(p, k){ const s = p && p._charKey && CLASS_STATS[p._charKey]; re
    TODO lector pasa por bst() → cero fontanería nueva aguas abajo. */
 function bst(p, k){ return (p.boost[k]||0) + ((p.own && p.own[k])||0) + ((p.perm && p.perm[k])||0); }
 
-function spdMul(p){ return Math.min(1.8,  (.55 + chaosLvl*.06) * (1 + .08*bst(p,'spd')) * clsStat(p,'spd') * (p.buffSpdT>0?(p.buffSpdV||1.2):1)); }   // boost de velocidad temporal (cura)
+function spdMul(p){ return Math.min(1.8,  (.55 + chaosLvl*.06) * (1 + .08*bst(p,'spd')) * clsStat(p,'spd') * (p.buffSpdT>0?(p.buffSpdV||1.2):1) * (p.anchorT>0?.45:1)); }   // ►ANCLA: lento   // boost de velocidad temporal (cura)
 /* ►SALTOACUM: el clamp antiguo (1.32) se comía el apilado — con el caos alto, a partir de la 4ª cápsula
    +SALTO ya no se notaba NADA. Ahora el caos aporta como mucho ×1 y el tope es EXPLÍCITO Y EN NIVELES
    (JMP_LV_MAX), no un número opaco: +7% acumulativo por nivel hasta 8 → ×1.56, o sea el DOBLE Y MEDIO
@@ -9886,9 +9931,10 @@ function jmpMul(p){
   const base = Math.min(1, .75 + chaosLvl*.04);                       // suelo del stage por caos (tope ×1)
   const lv   = Math.min(JMP_LV_MAX, bst(p,'jmp'));                    // cápsulas ⤒ + niveles de tienda, acumulativos hasta el tope
   return base * (1 + .07*lv)
-       * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1);   // ►S10ZEROG: empujón extra fuera del clamp
+       * ((typeof STAGE!=='undefined'&&STAGE===10)?S10_JUMP_MUL:1)   // ►S10ZEROG: empujón extra fuera del clamp
+       * (p.smashT>0?.5:1) * (p.anchorT>0?.5:1);                    // ►OBJETOS2: martillo Smash y ancla = salto corto
 }
-function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*Math.min(8, bst(p,'dmg'))) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p.rainbowT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1); }   // ►PERK BERSERKER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
+function _dmgBase(p){ return (.5 + chaosLvl*.08) * (1 + .12*Math.min(8, bst(p,'dmg'))) * (p._pkBerserk?(1+Math.min(.6,(p.damage||0)*.006)):1) * (p._frenzyT>0?5:1) * ((p.buffDmgT>0)?(p.buffDmgV||1.6):1) * (p.smashT>0?2.5:1) * (p.giantT>0?1.5:1); }   // ►PERK BERSERK · ►OBJETOS2: martillo ×2.5, seta ×1.5 · ►OBJETOS2: el ×5 es del FRENESÍ del bárbaro (la estrella ya no multiplica)ER: +daño cuanto más herido (hasta +60% a 100%) · boost de daño temporal (cura)
 function dmgMul(p){   return _dmgBase(p) * clsStat(p,'dmg'); }      // básicos / golpes físicos
 function spellMul(p){ return _dmgBase(p) * clsStat(p,'spell'); }   // HECHIZOS (rayo arcano del mago, etc.)
 function defMul(p){ return Math.max(.30, Math.pow(.9, bst(p,'def'))) * clsStat(p,'def') * ((p.buffDefT>0)?(p.buffDefV||0.5):1); }   // boost de defensa temporal (cura) con magnitud variable
@@ -9896,7 +9942,52 @@ function kbMul(p){
   let e = 0, w = 1;
   const n = bst(p,'kb');
   for(let i=0;i<n;i++){ e += w; w *= .85; }
-  return (.6 + chaosLvl*.05) * (1 + .15*e) * (p.rainbowT>0?10:1) * clsStat(p,'kb');
+  return (.6 + chaosLvl*.05) * (1 + .15*e) * (p._frenzyT>0?10:1) * (p.smashT>0?2:1) * clsStat(p,'kb');   // ►OBJETOS2: ×10 del FRENESÍ del bárbaro · martillo ×2
+}
+/* ►OBJETOS2 · lo que RECIBE cada uno: metal ÷4 de empuje, seta ÷3, anclado ×1.6. Lo leen applyHit, minions y jefe. */
+function kbTakenMul(v){ return (v.metalT>0?.25:1) * (v.giantT>0?(1/3):1) * (v.anchorT>0?1.6:1); }
+function reachMul(p){ return p.giantT>0 ? 1.6 : 1; }   // ►SETA: alcance del básico
+const GIANT_SCALE = 1.8;
+const SUPER_DUR = { smash:10, metal:15, sandal:30, cape:60, giant:10 };
+const SUPER_LABEL = { smash:'¡MARTILLO SMASH!', metal:'¡DE METAL!', sandal:'¡SANDALIAS ALADAS!', cape:'¡CAPA!', giant:'¡GIGANTE!', bolt:'¡RAYO AL LÍDER!' };
+/* ►SÚPER (OBJETOS2): se consumen al coger. bolt = objeto en mano de 1 uso (WEAPON_DEFS.bolt). */
+function giveSuper(p, kind){
+  if(kind==='bolt'){ p.weapon = { kind:'bolt', ammo:1 }; p.wpnCD = 0; }
+  else { const k = kind+'T'; p[k] = Math.max(p[k]||0, SUPER_DUR[kind]||10); }
+  p.sc.boosts++; showCombo(p, SUPER_LABEL[kind]||kind.toUpperCase()); sfx.chaos();
+  burst(p.pos.clone().add(new THREE.Vector3(0,1,0)), 0xffd040, 18, 7, 5, 1);
+}
+/* ►SÚPER · limpieza total de timers/efectos de objeto (muerte, portal, attract, resetMatch). */
+function clearItemTimers(p){
+  p.smashT = p.metalT = p.sandalT = p.capeT = p.giantT = p.anchorT = p.slipT = 0; p._frenzyT = 0;
+  p._airFloor = null; p._starTick = null; p._carryCut = 0;
+  try{ tintPlayer(p, null); }catch(e){}
+  if(p.gfx && p.gfx.root){ p.gfx.root.scale.setScalar(1); } p._giantOn = false;
+  if(p._capeMesh){ try{ p._capeMesh.parent && p._capeMesh.parent.remove(p._capeMesh); }catch(e){} p._capeMesh = null; }
+}
+/* ►SÚPER · tick por frame en el HOST: relojes, escala de la seta, martillo automático. La cosmética va en
+   itemFxTick (también la llama el cliente). */
+function superTick(p, dt){
+  for(const k of ['smashT','metalT','sandalT','capeT','giantT','anchorT','slipT']) if(p[k]>0) p[k] = Math.max(0, p[k]-dt);
+  if(p.sandalT>0 && p._airFloor==null && p.onGround) p._airFloor = p.pos.y;   // ►SANDALIAS: si aún no ha aterrizado con ellas, el suelo virtual es donde está
+  if(p.smashT>0 && !p.dead && !p.out && !p.heldBy && !p.holding && p.atk && p.atk.phase==='none' && p.hitstun<=0 && p.stun<=0 && !p.hang && !p.block && !p.rollT){ p.comboWindow = Math.max(p.comboWindow||0, .3); startAttack(p, 'hammer'); }
+  itemFxTick(p, dt);
+}
+/* ►SÚPER · cosmética (host y CLIENTE): escala de la seta, capa, chispas de metal, alas en los pies, brillo del martillo. */
+function itemFxTick(p, dt){
+  const root = p.gfx && p.gfx.root; if(!root) return;
+  if(p.giantT>0){ if(!p._giantOn){ p._giantOn = true; } root.scale.setScalar(GIANT_SCALE); }
+  else if(p._giantOn){ p._giantOn = false; root.scale.setScalar(1); }
+  if(p.capeT>0){
+    if(!p._capeMesh){ const m = new THREE.Mesh(new THREE.PlaneGeometry(.95, 1.35, 1, 3), new THREE.MeshStandardMaterial({ color:0x5a2bd6, emissive:0x2a0f6e, emissiveIntensity:.35, side:THREE.DoubleSide, roughness:.8 }));
+      m.position.set(0, 1.45, -.32); m.geometry.translate(0, -.65, 0); root.add(m); p._capeMesh = m; }
+    const sp = Math.hypot(p.vel.x, p.vel.z), fall = (!p.onGround && p.vel.y<0) ? 1 : 0;
+    p._capeMesh.rotation.x = -.25 - Math.min(.9, sp*.06) - fall*.55 + Math.sin(performance.now()*.006)*.08;
+  } else if(p._capeMesh){ try{ root.remove(p._capeMesh); }catch(e){} p._capeMesh = null; }
+  if(p.sandalT>0 && Math.random()<dt*14) burst(new THREE.Vector3(p.pos.x+(Math.random()-.5)*.6, p.pos.y+.15, p.pos.z+(Math.random()-.5)*.6), Math.random()<.5?0xffffff:0xbfe8ff, 1, 1.2, 1.2, .35);
+  if(p.metalT>0 && Math.random()<dt*5) burst(new THREE.Vector3(p.pos.x+(Math.random()-.5)*.7, p.pos.y+.4+Math.random()*1.4, p.pos.z+(Math.random()-.5)*.7), 0xe8f0ff, 1, 1.5, 1.2, .3);
+  if(p.smashT>0 && Math.random()<dt*10){ const t = hammerTip(p); burst(t, Math.random()<.5?0xffd040:0xffffff, 1, 1.6, 1.4, .35); }
+  if(p.anchorT>0 && Math.random()<dt*4) ring(new THREE.Vector3(p.pos.x, p.pos.y+.1, p.pos.z), 0x6a7080, 6, .3);
 }
 function rateMul(p){ return Math.max(.35, Math.pow(.86, bst(p,'rate')) * clsStat(p,'rate') * (p.buffRateT>0?(p.buffRateV||0.75):1)); }   // CADENCIA: menor = más rápido; boost de cadencia temporal (cura)
 const MAX_AIR_JUMPS = 7;   // ►CAP SALTOS: tope absoluto de saltos aéreos en stages normales → 7 aéreos + 1 de suelo = 8 SALTOS MÁX (3 base + 3 cápsula + 2 tienda). El CAOS ya NO da saltos extra (solo altura vía jmpMul).
@@ -11172,9 +11263,14 @@ function _buildHeldProc(kind){
   return g;
 }
 /* mantiene la visual de la mano sincronizada con el arma equipada (o el martillo por defecto) */
+function _smashHammer(){   // ►SMASH: martillo DORADO grande (mismo modelo del básico, ×1.6, brillo)
+  const h = buildCharHammer(0xffd040);
+  h.traverse(o=>{ if(!o.isMesh || !o.material) return; const arr = Array.isArray(o.material); const ms = (arr?o.material:[o.material]).map(m=>{ m = m.clone(); if(m.emissive){ m.emissive.setHex(0xffb000); m.emissiveIntensity = .55; } if(m.metalness!=null){ m.metalness = .7; m.roughness = .3; } return m; }); o.material = arr ? ms : ms[0]; });
+  h.userData.shared = true; return h;   // shared: la geometría es la del OBJ warhammer (no se dispone al quitarlo)
+}
 function syncHeld(p){
   const g = p.gfx;
-  const kind = p.weapon ? p.weapon.kind : null;
+  const kind = p.weapon ? p.weapon.kind : (p.smashT>0 ? 'smash' : null);   // ►SMASH: pseudo-arma en mano
   if(p._heldKind === kind) return;                     // sin cambios, no reconstruye
   p._heldKind = kind;
   if(p._charHand){                                      // HUMANOIDE: arma/martillo en el hueso de la mano
@@ -11184,7 +11280,8 @@ function syncHeld(p){
       const reattach   = cw==='katana' ? attachKatana : cw==='staff' ? attachStaff : attachWeapon;
       if(kind){                                          // recoge arma → oculta la de clase y muestra la recogida
         if(classHolder) classHolder.visible = false;
-        attachToHand(p, buildHandWeapon(kind), HAND_FITS[kind]);
+        if(kind==='smash') attachToHand(p, _smashHammer(), Object.assign({}, HAND_FITS.hammer, { scale:HAND_FITS.hammer.scale*1.6 }));
+        else attachToHand(p, buildHandWeapon(kind), HAND_FITS[kind]);
       } else {                                           // sin arma → quita la recogida y DEVUELVE la de clase
         if(p._charHeld){ p._charHand.remove(p._charHeld);
           if(!p._charHeld.userData.shared) p._charHeld.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
@@ -11199,14 +11296,16 @@ function syncHeld(p){
         p._charHeld = null; }
       return;
     }
-    if(kind){ const w = buildHandWeapon(kind); attachToHand(p, w, HAND_FITS[kind]); }
+    if(kind==='smash'){ attachToHand(p, _smashHammer(), Object.assign({}, HAND_FITS.hammer, { scale:HAND_FITS.hammer.scale*1.6 })); }
+    else if(kind){ const w = buildHandWeapon(kind); attachToHand(p, w, HAND_FITS[kind]); }
     else    { attachToHand(p, buildCharHammer(p.color), HAND_FITS.hammer); }
     return;
   }
   if(g.held){ g.elbR.remove(g.held);
     if(!g.held.userData.shared) g.held.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); });   // OBJ en mano = clon compartido: no disponer
     g.held=null; }
-  if(kind){ g.hammer.visible=false; const w=buildHeldWeapon(kind); g.elbR.add(w); g.held=w; }
+  if(kind==='smash'){ g.hammer.visible=false; const w=_smashHammer(); w.scale.multiplyScalar(1.6); g.elbR.add(w); g.held=w; }
+  else if(kind){ g.hammer.visible=false; const w=buildHeldWeapon(kind); g.elbR.add(w); g.held=w; }
   else g.hammer.visible=true;
 }
 
@@ -11259,7 +11358,7 @@ function giveItem(p, it){
   p._oneShot = 'pickup'; p._oneShotT = 0.5;                 // humanoide: animación de recoger
   try{ const c0 = p.pos.clone().add(new THREE.Vector3(0,1,0)); burst(c0, p.color, 8, 5, 4, .7); ring(c0, 0xffffff, 10, .3); jiggle(p, 8); hitSpark(c0, new THREE.Vector3(0,1,0), p.color, .8); }catch(e){}   // ►JUICE: recoger se ve
 
-  if(it.cat==='rainbow'){ p.sc.boosts++; p.rainbowT = RAINBOW_DUR; showCombo(p, '¡ARCOÍRIS x5!'); sfx.chaos(); }
+  if(it.cat==='rainbow'){ p.sc.boosts++; p.rainbowT = RAINBOW_DUR; showCombo(p, '¡ESTRELLA!'); sfx.chaos(); }
   else { p.sc.weapons++; p.weapon = { kind:it.kind, ammo:WEAPON_DEFS[it.kind].ammo }; p.wpnCD = 0;
          showCombo(p, WEAPON_DEFS[it.kind].name); sfx.weaponGet(); }
 }
@@ -11335,7 +11434,7 @@ function updateItems(dt){
     for(const p of players){
       if(p.dead) continue;
       const d = Math.hypot(p.pos.x-it.m.position.x, p.pos.z-it.m.position.z);
-      if(d<1.2 && Math.abs(p.pos.y-it.y0)<1.8){
+      if(d<1.2 && Math.abs(p.pos.y-it.y0)<1.8 && !(p.smashT>0 && it.cat==='weapon')){   // ►SMASH: con el martillo no recoges armas
         giveItem(p, it);
         burst(it.m.position, it.col, 16, 6, 5, 1);
         ring(it.m.position.clone(), it.col, 16, .45);
@@ -13909,7 +14008,7 @@ function minionMelee(mn, tgt){
   const dmg = base*(0.5+chaosLvl*.05)*defMul(tgt)*(_cg===2?CARRY_DMG_TAKEN:1); tgt.damage += dmg; noteMinion(tgt);   // enjambre de minions sobre el mismo
   if(_cg){ tgt.hitFlash=.16; }
   else {
-  const kb = (mn.type==='large' ? (8+tgt.damage*.16) : (4+tgt.damage*.08))/3;   // desplaza 3x menos
+  const kb = (mn.type==='large' ? (8+tgt.damage*.16) : (4+tgt.damage*.08))/3 * kbTakenMul(tgt);   // desplaza 3x menos · ►OBJETOS2: metal/seta/ancla
   tgt.vel.set(dir.x*kb, (mn.type==='large' ? (7+tgt.damage*.04) : 4)/3, dir.z*kb);
   tgt.hitstun = Math.max(tgt.hitstun, mn.type==='large'?.5:.25); tgt.onGround=false; tgt.hang=null; tgt.hitFlash=.16; tgt.comboWindow=0;
   }
@@ -13936,7 +14035,7 @@ function updateMprojs(dt){
       if(s.m.position.distanceTo(vc) > (s.hitR||.95)) continue;   // ►G3R: radio de impacto propio (orbes grandes lentos pegan más ancho)
       const dir=_mpD.copy(s.v); dir.y=0; dir.normalize();
       if(p.block){ p.damage+=2*defMul(p); p.vel.x+=dir.x*3; p.vel.z+=dir.z*3; p.shieldFlash=.18; sfx.chip(); }
-      else { const _cg=carryGuard(p); const dmg=((s.dmg!=null?s.dmg:5+chaosLvl))*defMul(p)*(_cg===2?CARRY_DMG_TAKEN:1); p.damage+=dmg; noteMinion(p); const kb=(4+p.damage*.06)/3;   // ►ROSTER: s.dmg propio (disparador pega más); resto = base 5+caos · ►CARRY4: en un agarre hiere pero no empuja ni aturde
+      else { const _cg=carryGuard(p); const dmg=((s.dmg!=null?s.dmg:5+chaosLvl))*defMul(p)*(_cg===2?CARRY_DMG_TAKEN:1); p.damage+=dmg; noteMinion(p); const kb=(4+p.damage*.06)/3*kbTakenMul(p);   // ►ROSTER: s.dmg propio (disparador pega más); resto = base 5+caos · ►CARRY4: en un agarre hiere pero no empuja ni aturde
         if(!s.nopush && !_cg){ p.vel.x+=dir.x*kb; p.vel.z+=dir.z*kb; p.vel.y=Math.max(p.vel.y,2.5/3); }   // ►ROBOTBOSS: los láseres de dedo DAÑAN mucho pero NO empujan (s.nopush)
         if(!_cg) p.hitstun=Math.max(p.hitstun,.2); p.hitFlash=.12; burst(vc, s.trailCol||0xff4040, 7,4,3,.7); jiggle(p,8); sfx.hit(p.damage, undefined, undefined, p); }
       consumed=true; break;
@@ -17007,7 +17106,7 @@ function bossHitPlayers(center, radius, dmg, kb, up, bleed, groundOnly){
     const dir=new THREE.Vector3(dx,0,dz); if(dir.lengthSq()<.01) dir.set(Math.sin(p.yaw),0,Math.cos(p.yaw)); dir.normalize();
     if(p.block){ p.damage += dmg*0.25*defMul(p); p.vel.x+=dir.x*4; p.vel.z+=dir.z*4; p.shieldFlash=.2; sfx.chip(); continue; }
     p.damage += dmg*defMul(p); noteMinion(p);
-    const k = kb + p.damage*0.12;
+    const k = (kb + p.damage*0.12) * kbTakenMul(p);   // ►OBJETOS2: metal/seta/ancla
     p.vel.set(dir.x*k, up||5, dir.z*k);
     p.hitstun=Math.max(p.hitstun,.35); p.onGround=false; p.hang=null; p.hitFlash=.18; p.comboWindow=0;
     if(p.holding) releaseGrab(p,false); else if(p.heldBy && p.heldBy.holding===p) releaseGrab(p.heldBy,false);   // ►CARRY4: el JEFE sí rompe el agarre, armadura incluida
@@ -19014,7 +19113,7 @@ function hitMinions(p){
   for(const mn of minions){
     if(mn.dead || mn.invuln>0 || mn.hitCD>0) continue;
     const mc = mn.pos.clone().add(new THREE.Vector3(0, 1*mn.scale, 0));
-    if(tip.distanceTo(mc) > (kind==='hammer'?2.6:1.95)*Math.max(1,mn.scale)) continue;   // martillo: barrido más amplio
+    if(tip.distanceTo(mc) > (kind==='hammer'?2.6:1.95)*Math.max(1,mn.scale)*reachMul(p)) continue;   // martillo: barrido más amplio
     if(mn.type!=='boss' && Math.abs(p.pos.y - mn.pos.y) > VHIT_BAND*Math.max(1,mn.scale)) continue;   // ►#4: no pegues a un minion de otro nivel (el jefe queda exento, alcance grande a propósito)
     mn.hitCD = .3;
     const dir = mn.pos.clone().sub(p.pos); dir.y=0;
@@ -21534,7 +21633,7 @@ const _gearEls = new Map();      // clave → nodo del sticker
 function _gearList(p){
   const L = [];
   if(p.weapon){ const w = WEAPON_DEFS[p.weapon.kind]; L.push({ k:'w:'+p.weapon.kind, ic:w.label, col:w.col, n:p.weapon.ammo, always:true }); }
-  if(p.rainbowT>0) L.push({ k:'rainbow', ic:'🌈', col:0xff5fd2, n:Math.ceil(p.rainbowT), always:true, tmp:true });
+  if(p.rainbowT>0) L.push({ k:'rainbow', ic:'⭐', col:0xffe34a, n:Math.ceil(p.rainbowT), always:true, tmp:true });
   for(const ty of CAP_TYPES){ if(ty.heal) continue; const c = bst(p,ty.k); if(c>0) L.push({ k:'c:'+ty.k, ic:ty.ic, col:ty.col, n:c }); }   // ►INTERSTAGE: temporal + comprado
   return L;
 }
@@ -22117,7 +22216,7 @@ function updateBodyBumps(dt){
     /* fuera: muertos/eliminados, el que va EN VOLANDAS (lo lleva otro), colgado de un borde o
        trepando (posición comprometida por glide), y el que acaba de reaparecer sobre su pad. */
     if(p.dead || p.out || p.heldBy || p.hang || p.climbT>0 || p.spawnPad || p.respDrop) continue;
-    _bumpAdd(p, BUMP_R_P, 1, true);
+    _bumpAdd(p, BUMP_R_P*(p.giantT>0?GIANT_SCALE:1), (p.giantT>0||p.metalT>0)?3:1, true);   // ►OBJETOS2: seta = grande y pesada, metal = pesado
   }
   for(const mn of minions){
     if(mn.dead) continue;
@@ -22241,7 +22340,7 @@ function nearestFoe(p, maxDist){
 function barbFrenzy(p){
   if(p.ult || p.dead || !p.onGround || p.mpow < MPOW_MAX) return;
   p.mpow = 0; p.sc.specials++;
-  p.rainbowT = Math.max(p.rainbowT||0, 10);   // 10s de furia (berserk largo)
+  p._frenzyT = Math.max(p._frenzyT||0, 10);   // 10s de furia (berserk largo) · ►OBJETOS2: reloj propio (el arcoíris ahora es la ESTRELLA)
   p._rainbowT = 10;                           // piel arcoíris (aviso de peligro)
   p._frenzyPoseT = .8;                        // ráfaga de la anim 'ult' al activar (barbarian; = BARB_WIN.ult)
   showCombo(p, '¡FRENESÍ!'); sfx.charge(); if(!demo) crowdCheer(.5);
@@ -22749,7 +22848,7 @@ function updateHealDisc(p,dt){
    F = movilidad/AoE (enfriamiento en p.spinCD, HUD escala con p._fMax).
    Q = a distancia/utilidad (enfriamiento en p.qCD). Contrato como las E:
    en cooldown→deny+return true; bloqueo transitorio→return false (el buffer reintenta); al salir→fija CD. */
-function _abilGate(p){ return !(p.atk.phase!=='none'||p.beam||p.hang||p.hitstun>0||p.stun>0||p.dead||p.block||p.spin||p.ult||p.storm||p.bastion||p.counter||p.parryT>0||p.charge); }
+function _abilGate(p){ return !(p.atk.phase!=='none'||p.beam||p.hang||p.hitstun>0||p.stun>0||p.dead||p.block||p.spin||p.ult||p.storm||p.bastion||p.counter||p.parryT>0||p.charge||p.smashT>0); }   // ►SMASH: con el martillo no hay especiales
 function _setF(p,cd){ cd *= (p._lvF||1); p.spinCD=cd; p._fMax=cd; p.sc.specials++; }   // ►CARTAS: F VELOZ
 function _setQ(p,cd){ cd *= (p._lvQ||1); p.qCD=cd; p._qMax=cd; }   // ►CARTAS: Q VELOZ
 function _aim(p,rng){ const foe=nearestFoe(p,rng||40); if(foe) p.yaw=Math.atan2(foe.pos.x-p.pos.x, foe.pos.z-p.pos.z); }
@@ -23503,7 +23602,7 @@ function startAttack(p, kind='hammer'){
 }
 function hammerTip(p){
   const f = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
-  const reach = (p.atk && p.atk.kind==='hammer') ? 1.95 : 1.55;   // martillo: barrido más amplio
+  const reach = ((p.atk && p.atk.kind==='hammer') ? 1.95 : 1.55) * reachMul(p);   // martillo: barrido más amplio · ►SETA ×1.6
   return p.pos.clone().addScaledVector(f, reach).add(new THREE.Vector3(0, 1.1, 0));
 }
 /* ---------- PUÑETAZO BRUTAL: se carga manteniendo el botón de ataque ---------- */
@@ -23632,7 +23731,12 @@ function applyHit(att, vic, o){
   if(o.powAttFlat) addPower(att, o.powAttFlat);
   if(o.powVic) addPower(vic, o.powVic * dmg);
   if(o.dir && _cg<2){
-    const kb = ((o.kbBase||0) + vic.damage*(o.kbScale||0)) * (o.kbExtra!=null?o.kbExtra:1) * kbMul(att);
+    const kb0 = ((o.kbBase||0) + vic.damage*(o.kbScale||0)) * (o.kbExtra!=null?o.kbExtra:1) * kbMul(att);
+    const kb = kb0 * kbTakenMul(vic);   // ►OBJETOS2: metal ÷4 · seta ÷3 · anclado ×1.6
+    if(vic.metalT>0 && att && att!==vic && att.vel && players.indexOf(att)>=0){   // ►METAL: el que pega cuerpo a cuerpo sale despedido con el empuje que iba a dar (×0.6)
+      const rk = kb0*.6; att.vel.x -= o.dir.x*rk; att.vel.z -= o.dir.z*rk; att.vel.y = Math.max(att.vel.y, 3);
+      att.hitstun = Math.max(att.hitstun||0, .2); att.onGround = false; att.hitFlash = .12;
+      burst(att.pos.clone().add(new THREE.Vector3(0,1,0)), 0xe8f0ff, 8, 5, 4, .6); sfx.chip(); }
     let up = (o.up||0) + vic.damage*(o.upScale||0);
     if(o.upMax != null) up = Math.min(o.upMax, up);
     if(o.upMin != null) up = Math.max(o.upMin, up);
@@ -23751,7 +23855,7 @@ function resolveHit(att, vic){
   if(vic.dead) return;                            // colgarse YA NO da inmunidad
   const tip = hammerTip(att);
   const vc = vic.pos.clone().add(new THREE.Vector3(0,1,0));
-  if(tip.distanceTo(vc) > (att.atk.kind==='hammer' ? 2.7 : 1.95)) return;   // martillo: alcance más amplio
+  if(tip.distanceTo(vc) > (att.atk.kind==='hammer' ? 2.7 : 1.95)*reachMul(att)) return;   // martillo: alcance más amplio · ►SETA ×1.6
   if(Math.abs(att.pos.y - vic.pos.y) > VHIT_BAND) return;   // ►#4: sin golpe entre niveles distintos (mismo XZ, distinta altura → no conecta)
   if(vic.invuln>0){                               // INVULNERABLE (respawn): el golpe "rebota" con feedback claro, no un return mudo
     att.atk.didHit = true;                        // consume el swing → un solo aviso, no uno por frame de la fase 'hit'
@@ -24147,7 +24251,7 @@ function respawn(p){
   p.atk.phase = 'none';
   p.block = false; p.comboStage = 0; p.comboWindow = 0; p.stun = 0; p.hitFlash = 0;
   p.invuln = 2.2;
-  p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // pierdes arma/arcoíris al morir
+  p.weapon = null; p.rainbowT = 0; p._frenzyT = 0; p.bleedT = 0; p.wpnCD = 0; clearItemTimers(p);   // pierdes arma/arcoíris/súper al morir
   /* ►KEEPBOOST (Toni 23/08): morir dentro del mismo mundo NO quita boosts de cápsula (p.boost, incluidos los saltos
      extra airj) ni pasivos recogidos. Solo se pierden al cambiar de mundo tras el jefe (stageResetPlayers) y en
      resetMatch; lo de tienda (p.own/p.ownPas/_pkAir) sigue como estaba. Antes aquí se ponían a cero. */
@@ -25951,13 +26055,15 @@ function updateFighter(p, dt){
   if(p.damage > (p._dmgMark||0) + 12 && p.hurtVoiceCD<=0 && !p.dead){ charVoice(p,'auch',0.6); p.hurtVoiceCD = .45; }
   p._dmgMark = p.damage;
   if(p._superWaveT>0) p._superWaveT -= dt;                             // ►SUPERR bárbaro: las ondas duran lo que el frenesí
-  if(p.rainbowT>0){ p.rainbowT -= dt;                                  // ARCOÍRIS: aura de colores
-    if(p._charKey==='voxelhero'){ frenzySkin(p, true);                  // ►FRENZYSKIN: rojo incandescente + humo
-      if(typeof tfx==='function' && VISUAL.toonfx && Math.random()<.5) tfx({ kind:'puff', pos:new THREE.Vector3(p.pos.x+(Math.random()-.5)*.7, p.pos.y+.6+Math.random()*1.3, p.pos.z+(Math.random()-.5)*.7), color:(Math.random()<.35?0xff5a3c:0x3a2a2a), size:.35+Math.random()*.25, life:.55, vel:new THREE.Vector3((Math.random()-.5)*.8, 2.2+Math.random(), (Math.random()-.5)*.8), grav:-2, rot:Math.random()*6.3, spin:(Math.random()-.5)*2, fade:.6, over:1.2, grow:.9 });
-    } else if(Math.random()<.8){ const _rc=[0xff3b30,0xff9500,0xffd23a,0x34c759,0x0a84ff,0x5e5ce6][Math.floor(Math.random()*6)];
-      burst(_fxV.set(p.pos.x+(Math.random()-.5)*.6, p.pos.y+.6+Math.random()*1.2, p.pos.z+(Math.random()-.5)*.6),
-        _rc, 1, 1.4, 2.2, .5); } }   // ►PERF2: scratch (efecto POR FRAME)
-  if(p.rainbowT<=0 && p._frenzySkin) frenzySkin(p, false);   // ►FRENZYSKIN: restaurar piel al terminar
+  if(p._frenzyT>0) p._frenzyT -= dt;                                   // ►FRENESÍ del bárbaro (rojo; ya no comparte reloj con el arcoíris)
+  if(p.rainbowT>0){ p.rainbowT -= dt;                                  // ►ESTRELLA (OBJETOS2): invulnerable + daña al tocar
+    p.invuln = Math.max(p.invuln, .05);                                // entra en los guards de invuln de todas las rutas de golpe (el parpadeo la excluye)
+    starTouch(p, dt); }
+  tintTick(p);                                                         // ►TINT: aura visible en CUALQUIER skin (rainbow / frenzy / metal)
+  superTick(p, dt);                                                    // ►SÚPER: relojes, seta, martillo automático, cosmética
+  if((p.rainbowT>0 || p._frenzyT>0) && typeof tfx==='function' && VISUAL.toonfx && Math.random()<.45){   // ESTRELLITAS (amarillas/blancas; rojas en el frenesí)
+    const red = !(p.rainbowT>0);
+    tfx({ kind:'star', pos:new THREE.Vector3(p.pos.x+(Math.random()-.5)*.9, p.pos.y+.3+Math.random()*1.6, p.pos.z+(Math.random()-.5)*.9), color: red ? (Math.random()<.5?0xff2a10:0xffa040) : (Math.random()<.5?0xffffff:0xffe34a), size:.35+Math.random()*.35, life:.5, rot:Math.random()*6.3, fade:.5, over:1.3, vel:new THREE.Vector3((Math.random()-.5)*1.5, 1.5+Math.random()*1.5, (Math.random()-.5)*1.5), grav:-3 }); }
   if(p.bleedT>0){ p.bleedT -= dt; p.damage += BLEED_DPS*dt*pvpMul(p.bleedFrom||null, p);        // SANGRADO de la espada · ►F3b: tregua
     if(Math.random()<.35) burst(_fxV.set(p.pos.x, p.pos.y+1, p.pos.z), 0xff2244, 1, 1.5, 1, .4); }
   if(p.spawnPad){ p.invuln = Math.max(p.invuln, .4);                                     // zona segura sobre la pad
@@ -26499,7 +26605,7 @@ function updateFighter(p, dt){
     }
     /* ►P10a · PLANEO (STAGE≥8): mantener SALTO cayendo = planeas (aire enrarecido). Se corta al
        soltar. Solo humanos (los AI no setean _spaceHeld — v1 aceptado). */
-    if(STAGE>=9 && !p.onGround && p.vel.y<0 && p._spaceHeld && !p.hang && p.hitstun<=0){
+    if(((STAGE>=9 && p._spaceHeld) || p.capeT>0) && !p.onGround && p.vel.y<0 && !p.hang && p.hitstun<=0){   // ►CAPA: caída lenta siempre
       p.vel.y = Math.max(p.vel.y, -4.5);
       p._glideFxT = (p._glideFxT||0) - dt;
       if(p._glideFxT<=0){ p._glideFxT = 0.12; if(typeof burst==='function') burst(_s4fx.set(p.pos.x, p.pos.y-0.3, p.pos.z), 0xbfe8ff, 1, 1.4, 1.5, .3); }
@@ -26547,6 +26653,7 @@ function updateFighter(p, dt){
       }
       p.pos.y = gy; p.vel.y = 0;
       p.onGround = true; p.jumps = airJumps()+1; p.coyote = .12; p.flip = 0; p._dj = false; p.respDrop = false;
+      p._airFloor = gy;   // ►SANDALIAS: último suelo REAL pisado (altura del suelo virtual)
       /* ►S4: HUNDIMIENTO en arena — pisando arena te vas enterrando (velocidad ↓ en ctl);
          saltar resetea. Las alfombras (sand:false) son refugio. */
       p._sandPl = (_groundPl && _groundPl.sand) ? _groundPl : null;
@@ -26558,6 +26665,10 @@ function updateFighter(p, dt){
         if(p.sandSink > .25 && Math.random() < dt*6)
           burst(new THREE.Vector3(p.pos.x, p.pos.y+.05, p.pos.z), 0xdec993, 1, 1.2, .8, .45);   // motitas al removerse
       } else p.sandSink = 0;
+    } else if(p.sandalT>0 && p.vel.y<=0 && p._airFloor!=null && p.pos.y <= p._airFloor+.05 && !p.heldBy){   // ►SANDALIAS ALADAS: caminas sobre el AIRE a la altura del último suelo pisado (y saltas desde ahí)
+      p.pos.y = p._airFloor; p.vel.y = 0;
+      p.onGround = true; p.jumps = airJumps()+1; p.coyote = .12; p._dj = false;
+      p._sandPl = null; p._icePl = null;
     } else {
       if(p.onGround) p.coyote = .12;
       p.onGround = false;
@@ -27118,7 +27229,7 @@ function updateFighter(p, dt){
      de golpe que salían en el informe (~30 ms cada uno = casi un segundo de congelación).
      Solución: parpadear las MALLAS, no el root. Se ve exactamente igual y las luces no se mueven de
      la cuenta. `_blinkOff` recuerda el estado para no recorrer el modelo en cada frame. */
-  const _blink = p.invuln>0 ? (Math.floor(t*14)%2===0) : true;
+  const _blink = (p.invuln>0 && !(p.rainbowT>0)) ? (Math.floor(t*14)%2===0) : true;   // ►ESTRELLA: invulnerable pero SIN parpadear (el aura ya lo dice)
   if(g._blinkOn !== _blink){
     g._blinkOn = _blink;
     for(const c of g.root.children){
@@ -42203,7 +42314,7 @@ function stageResetPlayers(){
     safeSpawn(p); p.vel.set(0,0,0);
     p.hitstun = 0; p.stun = 0; p.atk.phase = 'none'; p.hang = null; p.swing = null; p.sandSink = 0;
     p.block = false; p.shieldT = 0; p.comboStage = 0; p.comboWindow = 0; p.hitFlash = 0;
-    p.weapon = null; p.rainbowT = 0; p._rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;   // el arma/arcoíris no cruzan el portal (como al morir)
+    p.weapon = null; p.rainbowT = 0; p._rainbowT = 0; p.bleedT = 0; p.wpnCD = 0; clearItemTimers(p);   // el arma/arcoíris/súper no cruzan el portal (como al morir)
     /* carril TEMPORAL a cero: las cápsulas y los pasivos del suelo YA NO cruzan (antes SÍ lo hacían) */
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p._capQ = [];   // ►H5
@@ -43106,7 +43217,7 @@ function startDemo(){
   }
   for(const p of players){
     p.isAI = true; p.dead = false; p.out = false; p.stocks = 9; p.invuln = 0; p._rainbowT = 0;
-    p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
+    p.weapon = null; p.rainbowT = 0; p._frenzyT = 0; p.bleedT = 0; p.wpnCD = 0; clearItemTimers(p);
     p.boost = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, airj:0 };
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: el attract no arrastra compras
     p.sc = { dmg:0, mk:0, items:0, kills:0, specials:0, surv:0, minW:0, weapons:0, boosts:0, passives:0, deaths:0, bonus:0, mini:0 }; p.mpow = 0; p.lastHitBy = null; p._scSnap = null;   // ►LBREDO: foto del stage fuera también en el attract
@@ -43292,7 +43403,7 @@ function resetMatch(){          // deja el mundo listo para una partida real (sa
     p.own = { dmg:0, def:0, kb:0, spd:0, jmp:0, rate:0, lives:0 };   // ►INTERSTAGE: carril COMPRADO a cero (es por RUN)
     permApply(p);                                                    // ►TIENDA26: y el PERMANENTE se vuelve a leer del guardado
     p._rCount = 0;                                                   // ►SUPERR26: la cuenta de R es POR PARTIDA (ciclo 2 normales → 1 SUPER)
-    p.weapon = null; p.rainbowT = 0; p.bleedT = 0; p.wpnCD = 0;
+    p.weapon = null; p.rainbowT = 0; p._frenzyT = 0; p.bleedT = 0; p.wpnCD = 0; clearItemTimers(p);
     p._capQ = [];   // ►H5
     p.runXP = 0; p._runXPseen = 0;   // ►SHOP: cartera de EXP por jugador a cero (XP por RUN)
     p.coins = 0; p._coBuf = 0; p._coT = 0;   // ►MONEDAS: cartera de la run a cero
@@ -44603,7 +44714,7 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
     for(const k in WEAPON_DEFS){ if(k==='bazooka') continue;   // ►Toni: bazooka ya no es cogible → fuera de la guía
       const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||''); }
     h += '<div class="gSecTitle">Objeto especial</div>';
-    h += row('🌈', 0xff5fd2, 'ARCOÍRIS', '×5 de daño y ×10 de empuje durante '+RAINBOW_DUR+' s (¡muy raro!)');
+    h += row('⭐', 0xffe34a, 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (¡muy raro!)');
     h += '<div class="gSecTitle">Tienda · para cualquier clase</div>';
     for(const p of RUN_PERKS){ if(p.cls) continue; h += row(p.ic, p.col, p.name, p.desc, p.cost); }
     h += '<div class="gSecTitle">Tienda · mejoras de clase</div>';
@@ -45931,7 +46042,7 @@ window._net = {
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
         og:p.onGround?1:0, dj:p._dj?1:0, ak:(p.atk&&p.atk.kind)||'', cs:p.comboStage|0,
-        ho:p.holding?players.indexOf(p.holding):-1, hb:p.heldBy?players.indexOf(p.heldBy):-1, ts:+(p._tossT||0).toFixed(2), /* ►CARRY4-NET: el agarre viaja (pose carry/carried/toss en el invitado) */ sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
+        ho:p.holding?players.indexOf(p.holding):-1, hb:p.heldBy?players.indexOf(p.heldBy):-1, ts:+(p._tossT||0).toFixed(2), rb:+(p.rainbowT||0).toFixed(1), fz:+(p._frenzyT||0).toFixed(1), sm:+(p.smashT||0).toFixed(1), mt:+(p.metalT||0).toFixed(1), sd:+(p.sandalT||0).toFixed(1), cp:+(p.capeT||0).toFixed(1), gi:+(p.giantT||0).toFixed(1), an:+(p.anchorT||0).toFixed(1), wk:(p.weapon&&p.weapon.kind)||'', wa:(p.weapon&&p.weapon.ammo)|0, /* ►CARRY4-NET: el agarre viaja (pose carry/carried/toss en el invitado) */ sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     /* ►NETWORLD (E-A, 03/09/2026): el mundo del anfitrión viaja a ~15 Hz para que el cliente lo pinte como FANTASMAS
        (antes el invitado jugaba en un mundo vacío: solo veía a los jugadores). Ids estables asignados al enviar. */
@@ -45980,6 +46091,8 @@ window._net = {
       p.hitstun = ps.hs||0;
       p.onGround = !!ps.og; p._dj = !!ps.dj;                                       // ►NETFIX2
       if(ps.ho !== undefined){ p.holding = (ps.ho>=0 && players[ps.ho]) || null; p.heldBy = (ps.hb>=0 && players[ps.hb]) || null; if(ps.ts>0) p._tossT = Math.max(p._tossT||0, ps.ts); }   // ►CARRY4-NET
+      if(ps.rb != null){ p.rainbowT = ps.rb; p._frenzyT = ps.fz||0; p.smashT = ps.sm||0; p.metalT = ps.mt||0; p.sandalT = ps.sd||0; p.capeT = ps.cp||0; p.giantT = ps.gi||0; p.anchorT = ps.an||0;   // ►TINT-NET / ►SÚPER-NET
+        p.weapon = ps.wk ? { kind:ps.wk, ammo:ps.wa|0 } : null; }   // ►ARMA-NET: el invitado ve el arma en mano (syncHeld en clientFrame)
       if(ps.lv!=null){ p._lvlBase = ps.lb|0; if(ps.lp!=null) p._lvlPasI = ps.lp; const _nl = Math.max(1, ps.lv|0), _ol = p.lvl||1;   // ►NIVEL: el cliente no simula, solo pinta el fogonazo
         if(_nl > _ol){ for(let k=_ol+1;k<=_nl;k++) levelUpFx(p, k); } p.lvl = _nl; }
       if(ps.co != null) p.coins = ps.co|0;                                          // ►MONEDAS
@@ -46005,6 +46118,7 @@ window._net = {
     try{ animateDeco(dt); updateParts(dt); updateWeather(dt); }catch(e){}
     for(const p of players){ if((p._cliT||0) > 0) p._cliT -= dt;                                  // ►E1: +N flotantes en el cliente (agrupados cada 0,45 s como popXP)
       if((p._tossT||0) > 0) p._tossT -= dt;                                                        // ►CARRY4-NET: la pose de lanzar caduca también en el invitado
+      try{ tintTick(p); itemFxTick(p, dt); syncHeld(p); }catch(e){}                                  // ►TINT-NET / ►SÚPER-NET / ►ARMA-NET: aura, seta/capa/chispas y arma en mano en el invitado
       if((p._cliBuf||0) >= 1 && (p._cliT||0) <= 0){ try{ popKill(p.pos, '+'+Math.round(p._cliBuf), classColor(p)); }catch(e){} p._cliBuf = 0; p._cliT = .45; } }
     updateCamera(dt); updateHUD(); pollMoveSheet(); drawScene();
   },
