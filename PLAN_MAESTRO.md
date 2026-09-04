@@ -145,6 +145,10 @@ Plan aprobado por Toni (`~/.claude/plans/vale-perfecto-pues-preparemos-greedy-he
   distancia también; el brinco de esquiva solo cuando el golpe va a caer (antes brincaban sin parar: 69 % en el aire). El gólem
   con runa gira a BOSS1_RUNE_TURN=1.0 rad/s (a 4 los humanos tampoco le ganaban la espalda). Medido con 2 bots 25 s: detrás
   30 %/39 %, daño al jefe 0,2 % → 1,6 % (×8, sigue siendo poco: la presa nunca ataca y la monja dispara poco). Toni decide.
+- CURVA DE GIRA (Toni 05/09: "en piratas vas sobradísimo"; tienda intacta por decisión suya): minions con vida ×(1+0,07·parada) y
+  daño ×(1+0,06·parada) (RUTA_I), el jefe pega ×(1+0,7·(1/0,9^defensa−1)); vidas TOPE 5 en total (+2 VIDAS → +1 VIDA, máx 1;
+  +CORAZÓN no se ofrece al tope). Medido: con compras típicas un goblin grande aguanta 10-12 golpes en TODA la gira (antes 10 al
+  principio y 5 en piratas) y su golpe se queda en 7-12. Palancas: WORLD_HP_K, WORLD_DMG_K, BOSS_POWER_DEF_SCALE, LIVES_MAX.
 PENDIENTE: prueba real host + 2 Edge en red (objetos/agarre/auras/presa/runa en el invitado); afinar HAND_FITS de ancla/plátano/rayo;
 que Toni juegue 2 mundos y el jefe 1 con bots y diga qué números ajustar (BOSS1_RUNE_TURN, BOSS_PREY_STEAL).
 
