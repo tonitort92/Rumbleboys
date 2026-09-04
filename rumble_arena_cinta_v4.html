@@ -14287,6 +14287,15 @@ const BOSS_YAW = 0;                 // ►AJUSTA si el FBX mira al revés: prueb
 const BOSS_VERT = 4.5;              // alcance VERTICAL de los golpes del jefe (saltar más alto los esquiva)
 const VHIT_BAND = 1.8;             // ►#4 banda VERTICAL del melee entre personajes (~1 nivel de plataforma): si |Δy| supera esto, NO conecta (evita golpes "de invisibles" de otros niveles). El jefe usa BOSS_VERT aparte.
 const BOSS_PAUSE = 0.9;             // respiro del jefe tras cada patrón (ventana para el jugador)
+/* ►ACECHO (04/09): el jefe ya NO se queda plantado entre patrones. Durante el respiro CAMINA hacia su objetivo,
+   elige el siguiente patrón según la DISTANCIA (un melee de lejos falla siempre → antes cierra distancia; un
+   'run' con el jugador encima no aporta → lo salta) y en un melee sin lunge propio ACORTA durante el windup
+   (un paso atrás ya no lo esquiva gratis). Los jefes que hacen kite (mago) no acechan. */
+const BOSS_STALK_SP = 3.6;          // u/s del acecho (×speedMul del jefe)
+const BOSS_STALK_MIN = 4.2;         // por debajo de esta distancia se planta (no empuja al jugador)
+const BOSS_MELEE_FAR = 8.0;         // más lejos que esto un melee no llega (reach 2-3.6 + radio 4-6.5) → acercador
+const BOSS_RUN_NEAR = 4.5;          // 'run' con el jugador a menos de esto se salta
+const BOSS_WINDUP_STEP = 6.0;       // u/s con los que un melee sin lunge se acerca durante el windup (×speedMul)
 const BOSS_REP_GAP = 0.25;          // mini-pausa entre golpes de un mismo patrón (saltos)
 const BOSS_TIME_LIMIT = 150;        // 2:30 para vencer al jefe; a 0:00 = derrota
 const BOSS_MPOW_K = 0.8;            // mpow (definitiva) ganado por punto de daño hecho al jefe
@@ -17479,10 +17488,38 @@ function updateBoss(mn, dt){
     }
     case 'wait': {
       const _idle = (mn._spec && mn._spec.idleClip) || 'idle';                      // ►SAMBOSS: idle propio (samurái = 'stand')
-      if(inst.acts[_idle]) bossAnim(_idle, true);                                   // idle en bucle al esperar
+      /* ►ACECHO: mientras dura el respiro AVANZA hacia el objetivo (clip 'walk', o 'run' a media velocidad si no
+         hay walk). Se planta si ya lo tiene encima, si está aturdido o si el jefe es de kite. Nunca pisa un hueco. */
+      const _PT = mn._patterns||BOSS_PATTERNS;
+      const _noStalk = mn._noStalk || _PT.indexOf('kite')>=0;
+      let _stalking = false;
+      if(tgt && !_noStalk && mn.hitstun<=0){ const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z, d=Math.hypot(dx,dz)||1;
+        if(d > BOSS_STALK_MIN){ _stalking = true;
+          const sp=BOSS_STALK_SP*sm, px=mn.pos.x, pz=mn.pos.z;
+          mn.pos.x += (dx/d)*sp*dt; mn.pos.z += (dz/d)*sp*dt;
+          const lim=bossAH-3; mn.pos.x=THREE.MathUtils.clamp(mn.pos.x,-lim,lim); mn.pos.z=THREE.MathUtils.clamp(mn.pos.z,-lim,lim);
+          const _sp=activeBossSpec(), _holes=!!(_sp && (_sp.arena==='desert' || _sp.arena==='pyramid'));
+          if(_holes && bossSolidYAt(mn.pos.x, mn.pos.z)===null){ mn.pos.x=px; mn.pos.z=pz; _stalking=false; }
+          else mn.pos.y = _holes ? (bossSolidYAt(mn.pos.x, mn.pos.z) ?? groundY) : groundY;
+          if(_stalking){ mn._stepT=(mn._stepT||0)+dt; if(mn._stepT>=0.6){ mn._stepT=0; sfx.bossStep(); shake=Math.max(shake,.07); } }
+        } }
+      if(_stalking && inst.acts.walk) bossAnim('walk', true);
+      else if(_stalking && inst.acts.run){ const a=bossAnim('run', true); if(a && !mn._stalkAct){ mn._stalkAct=a; mn._stalkTS=a.timeScale; } if(a) a.timeScale=(mn._stalkTS||1)*0.5; }
+      else if(inst.acts[_idle]) bossAnim(_idle, true);                              // idle en bucle al esperar
       else bossAnim(inst.cur && inst.dur[inst.cur]?inst.cur:'roar', false);         // (sin idle: mantiene la última pose)
       if(mn.stateT>=mn.cd/(mn.cadence||1)){   // +cadencia (espera más corta) con más supervivientes
-        const _PT = mn._patterns||BOSS_PATTERNS; mn.pattern = _PT[(mn.pIdx++)%_PT.length];   // ►F4: patrones propios por oleada/acólito (feel mago/caballero)
+        if(mn._stalkAct){ mn._stalkAct.timeScale=mn._stalkTS||1; mn._stalkAct=null; }   // ►ACECHO: devuelve el 'run' a su velocidad
+        /* ►ACECHO: patrón según DISTANCIA. Mira el siguiente de la lista (►F4: patrones propios por oleada/acólito):
+           melee con el objetivo LEJOS → mete antes un acercador que el jefe tenga (run/charge/leap/jumps) SIN consumir
+           el melee (lo suelta al llegar; máx. 2 seguidos para no encallarse); 'run' con el objetivo ENCIMA → lo salta. */
+        let _pat = _PT[mn.pIdx % _PT.length];
+        const _d = tgt ? Math.hypot(tgt.pos.x-mn.pos.x, tgt.pos.z-mn.pos.z) : 0;
+        const _isMelee = (p)=> !!(mn._spec && mn._spec.attackDefs && mn._spec.attackDefs[p]) || p==='spin';
+        const _closer = ['run','charge','leap','jumps'].find(p=>_PT.indexOf(p)>=0);
+        if(tgt && _closer && _isMelee(_pat) && _d > BOSS_MELEE_FAR && (mn._ctxRuns||0) < 2){ _pat=_closer; mn._ctxRuns=(mn._ctxRuns||0)+1; }
+        else { let _g=0; while(_pat==='run' && tgt && _d < BOSS_RUN_NEAR && _g++ < _PT.length){ mn.pIdx++; _pat=_PT[mn.pIdx % _PT.length]; }
+               mn.pIdx++; mn._ctxRuns=0; }
+        mn.pattern = _pat;
         mn.state=mn.pattern; mn.stateT=0; mn.rep=0; mn._sub=0; mn._hitSet=new Set();
         if(mn._spec && mn._spec.attackDefs[mn.pattern]){   // ►SAMBOSS: ataque melee genérico guiado por ficha (telegrafiado ≥1s, VFX magenta)
           mn._atk = mn._spec.attackDefs[mn.pattern]; mn.state='melee'; mn._atkFired=false;
@@ -17691,6 +17728,15 @@ function updateBoss(mn, dt){
         mn.pos.x += fwd.x*A.lunge*dt; mn.pos.z += fwd.z*A.lunge*dt;
         const lim=bossAH-3; mn.pos.x=THREE.MathUtils.clamp(mn.pos.x,-lim,lim); mn.pos.z=THREE.MathUtils.clamp(mn.pos.z,-lim,lim);
         mn.pos.y=groundY;
+      }
+      else if(!A.lunge && tgt && mn.stateT < A.windup){   // ►ACECHO: melee SIN lunge propio — ACORTA hacia el objetivo durante el windup (se frena a reach+1.2; nunca pisa un hueco)
+        const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z, d=Math.hypot(dx,dz)||1, keep=(A.reach||2.6)+1.2;
+        if(d > keep){ const st=Math.min(d-keep, BOSS_WINDUP_STEP*sm*dt), px=mn.pos.x, pz=mn.pos.z;
+          mn.pos.x += (dx/d)*st; mn.pos.z += (dz/d)*st;
+          const lim=bossAH-3; mn.pos.x=THREE.MathUtils.clamp(mn.pos.x,-lim,lim); mn.pos.z=THREE.MathUtils.clamp(mn.pos.z,-lim,lim);
+          const _sp=activeBossSpec(), _holes=!!(_sp && (_sp.arena==='desert' || _sp.arena==='pyramid'));
+          if(_holes && bossSolidYAt(mn.pos.x, mn.pos.z)===null){ mn.pos.x=px; mn.pos.z=pz; }
+          else mn.pos.y = _holes ? (bossSolidYAt(mn.pos.x, mn.pos.z) ?? groundY) : groundY; }
       }
       if(!mn._atkFired && mn.stateT >= A.windup){
         mn._atkFired = true;
