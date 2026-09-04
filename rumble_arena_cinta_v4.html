@@ -26,7 +26,7 @@
 <!-- ►SELLO DE VERSIÓN: número visible en la esquina + consola. Lo subo en CADA cambio → de un vistazo
      sabes si tienes lo último (te digo el número, lo comparas). Máxima garantía anti-caché. -->
 <script>
-window.__BUILD = '2026-09-02 · alfa-09 (REPACK fase 1: los 123 MB de JS base64 pasan a 92 MB de binarios en assets/ con cargador async RB_ASSETS — lote critico primero, resto en segundo plano, need() por stage; main script a los 10 s en vez de ~30) · 2026-07-16 · b43 (ROCKS: S5 losas HEXAGONALES flotantes de piedra marrón multitono (flote idle → pisas → 1,5s temblando → CAEN a plomo → vuelven a los 3s), racimos en las 6 salas para elegir ruta + PUENTES fijos de reenganche; BOTONES que sueltan PEÑASCOS DE PINCHOS DE LAVA con FÍSICA REAL (gravedad, se apoyan, se paran solos, se empujan, se despeñan); la BOLA DE NIEVE del S7 pasa a ese mismo cuerpo físico (antes se pegaba al terreno = flotaba); FIX recorte VERTICAL: los sube-baja ya no atraviesan alfombras/flotantes/puentes/hexágonos de su sala (antes solo esquivaban losas sólidas)) · b42 (REMOVE-S6: el STAGE 6 EL POZO se retira de la campaña — la pirámide (S5) lleva DIRECTO a las cumbres nevadas (S7); F9 también salta el 6; código del pozo dormido como el S9) · b41 (JAPAN-OBSTACLES: BONSHŌ campanas pendulares con GONG (3), DARUMAS rodantes que arrollan (3), LANZADERAS de shuriken cruzando pasos (4), rejillas TATAMI que tiemblan y caen (3, máquina de losas-trampa S5 abierta al stage 3) + DENSIDAD: ~35% más plataformas por sala y los flotantes de Japón ahora son ZABUTON voladores CON movimiento (el float S1 ignoraba opts.move) + FIX bambusales fuera de losa · b40 (FROZEN-MULTI) · b39 JAPAN-ZEN)';
+window.__BUILD = '2026-09-05 · alfa-10 (OBJETOS2: estrella, 6 súper, ancla/plátano/rayo, auras en toda skin · AGARRE que cuaja · JEFES con presa y acecho · CURVA DE GIRA · guía con iconos 3D) · antes: 2026-09-02 · alfa-09 (REPACK fase 1: los 123 MB de JS base64 pasan a 92 MB de binarios en assets/ con cargador async RB_ASSETS — lote critico primero, resto en segundo plano, need() por stage; main script a los 10 s en vez de ~30) · 2026-07-16 · b43 (ROCKS: S5 losas HEXAGONALES flotantes de piedra marrón multitono (flote idle → pisas → 1,5s temblando → CAEN a plomo → vuelven a los 3s), racimos en las 6 salas para elegir ruta + PUENTES fijos de reenganche; BOTONES que sueltan PEÑASCOS DE PINCHOS DE LAVA con FÍSICA REAL (gravedad, se apoyan, se paran solos, se empujan, se despeñan); la BOLA DE NIEVE del S7 pasa a ese mismo cuerpo físico (antes se pegaba al terreno = flotaba); FIX recorte VERTICAL: los sube-baja ya no atraviesan alfombras/flotantes/puentes/hexágonos de su sala (antes solo esquivaban losas sólidas)) · b42 (REMOVE-S6: el STAGE 6 EL POZO se retira de la campaña — la pirámide (S5) lleva DIRECTO a las cumbres nevadas (S7); F9 también salta el 6; código del pozo dormido como el S9) · b41 (JAPAN-OBSTACLES: BONSHŌ campanas pendulares con GONG (3), DARUMAS rodantes que arrollan (3), LANZADERAS de shuriken cruzando pasos (4), rejillas TATAMI que tiemblan y caen (3, máquina de losas-trampa S5 abierta al stage 3) + DENSIDAD: ~35% más plataformas por sala y los flotantes de Japón ahora son ZABUTON voladores CON movimiento (el float S1 ignoraba opts.move) + FIX bambusales fuera de losa · b40 (FROZEN-MULTI) · b39 JAPAN-ZEN)';
 window.addEventListener('load', function(){
   try{
     // ►SELLO DE VERSIÓN: sello visible en pantalla ELIMINADO (a petición). El número sigue en consola para debug.
@@ -1263,7 +1263,7 @@ window.addEventListener('load', function(){
   .gIco { flex:0 0 auto; width:36px; height:36px; border-radius:9px; display:flex; align-items:center;
     justify-content:center; font-size:20px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); }
   /* ►ICONOS3D (Toni 04/09): objetos RENDERIZADOS (el modelo que cae en la cinta), más grandes que el emoji */
-  .gIco.g3d { width:58px; height:58px; border-radius:12px; background:radial-gradient(circle at 50% 40%, rgba(255,255,255,.14), rgba(255,255,255,.03) 70%); }
+  .gIco.g3d { width:68px; height:68px; border-radius:12px; background:radial-gradient(circle at 50% 40%, rgba(255,255,255,.14), rgba(255,255,255,.03) 70%); }
   .gIco.g3d img { width:100%; height:100%; object-fit:contain; display:block; filter:drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
   .gRow.g3dRow { align-items:center; }
   .gTxt { flex:1; min-width:0; }
@@ -10788,7 +10788,7 @@ function buildBoostModel(ty){
 function _buildSuperProc(ty){
   const g = new THREE.Group();
   const gold = new THREE.MeshStandardMaterial({ color:0xffd040, emissive:0xffb000, emissiveIntensity:.5, roughness:.3, metalness:.6 });
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(.62,.06,8,24), gold); halo.rotation.x = Math.PI/2; halo.position.y = .05; g.add(halo);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(.62,.06,8,24), gold); halo.rotation.x = Math.PI/2; halo.position.y = .05; halo.userData._icoHide = true; g.add(halo);   // el aro no sale en el icono de la guía (se comía el encuadre)
   const mk = (c, e)=> new THREE.MeshStandardMaterial({ color:c, emissive:(e==null?c:e), emissiveIntensity:.5, roughness:.4, metalness:.2 });
   if(ty.k==='smash'){ let h=null; try{ h = buildCharHammer(0xffd040); }catch(e){} if(h){ h.scale.setScalar(.9); h.position.y=.55; h.rotation.z=.6; g.add(h); } else { const head=new THREE.Mesh(new THREE.BoxGeometry(.6,.36,.36), gold); head.position.y=.85; g.add(head); const st=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,.9,8), mk(0x6b4a1e)); st.position.y=.4; g.add(st); } }
   else if(ty.k==='metal'){ const c=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.6), new THREE.MeshStandardMaterial({ color:0xdfe6f0, metalness:1, roughness:.2, emissive:0x334455, emissiveIntensity:.3 })); c.position.y=.5; c.rotation.y=.6; g.add(c); }
@@ -44988,9 +44988,10 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
   }
   function iconURL(model){
     try{ if(!model || !_iconRenderer()) return null;
+      model.traverse(o=>{ if(o.userData && o.userData._icoHide) o.visible=false; });   // ►ICONOS3D: sin el aro dorado de la cápsula, el objeto llena el icono
       const g=new THREE.Group(); g.add(model); g.rotation.y=-.55; _isc.add(g); g.updateMatrixWorld(true);
       const box=new THREE.Box3().setFromObject(g); const sz=box.getSize(new THREE.Vector3()), c=box.getCenter(new THREE.Vector3());
-      const md=Math.max(sz.x, sz.y, sz.z)||1, dist=(md/2)/Math.tan(_icam.fov*Math.PI/360)*1.25;
+      const md=Math.max(sz.x, sz.y, sz.z)||1, dist=(md/2)/Math.tan(_icam.fov*Math.PI/360)*1.12;
       _icam.position.set(c.x+dist*.35, c.y+dist*.32, c.z+dist*.88); _icam.lookAt(c); _icam.updateProjectionMatrix();
       _ir.render(_isc, _icam); const url=_ir.domElement.toDataURL('image/png');
       _isc.remove(g); g.remove(model); return url;
