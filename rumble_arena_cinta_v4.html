@@ -13419,10 +13419,12 @@ function droneFire(mn, tgt){
   if(!tgt.dead && !(tgt.invuln>0)){
     if(tgt.block){ tgt.damage += 6*defMul(tgt); tgt.shieldFlash = .2; sfx.chip(); }
     else {
-      const dmg = (DRONE_DMG + chaosLvl*1.6) * defMul(tgt);
+      const _cg = carryGuard(tgt);   // ►CARRY4: en un agarre hiere pero no empuja ni aturde
+      const dmg = (DRONE_DMG + chaosLvl*1.6) * defMul(tgt) * (_cg===2?CARRY_DMG_TAKEN:1);
       tgt.damage += dmg; noteMinion(tgt);
-      tgt.vel.x += to.x*4; tgt.vel.z += to.z*4; tgt.vel.y = Math.max(tgt.vel.y, 3);
-      tgt.hitstun = Math.max(tgt.hitstun, .28); tgt.hitFlash = .2; tgt.comboWindow = 0; tgt.onGround = false;
+      if(!_cg){ tgt.vel.x += to.x*4; tgt.vel.z += to.z*4; tgt.vel.y = Math.max(tgt.vel.y, 3);
+      tgt.hitstun = Math.max(tgt.hitstun, .28); tgt.comboWindow = 0; tgt.onGround = false; }
+      tgt.hitFlash = .2;
       burst(tgt.pos.clone().add(new THREE.Vector3(0,1,0)), DRONE_LILA, 14, 6, 5, .9);
       ring(tgt.pos.clone().add(new THREE.Vector3(0,1,0)), DRONE_LILA2, 14, .35);
       jiggle(tgt, 12); shake = Math.max(shake, .28);
@@ -13989,10 +13991,14 @@ function minionMelee(mn, tgt){
   if(dir.lengthSq()<.01) dir.set(Math.sin(mn.yaw),0,Math.cos(mn.yaw)); dir.normalize();
   if(tgt.block){ tgt.damage += (mn.type==='large'?4:2)*defMul(tgt); tgt.vel.x+=dir.x*3; tgt.vel.z+=dir.z*3; tgt.shieldFlash=.2; sfx.chip(); return; }
   const base = (mn.type==='large' ? 20 : 7) * (mn._elite ? 1.3 : 1);   // ►S3F: el elite morado pega más fuerte
-  const dmg = base*(0.5+chaosLvl*.05)*defMul(tgt); tgt.damage += dmg; noteMinion(tgt);   // enjambre de minions sobre el mismo
+  const _cg = carryGuard(tgt);   // ►CARRY4: en un agarre el minion HIERE (×2 al blindado) pero no empuja ni aturde
+  const dmg = base*(0.5+chaosLvl*.05)*defMul(tgt)*(_cg===2?CARRY_DMG_TAKEN:1); tgt.damage += dmg; noteMinion(tgt);   // enjambre de minions sobre el mismo
+  if(_cg){ tgt.hitFlash=.16; }
+  else {
   const kb = (mn.type==='large' ? (8+tgt.damage*.16) : (4+tgt.damage*.08))/3;   // desplaza 3x menos
   tgt.vel.set(dir.x*kb, (mn.type==='large' ? (7+tgt.damage*.04) : 4)/3, dir.z*kb);
   tgt.hitstun = Math.max(tgt.hitstun, mn.type==='large'?.5:.25); tgt.onGround=false; tgt.hang=null; tgt.hitFlash=.16; tgt.comboWindow=0;
+  }
   burst(tgt.pos.clone().add(new THREE.Vector3(0,1,0)), 0xff3030, 8,5,4,.8); jiggle(tgt,12);
   shake=Math.max(shake, mn.type==='large'?.5:.2);   // minions: SIN freeze (mata el lag del enjambre); el golpe se vende con shake+jiggle+knockback
   sfx.hit(tgt.damage + (mn.type==='large'?30:0));
@@ -14016,9 +14022,9 @@ function updateMprojs(dt){
       if(s.m.position.distanceTo(vc) > (s.hitR||.95)) continue;   // ►G3R: radio de impacto propio (orbes grandes lentos pegan más ancho)
       const dir=_mpD.copy(s.v); dir.y=0; dir.normalize();
       if(p.block){ p.damage+=2*defMul(p); p.vel.x+=dir.x*3; p.vel.z+=dir.z*3; p.shieldFlash=.18; sfx.chip(); }
-      else { const dmg=((s.dmg!=null?s.dmg:5+chaosLvl))*defMul(p); p.damage+=dmg; noteMinion(p); const kb=(4+p.damage*.06)/3;   // ►ROSTER: s.dmg propio (disparador pega más); resto = base 5+caos
-        if(!s.nopush){ p.vel.x+=dir.x*kb; p.vel.z+=dir.z*kb; p.vel.y=Math.max(p.vel.y,2.5/3); }   // ►ROBOTBOSS: los láseres de dedo DAÑAN mucho pero NO empujan (s.nopush)
-        p.hitstun=Math.max(p.hitstun,.2); p.hitFlash=.12; burst(vc, s.trailCol||0xff4040, 7,4,3,.7); jiggle(p,8); sfx.hit(p.damage, undefined, undefined, p); }
+      else { const _cg=carryGuard(p); const dmg=((s.dmg!=null?s.dmg:5+chaosLvl))*defMul(p)*(_cg===2?CARRY_DMG_TAKEN:1); p.damage+=dmg; noteMinion(p); const kb=(4+p.damage*.06)/3;   // ►ROSTER: s.dmg propio (disparador pega más); resto = base 5+caos · ►CARRY4: en un agarre hiere pero no empuja ni aturde
+        if(!s.nopush && !_cg){ p.vel.x+=dir.x*kb; p.vel.z+=dir.z*kb; p.vel.y=Math.max(p.vel.y,2.5/3); }   // ►ROBOTBOSS: los láseres de dedo DAÑAN mucho pero NO empujan (s.nopush)
+        if(!_cg) p.hitstun=Math.max(p.hitstun,.2); p.hitFlash=.12; burst(vc, s.trailCol||0xff4040, 7,4,3,.7); jiggle(p,8); sfx.hit(p.damage, undefined, undefined, p); }
       consumed=true; break;
     }
     if(consumed) killMproj(i);
@@ -17090,6 +17096,7 @@ function bossHitPlayers(center, radius, dmg, kb, up, bleed, groundOnly){
     const k = kb + p.damage*0.12;
     p.vel.set(dir.x*k, up||5, dir.z*k);
     p.hitstun=Math.max(p.hitstun,.35); p.onGround=false; p.hang=null; p.hitFlash=.18; p.comboWindow=0;
+    if(p.holding) releaseGrab(p,false); else if(p.heldBy && p.heldBy.holding===p) releaseGrab(p.heldBy,false);   // ►CARRY4: el JEFE sí rompe el agarre, armadura incluida
     if(bleed){ p.bleedT=Math.max(p.bleedT||0, bleed); p.bleedFrom=null; }
     burst(p.pos.clone().add(new THREE.Vector3(0,1,0)), 0xff3030, 9,5,4,.9); jiggle(p,12);
     sfx.hit(p.damage+20);
@@ -19270,7 +19277,7 @@ const GRAB_UP = 11;          // empuje vertical (más alto que el bate: "para ar
      dando un BÁSICO, SÍ. · A los minions NO se les agarra (solo personajes/jugadores).
    · Si a TI te pegan un básico mientras cargas a alguien, te lo quitan de encima (sin empuje).
    ►►► AJUSTA ◄◄◄ */
-const HOLD_RANGE    = 2.4;    // alcance para engancharlo
+const HOLD_RANGE    = 3.2;    // alcance para engancharlo · ►CARRY4: 2.4→3.2 (el bate llegaba más lejos que el agarre)
 const HOLD_SPD      = 0.62;   // vas más lento cargando a alguien (como el escudo, que va a 0.55)
 /* ►FGGRAB (11/08, petición de Toni: "que se parezca muchísimo más a Fall Guys") — tres cosas:
    1) IMANTADO: al enganchar, el rival NO aparece de golpe delante; entra volando a tus manos en
@@ -19295,6 +19302,17 @@ const HOLD_MAG_T    = 0.18;   // s del imantado (de donde estaba a tus manos)
    · Distancia = base + su % de daño, con tope (THROW_MAX); sin amortiguación.
    ►►► AJUSTA ◄◄◄ */
 const CARRY_MAX_T    = 4.0;   // s máximos en volandas: al cumplirse se lanza solo ►AJUSTA
+/* ►CARRY4 (Toni 04/09): AGARRE QUE CUAJA. Lo que rompía el agarre era cualquier toque: un minion al que
+   carga, un tercero pegándole al cargado. Ahora: los MINIONS no lo rompen por ningún lado (hieren, no
+   aturden ni empujan); ventana de ARMADURA al enganchar (nadie te mete hitstun ni empuje, pero encajas
+   ×CARRY_DMG_TAKEN); el cargado es PIÑATA (pegarle no lo libera, solo le suma daño); el FORCEJEO acorta
+   el paseo (nunca lo anula: al cumplirse se lanza igual); y enganchar cuesta AGUANTE (la barra del borde),
+   que no se recarga mientras cargas. El JEFE sí lo rompe siempre. ►►► AJUSTA ◄◄◄ */
+const CARRY_ARMOR_T   = 1.5;   // s de armadura desde el enganche
+const CARRY_DMG_TAKEN = 2;     // ×daño que encaja el que carga durante la armadura
+const CARRY_MIN_T     = 2.0;   // s mínimos de paseo por mucho que forcejee el cargado
+const CARRY_MASH_STEP = 0.35;  // s que resta cada agitón de stick / pulsación de salto del cargado
+const GRAB_STAM_COST  = 2;     // s de barra de aguante que cuesta enganchar a un rival
 const HOLD_OVER_Y    = 1.95;  // altura (sobre los pies del que carga) a la que va el cargado — FALLBACK: con los clips montados manda carryHoldY()
 const HOLD_OVER_FWD  = 0.10;  // pizca hacia delante: el peso no va justo sobre el eje
 const THROW_BASE     = 24;    // empuje horizontal del lanzamiento con 0% de daño · ►CARRY3: 15→24 (medido: con kbMul 0.6 del samurái son ~9 u de vuelo a 0 %)
@@ -21664,7 +21682,7 @@ function updateAtkBar(p){
   if(document.getElementById('atk_heal'))                                                                     // ►HEALCD · Cura (H): sube el relleno con el enfriamiento; listo = lleno
     set('heal', HEAL_CD>0 ? 1-(p.healCD||0)/HEAL_CD : 1, (p.healCD||0)<=0, (p.healCD||0)>0?Math.ceil(p.healCD):'');
   if(document.getElementById('atk_shove')){                                                                   // ►LTSHOVE · Empujón (LT): se rellena con la barra de AGUANTE; ↻ mientras se recarga (parpadeando)
-    const sready = !p.stamLock && (p.stam||0) >= STAM_MAX;
+    const sready = !p.stamLock && (p.stam||0) >= GRAB_STAM_COST;   // ►CARRY4: listo = hay barra para un agarre
     set('shove', Math.max(0, Math.min(1, (p.stam||0)/STAM_MAX)), sready, p.stamLock ? '↻' : '');
   }
   /* ►SHIELDCD · Escudo (T/LB, ►ESCUDO2): el relleno es la INTEGRIDAD del cristal (baja al usarlo,
@@ -22056,6 +22074,9 @@ function _grabImmune(v){
   return !!(v.block || v.shieldT>0 || v.spin || v.beam || v.ult || v.storm || v.bastion ||
             v.zone || v.fireShield || v.healDisc || v.counter || v.parryT>0 || v.charge || v.throwT>0);
 }
+/* ►CARRY4 · 0 = libre · 1 = carga fuera de la ventana (un básico de jugador se lo tira) · 2 = carga con
+   ARMADURA · 3 = va cargado (piñata). Lo leen el embudo PvP (applyHit), los golpes de minion y la onda. */
+function carryGuard(v){ return v.holding ? (v.holdT < CARRY_ARMOR_T ? 2 : 1) : (v.heldBy ? 3 : 0); }
 
 /* ►CARRY3 · SOLTAR al que llevas en volandas.
      · throwIt = false → se te CAE (te pegaron, os murió alguien). Cae a plomo donde esté, sin empuje.
@@ -22063,7 +22084,7 @@ function _grabImmune(v){
        SIEMPRE con tope THROW_MAX. */
 function releaseGrab(p, throwIt){
   const v = p.holding; if(!v) return;
-  p.holding = null; p.holdT = 0;
+  p.holding = null; p.holdT = 0; p._carryCut = 0;
   v.heldBy = null; v._magT = 0;
   /* ►CARRY2 · margen anti-reagarre por los DOS lados: el botón sigue SOSTENIDO cuando lanzas, y sin
      esto `tryGrabPlayer` volvería a engancharlo en el mismo frame (agarre eterno de una sola tecla). */
@@ -22110,6 +22131,7 @@ function clearGrabs(p){
 function tryGrabPlayer(p){
   if(p.holding || p.heldBy || (p._noGrabT||0)>0) return false;
   if(p.dead || p.out || p.hang || p.hitstun>0 || p.stun>0 || p.dashT>0 || !p.onGround) return false;
+  if(p.stamLock || p.stam < GRAB_STAM_COST) return false;         // ►CARRY4: enganchar cuesta aguante (la barra del borde)
   if(_grabImmune(p)) return false;                                // ni en mitad de TU propio especial
   let best=null, bd=HOLD_RANGE*HOLD_RANGE;
   for(const v of players){
@@ -22121,7 +22143,8 @@ function tryGrabPlayer(p){
     bd=d2; best=v;
   }
   if(!best) return false;
-  p.holding = best; p.holdT = 0;
+  p.holding = best; p.holdT = 0; p._carryCut = 0;
+  p.stam = Math.max(0, p.stam - GRAB_STAM_COST);                   // ►CARRY4: bocado de aguante
   p._aiTossAt = 1.2 + Math.random()*(CARRY_MAX_T - 1.6);   // la CPU lanza sola en algún punto antes del tope
   best.heldBy = p;
   best.hang = null; best.charge = null; best.comboWindow = 0; best.comboStage = 0;
@@ -23674,7 +23697,7 @@ function shockwaveHit(att, vic, dmg, comboK){
     mn.hitstun = Math.max(mn.hitstun, .14 + .12*k); mn.onGround = false;
   }
   for(const q of players){
-    if(q===att || q===vic || q.dead || q.out || q.invuln>0) continue;
+    if(q===att || q===vic || q.dead || q.out || q.invuln>0 || carryGuard(q)>=2) continue;   // ►CARRY4: ni al blindado ni al cargado
     const dx = q.pos.x - vic.pos.x, dz = q.pos.z - vic.pos.z, d = Math.hypot(dx, dz);
     if(d > R || d < 0.01) continue;
     const f = (3.5 + 4*k) * (1 - d/(R+1)) * (q.block ? .4 : 1);   // a jugadores empuja MENOS (y el escudo aguanta)
@@ -23689,12 +23712,14 @@ function applyHit(att, vic, o){
      abajo sigue: empujón con vic.damage≈0, flash blanco, hitstun) pero no hiere ni da crédito/poder
      (dmg 0 en la fuente). Minions y jefe no son `players` → intactos. */
   dmg *= pvpMul(att, vic);
+  const _cg = carryGuard(vic);   // ►CARRY4: 2 = carga con ARMADURA (×daño, sin empuje ni hitstun) · 3 = va cargado (PIÑATA: solo daño)
+  if(_cg===2) dmg *= CARRY_DMG_TAKEN;
   vic.damage += dmg; vic._noDmgT = 0;   // ►ANTICAMP
   if(o.credit !== false){ credit(att, dmg); vic.lastHitBy = att; }
   if(o.powAtt) addPower(att, o.powAtt * dmg);
   if(o.powAttFlat) addPower(att, o.powAttFlat);
   if(o.powVic) addPower(vic, o.powVic * dmg);
-  if(o.dir){
+  if(o.dir && _cg<2){
     const kb = ((o.kbBase||0) + vic.damage*(o.kbScale||0)) * (o.kbExtra!=null?o.kbExtra:1) * kbMul(att);
     let up = (o.up||0) + vic.damage*(o.upScale||0);
     if(o.upMax != null) up = Math.min(o.upMax, up);
@@ -23703,7 +23728,7 @@ function applyHit(att, vic, o){
     if(o.addVel){ vic.vel.x += d.x*kb; vic.vel.z += d.z*kb; if(up) vic.vel.y = Math.max(vic.vel.y, up); }
     else vic.vel.set(d.x*kb, up, d.z*kb);
   }
-  if(o.hitstun != null){
+  if(o.hitstun != null && _cg<2){
     const hs = o.hitstun + vic.damage*(o.hitstunScale||0);
     vic.hitstun = o.hitstunMin ? Math.max(vic.hitstun||0, hs) : hs;
   }
@@ -23714,7 +23739,7 @@ function applyHit(att, vic, o){
        en blanco (el decremento limpia _hitFlashCol al expirar). */
     vic._hitFlashCol = dmg >= 26 ? 0xff5040 : dmg >= 13 ? 0xffb347 : 0xffffff;
   }
-  if(o.ground !== false){ vic.onGround = false; vic.hang = null; }
+  if(o.ground !== false && _cg<2){ vic.onGround = false; vic.hang = null; }
   if(o.resetCombo !== false){ vic.comboWindow = 0; vic.comboStage = 0; }
   if(dmg >= SHOCK_MIN && att && players.indexOf(att) >= 0) shockwaveHit(att, vic, dmg, o.comboK || 1);   // ►ONDA
   return dmg;
@@ -26180,7 +26205,7 @@ function updateFighter(p, dt){
       p.stamLock = true;
       if(p.hang){ p.hang=null; p.hangCD=.45; p.vel.y=-2; sfx.hangOut(); }   // caes SIN poder reengancharte
     }
-  } else if(p.stam < STAM_MAX){
+  } else if(p.stam < STAM_MAX && !p.holding){                       // ►CARRY4: cargando a alguien NO se recarga
     p.stam = Math.min(STAM_MAX, p.stam + dt*(STAM_MAX/STAM_CD));   // recarga: 0 → lleno en STAM_CD s
     if(p.stam >= STAM_MAX) p.stamLock = false;                     // solo al LLENARSE vuelves a poder agarrar
   }
@@ -26191,14 +26216,16 @@ function updateFighter(p, dt){
     const v = p.holding;
     /* te lo quitan de encima: si te PEGAN (el básico del rival deja hitstun), si el especial
        te pilla, o si alguno de los dos se muere/sale. Se te CAE. */
+    if(p.holdT < CARRY_ARMOR_T) p.hitstun = 0;   // ►CARRY4 · ARMADURA: los golpes que no pasan por applyHit (orbes, flechas, misiles) tampoco te lo quitan
     if(p.dead || p.out || p.hitstun>0 || p.stun>0 || _grabImmune(p) ||
-       v.dead || v.out || v.hitstun>0 || v.heldBy!==p) releaseGrab(p, false);
+       v.dead || v.out || v.heldBy!==p) releaseGrab(p, false);   // ►CARRY4 · PIÑATA: pegarle al cargado ya no lo libera (antes v.hitstun>0 lo soltaba)
     else {
       p.holdT += dt;
+      const _capT = CARRY_MAX_T - (p._carryCut||0);   // ►CARRY4 · FORCEJEO: el cargado acorta el paseo, nunca por debajo de CARRY_MIN_T
       if(!p.isAI){
         if(wantGrab){ releaseGrab(p, true); wantGrab = false; }          // 2.º clic = lanzar (sin armar nada: el agarre ya no va por sostenido)
-        else if(p.holdT >= CARRY_MAX_T) releaseGrab(p, true);            // tope: sale solo hacia donde miras
-      } else if(p.holdT >= (p._aiTossAt || CARRY_MAX_T)){
+        else if(p.holdT >= _capT) releaseGrab(p, true);                  // tope: sale solo hacia donde miras
+      } else if(p.holdT >= Math.min(p._aiTossAt || CARRY_MAX_T, _capT)){
         releaseGrab(p, true);                                    // la CPU lanza sola
       }
     }
@@ -26238,6 +26265,15 @@ function updateFighter(p, dt){
       p.heldBy = null;
     }
     else {
+      /* ►CARRY4 · FORCEJEO: agitar el stick (cambio de sentido) o pulsar salto resta CARRY_MASH_STEP al
+         paseo del que te lleva, hasta CARRY_MIN_T. Se lee AQUÍ, antes de anular los inputs. La CPU
+         cargada forcejea a un ritmo medio. */
+      { const dv = p._diVec, pv = p._mashPrev || (p._mashPrev = new THREE.Vector3());
+        let mash = !!wantJump;
+        if(dv && dv.lengthSq() > .2){ if(pv.lengthSq() > .2 && dv.dot(pv) < -0.2) mash = true; pv.copy(dv); }
+        if(p.isAI && Math.random() < dt*2.5) mash = true;
+        if(mash) g._carryCut = Math.min(CARRY_MAX_T - CARRY_MIN_T, (g._carryCut||0) + CARRY_MASH_STEP); }
+      p.hitstun = 0;   // ►CARRY4 · PIÑATA: ahí arriba no se acumula hitstun (al soltarte sales limpio)
       move.set(0,0,0); wantDash = false; wantGrab = grabHeld = false; wantJump = false;   // en volandas no te mueves, ni saltas, ni agarras
       if(!HELD_CAN_ATTACK){ wantAtk = false; p.atkBuf = 0; p.charge = null; }             // por encima de la cabeza no se pega a nadie
       p.superBuf = 0; p.throwBuf = 0; p.spinBuf = 0;
@@ -46012,7 +46048,8 @@ window._net = {
       P.push({ i, x:+p.pos.x.toFixed(2), y:+p.pos.y.toFixed(2), z:+p.pos.z.toFixed(2), yaw:+p.yaw.toFixed(2),
         vx:+p.vel.x.toFixed(2), vz:+p.vel.z.toFixed(2), dmg:Math.round(p.damage), st:p.stocks|0,
         d:p.dead?1:0, o:p.out?1:0, ap:(p.atk&&p.atk.phase)||'none', bm:p.beam?1:0, ul:p.ult?1:0, hs:+(p.hitstun||0).toFixed(2),
-        og:p.onGround?1:0, dj:p._dj?1:0, ak:(p.atk&&p.atk.kind)||'', cs:p.comboStage|0, sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
+        og:p.onGround?1:0, dj:p._dj?1:0, ak:(p.atk&&p.atk.kind)||'', cs:p.comboStage|0,
+        ho:p.holding?players.indexOf(p.holding):-1, hb:p.heldBy?players.indexOf(p.heldBy):-1, ts:+(p._tossT||0).toFixed(2), /* ►CARRY4-NET: el agarre viaja (pose carry/carried/toss en el invitado) */ sc:p.sc||null, lv:p.lvl|0, lb:p._lvlBase|0, lp:(p._lvlPasI==null?-1:p._lvlPasI), co:p.coins|0, of:(p._lvOffer ? [p._lvOffer.a.k, p._lvOffer.b?p._lvOffer.b.k:'', +p._lvOffer.t.toFixed(1)] : 0) }); }   // ►NIVEL, ►MONEDAS y ►CARTAS viajan   // ►NETFIX2: onGround/_dj (sin ellos charToken clava 'jump' en el cliente y los luchadores se deslizan rigidos) + p.sc entero (el marcador del invitado se quedaba a 0)
     const belt=(BELT.segs&&BELT.segs[0])?(BELT.segs[0].x-BELT.startX):0;
     /* ►NETWORLD (E-A, 03/09/2026): el mundo del anfitrión viaja a ~15 Hz para que el cliente lo pinte como FANTASMAS
        (antes el invitado jugaba en un mundo vacío: solo veía a los jugadores). Ids estables asignados al enviar. */
@@ -46060,6 +46097,7 @@ window._net = {
       p.ult  = ps.ul ? (p.ult||true)  : null;
       p.hitstun = ps.hs||0;
       p.onGround = !!ps.og; p._dj = !!ps.dj;                                       // ►NETFIX2
+      if(ps.ho !== undefined){ p.holding = (ps.ho>=0 && players[ps.ho]) || null; p.heldBy = (ps.hb>=0 && players[ps.hb]) || null; if(ps.ts>0) p._tossT = Math.max(p._tossT||0, ps.ts); }   // ►CARRY4-NET
       if(ps.lv!=null){ p._lvlBase = ps.lb|0; if(ps.lp!=null) p._lvlPasI = ps.lp; const _nl = Math.max(1, ps.lv|0), _ol = p.lvl||1;   // ►NIVEL: el cliente no simula, solo pinta el fogonazo
         if(_nl > _ol){ for(let k=_ol+1;k<=_nl;k++) levelUpFx(p, k); } p.lvl = _nl; }
       if(ps.co != null) p.coins = ps.co|0;                                          // ►MONEDAS
@@ -46084,6 +46122,7 @@ window._net = {
     try{ _netWorldTick(dt); }catch(e){ console.warn('[networld] tick', e); }   // ►NETWORLD: mueve/anima los fantasmas
     try{ animateDeco(dt); updateParts(dt); updateWeather(dt); }catch(e){}
     for(const p of players){ if((p._cliT||0) > 0) p._cliT -= dt;                                  // ►E1: +N flotantes en el cliente (agrupados cada 0,45 s como popXP)
+      if((p._tossT||0) > 0) p._tossT -= dt;                                                        // ►CARRY4-NET: la pose de lanzar caduca también en el invitado
       if((p._cliBuf||0) >= 1 && (p._cliT||0) <= 0){ try{ popKill(p.pos, '+'+Math.round(p._cliBuf), classColor(p)); }catch(e){} p._cliBuf = 0; p._cliT = .45; } }
     updateCamera(dt); updateHUD(); pollMoveSheet(); drawScene();
   },
