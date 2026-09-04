@@ -126,6 +126,22 @@ roto, cartas legibles en 5 s, HUD?; probar el checkpoint (llegar al 8, morir en 
 (2) decidir si reparte YA la alfa en solitario a 8-10 personas con el enlace público;
 (3) OK/NO a PROPUESTAS_GIRA.md.
 
+## H. OBJETOS2 + AGARRE + JEFES · sesión objetos-agarre (04/09, Toni ausente, delegado) · rama `objetos-agarre` SIN push
+
+Plan aprobado por Toni (`~/.claude/plans/vale-perfecto-pues-preparemos-greedy-hennessy.md`). HECHO y medido en headless:
+- AGARRE ►CARRY4 (85185a2): minions no lo rompen; 1,5 s de armadura al enganchar (×2 daño); cargado = piñata; alcance 3,2;
+  forcejeo acorta 4→2 s; enganchar cuesta 2 s de aguante (sin recarga cargando); el jefe sí rompe; holding/heldBy por red.
+- OBJETOS (baa44a9, 8bd48d4, 7c222bb): fuera pinchos/electricidad/imán/minas (código incluido; las minas son el PLÁTANO);
+  ESTRELLA (arcoíris = invulnerable sin parpadeo + daña al tocar; el ×5/×10 es del frenesí del bárbaro, `_frenzyT`);
+  tintPlayer: aura en CUALQUIER skin (estrella HSL / frenesí rojo / metal); SÚPER por cápsulas doradas con pity 18 %/5 %:
+  martillo 10 s (golpe automático ×2.5/×2, martillo dorado), metal 15 s (empuje ÷4, retroceso al atacante), sandalias 30 s
+  (suelo virtual), capa 60 s (caída lenta + tela), seta 10 s (×1.8), rayo al líder (sube 1,5 s y cae sobre el líder, se
+  esquiva saltando); en mano: ancla (1 uso, 8 s anclado) y plátano (3 usos); temporizador 10/15/15/60. HUD, IA y guía.
+- JEFES: presa fija 5 s con robo por daño (6 % de vida en ~2 s) y marcador rojo; cámara vuelve a mirar al jefe con bounce
+  back de la órbita; giro ×2 en el windup del melee. GUÍA de la home 2 con los objetos RENDERIZADOS en 3D (no emojis).
+PENDIENTE: prueba real host + 2 Edge en red (objetos/agarre/auras en el invitado); afinar HAND_FITS de ancla/plátano/rayo;
+el marcador de presa no viaja al cliente; que Toni juegue 2 mundos y un jefe y diga qué números ajustar.
+
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 
 Ya no es peso de descarga (45→12 MB gz con hosting), solo parse-time: prioridad baja. Migrar los

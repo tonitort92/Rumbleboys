@@ -1262,6 +1262,10 @@ window.addEventListener('load', function(){
     background:rgba(255,255,255,.035); margin-bottom:7px; }
   .gIco { flex:0 0 auto; width:36px; height:36px; border-radius:9px; display:flex; align-items:center;
     justify-content:center; font-size:20px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); }
+  /* ►ICONOS3D (Toni 04/09): objetos RENDERIZADOS (el modelo que cae en la cinta), más grandes que el emoji */
+  .gIco.g3d { width:58px; height:58px; border-radius:12px; background:radial-gradient(circle at 50% 40%, rgba(255,255,255,.14), rgba(255,255,255,.03) 70%); }
+  .gIco.g3d img { width:100%; height:100%; object-fit:contain; display:block; filter:drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
+  .gRow.g3dRow { align-items:center; }
   .gTxt { flex:1; min-width:0; }
   .gName { font-size:14px; font-weight:800; color:#fff; }
   .gName .gcost { float:right; font-size:12px; font-weight:800; color:#ffd84f; margin-left:10px; }
@@ -14450,6 +14454,16 @@ const BOSS_STALK_MIN = 4.2;         // por debajo de esta distancia se planta (n
 const BOSS_MELEE_FAR = 8.0;         // más lejos que esto un melee no llega (reach 2-3.6 + radio 4-6.5) → acercador
 const BOSS_RUN_NEAR = 4.5;          // 'run' con el jugador a menos de esto se salta
 const BOSS_WINDUP_STEP = 6.0;       // u/s con los que un melee sin lunge se acerca durante el windup (×speedMul)
+/* ►PRESA (Toni 04/09): el jefe FIJA una presa BOSS_PREY_T s (antes: el más cercano recalculado cada frame → con dos
+   jugadores no perseguía a nadie). Se la roba quien le meta ≥ BOSS_PREY_STEAL de su vida en ~2 s ("el que pega se lo
+   lleva"), así los demás pueden usar al jefe contra un rival. Marcador rojo sobre la presa + '¡TE HA MARCADO!'. */
+const BOSS_PREY_T = 5;              // s que mantiene la presa
+const BOSS_PREY_STEAL = 0.06;       // fracción de la vida del jefe que hay que meterle en ~2 s para robarle la presa
+/* ►CAMJEFE (Toni 04/09): en el combate la cámara VUELVE a mirar al jefe: rumbo por defecto jugador→jefe con giro
+   limitado, y la órbita manual regresa sola (bounce back) al soltar. Fuera del jefe la cámara sigue como estaba. */
+const BOSS_CAM_LOCK = true;
+const BOSS_CAM_TURN = 1.2;          // rad/s máximos del rumbo (que no dé bandazos cuando el jefe salta por encima)
+const BOSS_CAM_BOUNCE = 3;          // velocidad de retorno de la órbita manual (mayor = vuelve antes)
 const BOSS_REP_GAP = 0.25;          // mini-pausa entre golpes de un mismo patrón (saltos)
 const BOSS_TIME_LIMIT = 150;        // 2:30 para vencer al jefe; a 0:00 = derrota
 const BOSS_MPOW_K = 0.8;            // mpow (definitiva) ganado por punto de daño hecho al jefe
@@ -17524,6 +17538,36 @@ const BOSS_PATTERNS = ['run','jumps','charge','jump','spin','run','jumps','charg
    updateBoss se re-declaran como cierres que fijan la instancia ACTIVA (primario BOSSFIGHT.inst o coloso
    añadido mn._binst), así los ~28 sitios de llamada usan la malla correcta SIN tocarlos uno a uno. */
 const _abI = bossAnim, _cbI = bossClip, _pbI = bossPlaceInst;
+function bossPickTarget(mn, dt){
+  const alive = q => q && !q.dead && !q.out;
+  mn._preyT = Math.max(0, (mn._preyT||0) - dt);
+  const hp = mn.maxHp || 1000, acc = mn._preyAcc || (mn._preyAcc = new Map());
+  for(const [k,v] of acc){ const nv = v - dt*hp*BOSS_PREY_STEAL/2; if(nv<=0) acc.delete(k); else acc.set(k, nv); }   // el acumulado decae en ~2 s
+  const dd = Math.max(0, mn.damage - (mn._preyLastDmg||0)); mn._preyLastDmg = mn.damage;
+  if(dd>0 && mn.lastHitBy && alive(mn.lastHitBy)) acc.set(mn.lastHitBy, (acc.get(mn.lastHitBy)||0) + dd);
+  let prey = mn._prey, steal = null;
+  for(const [k,v] of acc){ if(k!==prey && alive(k) && v >= hp*BOSS_PREY_STEAL){ steal = k; break; } }
+  if(steal){ prey = steal; acc.clear(); mn._preyT = BOSS_PREY_T; bossPreyMark(mn, prey, true); }
+  else if(!alive(prey) || mn._preyT<=0){
+    const n = nearestPlayer(mn); prey = alive(n) ? n : (players.find(alive) || players[0]);
+    mn._preyT = BOSS_PREY_T; bossPreyMark(mn, prey, !!(mn._prey && mn._prey!==prey)); }
+  mn._prey = prey; return prey;
+}
+function bossPreyMark(mn, prey, announce){
+  if(!prey) return;
+  if(announce && BOSSFIGHT.boss===mn){ showCombo(prey, '¡TE HA MARCADO!'); if(!prey.isAI) shake = Math.max(shake, .25); }
+  if(!BOSSFIGHT._preyMark){ const g = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(.42, .95, 4), new THREE.MeshBasicMaterial({ color:0xff3030 })); cone.rotation.x = Math.PI; g.add(cone);
+    const ring_ = new THREE.Mesh(new THREE.TorusGeometry(.5, .07, 8, 20), new THREE.MeshBasicMaterial({ color:0xff8080 })); ring_.rotation.x = Math.PI/2; ring_.position.y = .8; g.add(ring_);
+    g.renderOrder = 30; scene.add(g); BOSSFIGHT._preyMark = g; }
+}
+function bossPreyMarkTick(dt){
+  const g = BOSSFIGHT._preyMark; if(!g) return;
+  const b = BOSSFIGHT.boss, p = b && b._prey;
+  if(!p || !b || b.dead || BOSSFIGHT.phase!=='fight' || p.dead || p.out){ g.visible = false; return; }
+  g.visible = true; const t = performance.now()*.001;
+  g.position.set(p.pos.x, p.pos.y + 3.1 + Math.sin(t*5)*.18, p.pos.z); g.rotation.y = t*2.2;
+}
 function updateBoss(mn, dt){
   const inst=mn._binst||BOSSFIGHT.inst; if(!inst) return;   // ►ICEADD: cada coloso añadido conduce su PROPIA malla (mn._binst); el primario no lo tiene → BOSSFIGHT.inst
   const bossAnim=(n,l)=>_abI(n,l,inst), bossClip=(n)=>_cbI(n,inst), bossPlaceInst=(m)=>_pbI(m,inst);   // ►ICEADD: cierres ligados a la instancia activa
@@ -17609,14 +17653,16 @@ function updateBoss(mn, dt){
     showBanner('¡JEFE ABATIDO!', 2.2); sfx.ko(); shake=Math.max(shake,1.0); flashT=Math.max(flashT,.3);
     return;
   }
-  const tgt = nearestPlayer(mn) || players[0];
+  const tgt = bossPickTarget(mn, dt);   // ►PRESA: presa fija 5 s (se la roba quien más le pegue)
   const groundY = bossFloorYAt(mn.pos.x, mn.pos.z);   // ►PORTAL-BOSS: suelo del jefe = arena del cielo · ►DGOLEM-FIX: topY de la meseta bajo el jefe (mesetas del desierto a distintas alturas)
   const sm = (mn._spec && mn._spec.speedMul) || 1;  // ►S2BOSS: jefe más RÁPIDO (embestida/carrera)
   mn.stateT += dt;
   // mira al objetivo salvo durante embestida/saltos/leap (que fijan dirección)
   if(tgt && mn.state!=='charge' && mn.state!=='jumps' && mn.state!=='leap' && mn.state!=='hurricane' && mn.state!=='hop' && mn.state!=='leapplat' && mn.state!=='leapdown' && mn.state!=='beam' && mn.state!=='knightr' && mn.state!=='chargelaser' && mn.state!=='broken'){   // ►S3HK/►S4HOP/►S3AIR/►G3R/►ROBOTBOSS: huracán/saltos/rayo/torbellino/sobrecarga conducen su propio giro · ►BREAK: derrumbado ni te sigue con la mirada
     const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z;
-    if(dx*dx+dz*dz>0.01) mn.yaw += (Math.atan2(dx,dz)-mn.yaw)*Math.min(1,4*dt);
+    if(dx*dx+dz*dz>0.01){ let d=Math.atan2(dx,dz)-mn.yaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;   // ►PRESA: delta acotado (antes podía girar por el lado largo)
+      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : 4;   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot)
+      mn.yaw += d*Math.min(1, tr*dt); }
   }
   switch(mn.state){
     /* ►BREAK · DERRUMBADO: no ataca, no persigue, no gira. Solo encaja.
@@ -18372,7 +18418,9 @@ function updateBrute(mn, dt){
   mn.stateT += dt;
   if(tgt && mn.state!=='charge' && mn.state!=='jumps'){
     const dx=tgt.pos.x-mn.pos.x, dz=tgt.pos.z-mn.pos.z;
-    if(dx*dx+dz*dz>0.01) mn.yaw += (Math.atan2(dx,dz)-mn.yaw)*Math.min(1,4*dt);
+    if(dx*dx+dz*dz>0.01){ let d=Math.atan2(dx,dz)-mn.yaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;   // ►PRESA: delta acotado (antes podía girar por el lado largo)
+      const tr = (mn.state==='melee' && !mn._atkFired) ? 9 : 4;   // en el windup del melee gira más rápido: el paso lateral ya no lo esquiva gratis (robot)
+      mn.yaw += d*Math.min(1, tr*dt); }
   }
   let airborne = false;
   switch(mn.state){
@@ -18938,6 +18986,7 @@ function updateBossArena(rawDt){
   if(BOSSFIGHT._pyFloorTraps) _updatePyramidFloorTraps(rawDt);   // ►G3TRAP: losetas del ANILLO que parpadean marrón → caen → vuelven (escalado por gólem)
   const inst=BOSSFIGHT.inst;
   if(inst) inst.mixer.update(rawDt);                 // el mixer del jefe avanza a tiempo REAL (sin slow-mo)
+  bossPreyMarkTick(rawDt);                           // ►PRESA: marcador sobre la presa del jefe
   if(inst && inst._deathSeq) tickRobotDeath(inst, rawDt);   // ►ROBOTDEATH: avanza la secuencia de muerte (Running Tired → Death From The Back) en fase 'dying'
   // ARO: girar el torus + animar membrana + CERRARSE (el hueco se encoge con el tiempo) / reabrirse
   if(BOSSFIGHT.ring){ BOSSFIGHT.ring.torus.rotation.z += rawDt*(BOSSFIGHT.sealed?0.5:1.4);
@@ -19204,7 +19253,8 @@ function _bossGolemSwap(){
 /* limpieza al reiniciar partida (lo llama el reinicio del roster) */
 function resetBossFight(){
   try{ covenClear(); }catch(e){}
-  if(BOSSFIGHT._rune){ scene.remove(BOSSFIGHT._rune); BOSSFIGHT._rune=null; } BOSSFIGHT._runeHinted=false;   // ►RUNA   // ►COVEN: hilos de magia y brujas fuera
+  if(BOSSFIGHT._rune){ scene.remove(BOSSFIGHT._rune); BOSSFIGHT._rune=null; } BOSSFIGHT._runeHinted=false;
+  if(BOSSFIGHT._preyMark){ scene.remove(BOSSFIGHT._preyMark); BOSSFIGHT._preyMark=null; }   // ►PRESA   // ►RUNA   // ►COVEN: hilos de magia y brujas fuera
   s4BossLookOff();                                                              // ►S4LIGHT: devuelve luz/sombras del stage (no-op si no se aplicó)
   if(BOSSFIGHT.boss){ if(BOSSFIGHT.boss._beam) _bossBeamEnd(BOSSFIGHT.boss); if(BOSSFIGHT.boss._whirl) _bossWhirlEnd(BOSSFIGHT.boss); }   // ►G3R: rayo/torbellino colgados de scene → fuera si la pelea acaba en pleno especial
   if(BOSSFIGHT._robotOrb){ scene.remove(BOSSFIGHT._robotOrb); BOSSFIGHT._robotOrb=null; }   // ►ROBOTBOSS: orbe de sobrecarga colgado de scene → fuera si la pelea acaba en plena carga
@@ -27413,6 +27463,7 @@ function setCamPreset(i, persist){
 function _camSync(){ try{ document.querySelectorAll('[data-cam]').forEach(b=> b.classList.toggle('on', +b.dataset.cam === camMode)); }catch(e){} }
 try{ const _cp = saveGet().camPreset; camMode = (_cp===0||_cp===1||_cp===2) ? _cp : 1; }catch(e){}   // ►CAMMEDIA: por defecto MEDIA
 let camOrbit = 0;                                  // rotación lateral (rad) con , y .
+let _camOrbMouse = false, _camBossYaw = null;      // ►CAMJEFE: hubo ratón este frame · rumbo suavizado hacia el jefe
 let camHeadingYaw = Math.PI;                       // rumbo BASE FIJO del seguimiento (no auto-rota); la rotación la pone el jugador con camOrbit. PI = arranca desde el LADO OPUESTO del escenario (izquierda↔derecha invertidas respecto al rumbo 0)
 let camRotL = false, camRotR = false;
 let _padCamPrevL = false, _padCamPrevR = false;   // flanco de la cruceta para cambiar de modo de cámara (1 vez por pulsación)
@@ -27437,7 +27488,7 @@ document.addEventListener('pointerlockchange', ()=>{
 });
 addEventListener('mousemove', e=>{
   if(document.pointerLockElement!==canvas || !running || demo) return;
-  camOrbit += (e.movementX||0) * CAM_MOUSE_SENS;   // el wrap a ±π lo hace updateCamera
+  camOrbit += (e.movementX||0) * CAM_MOUSE_SENS; _camOrbMouse = true;   // el wrap a ±π lo hace updateCamera · ►CAMJEFE: marca input
 });
 const camTarget = new THREE.Vector3(0,2,0);
 const camPos = new THREE.Vector3(0, 16, 26);
@@ -27941,12 +27992,14 @@ function updateCamera(dt){
   if(document.pointerLockElement===canvas && (!running || demo)){ try{ document.exitPointerLock(); }catch(e){} }
   /* ÓRBITA LIBRE alrededor del jugador (estilo Fall Guys), en TODOS los modos:
      teclas , / . , RATÓN (mouselook) y STICK DERECHO del mando — vuelta completa (sin tope). */
+  const _orb0 = camOrbit;   // ►CAMJEFE: para saber si el jugador ha girado la cámara este frame
   if(camRotL) camOrbit -= 1.9*dt;
   if(camRotR) camOrbit += 1.9*dt;
   if(navigator.getGamepads){ const gps=navigator.getGamepads();
     for(const gp of gps){ if(!gp) continue;
       const rx=gp.axes[2]||0; if(Math.abs(rx)>0.18) camOrbit += rx*2.4*dt;                 // ↔ girar la cámara (►CAMFIJA: el eje ↕ ya no hace zoom)
       break; } }
+  const _orbIn = (camOrbit !== _orb0) || _camOrbMouse; _camOrbMouse = false;
   /* CRUCETA del mando (cámara compartida): izq/der = cambia el modo de cámara · arriba/abajo = zoom in/out */
   if(running && navigator.getGamepads){ const gps=navigator.getGamepads();
     let dL=false,dR=false,dU=false,dD=false;
@@ -27975,7 +28028,16 @@ function updateCamera(dt){
        se adapta es el MUNDO: gravedad cero (S10) y la torre (S13) necesitan más aire, y un jefe grande
        en LEJOS un poco más. */
     const me = _camMe();
-    const yaw = camHeadingYaw;
+    let yaw = camHeadingYaw;
+    /* ►CAMJEFE: en el combate el rumbo por defecto es jugador→jefe (giro limitado) y la órbita manual vuelve sola */
+    const _bl = BOSS_CAM_LOCK && typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase==='fight' && BOSSFIGHT.boss && !BOSSFIGHT.boss.dead && me && !me.dead && !me.out;
+    if(_bl){ const b = BOSSFIGHT.boss, want = Math.atan2(b.pos.x-me.pos.x, b.pos.z-me.pos.z);
+      if(_camBossYaw==null) _camBossYaw = camHeadingYaw;
+      let d = want - _camBossYaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;
+      _camBossYaw += THREE.MathUtils.clamp(d, -BOSS_CAM_TURN*dt, BOSS_CAM_TURN*dt); yaw = _camBossYaw;
+      if(!_orbIn && camOrbit!==0){ camOrbit *= Math.exp(-BOSS_CAM_BOUNCE*dt); if(Math.abs(camOrbit)<.01) camOrbit = 0; }   // bounce back
+    } else if(_camBossYaw!=null){ let d = camHeadingYaw - _camBossYaw; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;
+      if(Math.abs(d) < .02) _camBossYaw = null; else { _camBossYaw += THREE.MathUtils.clamp(d, -BOSS_CAM_TURN*dt, BOSS_CAM_TURN*dt); yaw = _camBossYaw; } }   // vuelve suave al rumbo fijo
     const fwd = _camFwd.set(Math.sin(yaw), 0, Math.cos(yaw));
     const P = CAM_PRESETS[camMode] || CAM_PRESETS[0];
     let back = P.back, height = P.height, lookUp = P.look;
@@ -44849,30 +44911,61 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
   };
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const hex = c => (typeof c==='number') ? '#'+(c>>>0).toString(16).padStart(6,'0').slice(-6) : (c||'#ffffff');
-  function row(ic, col, name, desc, cost){
+  /* ►ICONOS3D (Toni 04/09): los objetos se enseñan RENDERIZADOS (el MISMO modelo 3D que cae en la cinta), no con
+     emojis, para que el jugador reconozca en partida lo que ha leído aquí. Render offscreen de 112 px con el rig de
+     luz del juego; si un modelo aún no ha cargado (OBJ), cae al emoji y la guía se reconstruye en la siguiente apertura. */
+  let _ir=null, _isc=null, _icam=null, _iconsMissing=false;
+  function _iconRenderer(){
+    if(_ir) return _ir;
+    if(!window.THREE) return null;
+    const off=document.createElement('canvas'); off.width=off.height=112;
+    _ir=new THREE.WebGLRenderer({ canvas:off, alpha:true, antialias:true, preserveDrawingBuffer:true });
+    _ir.setPixelRatio(1); _ir.setSize(112,112,false); _ir.setClearColor(0x000000, 0);
+    if(THREE.sRGBEncoding) _ir.outputEncoding=THREE.sRGBEncoding;
+    _ir.toneMapping=(typeof VISUAL!=='undefined' && THREE[VISUAL.toneMapping]!=null)?THREE[VISUAL.toneMapping]:THREE.ACESFilmicToneMapping;
+    _ir.toneMappingExposure=(typeof VISUAL!=='undefined' && VISUAL.exposure)||.66;
+    _isc=new THREE.Scene(); _icam=new THREE.PerspectiveCamera(28, 1, .05, 60);
+    _isc.add(new THREE.HemisphereLight(0x9fb0e8, 0x4a3f48, .9));
+    const k=new THREE.DirectionalLight(0xffe8c0, 1.6); k.position.set(3,4.5,4); _isc.add(k);
+    const r=new THREE.DirectionalLight(0xb8d8ff, .5); r.position.set(-4,2,-3); _isc.add(r);
+    return _ir;
+  }
+  function iconURL(model){
+    try{ if(!model || !_iconRenderer()) return null;
+      const g=new THREE.Group(); g.add(model); g.rotation.y=-.55; _isc.add(g); g.updateMatrixWorld(true);
+      const box=new THREE.Box3().setFromObject(g); const sz=box.getSize(new THREE.Vector3()), c=box.getCenter(new THREE.Vector3());
+      const md=Math.max(sz.x, sz.y, sz.z)||1, dist=(md/2)/Math.tan(_icam.fov*Math.PI/360)*1.25;
+      _icam.position.set(c.x+dist*.35, c.y+dist*.32, c.z+dist*.88); _icam.lookAt(c); _icam.updateProjectionMatrix();
+      _ir.render(_isc, _icam); const url=_ir.domElement.toDataURL('image/png');
+      _isc.remove(g); g.remove(model); return url;
+    }catch(e){ console.warn('[guide] icono 3D', e); return null; }
+  }
+  function icon3d(build){ let url=null; try{ url = iconURL(build()); }catch(e){} if(!url) _iconsMissing = true; return url; }
+  function row(ic, col, name, desc, cost, img){
     const c = cost!=null ? '<span class="gcost">'+cost+' pts</span>' : '';
-    return '<div class="gRow"><div class="gIco" style="color:'+hex(col)+'">'+esc(ic)+'</div>'
+    const ico = img ? '<div class="gIco g3d"><img src="'+img+'" alt=""></div>' : '<div class="gIco" style="color:'+hex(col)+'">'+esc(ic)+'</div>';
+    return '<div class="gRow'+(img?' g3dRow':'')+'">'+ico
          + '<div class="gTxt"><div class="gName">'+c+esc(name)+'</div>'
          + '<div class="gDesc">'+esc(desc)+'</div></div></div>';
   }
   function build(){
-    let h='';
+    let h=''; _iconsMissing = false;
     h += '<div class="gSecTitle">Cápsulas de mejora</div>';
-    for(const t of CAP_TYPES) h += row(t.ic, t.col, t.label, CAP_DESC[t.k]||'');
+    for(const t of CAP_TYPES) h += row(t.ic, t.col, t.label, CAP_DESC[t.k]||'', null, icon3d(()=>buildBoostModel(t)));
     h += '<div class="gSecTitle">Armas</div>';
     for(const k in WEAPON_DEFS){ if(k==='bazooka' || k==='bolt') continue;   // ►Toni: bazooka ya no es cogible → fuera de la guía · el rayo va con los súper
-      const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||''); }
+      const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||'', null, icon3d(()=>buildWeaponModel(k))); }
     h += '<div class="gSecTitle">Súper · cápsulas doradas</div>';
-    for(const t of SUPER_TYPES) h += row(t.ic, t.col, t.label, SUP_DESC[t.k]||'');
+    for(const t of SUPER_TYPES) h += row(t.ic, t.col, t.label, SUP_DESC[t.k]||'', null, icon3d(()=>buildBoostModel(t)));
     h += '<div class="gSecTitle">Objeto especial</div>';
-    h += row('⭐', 0xffe34a, 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (¡muy raro!)');
+    h += row('⭐', 0xffe34a, 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (¡muy raro!)', null, icon3d(()=>buildRainbowModel()));
     h += '<div class="gSecTitle">Tienda · para cualquier clase</div>';
     for(const p of RUN_PERKS){ if(p.cls) continue; h += row(p.ic, p.col, p.name, p.desc, p.cost); }
     h += '<div class="gSecTitle">Tienda · mejoras de clase</div>';
     for(const p of RUN_PERKS){ if(!p.cls) continue; h += row(p.ic, p.col, p.name, p.desc, p.cost); }
     body.innerHTML = h;
   }
-  function open(){ sfxEv('ui_open',{ui:true}); window._soloModal('guideModal'); if(!body.innerHTML) build(); modal.style.display='flex'; modal.scrollTop=0; }   // ►SFXTONI
+  function open(){ sfxEv('ui_open',{ui:true}); window._soloModal('guideModal'); if(!body.innerHTML || _iconsMissing) build(); modal.style.display='flex'; modal.scrollTop=0; }   // ►SFXTONI · ►ICONOS3D: se reconstruye si faltó algún modelo
   const hide = ()=>{ modal.style.display='none'; };
   btn.addEventListener('click', open);
   if(x) x.addEventListener('click', hide);
