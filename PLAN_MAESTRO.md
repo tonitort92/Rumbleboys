@@ -152,6 +152,16 @@ Plan aprobado por Toni (`~/.claude/plans/vale-perfecto-pues-preparemos-greedy-he
 PENDIENTE: prueba real host + 2 Edge en red (objetos/agarre/auras/presa/runa en el invitado); afinar HAND_FITS de ancla/plátano/rayo;
 que Toni juegue 2 mundos y el jefe 1 con bots y diga qué números ajustar (BOSS1_RUNE_TURN, BOSS_PREY_STEAL).
 
+## I. PLAYTEST CIEGO 05/09 (alfa-10) · casual 4,5 · crítico 4 · potencial 7,5 · informes en docs_playtest_2026-09-05_*.md
+
+Bajan del 5,5 del 31/08 porque NINGUNO llegó al jefe. Arreglado el mismo día: JUGAR cortado en ventanas < 780 px (►FITHOME) y
+"¡TE HAN SACADO!" al caerte solo. Sesgos del arnés: ventana de 500×450 en el crítico e input a ráfagas (el humano casi siempre
+parado). DECISIONES PARA TONI (consenso 2/2): (1) muerte sin causa: "eliminado por X" + flash letal + explicar el %; (2) CPUs
+a 100× puntos (10248 vs 85) y catarata de "+N" sin dueño → la carrera está decidida a los 30 s; (3) escudo y agarre sin
+feedback visible; (4) tecla de USO junto al objeto en mano (3 plátanos sin usar); (5) cámara lejos + popups + cartas tapan al
+personaje; (6) 6 decisiones + tour de 8 pasos hasta jugar, home con botones de MANDO en teclado, "Agarrar" vs "EMPUJÓN";
+(7) "¡NUEVO RÉCORD!" tras quedar último; (8) ENTRENAR debe gritar que no es la partida real.
+
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 
 Ya no es peso de descarga (45→12 MB gz con hosting), solo parse-time: prioridad baja. Migrar los
