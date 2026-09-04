@@ -126,7 +126,7 @@ roto, cartas legibles en 5 s, HUD?; probar el checkpoint (llegar al 8, morir en 
 (2) decidir si reparte YA la alfa en solitario a 8-10 personas con el enlace público;
 (3) OK/NO a PROPUESTAS_GIRA.md.
 
-## H. OBJETOS2 + AGARRE + JEFES · sesión objetos-agarre (04/09, Toni ausente, delegado) · rama `objetos-agarre` SIN push
+## H. OBJETOS2 + AGARRE + JEFES + CURVA · sesión objetos-agarre (04-05/09) · EN MAIN y PUBLICADO (32af617, alfa-10)
 
 Plan aprobado por Toni (`~/.claude/plans/vale-perfecto-pues-preparemos-greedy-hennessy.md`). HECHO y medido en headless:
 - AGARRE ►CARRY4 (85185a2): minions no lo rompen; 1,5 s de armadura al enganchar (×2 daño); cargado = piñata; alcance 3,2;
