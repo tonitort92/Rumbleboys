@@ -165,8 +165,13 @@ HECHO el 05/09 sin pedir permiso (Toni: "haz lo que quieras"): (1) cartel de mue
 "¡LA HORDA TE HA SACADO!" / "¡EL JEFE TE HA SACADO!" / "¡TE HAS CAÍDO!") + flash rojo; (4) la ficha del básico se llama como el
 objeto en mano con sus usos ("PLÁTANO ×3", en dorado); (7) el récord solo si quedas 1º o 2º; (8) ENTRENAR con rótulo fijo
 "ENTRENAMIENTO" y cartel "sin rivales ni trofeos · ESC para salir"; agarre junto a un goblin → "AGARRE: solo a rivales".
-QUEDAN para decidir: (2) puntos de los CPUs a 100× y catarata de "+N"; (3) feedback del escudo; (5) cámara/popups/cartas;
-(6) decisiones hasta jugar y botones de mando en la home con teclado.
+Toni (05/09 noche): el feedback de los AGENTES no dicta diseño — bots, muerte pronto, 6 clics, +N y escudo son el juego y se quedan.
+ESCALÓN 2 (gancho del primer minuto), HECHO el 05/09: (a) ►MUNDO1-CORTO: en el mundo 1 el caos sube cada 22 s y el jefe llega
+en el caos 8 → 198 s (antes 275); (b) ►KO-FEEL: al caer el humano, parón de 0,12 s, más sacudida y público, cartel en el color
+del rival que te sacó y el rival lee "¡FUERA <TÚ>!"; (c) ►PUÑALADA-GUIADA: en el primer mundo de la gira el primer objeto es un
+PLÁTANO a 2,6 u delante del humano (entre los 12 y 45 s) y al cogerlo sale "¡PLÁTANO! CLIC IZQ. LO SUELTA: QUE LO PISE UN RIVAL".
+Quedan del escalón 2 (decisiones de diseño de Toni): regla propia para el mundo 1; snowboard distinto del sandboard; jungla y
+western con jefe propio. Escalón 3: sala online de 4 letras, repetición de la mejor jugada, playtest con PERSONAS.
 
 ## F. OBJ FASE 2 (GAME_MODELS) · sesión a9 · SOLO cuando 7f no esté tocando los <script src>
 
