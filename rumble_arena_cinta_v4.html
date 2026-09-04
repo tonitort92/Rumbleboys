@@ -626,13 +626,12 @@ window.addEventListener('load', function(){
                padding:10px 26px; font-size:15px; font-weight:800; letter-spacing:1px; color:#0e1428;
                background:linear-gradient(90deg,#ffd84f,#ff8a3a); border:none; border-radius:30px;
                cursor:pointer; pointer-events:auto; box-shadow:0 4px 16px rgba(255,150,40,.5); display:none; }
-  /* barra del MODO ESPECTADOR (eliminado que puede tocar las narices) */
+  /* barra del MODO ESPECTADOR (el eliminado SOLO mira y elige a quien seguir) */
   #specBar { position:fixed; top:58px; left:50%; transform:translateX(-50%); z-index:44; display:none;
              padding:8px 18px; font-size:13px; font-weight:700; letter-spacing:.4px; color:#dfe8ff; text-align:center;
              background:linear-gradient(180deg,rgba(24,29,48,.92),rgba(14,18,32,.92)); border:1px solid rgba(255,255,255,.10);
              border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.5); pointer-events:none; }
-  #specBar .specAmmo { display:inline-block; margin:3px 8px 0; font-size:15px; font-weight:900; color:#ffd84f; }
-  #specBar .specAmmo small { font-weight:700; font-size:10px; color:#9fb4dd; }
+  #specBar .specWho { display:inline-block; margin:3px 6px 0; font-size:16px; font-weight:900; color:#ffd84f; }
   /* ►BOTHUD: texto de card MÁS legible (nombre más grande y con contorno; % con sombra fuerte) */
   .pname { font-size:11.5px; letter-spacing:.6px; font-weight:900; opacity:1; line-height:1.15;
            text-shadow:0 1px 2px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.7); }
@@ -13219,7 +13218,9 @@ function gobUpdate(mn, dt){
   g.root.rotation.y = mn.yaw;                             // el goblin Mixamo mira a +Z, igual que mn.yaw (cajas con ojos en +Z)
   const sp = Math.hypot(mn.vel.x, mn.vel.z);
   let tok;
-  if(mn.atkPhase!=='none' || (cfg.shootAtk && mn.shootT>0)) tok='attack';
+  if(mn._coven && g.acts.attack){   // ►COVEN: bruja del aquelarre → 'attack' CONGELADO a mitad (bastón en alto), sin volver al idle
+    if(g.token!=='attack'){ const a=g.acts.attack; a.reset(); a.timeScale=1; a.play(); a.paused=true; a.time=a.getClip().duration*0.45; g.token='attack'; } tok='attack'; }   /* g.token ya puesto → el bloque de abajo no la reinicia */
+  else if(mn.atkPhase!=='none' || (cfg.shootAtk && mn.shootT>0)) tok='attack';
   else if(!mn.onGround) tok='jump';
   else if(sp>0.5) tok='walk';
   else tok='idle';
@@ -14265,8 +14266,9 @@ function updateMinions(dt){
     }
     antiCamp(dt);   // ►ANTICAMP
   }
-  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn._levi){ continue; }   // ►LEVIATAN: la punta dorada de una pata es una entidad dañable, pero la mueve su tentáculo (updateLeviathan), no una IA
+  for(let i=minions.length-1;i>=0;i--){ const mn=minions[i]; if(mn.dead){ covenBeamOff(mn); gobRemove(mn); if(mn._brute) bruteRemove(mn); if(mn._carcher) carcherRemove(mn); if(mn._drone) droneRemove(mn); minions.splice(i,1); continue; } if(mn._levi){ continue; }   // ►LEVIATAN: la punta dorada de una pata es una entidad dañable, pero la mueve su tentáculo (updateLeviathan), no una IA
       if(mn.type==='boss'){ updateBoss(mn,dt); continue; } if(mn.type==='brute'){ updateBrute(mn,dt); continue; } if(mn.type==='carcher'){ updateCorruptArcher(mn,dt); continue; } if(mn.type==='drone'){ updateDrone(mn,dt); continue; }
+      if(mn._coven){ covenMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); continue; }   // ►COVEN: bruja del aquelarre — quieta, bastón en alto, sin IA
       if(mn.hitstopT>0){ mn.hitstopT -= dt; gobAttach(mn); gobUpdate(mn, 0); continue; }   // ►HITSTOP2: el minion golpeado se congela unos frames (sim + mixer), como el jugador
       updateMinion(mn,dt); gobAttach(mn); gobUpdate(mn,dt); }   // JEFE/MINI-JEFE: IA propia (updateBoss/updateBrute). gob* decide por mn.type (small/shooter/large); si no hay GLB de ese tipo, cae a caja
   renderMinionInstances();               // re-empaqueta las matrices instanciadas de los vivos en [0,n)
@@ -14311,6 +14313,7 @@ const BOSS_BREAK_DMG    = 2.4;    // multiplicador de daño recibido mientras es
 const BOSS_POISE_GRACE  = 1.2;    // s sin recibir daño antes de empezar a recomponerse
 const BOSS_POISE_REGEN  = 0.22;   // fracción de la guardia recuperada por segundo (≈4.5s para llenarla)
 const BOSS_BREAK_CD     = 7.0;    // s mínimos entre una ruptura y la siguiente (no encadenables)
+const BOSS_BREAK_ON     = false;  // ►Toni 04/09/2026: el DERRUMBE (estado 'broken', cámara lenta, ×2.4 de daño) NO gusta → apagado para TODOS los jefes. La guardia sigue calculándose pero nunca rompe y su barra va oculta.
 const BOSS_ARENA_Y = 120;           // ►PORTAL-BOSS: la arena del jefe FLOTA en el cielo (mismo X/Z, solo Y) — se llega cayendo por el portal
 const BOSS_PORTAL_TIME = 30;        // ►PORTAL-BOSS: segundos del portal de ENTRADA (se encoge; al agotarse: -1 vida y absorción)
 const ARENA_C = new THREE.Vector3(0, 0, 0);   // centro de la arena
@@ -14443,7 +14446,7 @@ const STAGE_BOSSES = {
     speedMul: 1.30,           // MÁS RÁPIDO (embestida/carrera/saltos)
     stats: { hpMul: 1.6, cadenceMul: 1.35, dmgMul: 1.35 },   // MÁS FUERTE (vida, cadencia de patrones, daño de golpe)
     arena: 'forest2',         // ►S2BOSS: arena en ANILLO del bosque profundo, con la plataforma LLENA DE HUECOS
-    bruteHorde: { escort:3, cap:5, every:2.4 },   // ►S2BOSS: 3 mini-jefes (brutes) de escolta + refuerzos hasta 5, cada ~2.4s
+    coven: { n:10, every:5.0, heal:0.004, shield:0.085 },   // ►COVEN (Toni 04/09/2026): SOLO su aquelarre — 10 brujas quietas, bastón en alto, cada una cura al jefe 0,4 %/s y le quita un 8,5 % del daño que recibe; si tardas, respawnean de 1 en 1 cada 5 s. (Antes: bruteHorde de mini-jefes.)
     // patrones: omitido a propósito → boss._patterns queda undefined y updateBoss cae a BOSS_PATTERNS
     // (NO referenciar BOSS_PATTERNS aquí: se declara MÁS ABAJO → TDZ en la inicialización del literal)
     attackDefs: {},           // vacío → sin ruta melee spec (usa las ramas golem run/jumps/charge/spin/ulti)
@@ -16816,6 +16819,52 @@ function arenaBruteSpot(){
   return { x:(t.minX+t.maxX)*0.5, z:(t.minZ+t.maxZ)*0.5, y0:t.topY };   // ►DGOLEM: topY de LA meseta, no BOSS_ARENA_Y — las del desierto están a distintas alturas (en S2/S3 todas valen BOSS_ARENA_Y → mismo valor de siempre)
 }
 
+/* ===== ►COVEN · AQUELARRE del jefe 2 (Toni 04/09/2026) =====
+   Brujas (piel 'witch', type shooter → 30 HP) que NO se mueven ni disparan: nacen en losetas sólidas de la
+   arena, miran al jefe con el bastón en alto (clip 'attack' congelado, gobUpdate) y le tienden un HILO de
+   magia lila. Mientras viva alguna: el jefe se CURA (heal·n de su vida por segundo) y encaja menos daño
+   (hurtEnemy: ×(1 − shield·n), mínimo 15 %). Respawn de 1 en 1 cada `every` s → presión si tardas. */
+function covenAlive(){ let n=0; for(const m of minions){ if(m._coven && !m.dead) n++; } return n; }
+function covenSpawn(){
+  if(typeof gobFree==='function' && !gobFree('witch')) return null;   // sin instancia libre de bruja → espera
+  const sp=arenaBruteSpot(); if(!sp) return null;
+  const mn=spawnMinionAt(sp.x, sp.z, sp.y0, 'shooter', 'witch'); if(!mn) return null;
+  mn._coven=true; mn.pos.y=sp.y0; mn.onGround=true; mn.vel.set(0,0,0); mn.cd=99; mn.retargetT=99; mn.invuln=.4;
+  mn._home=mn.pos.clone();
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6),3));
+  const ln=new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0xc36bff, transparent:true, opacity:.85, depthWrite:false }));
+  ln.frustumCulled=false; scene.add(ln); mn._cvBeam=ln;
+  ring(mn.pos.clone().add(new THREE.Vector3(0,1,0)), 0xc36bff, 10, .4); burst(mn.pos.clone().add(new THREE.Vector3(0,1.2,0)), 0xd9a6ff, 10, 4, 4, .7);
+  return mn;
+}
+function covenBeamOff(mn){ if(mn._cvBeam){ scene.remove(mn._cvBeam); try{ mn._cvBeam.geometry.dispose(); mn._cvBeam.material.dispose(); }catch(e){} mn._cvBeam=null; } }
+function covenClear(){ for(const m of minions){ if(m._coven){ covenBeamOff(m); m.dead=true; } } if(BOSSFIGHT.boss) BOSSFIGHT.boss._covenN=0; BOSSFIGHT._cvT=0; BOSSFIGHT._cvSpawned=0; BOSSFIGHT._cvBroken=false; }
+function covenMinion(mn, dt){   // tick de UNA bruja (sustituye a updateMinion: sin IA, sin física, sin disparo)
+  mn.hitstun=Math.max(0,mn.hitstun-dt); mn.invuln=Math.max(0,mn.invuln-dt); mn.hitCD=Math.max(0,mn.hitCD-dt);
+  mn.vel.set(0,0,0); if(mn._home) mn.pos.copy(mn._home); mn.onGround=true; mn.atkPhase='none'; mn.shootT=0;
+  const b=BOSSFIGHT.boss;
+  if(b && !b.dead){ mn.yaw=Math.atan2(b.pos.x-mn.pos.x, b.pos.z-mn.pos.z);
+    if(mn._cvBeam){ const a=mn._cvBeam.geometry.attributes.position.array, t=performance.now()*.004;
+      a[0]=mn.pos.x; a[1]=mn.pos.y+2.1; a[2]=mn.pos.z; a[3]=b.pos.x; a[4]=b.pos.y+2.2*(b.scale||1)/BOSS_HIT_SCALE*1.6; a[5]=b.pos.z;
+      mn._cvBeam.geometry.attributes.position.needsUpdate=true; mn._cvBeam.material.opacity=.55+.3*Math.sin(t+mn.animPhase); } }
+  if(mn.damage >= minionHP('shooter')){ awardMinion(mn); killMinion(mn); }
+}
+function covenTick(cv, dt){
+  const b=BOSSFIGHT.boss; if(!b) return;
+  BOSSFIGHT._cvT=(BOSSFIGHT._cvT||0)-dt;
+  const n=covenAlive();
+  if(BOSSFIGHT._cvT<=0 && n<cv.n && minions.length<MINION_CAP){
+    const first=(BOSSFIGHT._cvSpawned||0) < cv.n;                          // 1ª tanda: las 10 seguidas (2 por tick, 0,25 s) · después: de 1 en 1 cada `every`
+    let k=0; while(k<(first?2:1) && covenAlive()<cv.n){ if(!covenSpawn()) break; BOSSFIGHT._cvSpawned=(BOSSFIGHT._cvSpawned||0)+1; k++; }
+    BOSSFIGHT._cvT = first ? 0.25 : cv.every;
+    if(k && !first && typeof showBanner==='function') showBanner('¡VUELVE UNA BRUJA!', 1.0);
+    if((BOSSFIGHT._cvSpawned||0)>=cv.n && !BOSSFIGHT._cvAnnounced){ BOSSFIGHT._cvAnnounced=true; showBanner('¡SU AQUELARRE LO PROTEGE: MATA A LAS BRUJAS!', 2.4); }
+  }
+  b._covenN=n;
+  if(n>0){ b.damage=Math.max(0, b.damage - b.maxHp*cv.heal*n*dt); BOSSFIGHT._cvBroken=false; }
+  else if(BOSSFIGHT._cvAnnounced && !BOSSFIGHT._cvBroken){ BOSSFIGHT._cvBroken=true; showBanner('¡AQUELARRE ROTO: AHORA!', 1.6); ring(b.pos.clone().add(new THREE.Vector3(0,2,0)), 0xffd84f, 26, .5); }
+}
+
 /* ---- barra de vida del jefe + CONTADOR (DOM, arriba-centro) ---- */
 function buildBossBar(){
   if(BOSSFIGHT.bar) return;
@@ -16833,6 +16882,7 @@ function buildBossBar(){
   document.body.appendChild(wrap);
   BOSSFIGHT.bar = { wrap, fill:wrap.querySelector('#bossHpFill'),
                     poise:wrap.querySelector('#bossPoiseFill'), breakTag:wrap.querySelector('#bossBreakTag') };
+  if(!BOSS_BREAK_ON){ const _pf=wrap.querySelector('#bossPoiseFill'); if(_pf && _pf.parentNode) _pf.parentNode.style.display='none'; }   // sin ruptura → sin barra de guardia
   BOSSFIGHT.timer = wrap.querySelector('#bossTimer');
 }
 /* ►ICEADD: 2 barras de vida AZUL-HIELO para los COLOSOS AÑADIDOS (stage 7). Se crean al caer los 2 colosos
@@ -17163,7 +17213,8 @@ function hurtEnemy(mn, dmg, isSpell){
      embudo único de daño a enemigos; el tope por frame de updateBoss sigue actuando después, así que
      ni siquiera una ventana de castigo puede matarlo de un golpe. */
   const brk = (mn._brokenT>0) ? BOSS_BREAK_DMG : 1;
-  const eff = dmg*m*brk; mn.damage += eff; return eff;
+  const cvn = (mn._boss && mn._covenN>0 && BOSSFIGHT.boss===mn && activeBossSpec() && activeBossSpec().coven) ? Math.max(0.15, 1 - activeBossSpec().coven.shield*mn._covenN) : 1;   // ►COVEN: cada bruja viva le quita daño
+  const eff = dmg*m*brk*cvn; mn.damage += eff; return eff;
 }
 
 /* ►BREAK · reloj de la GUARDIA de un jefe. Lo llama updateBoss una vez por frame con el daño REAL
@@ -17206,7 +17257,7 @@ function bossPoiseTick(mn, dd, dt){
      de la arena del cielo, así que llevan su propia condición. */
   const enCombate = (typeof BOSSFIGHT!=='undefined' && BOSSFIGHT.phase==='fight') || !!mn._s10wave;
   if(!enCombate) return false;
-  if(mn._poise <= 0 && mn._breakCD <= 0){ bossBreak(mn); return true; }
+  if(BOSS_BREAK_ON && mn._poise <= 0 && mn._breakCD <= 0){ bossBreak(mn); return true; }
   return false;
 }
 
@@ -18688,7 +18739,7 @@ function updateBossArena(rawDt){
       bar.wrap.style.display = show?'block':'none';
       if(show) bar.fill.style.width = (100*Math.max(0,1-mn.damage/mn.maxHp)).toFixed(1)+'%'; } }
 
-  bossSnoreSet(BOSSFIGHT.phase==='portal');   // RONQUIDO mientras el jefe duerme; para al empezar a levantarse
+  bossSnoreSet(false);   // ►Toni 04/09/2026: SIN ronquido del jefe dormido (antes sonaba en la fase portal)
   switch(BOSSFIGHT.phase){
     case 'portal': {                                   // ►PORTAL-BOSS: cuenta atrás de 30s para ENTRAR al portal (la cinta está parada)
       BOSSFIGHT.t += rawDt;
@@ -18798,19 +18849,12 @@ function updateBossArena(rawDt){
           BOSSFIGHT._hordeT = Math.max(.4, 1.6 - effChaos*.16);
         }
       }
-      /* ►S2BOSS: ESCOLTA + HORDA de MINI-JEFES (brutes morados). El spawner de goblins está apagado por
-         bossActive, así que este es el único enjambre del jefe morado: 3 de escolta fija + refuerzos hasta
-         `cap`, cayendo en losetas SÓLIDAS de la arena (arenaBruteSpot). Refresca al morir alguno (_bruteLive). */
-      const _bh = activeBossSpec() && activeBossSpec().bruteHorde;
-      if(_bh && BOSSFIGHT.boss && !gameOver && _bossTpl){
-        BOSSFIGHT._bhT = (BOSSFIGHT._bhT||0) - rawDt;
-        if(BOSSFIGHT._bhT <= 0){
-          const want = (_bruteLive < _bh.escort) ? _bh.escort : _bh.cap;   // 1º completa la escolta (3), luego refuerza hasta cap
-          let n=0; while(_bruteLive < want && minions.length < MINION_CAP && n<2){ const sp=arenaBruteSpot(); if(!sp) break; spawnBrute(sp, true); n++; }
-          if(_bruteLive>=_bh.escort && !BOSSFIGHT._bhAnnounced){ BOSSFIGHT._bhAnnounced=true; showBanner('¡Y SU HORDA DE MINI-JEFES!', 1.8); }
-          BOSSFIGHT._bhT = (_bruteLive < _bh.escort) ? 0.7 : (_bh.every||2.4);   // escolta rápida al arrancar · refuerzos espaciados
-        }
-      }
+      /* ►S2BOSS (mini-jefes de escolta) RETIRADO el 04/09/2026 por Toni: el jefe 2 ya no trae minions
+         aleatorios. Solo su AQUELARRE (coven de STAGE_BOSSES[2]): 10 brujas quietas con el bastón en alto
+         y un hilo de magia al jefe que lo CURA y le REDUCE el daño mientras vivan. Hay que matarlas antes
+         de poder pegarle bien; si tardas, RESPAWNEAN de una en una. El spawner normal sigue apagado (bossActive). */
+      const _cv = activeBossSpec() && activeBossSpec().coven;
+      if(_cv && BOSSFIGHT.boss && !gameOver) covenTick(_cv, rawDt);
       if(BOSSFIGHT.fightT >= BOSS_TIME_LIMIT){          // ¡se acabó el tiempo! → DERROTA
         BOSSFIGHT.phase='lost';
         if(BOSSFIGHT.timer) BOSSFIGHT.timer.textContent='0:00';
@@ -18908,6 +18952,7 @@ function _bossGolemSwap(){
 
 /* limpieza al reiniciar partida (lo llama el reinicio del roster) */
 function resetBossFight(){
+  try{ covenClear(); }catch(e){}   // ►COVEN: hilos de magia y brujas fuera
   s4BossLookOff();                                                              // ►S4LIGHT: devuelve luz/sombras del stage (no-op si no se aplicó)
   if(BOSSFIGHT.boss){ if(BOSSFIGHT.boss._beam) _bossBeamEnd(BOSSFIGHT.boss); if(BOSSFIGHT.boss._whirl) _bossWhirlEnd(BOSSFIGHT.boss); }   // ►G3R: rayo/torbellino colgados de scene → fuera si la pelea acaba en pleno especial
   if(BOSSFIGHT._robotOrb){ scene.remove(BOSSFIGHT._robotOrb); BOSSFIGHT._robotOrb=null; }   // ►ROBOTBOSS: orbe de sobrecarga colgado de scene → fuera si la pelea acaba en plena carga
@@ -23891,8 +23936,6 @@ function ko(p){
      superficie, no en el fondo). */
   if(STAGE===12 && typeof pirSplash==='function' && p.pos.y < PIR_WL + 2.5) pirSplash(p.pos);
   if(p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.out){ p.lastHitBy.sc.kills++; p.lastHitBy._xpBuf=(p.lastHitBy._xpBuf||0)+150; if(typeof popKill==='function') popKill(p.pos, '+150', classColor(p.lastHitBy)); }   // baja causada (puntúa) · ►PTSPOP: el +150 se ve donde cae el rival
-  /* ESPECTADOR: si quien ha echado a este superviviente es un eliminado humano, vuelve a la pelea (salvo en BOSS) */
-  if(p.lastHitBy && p.lastHitBy.out && !p.lastHitBy.isAI && !bossActive && !demo && !TRAIN.on){ reviveSpectator(p.lastHitBy); }
   if(p.sc) p.sc.deaths = (p.sc.deaths||0) + 1;   // muerte propia
   endBeam(p); endUlt(p); endSpin(p); endShield(p); endCounter(p); endStorm(p); endBastion(p); endZone(p); endFireShield(p); endHealDisc(p);
   p.shieldT = 0; p.parryT = 0; p.rainT = 0;
@@ -23925,9 +23968,7 @@ function ko(p){
     narrateOut(p._charKey);                                // "the <clase> is out"
     narrateCount(alive.length);                            // recuento: 3 / 2 / 1 jugadores restantes
     if(alive.length===0){ endGame(); return; }             // TODOS fuera → fin + leaderboard (la partida NO acaba con 1 en pie)
-    if(!p.isAI){ document.getElementById('endNowBtn').style.display = 'block';  // humano fuera: puede TERMINAR PARTIDA
-      p.specShots = SPEC_AMMO; p.specBombs = SPEC_BOMB; p.specFireCD = 0;       // … y entra en MODO ESPECTADOR con munición fresca
-      p._specAtkPrev = true; p._specBombPrev = true; }                          // evita un disparo accidental si tenía el botón pulsado al morir
+    if(!p.isAI) document.getElementById('endNowBtn').style.display = 'block';   // humano fuera: puede TERMINAR PARTIDA; como espectador SOLO mira (specTick)
     return;                                                 // eliminado: no reaparece
   }
   p.respawnT = 1.1;
@@ -25746,76 +25787,48 @@ function pollMoveSheet(){
 addEventListener('keydown', e=>{ if(e.code==='Tab' && running && !gameOver && !demo){ _msTab=true; e.preventDefault(); } });
 addEventListener('keyup',   e=>{ if(e.code==='Tab'){ _msTab=false; e.preventDefault(); } });
 
-/* ===== MODO ESPECTADOR: el eliminado puede tocar las narices a los supervivientes
-   (20 disparos + 1 bomba). Si consigue ECHAR a un superviviente (KO), vuelve al juego
-   —salvo en peleas de BOSS, donde no hay regreso—. Disparo = J/X · Bomba = Q/RB. ===== */
-let bossActive = false;                 // se pondrá true durante un BOSS (aún no implementado): bloquea el regreso
-const SPEC_AMMO = 20, SPEC_BOMB = 1, SPEC_FIRE_CD = 0.28;
-function specTarget(){                   // superviviente objetivo: el vivo más cercano al centro (donde está la acción)
+/* ===== MODO ESPECTADOR (decisión de Toni, 04/09/2026): el eliminado SOLO MIRA. Ya no dispara,
+   ni tira bombas, ni vuelve a la pelea. Lo único que puede hacer es CAMBIAR DE JUGADOR al que
+   sigue la cámara: A/D · ◀ ▶ · J (siguiente) · stick izquierdo / botón A del mando. Corre en el
+   host y en el cliente online (cada uno mira lo suyo) desde updateCamera → specTick. ===== */
+let bossActive = false;                 // true durante un BOSS (lo ponen las arenas de jefe)
+let _specFollow = null, _specDirPrev = 0;
+function specTarget(){                   // superviviente por defecto: el vivo más cercano al centro (donde está la acción)
   let best=null, bd=Infinity;
   for(const o of players){ if(o.out||o.dead) continue;
     const d=o.pos.x*o.pos.x+o.pos.z*o.pos.z; if(d<bd){ bd=d; best=o; } }
   return best;
 }
-function specShoot(p, bomb){             // cae desde el cielo y persigue al objetivo (esquivable); owner=espectador → si mata, le da el crédito
-  const t=specTarget(); if(!t) return false;
-  const from=t.pos.clone().add(new THREE.Vector3((Math.random()-.5)*6, 16+Math.random()*4, (Math.random()-.5)*6));
-  const dir=t.pos.clone().add(new THREE.Vector3(0,1,0)).sub(from).normalize();
-  if(bomb){
-    /* ►R2.6: POOL de bombas (antes: new SphereGeometry + new MeshStandardMaterial por disparo, y
-       killWproj los DISPONÍA — churn de GC + recompilación por dispose en pleno final de partida,
-       que es cuando el espectador dispara). killWproj ya respeta m._pool y recicla sin dispose. */
-    if(!specShoot._bombPool) specShoot._bombPool = [];
-    let m = specShoot._bombPool.pop();
-    if(!m){
-      if(!specShoot._bombGeo){ specShoot._bombGeo = new THREE.SphereGeometry(.22,10,8);
-        specShoot._bombMat = new THREE.MeshStandardMaterial({ color:0x1a1a1a, emissive:0xff5a1a, emissiveIntensity:.8, roughness:.5 }); }
-      m = new THREE.Mesh(specShoot._bombGeo, specShoot._bombMat);
-      m._pool = specShoot._bombPool;
-    }
-    m.visible = true;
-    m.position.copy(from); scene.add(m);
-    wprojs.push({ m, owner:p, kind:'missile', v:dir.multiplyScalar(16), life:3.2, home:true, foe:t, homeRate:1.5 });
-    if(sfx.bazooka) sfx.bazooka();
-  } else {
-    let m=_arrowMesh();                                 // ►ARROW: flecha REAL del espectador (caída desde el cielo)
-    if(!m){ m=_projMesh(.06, .9, 1.5); m.material.color.set(0xfff0a0); m.material.emissive.set(0xffd84f); }
-    m.quaternion.setFromUnitVectors(_PJ_UPY, dir);
-    m.position.copy(from); scene.add(m);
-    wprojs.push({ m, owner:p, kind:'arrow', v:m._v.copy(dir).multiplyScalar(30), life:2.6, home:true, foe:t, homeRate:3.4, dmg:14, kbK:1.25, col:0xffd84f, trail:AR_TRAIL_YEL });
-    if(sfx.bow) sfx.bow();
-  }
-  return true;
+function specName(q){
+  const lb=(q.label && q.label!=='TÚ') ? q.label : '';
+  const ck=(q._charKey||'').toUpperCase();
+  return ck ? (lb ? ck+' · '+lb : ck) : (lb||'JUGADOR');
 }
-function reviveSpectator(sp){            // el espectador echó a alguien → vuelve a la pelea con 1 vida
-  sp.out=false; sp.outOrder=0; sp.stocks=1; sp.dead=true; sp.respawnT=0.7; sp.damage=0; sp.mpow=0;
-  sp.specShots=0; sp.specBombs=0;
-  if(!sp.isAI){ const b=document.getElementById('endNowBtn'); if(b) b.style.display='none';
-    const sb=document.getElementById('specBar'); if(sb) sb.style.display='none'; }
-  showBanner('¡'+(sp.label||'JUGADOR')+' VUELVE A LA PELEA!', 1.5);
-  if(typeof crowdCheer==='function') crowdCheer(.7, true);
-}
-function specUpdate(p, dt){              // input del espectador humano (solo eliminado, sin boss, partida real)
-  if(p.isAI || demo || TRAIN.on || gameOver || bossActive) return;
-  if(p.specShots==null){ p.specShots=SPEC_AMMO; p.specBombs=SPEC_BOMB; }
-  p.specFireCD=Math.max(0,(p.specFireCD||0)-dt);
-  const inp=readInput(p), atk=inp.atk, bomb=inp.throw||inp.sup;
-  if(atk && !p._specAtkPrev && p.specShots>0 && p.specFireCD<=0){ if(specShoot(p,false)){ p.specShots--; p.specFireCD=SPEC_FIRE_CD; } }
-  if(bomb && !p._specBombPrev && p.specBombs>0 && p.specFireCD<=0){ if(specShoot(p,true)){ p.specBombs--; p.specFireCD=SPEC_FIRE_CD; } }
-  p._specAtkPrev=atk; p._specBombPrev=bomb;
-  if(p.kbInput) updateSpecBar(p);        // HUD del espectador (humano de teclado)
+function specTick(dt){
+  const me = _ownedPlayer();
+  const on = !!(me && me.out && running && !gameOver && !demo && !TRAIN.on);
+  if(!on){ if(_specFollow){ _specFollow=null; _specBarKey=''; const sb=document.getElementById('specBar'); if(sb) sb.style.display='none'; } return; }
+  const alive = players.filter(q=>!q.out && q!==me);
+  if(!alive.length){ _specFollow=null; return; }
+  if(!_specFollow || _specFollow.out || _specFollow===me) _specFollow = specTarget() || alive[0];
+  let dir=0;
+  if(me.kbInput){ if(keys['KeyD']||keys['ArrowRight']||keys['KeyJ']) dir=1; else if(keys['KeyA']||keys['ArrowLeft']) dir=-1; }
+  if(me.padIndex>=0 && navigator.getGamepads){ const gp=navigator.getGamepads()[me.padIndex];
+    if(gp){ const ax=gp.axes[0]||0, B=i=>!!(gp.buttons[i]&&gp.buttons[i].pressed);
+      if(ax>.5||B(0)) dir=1; else if(ax<-.5) dir=-1; } }   /* la cruceta sigue siendo del modo de cámara */
+  if(dir && dir!==_specDirPrev){ let i=alive.indexOf(_specFollow); if(i<0) i=0; _specFollow=alive[(i+dir+alive.length)%alive.length]; }
+  _specDirPrev=dir;
+  updateSpecBar(me, _specFollow);
 }
 let _specBarKey='';
-function updateSpecBar(p){
+function updateSpecBar(p, who){
   const el=document.getElementById('specBar'); if(!el) return;
-  const key=bossActive?'boss':((p.specShots||0)+'/'+(p.specBombs||0));   // dirty-check: solo reescribe al cambiar
+  const nm = who ? specName(who) : '—';
+  const key = nm+'|'+(p.padIndex>=0?'pad':'kb');   // dirty-check: solo reescribe al cambiar
   if(key!==_specBarKey){
     _specBarKey=key;
-    if(bossActive) el.innerHTML='<b>MODO ESPECTADOR</b><br><span style="opacity:.7">Sin interferir: combate de BOSS</span>';
-    else el.innerHTML='<b>MODO ESPECTADOR</b> — toca las narices a los supervivientes'+
-      '<br><span class="specAmmo">🎯 '+(p.specShots||0)+' disparos <small>(J/X)</small></span>'+
-      '<span class="specAmmo">💣 '+(p.specBombs||0)+' bomba <small>(Q/RB)</small></span>'+
-      '<br><span style="opacity:.7">Si echas a uno, ¡vuelves!</span>';
+    el.innerHTML='<b>MODO ESPECTADOR</b><br><span style="opacity:.75">Viendo a</span> <span class="specWho">'+nm+'</span>'+
+      '<br><span style="opacity:.7">'+(p.padIndex>=0 ? 'Stick / A: cambiar de jugador' : 'A / D · ◀ ▶: cambiar de jugador')+'</span>';
   }
   if(el.style.display!=='block') el.style.display='block';
 }
@@ -25830,7 +25843,7 @@ function updateFighter(p, dt){
 
   if(bossCineLock && !p.dead){ p.vel.x*=0.7; p.vel.z*=0.7; return; }   // CINEMÁTICA del jefe: los supervivientes no se mueven
   if(p.dead){
-    if(p.out){ specUpdate(p, dt); return; }   // eliminado: no reaparece, pero puede tocar las narices (espectador)
+    if(p.out) return;                         // eliminado: no reaparece; como espectador solo mira (specTick, desde la cámara)
     p.respawnT -= dt;
     if(p.respawnT<=0 && !gameOver) respawn(p);
     return;
@@ -27146,6 +27159,7 @@ addEventListener('mousemove', e=>{
 const camTarget = new THREE.Vector3(0,2,0);
 const camPos = new THREE.Vector3(0, 16, 26);
 function _camMe(){
+  if(_specFollow && !_specFollow.out && _ownedPlayer().out) return _specFollow;           // ►SPEC: eliminado → la cámara sigue al jugador elegido (host y cliente)
   if(window._net && _net.role==='client' && _net.localPlayer) return _net.localPlayer;   // ONLINE cliente: la cámara sigue a SU personaje (índice 1)
   return P1.dead ? (players.find(q=>!q.dead)||P1) : P1;
 }
@@ -27639,6 +27653,7 @@ function stageIntroCamera(){
 }
 function updateCamera(dt){
   if(_fly.on) return;   // ►TOOLS ?fly: la cámara libre manda (el tick vive en frame())
+  specTick(dt);         // ►SPEC: el eliminado elige a quién mira (corre en host y cliente)
   /* fuera de partida (pausa / fin / demo / menú) libera el puntero capturado para poder usar el cursor en la UI */
   if(document.pointerLockElement===canvas && (!running || demo)){ try{ document.exitPointerLock(); }catch(e){} }
   /* ÓRBITA LIBRE alrededor del jugador (estilo Fall Guys), en TODOS los modos:
@@ -46367,6 +46382,9 @@ window.__I18N_STATIC = Object.assign(window.__I18N_STATIC || {}, {
     "O jogo inteiro é traduzido ao voo",
     "Tout le jeu est traduit à la volée",
     "Das ganze Spiel wird direkt übersetzt"],
+  "Viendo a":["Watching","Guardando","A ver","Vous regardez","Du siehst"],
+  "A / D · ◀ ▶: cambiar de jugador":["A / D · ◀ ▶: switch player","A / D · ◀ ▶: cambia giocatore","A / D · ◀ ▶: mudar de jogador","A / D · ◀ ▶ : changer de joueur","A / D · ◀ ▶: Spieler wechseln"],
+  "Stick / A: cambiar de jugador":["Stick / A: switch player","Stick / A: cambia giocatore","Stick / A: mudar de jogador","Stick / A : changer de joueur","Stick / A: Spieler wechseln"],
   "Abrir la vitrina de trofeos":["Open the trophy case","Apri la bacheca dei trofei","Abrir a vitrine de troféus","Ouvrir la vitrine des trophées","Trophäenschrank öffnen"]
 });
 /* ============================================================================

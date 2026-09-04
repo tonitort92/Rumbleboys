@@ -35,8 +35,10 @@ El juego se parte en DOS MODOS con dos UIs (la gira entera medía ~2 h):
   solo mira; el online ya NO arranca al conectar). Verificado con humo doble (7f + a9, sala real
   de 2 Edge) y publicado. Pendientes menores: rótulo RONDA i/6 en partida, recortar paso 4 del
   asistente; y red a 4 jugadores (bloque E futuro).
-- Abierto (Toni): ¿el invitado del lobby PERSONALIZADO puede vetar/cambiar rondas o solo mira?
-  (supuesto actual: solo mira).
+- DECIDIDO (Toni 04/09): el invitado del lobby PERSONALIZADO solo mira. Y el MODO ESPECTADOR (eliminado)
+  también solo mira: fuera los 20 disparos + bomba y el "si echas a uno, vuelves"; lo único que hace es
+  CAMBIAR DE JUGADOR al que sigue la cámara (A/D · ◀ ▶ · J · stick/botón A). Corre en host y cliente
+  (specTick desde updateCamera). Verificado en headless (cámara sigue al elegido, D/A rotan, barra se oculta).
 - **UX de dos ejes (03/09, petición de Toni a 7f)**: la GIRA también se juega online. Asistente:
   paso 1 "¿Qué jugamos?" GIRA / ARENA / ENTRENAMIENTO; paso final "¿Con quién?" SOLO (CPUs) /
   ONLINE (lobby). Fuera el conmutador OFFLINE/ONLINE de la home; JUGAR siempre abre el asistente;
@@ -103,6 +105,13 @@ de Toni → implementar.
    mute con M + botón, 🎤 sobre el hablante, muertos entre sí, sin micro se juega igual.
    Verificado con stream real entre 2 Edge (fórmula de volumen exacta, RMS, mute). La voz HUMANA
    solo se valida en E-C: que Toni diga si los radios 8/28 cuadran.
+- JEFES (Toni 04/09, 3 cambios, verificados en headless con tick bombeado): (1) SIN ruptura de guardia
+  ("stagger"/derrumbe) en NINGÚN jefe — BOSS_BREAK_ON=false, barra de guardia oculta; (2) SIN ronquido del
+  jefe dormido (bossSnoreSet(false)); (3) JEFE 2 (jungla): fuera los mini-jefes aleatorios (bruteHorde) →
+  AQUELARRE: 10 brujas quietas, bastón en alto (clip attack congelado al 45 %), hilo de magia lila al
+  jefe; cada bruja viva le cura 0,4 %/s y le quita un 8,5 % del daño (10 vivas → recibe el 15 %); respawn
+  de 1 en 1 cada 5 s. Constantes en STAGE_BOSSES[2].coven. Pendiente que Toni lo VEA (pose del brazo y
+  ritmo de la cura) — el cliente online no ve los hilos (solo las brujas replicadas).
 Pendientes menores APARCADOS hasta después del playtest de Toni: rótulo RONDA i/6, recortar el
 paso sobrante del asistente, OBJ fase 2 (bloque F), rasgo escaparate del mundo 1.
 
