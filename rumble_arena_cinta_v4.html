@@ -2431,28 +2431,60 @@ window.RB_ASSETS = (function(){
      DecompressionStream, asi el peso no depende de que el hosting comprima octet-stream. Si el fichero .gz
      no esta (asset viejo sin pasar por _repack_gzip.js) o el navegador no sabe descomprimir, cae al .bin. */
   function plain(url){ return fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }); }
+  /* ►REPACK-STALL (05/09/2026, medido): encadenar el body de red directamente en DecompressionStream se QUEDABA COLGADO al
+     azar en un fichero (sin error, sin fin) y todo lo que venia detras en la cadena no llegaba nunca — personajes en el
+     humanoide de relleno, bancos de sonido sin cargar. Ahora se descarga entero (con timeout) y se descomprime desde el
+     buffer ya en memoria (con su propio timeout); el reintento de arriba vuelve a pedirlo si algo falla. */
   function getBuf(url, gz){
     if(!gz || typeof DecompressionStream !== 'function') return plain(url);
-    return fetch(url+'.gz').then(function(r){
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-    }).catch(function(e){ console.warn('[repack] sin gz, pruebo plano', url, e && e.message); return plain(url); });
+    return withTimeout(fetch(url+'.gz').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); }), 30000)
+      .then(function(zbuf){ return inflate(zbuf, url); })
+      .catch(function(e){ console.warn('[repack] gz fallido ('+(e && e.message)+'), pruebo plano', url); return withTimeout(plain(url), 30000); });
   }
+  /* descompresion con red de seguridad: DecompressionStream (2 intentos de 6 s) y, si se cuelga, pako (JS puro, cargado solo entonces) */
+  var dsBroken = false;   // en cuanto DecompressionStream se cuelga una vez, el resto de la sesion va por pako (no pagar 4 s por fichero)
+  function inflateDS(zbuf){ return withTimeout(new Response(new Blob([zbuf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(), 4000); }
+  var pakoP = null;
+  function loadPako(){ if(window.pako) return Promise.resolve(window.pako); if(pakoP) return pakoP;
+    pakoP = new Promise(function(res, rej){ var sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js'; sc.onload = function(){ res(window.pako); }; sc.onerror = function(){ pakoP = null; rej(new Error('pako no cargo')); }; document.head.appendChild(sc); });
+    return pakoP; }
+  function inflatePako(zbuf){ return loadPako().then(function(pk){ return pk.ungzip(new Uint8Array(zbuf)).buffer; }); }
+  function inflate(zbuf, url){
+    if(dsBroken) return inflatePako(zbuf);
+    return inflateDS(zbuf).catch(function(e1){ dsBroken = true; console.warn('[repack] DecompressionStream colgado: el resto de la sesion va por pako', url); return inflatePako(zbuf); });
+  }
+  /* ►REPACK-RETRY (05/09/2026): una descarga que falla o se cuelga (servidor saturado, red floja) dejaba el asset PERDIDO para
+     toda la sesion — sin personaje, sin sonidos — porque no habia reintento. Ahora cada fichero se intenta hasta 4 veces con
+     espera creciente y timeout por intento; si aun asi falla, el asset vuelve a la cola al final para probar mas tarde. */
+  function withTimeout(pr, ms){ return new Promise(function(res, rej){ var t = setTimeout(function(){ rej(new Error('timeout '+ms+'ms')); }, ms); pr.then(function(v){ clearTimeout(t); res(v); }, function(e){ clearTimeout(t); rej(e); }); }); }
+  function retry(fn, tries, wait){
+    return fn().catch(function(e){
+      if(tries <= 0) throw e;
+      console.warn('[repack] reintento en '+wait+' ms:', e && e.message);
+      return new Promise(function(r){ setTimeout(r, wait); }).then(function(){ return retry(fn, tries-1, Math.min(8000, wait*2)); });
+    });
+  }
+  var failed = {};
   function start(name){
     state[name] = 'pend'; active++;
     var e = man[name];
     if(!e){ done(name, true); return; }
     var p;
     if(e.f){
-      p = getBuf('assets/'+e.f, e.gz).then(function(b){ window[name] = b; });
+      p = retry(function(){ return getBuf('assets/'+e.f, e.gz); }, 3, 800).then(function(b){ window[name] = b; });
     } else {
       var map = {}; p = Promise.resolve();
       e.keys.forEach(function(k){
-        p = p.then(function(){ return getBuf('assets/'+e.d+'/'+k+'.bin', e.gz).then(function(b){ map[k] = b; }); });
+        p = p.then(function(){ return retry(function(){ return getBuf('assets/'+e.d+'/'+k+'.bin', e.gz); }, 3, 800).then(function(b){ map[k] = b; }); });
       });
       p = p.then(function(){ window[name] = map; });
     }
-    p.then(function(){ done(name, true); }, function(err){ console.warn('[repack] fallo '+name, err); done(name, false); });
+    p.then(function(){ done(name, true); }, function(err){
+      console.warn('[repack] fallo '+name, err);
+      failed[name] = (failed[name]||0) + 1;
+      done(name, false);
+      if(failed[name] <= 2){ setTimeout(function(){ if(!state[name]){ queue.push(name); pump(); } }, 15000); }   // segunda oportunidad al final de la cola
+    });
   }
   function pump(){
     if(!man) return;
@@ -7687,8 +7719,13 @@ window._rbAssetArrived = function(name){
   }catch(e){ console.warn('[repack] arrival '+name, e); }
 };
 const _cabDone = {};   // ►REPACK: sub-bloques ya procesados (la funcion se re-invoca con cada llegada)
+let _cabWaitT = null;
 function _charAssetsBoot(){
- if(!(DEBUG_MODEL && window.THREE && THREE.GLTFLoader && (window.CHAR_GLB_B64 || window.CHAR_MODELS_B64))) return;
+ if(!DEBUG_MODEL) return;
+ /* ►LOADER-RACE (05/09/2026, medido): si los binarios llegan ANTES que GLTFLoader (CDN lento, maquina cargada) esto salia sin
+    hacer nada y NADIE volvia a llamarlo → los 6 personajes se quedaban en el humanoide de relleno toda la sesion. Ahora espera. */
+ if(!(window.THREE && THREE.GLTFLoader)){ if(!_cabWaitT) _cabWaitT = setTimeout(function(){ _cabWaitT = null; _charAssetsBoot(); }, 600); return; }
+ if(!(window.CHAR_GLB_B64 || window.CHAR_MODELS_B64)) return;
   try {
     /* loader + decodificador Draco (uno por parseo) y utilidad base64→ArrayBuffer */
     const _mkLoader = ()=>{ const gl = new THREE.GLTFLoader();
@@ -14597,7 +14634,7 @@ let _bossTpl = null;   // { root, clips:{name:AnimationClip}, baseScale, baseY }
 function _bossBoot(){   // ►REPACK: antes IIFE de un tiro; lo re-invoca la llegada del asset
   if(_bossBoot._done) return;
   if(window.RB_ASSETS) RB_ASSETS.need('BOSS_FBX_B64');
-  if(!window.BOSS_FBX_B64 || !THREE.FBXLoader){ console.warn('[boss] sin BOSS_FBX_B64 o FBXLoader (llegara por assets/)'); return; }
+  if(!window.BOSS_FBX_B64 || !THREE.FBXLoader){ console.warn('[boss] sin BOSS_FBX_B64 o FBXLoader (llegara por assets/)'); if(window.BOSS_FBX_B64 && !window._bossBootWaitT){ window._bossBootWaitT = setTimeout(function(){ window._bossBootWaitT = null; _bossBoot(); }, 800); } return; }   // ►LOADER-RACE: el asset ya esta pero el FBXLoader aun no → reintenta
   _bossBoot._done = true;
   const loader = new THREE.FBXLoader();
   const names = ['standup','roar','saltos','cabezazo','giro','ulti','muerte','run','jump','fall','idle'];   // +run/jump/fall/idle (boss_anims2.js)
@@ -20462,8 +20499,8 @@ function updatePvpShieldFX(){
     #hdPlay:hover,, #hdContinue:hover, #hdPlay.uinav-focus,, #hdContinue.uinav-focus, #hdPlay:focus-visible, #hdContinue:focus-visible{ outline:none; transform:scale(1.04);
       box-shadow:0 0 0 3px #000, 0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
     #hdPlay, #hdContinue b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
-    #hdPlay b{ font-size:clamp(38px,4.6vw,60px); letter-spacing:5px; padding:4px 10px; }   /* ►HOME-JUGAR: JUGAR grande a solas */
       -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 6px rgba(0,0,0,.6); }   /* más outline (Toni 21/08) */
+    #hdPlay b{ font-size:clamp(38px,4.6vw,60px); letter-spacing:5px; padding:4px 10px; }   /* ►HOME-JUGAR: JUGAR grande a solas */
     #hdPlay, #hdContinue small{ display:block; margin-top:4px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; -webkit-text-stroke:1px #000; paint-order:stroke fill; text-shadow:0 1px 0 #000; }
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:900; letter-spacing:3px;
       color:#9fe8ff; opacity:.75; text-decoration:underline; text-underline-offset:4px; padding:0; }
@@ -45097,23 +45134,15 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
   }
   function build(){
     let h=''; _iconsMissing = false;
-    const perkBy = {}; for(const p of RUN_PERKS){ if(!p.cls) perkBy[p.k] = p; }
-    h += '<div class="gSecTitle">Mejoras · cápsulas que caen (20 s) y su compra en la tienda (toda la partida)</div>';
-    for(const t of CAP_TYPES){
-      const pk = perkBy[t.k]; const desc = (CAP_DESC[t.k]||'') + (pk ? (' · en la TIENDA: '+pk.name+' ('+pk.cost+' pts, hasta '+pk.max+' niveles, no caduca)') : '');
-      h += row2(icon3d(()=>buildBoostModel(t)), t.label, desc, TAG_CAE + (pk ? ' '+TAG_TIENDA : ''));
-    }
-    if(perkBy.spd) h += row2(perkIcon(perkBy.spd.col), perkBy.spd.name, perkBy.spd.desc + ' (solo en la tienda, no cae)', TAG_TIENDA, perkBy.spd.cost);
-    h += '<div class="gSecTitle">Armas y objetos en mano · caen en la cinta · se usan con el ataque</div>';
+    /* ►GUÍA3 (Toni 05/09): SOLO lo que se recoge en el campo — nada de tienda ni de cartas de nivel */
+    h += '<div class="gSecTitle">Cápsulas de mejora · duran 20 s</div>';
+    for(const t of CAP_TYPES) h += row2(icon3d(()=>buildBoostModel(t)), t.label, CAP_DESC[t.k]||'', TAG_CAE);
+    h += '<div class="gSecTitle">Armas y objetos en mano · se usan con el ataque</div>';
     for(const k in WEAPON_DEFS){ if(k==='bazooka' || k==='bolt') continue;
       const w=WEAPON_DEFS[k]; h += row2(icon3d(()=>buildWeaponModel(k)), w.name, WPN_DESC[k]||'', TAG_CAE); }
     h += row2(icon3d(()=>buildRainbowModel()), 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (1 de cada 10 objetos)', TAG_CAE);
     h += '<div class="gSecTitle">Súper · cápsulas doradas (más probables para el que va último) · se activan al coger</div>';
     for(const t of SUPER_TYPES) h += row2(icon3d(()=>buildBoostModel(t)), t.label, SUP_DESC[t.k]||'', TAG_ORO);
-    h += '<div class="gSecTitle">Tienda entre mundos · solo se compran</div>';
-    for(const p of RUN_PERKS){ if(p.cls || CAP_TYPES.some(t=>t.k===p.k) || p.k==='spd') continue; h += row2(perkIcon(p.col), p.name, p.desc, TAG_TIENDA, p.cost); }
-    h += '<div class="gSecTitle">Tienda · mejoras de clase</div>';
-    for(const p of RUN_PERKS){ if(!p.cls) continue; h += row2(perkIcon(p.col), p.name, p.desc, TAG_TIENDA, p.cost); }
     body.innerHTML = h;
   }
   function open(){ sfxEv('ui_open',{ui:true}); window._soloModal('guideModal'); if(!body.innerHTML || _iconsMissing) build(); modal.style.display='flex'; modal.scrollTop=0; }   // ►SFXTONI · ►ICONOS3D: se reconstruye si faltó algún modelo
