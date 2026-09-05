@@ -1267,6 +1267,10 @@ window.addEventListener('load', function(){
   .gIco.g3d { width:68px; height:68px; border-radius:12px; background:radial-gradient(circle at 50% 40%, rgba(255,255,255,.14), rgba(255,255,255,.03) 70%); }
   .gIco.g3d img { width:100%; height:100%; object-fit:contain; display:block; filter:drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
   .gRow.g3dRow { align-items:center; }
+  .gTag { display:inline-block; vertical-align:middle; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:10px; font-weight:900; letter-spacing:1.5px; }
+  .gTag.cae { background:rgba(95,208,255,.18); color:#9fe8ff; border:1px solid rgba(95,208,255,.35); }
+  .gTag.tienda { background:rgba(255,216,79,.16); color:#ffd84f; border:1px solid rgba(255,216,79,.35); }
+  .gTag.oro { background:rgba(255,176,0,.22); color:#ffe08a; border:1px solid rgba(255,208,64,.45); }
   .gTxt { flex:1; min-width:0; }
   .gName { font-size:14px; font-weight:800; color:#fff; }
   .gName .gcost { float:right; font-size:12px; font-weight:800; color:#ffd84f; margin-left:10px; }
@@ -9153,10 +9157,11 @@ const voiceStart = new Audio('narrator/starting-match.mp3'); voiceStart.volume =
 const introMusic = new Audio('music/arcade-overdrive.mp3'); introMusic.loop = true; introMusic.volume = 0; introMusic.preload = 'auto';
 const introVox = new Audio('narrator/intro-locutor.ogg'); introVox.volume = .7; introVox.preload = 'auto';   // nivel de ENTRADA a la cadena ►VOXPA (alimenta la saturación; el volumen real se ajusta en INTRO_VOX_GAIN, no aquí)
 let _introPhase = true, _introBase = .5, _introVoxDone = false, _introAudible = false;   // ►AJUSTA: .5 portada · .18 home 2 (bajo la voz NO baja: ►VOXPA)
-const INTRO_VOX_AT = 0.5;   // ►AJUSTA (Toni 24/08): segundos de música antes de la locución (0 = nada más acabar el splash; +0.5 pedido)
+const INTRO_VOX_AT = 2.5;   // ►AJUSTA (Toni 24/08): segundos de música antes de la locución (0 = nada más acabar el splash; +0.5 pedido) · ►Toni 05/09: +2 s más tarde
+const INTRO_VOX_SKIP = 2.0;  // ►Toni 05/09: la locución arranca saltándose sus 2 primeros segundos
 const INTRO_VOX_GAIN = .28;   // ►AJUSTA (Toni 24/08): VOLUMEN de la locución, aplicado DESPUÉS del efecto y directo a destination (sin el compresor del master). .2 → .28 (Toni 24/08: "un poco más alto").
                              // Bajar introVox.volume no se notaba: la saturación tanh y el compresor "glue" del bus master recomprimían la voz.
-function _introVoxClock(){ if(_introVoxDone) return; if(introMusic.currentTime >= INTRO_VOX_AT){ _introVoxDone = true; if(musicOn) introVox.play().catch(()=>{}); return; } requestAnimationFrame(_introVoxClock); }
+function _introVoxClock(){ if(_introVoxDone) return; if(introMusic.currentTime >= INTRO_VOX_AT){ _introVoxDone = true; if(musicOn){ try{ introVox.currentTime = INTRO_VOX_SKIP; }catch(e){} introVox.play().catch(()=>{}); } return; } requestAnimationFrame(_introVoxClock); }
 /* ►VOXPA (Toni 24/08): la locución de la intro NO baja la música (sin duck: 'no bajes el volumen para meter la voz') y
    deja de sonar 'natural': pasa por una cadena de MEGAFONÍA/RADIO en WebAudio — banda 300-3600 Hz con pico nasal a
    1.8 kHz, saturación suave, slap-back corto y reverb de cámara (IR sintética de ruido con cola de 1.7 s). El <audio>
@@ -20430,9 +20435,9 @@ function updatePvpShieldFX(){
     #hdCharHost{ order:1; } #hdName{ order:2; } #hdRole{ order:3; } #hdAtk{ order:4; } #hdMeta{ order:5; } #hdPlay{ order:6; } #hdStats{ order:7; } #hdOnline{ order:8; }
     /* ►CHARSTATS: dos marcas del PERSONAJE bajo JUGAR (clic → resumen por mundo) */
     #hdStats{ display:flex; gap:8px; justify-content:center; margin-top:6px; }
-    .hdStat{ cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; padding:6px 12px; border-radius:12px; background:rgba(10,14,30,.72); border:1px solid rgba(255,255,255,.14); color:#e8eefc; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:border-color .13s ease, transform .1s ease; }
+    .hdStat{ cursor:pointer; font-family:inherit; display:flex; flex-direction:column; align-items:center; gap:1px; min-width:104px; padding:7px 16px 6px;   /* ►HOME-FICHAS (Toni 05/09): número grande arriba, etiqueta pequeña debajo */ border-radius:12px; background:rgba(10,14,30,.72); border:1px solid rgba(255,255,255,.14); color:#e8eefc; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:border-color .13s ease, transform .1s ease; }
     .hdStat:hover, .hdStat:focus-visible, .hdStat.uinav-focus{ outline:none; border-color:var(--hc,#ffd84f); transform:scale(1.04); }
-    .hdStat .ic{ font-size:14px; } .hdStat b{ font-size:16px; font-weight:900; font-style:italic; color:#ffd84f; font-variant-numeric:tabular-nums; }
+    .hdStat .ic{ display:none; } .hdStat b{ font-size:30px; line-height:1; font-weight:900; font-style:italic; color:#ffd84f; font-variant-numeric:tabular-nums; }
     .hdStat small{ font-size:8.5px; font-weight:900; letter-spacing:2px; color:#9fb0d6; }
     #hdRole{ font-size:11px; font-weight:900; letter-spacing:3px; color:#9fb0d6; text-shadow:0 2px 6px rgba(0,0,0,.9); margin:-2px 0 2px; text-transform:uppercase; }
     /* JUGAR lleva el COLOR INSIGNIA del héroe elegido (--hc, la pone renderChar): el botón es "juega CON ÉSTE" */
@@ -20445,6 +20450,7 @@ function updatePvpShieldFX(){
     #hdPlay:hover,, #hdContinue:hover, #hdPlay.uinav-focus,, #hdContinue.uinav-focus, #hdPlay:focus-visible, #hdContinue:focus-visible{ outline:none; transform:scale(1.04);
       box-shadow:0 0 0 3px #000, 0 14px 40px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--hc) 65%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
     #hdPlay, #hdContinue b{ display:block; font-size:clamp(26px,3vw,40px); font-weight:900; font-style:italic; letter-spacing:3px; line-height:1;
+    #hdPlay b{ font-size:clamp(38px,4.6vw,60px); letter-spacing:5px; padding:4px 10px; }   /* ►HOME-JUGAR: JUGAR grande a solas */
       -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:0 3px 0 #000, 0 0 6px rgba(0,0,0,.6); }   /* más outline (Toni 21/08) */
     #hdPlay, #hdContinue small{ display:block; margin-top:4px; font-size:11px; font-weight:900; letter-spacing:2.5px; color:#fff; -webkit-text-stroke:1px #000; paint-order:stroke fill; text-shadow:0 1px 0 #000; }
     #hdOnline{ background:none; border:0; cursor:pointer; font-family:inherit; font-size:11px; font-weight:900; letter-spacing:3px;
@@ -20876,7 +20882,7 @@ function updatePvpShieldFX(){
        FIRST_PICK) está oculto, y el CTA principal debe ser lo primero que enfoque el mando */
     r.innerHTML =
         '<div id="hdLeft">'
-      +   '<button type="button" id="hdPlay"><b>JUGAR</b><small>GIRA · ' + ruta().length + ' MUNDOS · O ARENA</small></button>'
+      +   '<button type="button" id="hdPlay"><b>JUGAR</b></button>'   /* ►HOME-JUGAR (Toni 05/09): solo JUGAR, en grande, sin subtítulo */
       +   '<button type="button" id="hdContinue" class="hidden"><b>CONTINUAR</b><small>GIRA GUARDADA · MUNDO 8</small></button>'   /* ►CHECKPOINT */
       +   '<div id="hdCharHost"></div>'
       +   '<div id="hdNameRow"><button type="button" class="hdNav" id="hdPrev" aria-label="Anterior"></button><div id="hdName"></div><button type="button" class="hdNav" id="hdNext" aria-label="Siguiente"></button></div>'   /* v29: las flechas ‹ › del heroe, a los lados del titulo (Toni 21/08); pulsan las del carrusel */
@@ -20884,7 +20890,7 @@ function updatePvpShieldFX(){
       +   '<div id="hdAtk" aria-label="Ataques"></div>'   /* los CONTROLES del héroe, bajo su nombre (Toni 21/08): mismas tablas que los diagramas (CTL_MAP + CLASS_MOVES) */
       +   '<div id="hdMeta"></div>'
       +   '<div id="hdAtkTip"></div>'
-      +   '<div id="hdStats"><button type="button" class="hdStat" id="hdStatTro"><span class="ic">🏆</span><b>0</b><small>TROFEOS</small></button><button type="button" class="hdStat" id="hdStatMk"><span class="ic">★</span><b>—</b><small>MEJOR MARCA</small></button></div>'   /* ►CHARSTATS */
+      +   '<div id="hdStats"><button type="button" class="hdStat" id="hdStatTro"><b>0</b><small>TROFEOS</small></button><button type="button" class="hdStat" id="hdStatMk"><b>—</b><small>MEJOR MARCA</small></button></div>'   /* ►CHARSTATS */
       +   '<button type="button" id="hdOnline" style="display:none">ONLINE</button>'   /* ONLINE vive ahora en el RAIL */
       + '</div>'
       + '<img id="hdLogo" src="logo.png" alt="RUMBLEBOYS" onerror="this.style.display=\'none\'">'
@@ -45049,21 +45055,40 @@ const HT_COLS = ['#ff3b30','#c299ff','#ffd84f','#3ad06a','#5ec8ff','#ff9a6a','#6
          + '<div class="gTxt"><div class="gName">'+c+esc(name)+'</div>'
          + '<div class="gDesc">'+esc(desc)+'</div></div></div>';
   }
+  /* ►GUÍA2 (Toni 05/09: "el listado está duplicadísimo y aún tiene emojis"): UNA entrada por cosa, sin emojis. Las mejoras
+     de estadística salen una sola vez (la cápsula que cae Y la compra de tienda, en la misma ficha); las mejoras de tienda sin
+     modelo llevan una FICHA 3D en su color en vez de emoji; y cada ficha dice de dónde sale: CAE (cinta) o TIENDA. */
+  function perkIcon(col){
+    return icon3d(()=>{ const g=new THREE.Group(); const c=(typeof col==='string') ? parseInt(col.replace('#',''),16) : (col||0xffd84f);
+      const coin=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.12,28), new THREE.MeshStandardMaterial({ color:c, emissive:c, emissiveIntensity:.35, metalness:.6, roughness:.3 })); coin.rotation.x=Math.PI/2*.15; coin.rotation.z=.3; g.add(coin);
+      const rim=new THREE.Mesh(new THREE.TorusGeometry(.55,.06,10,32), new THREE.MeshStandardMaterial({ color:0xffd84f, metalness:.8, roughness:.25 })); rim.rotation.x=Math.PI/2+Math.PI/2*.15; rim.rotation.z=.3; g.add(rim);
+      return g; });
+  }
+  const TAG_CAE='<span class="gTag cae">CAE</span>', TAG_TIENDA='<span class="gTag tienda">TIENDA</span>', TAG_ORO='<span class="gTag oro">CÁPSULA DORADA</span>';
+  function row2(img, name, desc, tags, cost){
+    const c = cost!=null ? '<span class="gcost">'+cost+' pts</span>' : '';
+    const ico = img ? '<div class="gIco g3d"><img src="'+img+'" alt=""></div>' : '<div class="gIco g3d"></div>';
+    return '<div class="gRow g3dRow">'+ico+'<div class="gTxt"><div class="gName">'+c+esc(name)+' '+(tags||'')+'</div><div class="gDesc">'+esc(desc)+'</div></div></div>';
+  }
   function build(){
     let h=''; _iconsMissing = false;
-    h += '<div class="gSecTitle">Cápsulas de mejora</div>';
-    for(const t of CAP_TYPES) h += row(t.ic, t.col, t.label, CAP_DESC[t.k]||'', null, icon3d(()=>buildBoostModel(t)));
-    h += '<div class="gSecTitle">Armas</div>';
-    for(const k in WEAPON_DEFS){ if(k==='bazooka' || k==='bolt') continue;   // ►Toni: bazooka ya no es cogible → fuera de la guía · el rayo va con los súper
-      const w=WEAPON_DEFS[k]; h += row(w.label, w.col, w.name, WPN_DESC[k]||'', null, icon3d(()=>buildWeaponModel(k))); }
-    h += '<div class="gSecTitle">Súper · cápsulas doradas</div>';
-    for(const t of SUPER_TYPES) h += row(t.ic, t.col, t.label, SUP_DESC[t.k]||'', null, icon3d(()=>buildBoostModel(t)));
-    h += '<div class="gSecTitle">Objeto especial</div>';
-    h += row('⭐', 0xffe34a, 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (¡muy raro!)', null, icon3d(()=>buildRainbowModel()));
-    h += '<div class="gSecTitle">Tienda · para cualquier clase</div>';
-    for(const p of RUN_PERKS){ if(p.cls) continue; h += row(p.ic, p.col, p.name, p.desc, p.cost); }
+    const perkBy = {}; for(const p of RUN_PERKS){ if(!p.cls) perkBy[p.k] = p; }
+    h += '<div class="gSecTitle">Mejoras · cápsulas que caen (20 s) y su compra en la tienda (toda la partida)</div>';
+    for(const t of CAP_TYPES){
+      const pk = perkBy[t.k]; const desc = (CAP_DESC[t.k]||'') + (pk ? (' · en la TIENDA: '+pk.name+' ('+pk.cost+' pts, hasta '+pk.max+' niveles, no caduca)') : '');
+      h += row2(icon3d(()=>buildBoostModel(t)), t.label, desc, TAG_CAE + (pk ? ' '+TAG_TIENDA : ''));
+    }
+    if(perkBy.spd) h += row2(perkIcon(perkBy.spd.col), perkBy.spd.name, perkBy.spd.desc + ' (solo en la tienda, no cae)', TAG_TIENDA, perkBy.spd.cost);
+    h += '<div class="gSecTitle">Armas y objetos en mano · caen en la cinta · se usan con el ataque</div>';
+    for(const k in WEAPON_DEFS){ if(k==='bazooka' || k==='bolt') continue;
+      const w=WEAPON_DEFS[k]; h += row2(icon3d(()=>buildWeaponModel(k)), w.name, WPN_DESC[k]||'', TAG_CAE); }
+    h += row2(icon3d(()=>buildRainbowModel()), 'ESTRELLA', 'invulnerable y quien te toca sale volando durante '+RAINBOW_DUR+' s (1 de cada 10 objetos)', TAG_CAE);
+    h += '<div class="gSecTitle">Súper · cápsulas doradas (más probables para el que va último) · se activan al coger</div>';
+    for(const t of SUPER_TYPES) h += row2(icon3d(()=>buildBoostModel(t)), t.label, SUP_DESC[t.k]||'', TAG_ORO);
+    h += '<div class="gSecTitle">Tienda entre mundos · solo se compran</div>';
+    for(const p of RUN_PERKS){ if(p.cls || CAP_TYPES.some(t=>t.k===p.k) || p.k==='spd') continue; h += row2(perkIcon(p.col), p.name, p.desc, TAG_TIENDA, p.cost); }
     h += '<div class="gSecTitle">Tienda · mejoras de clase</div>';
-    for(const p of RUN_PERKS){ if(!p.cls) continue; h += row(p.ic, p.col, p.name, p.desc, p.cost); }
+    for(const p of RUN_PERKS){ if(!p.cls) continue; h += row2(perkIcon(p.col), p.name, p.desc, TAG_TIENDA, p.cost); }
     body.innerHTML = h;
   }
   function open(){ sfxEv('ui_open',{ui:true}); window._soloModal('guideModal'); if(!body.innerHTML || _iconsMissing) build(); modal.style.display='flex'; modal.scrollTop=0; }   // ►SFXTONI · ►ICONOS3D: se reconstruye si faltó algún modelo
