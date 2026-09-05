@@ -244,7 +244,7 @@ window.addEventListener('load', function(){
   .atkSep { align-self:stretch; width:1px; margin:8px 3px 16px; background:rgba(255,255,255,.14); border-radius:1px; }
 
   /* botón = columna: disco (círculo + anillo) y nombre pequeño debajo */
-  .hbtn.basic { zoom:.85; } .hbtn.basic .hKey { font-size:10px; text-align:center; white-space:nowrap; }   /* ►HUD2: el clic/ataque básico, más pequeño y centrado */
+  .hbtn.basic, #atkb_shove { zoom:.85; } .hbtn.basic .hKey, #atkb_shove .hKey { font-size:10px; text-align:center; white-space:nowrap; }   /* ►HUD2: el clic/ataque básico, más pequeño y centrado · ►HUD3: el clic derecho (Agarrar) igual que el izquierdo */
   .hbtn { zoom:.8; position:relative; width:56px; display:flex; flex-direction:column; align-items:center; gap:4px;   /* ►HUD2: todos un 20% más pequeños */
           transition:transform .15s ease; }
   .hDisc { position:relative; width:54px; height:54px; border-radius:50%; box-sizing:border-box;
@@ -312,14 +312,17 @@ window.addEventListener('load', function(){
      siguen en la lista y siguen desplazándose si les adelantan. */
   /* ►HUDLOL (NIVELES V2 H4): las fichas de los jugadores van ABAJO-CENTRO en horizontal (filas absolutas movidas
      con translateX); los atajos, a la IZQUIERDA en horizontal con las cartas de nivel encima. */
-  #rank { position:fixed; left:50%; bottom:18px; z-index:23; height:44px; pointer-events:none;
-          transform:translateX(-50%) scale(calc(var(--hudScale,1) * var(--rkScale,1))); transform-origin:bottom center;   /* --rkScale: encoge la fila si no caben las fichas (buildRank) */
+  /* ►HUD3 (Toni 05/09, con maqueta): las fichas de jugador ARRIBA con margen (no pegadas al borde), en 3 líneas — nombre ·
+     corazones grandes · % de daño grande + "N SALTOS" + monedas — tematizadas con el color de clase; los puntos ganados salen
+     DEBAJO de la ficha de cada jugador ("+50 · Minion"), no en medio de la pelea. Botones y barra de nivel se quedan abajo. */
+  #rank { position:fixed; left:50%; top:80px; z-index:23; height:104px; pointer-events:none;   /* top 80: por debajo de la flecha de la cinta (9-67 px) y con aire */
+          transform:translateX(-50%) scale(calc(var(--hudScale,1) * var(--rkScale,1))); transform-origin:top center;   /* --rkScale: encoge la fila si no caben las fichas (buildRank) */
           transition:opacity .25s ease; font-family:'Segoe UI',system-ui,sans-serif; }
   #rank.hidden { opacity:0; }
   /* ►RANKCHIP (Toni 23/08): chip de DOS líneas tematizada con el color de clase — línea 1: puesto · clase · EXP · DAÑO %
      (grande, en el color del personaje, a la derecha del todo) · línea 2: VIDAS como corazones rosas. */
-  .rkRow { position:absolute; left:0; top:0; width:240px; height:44px; box-sizing:border-box;
-           display:flex; flex-direction:column; justify-content:center; gap:2px; padding:0 9px 0 7px; border-radius:14px;
+  .rkRow { position:absolute; left:0; top:0; width:240px; height:104px; box-sizing:border-box;
+           display:flex; flex-direction:column; justify-content:center; gap:5px; padding:8px 10px 7px; border-radius:16px;
            background:linear-gradient(90deg, color-mix(in srgb, var(--pc,#fff) 22%, rgba(8,11,24,.55)), rgba(8,11,24,.42));
            border:1px solid color-mix(in srgb, var(--pc,#fff) 45%, rgba(255,255,255,.09)); backdrop-filter:blur(5px);
            box-shadow:0 3px 12px rgba(0,0,0,.35); will-change:transform;
@@ -327,35 +330,43 @@ window.addEventListener('load', function(){
                       background .3s ease, border-color .3s ease; }
   .rkRow.me { border-color:color-mix(in srgb, var(--pc,#fff) 70%, #fff); box-shadow:0 0 10px color-mix(in srgb, var(--pc,#fff) 45%, transparent), 0 3px 12px rgba(0,0,0,.35); }
   .rkL1 { display:flex; align-items:center; gap:7px; min-width:0; }
-  .rkDmg { flex:0 0 auto; margin-left:4px; font:900 16px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; color:var(--pc,#fff);
-           font-variant-numeric:tabular-nums; text-shadow:0 0 6px color-mix(in srgb, var(--pc,#fff) 60%, transparent), 0 1px 3px rgba(0,0,0,.8); min-width:40px; text-align:right; }
+  .rkL3 { display:flex; align-items:center; justify-content:center; gap:12px; min-width:0; }
+  .rkDmg { flex:0 0 auto; font:900 26px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; color:var(--pc,#fff);
+           font-variant-numeric:tabular-nums; text-shadow:0 0 8px color-mix(in srgb, var(--pc,#fff) 60%, transparent), 0 1px 3px rgba(0,0,0,.8); min-width:64px; text-align:right; }
   .rkDmg.hot { color:#ff4040; }
-  .rkJ { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#9fffd8; display:flex; align-items:center; gap:2px; }
-  .rkJ b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
+  .rkJ { flex:0 0 auto; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#9fffd8; display:flex; align-items:baseline; gap:4px; }
+  .rkJ b { font:900 17px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
+  .rkJ small { font:900 8.5px/1 'Segoe UI',system-ui,sans-serif; letter-spacing:1.5px; color:#9fffd8; opacity:.9; }
   .rkJ.none { color:#ff8d8d; }
   #lbMedal { font:900 17px/1.3 'Segoe UI',system-ui,sans-serif; color:#ffd84f; text-align:center; letter-spacing:2px; margin:6px 0 2px;
              text-shadow:0 2px 6px rgba(0,0,0,.9); }   /* ►SHOWDOWN */
   #lbMedal.crown { color:#fff; text-shadow:0 0 14px rgba(255,216,79,.9), 0 2px 6px rgba(0,0,0,.9); }
-  .rkCo { flex:0 0 auto; margin-left:6px; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#ffd84f; display:flex; align-items:center; gap:2px; }   /* ►MONEDAS */
-  .rkCo b { font:900 13px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
-  .rkHearts { display:flex; gap:2px; padding-left:22px; height:11px; align-items:center; }
-  .rkHearts i { width:11px; height:11px; display:block; background:#ff5fa8; clip-path:path('M5.5 10.5 L1.2 6.2 C-0.2 4.8 0.3 2.2 2.3 1.6 C3.5 1.3 4.8 1.9 5.5 2.9 C6.2 1.9 7.5 1.3 8.7 1.6 C10.7 2.2 11.2 4.8 9.8 6.2 Z');
+  .rkCo { flex:0 0 auto; font:800 10.5px/1 'Segoe UI',system-ui,sans-serif; color:#ffd84f; display:flex; align-items:center; gap:5px; }   /* ►MONEDAS */
+  .rkCo b { font:900 17px/1 'Segoe UI',system-ui,sans-serif; font-style:italic; font-variant-numeric:tabular-nums; }
+  .rkCo .coin { width:13px; height:13px; border-radius:50%; background:radial-gradient(circle at 35% 35%, #fff2a8, #ffd84f 55%, #c9962a); box-shadow:0 0 0 1.5px #8a6410, 0 1px 2px rgba(0,0,0,.6); display:block; }
+  .rkHearts { display:flex; gap:9px; justify-content:center; height:18px; align-items:center; }
+  .rkHearts i { width:11px; height:11px; display:block; transform:scale(1.65); background:#ff5fa8; clip-path:path('M5.5 10.5 L1.2 6.2 C-0.2 4.8 0.3 2.2 2.3 1.6 C3.5 1.3 4.8 1.9 5.5 2.9 C6.2 1.9 7.5 1.3 8.7 1.6 C10.7 2.2 11.2 4.8 9.8 6.2 Z');
                 filter:drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
+  .rkPop { position:absolute; left:0; right:0; top:100%; margin-top:5px; text-align:center; font:900 16px/1 'Segoe UI',system-ui,sans-serif; font-style:italic;
+           color:#ffd84f; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(255,216,79,.4); opacity:0; pointer-events:none; white-space:nowrap; }
+  .rkPop small { font:800 11px/1 'Segoe UI',system-ui,sans-serif; font-style:normal; letter-spacing:.5px; color:#e7eeff; margin-left:4px; }
+  .rkPop.go { animation:rkPopUp 1.25s ease-out forwards; }
+  @keyframes rkPopUp { 0%{ opacity:0; transform:translateY(6px) } 12%{ opacity:1; transform:translateY(0) } 70%{ opacity:1 } 100%{ opacity:0; transform:translateY(-10px) } }
   .rkHearts i.lost { background:rgba(255,255,255,.18); filter:none; }
   .rkPos { flex:0 0 14px; text-align:center; font:900 11px/1 'Segoe UI',system-ui,sans-serif;
            font-style:italic; color:#9fb0d0; font-variant-numeric:tabular-nums; }
   .rkRow.lead .rkPos { color:#ffd84f; }                     /* el líder, en oro */
   .rkDot { flex:0 0 8px; width:8px; height:8px; border-radius:50%; background:var(--pc,#fff);
            box-shadow:0 0 6px var(--pc,#fff); }
-  .rkName { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
-            font-size:10.5px; font-weight:800; letter-spacing:.3px; color:#e7eeff;
-            text-shadow:0 1px 3px rgba(0,0,0,.7); }
-  .rkXP { flex:0 0 auto; text-decoration:none; font:900 12px/1 'Segoe UI',system-ui,sans-serif;
+  .rkName { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:center;
+            font-size:13px; font-weight:900; letter-spacing:1px; color:#fff; text-transform:uppercase;
+            text-shadow:0 1px 3px rgba(0,0,0,.7), 0 0 8px color-mix(in srgb, var(--pc,#fff) 55%, transparent); }
+  .rkXP { flex:0 0 auto; text-decoration:none; font:900 13px/1 'Segoe UI',system-ui,sans-serif;
           font-style:italic; color:#ffd84f; font-variant-numeric:tabular-nums;
           text-shadow:0 1px 3px rgba(0,0,0,.6); }
+  .rkXP::after { content:' pts'; font-size:8px; font-style:normal; letter-spacing:1px; opacity:.8; }
   .rkXP.bump { animation:rkBump .28s ease; }
-  .rkHdr { position:absolute; top:-15px; left:6px; font:900 10px/1 'Segoe UI',system-ui,sans-serif; font-style:italic;
-           letter-spacing:1.5px; color:#ffd84f; text-shadow:0 1px 3px rgba(0,0,0,.8); }
+  .rkHdr { display:none; }   /* ►HUD3: la cifra ya lleva "pts" */
   @keyframes rkBump { 0%{ transform:scale(1) } 45%{ transform:scale(1.22) } 100%{ transform:scale(1) } }
   .rkRow.up { border-color:rgba(122,255,200,.75); box-shadow:0 0 14px rgba(122,255,200,.35), 0 3px 12px rgba(0,0,0,.35); }
   .rkRow.dead { opacity:.72; filter:saturate(.35); }        /* muerto (reapareciendo): apagado */
@@ -7825,7 +7836,7 @@ const MPOW_MAX = 300;                                    // barra de minions lle
 const ULT_WIND = 2, ULT_DUR = 4, ULT_RMAX = 20, ULT_DMG = 60;   // definitiva (ajustable)
 const ULT_SUPER_DUR = 6.5, ULT_SUPER_RMAX = 32;   // ►SUPERR bruja: la doble expansión dura más y llega a 32
 function addMpow(p, amt){ p.mpow = Math.min(MPOW_MAX, (p.mpow||0)+amt*((p&&p._pkUltCharge)?1.5:1)*((p&&p._lvR)||1)); }   /* ►CARTAS: R CARGA VELOZ */   // ►PERK CARGA VELOZ: la definitiva se llena 50% más rápido
-function credit(p, d){ if(p && p.sc){ p.sc.dmg += d; p._xpBuf = (p._xpBuf||0) + d; } if(p && (p._pkLifesteal || p._lvSteal) && d>0 && !p.dead){ p.damage = Math.max(0, p.damage - d*0.15); }   /* ►PERK ROBO DE VIDA: recupera el 15% del daño causado */ noteHit(p); if(d>=12) charVoice(p,'hehe',0.4); }   // pegada fuerte → "hehe"
+function credit(p, d){ if(p && p.sc){ p.sc.dmg += d; p._xpBuf = (p._xpBuf||0) + d; xpTag(p, 'dmg', d); } if(p && (p._pkLifesteal || p._lvSteal) && d>0 && !p.dead){ p.damage = Math.max(0, p.damage - d*0.15); }   /* ►PERK ROBO DE VIDA: recupera el 15% del daño causado */ noteHit(p); if(d>=12) charVoice(p,'hehe',0.4); }   // pegada fuerte → "hehe"
 function nearestPlayer(p){ let best=null, bd=Infinity;
   for(const o of players){ if(o===p||o.dead) continue; const d=p.pos.distanceToSquared(o.pos); if(d<bd){ bd=d; best=o; } }
   return best; }
@@ -7892,7 +7903,7 @@ function starTouch(p, dt){
   }
 }
 function ultActive(p){ return !!(p.ult || p.storm || p.bastion || p.beam || p.genki || p.rainT>0 || p._rainbowT>0); }   // ►SUPERR: + genkidama
-function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; try{ spawnCoins(mn, k); }catch(e){} } }   // ►MONEDAS: el minion explota en monedas   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
+function awardMinion(mn){ const k = mn.lastHitBy; if(k && !k.out){ if(!ultActive(k)) addMpow(k, MINION_PTS[mn.type]||10); k.sc.mk++; k.sc.minW = (k.sc.minW||0) + (mn.type==='large'?3 : mn.type==='shooter'?2 : 1); k._xpBuf=(k._xpBuf||0)+20; xpTag(k, 'minion', 20); try{ spawnCoins(mn, k); }catch(e){} } }   // ►MONEDAS: el minion explota en monedas   // mientras usas la R los minions NO recargan su barra (evita el bucle); grande=3, medio=2, pequeño=1
 /* círculo del color de cada jugador, pegado al suelo: ves dónde caes y dónde estás */
 for(const _p of allPlayers){
   _p.groundRing = new THREE.Mesh(new THREE.RingGeometry(.55,.82,30),
@@ -7954,9 +7965,10 @@ function buildRank(){
     const r = document.createElement('div');
     r.className = 'rkRow'+(p===P1?' me':'');
     r.style.setProperty('--pc', col);
-    r.innerHTML = '<div class="rkL1"><b class="rkPos">'+(i+1)+'</b><i class="rkDot"></i>'+
-                  '<span class="rkName">'+_rankName(p)+'</span><u class="rkXP">0</u><em class="rkDmg">0%</em><span class="rkJ">⏫<b>0</b></span><span class="rkCo">🪙<b>0</b></span></div>'+
-                  '<div class="rkHearts"></div>';
+    r.innerHTML = '<div class="rkL1"><b class="rkPos">'+(i+1)+'</b><span class="rkName">'+_rankName(p)+'</span><u class="rkXP">0</u></div>'+
+                  '<div class="rkHearts"></div>'+
+                  '<div class="rkL3"><em class="rkDmg">0%</em><span class="rkJ"><b>0</b><small>SALTOS</small></span><span class="rkCo"><i class="coin"></i><b>0</b></span></div>'+
+                  '<div class="rkPop"></div>';   // ►HUD3: 3 líneas + hueco de puntos debajo
     r._dmg = -1; r._stk = -1; r._jr = -1; r._co = -1;   // ►MONEDAS
     r._pos = -1; r._xp = -1; r._st = 'x'; r._nm = _rankName(p);   // _pos=-1: el primer updateRank() SIEMPRE pinta puesto y clase de líder
     r.style.transform = 'translateX('+(i*RANK_ROW_W)+'px)';   // primer pintado: ya en su sitio (sin deslizar) · ►HUDLOL: en horizontal
@@ -7995,7 +8007,7 @@ function updateRank(){
       if(row._dmg !== d){ row._dmg = d; const e = row.querySelector('.rkDmg'); e.textContent = d+'%'; e.classList.toggle('hot', d >= 100); }
       { /* ►RANKJUMPS (Toni 23/08): saltos disponibles a la derecha de cada chip (misma cuenta que el indicador antiguo) */
         const cap = 1 + airJumps(p); const rem = (p.onGround || p.coyote>0) ? cap : Math.max(0, Math.min(p.jumps|0, cap-1));
-        if(row._jr !== rem){ row._jr = rem; const j = row.querySelector('.rkJ'); j.lastElementChild.textContent = rem; j.classList.toggle('none', rem<=0); } }
+        if(row._jr !== rem){ row._jr = rem; const j = row.querySelector('.rkJ'); j.querySelector('b').textContent = rem; j.classList.toggle('none', rem<=0); } }   /* ►HUD3 */
       const stk = p.stocks|0;
       if(row._stk !== stk){ row._stk = stk; const h = row.querySelector('.rkHearts'); h.innerHTML = ''; const tot = Math.max(4, stk); for(let q=0;q<tot;q++){ const ic = document.createElement('i'); if(q >= stk) ic.className = 'lost'; h.appendChild(ic); } }
     }
@@ -10989,7 +11001,7 @@ function updateCapsules(dt){
       if(p.dead) continue;
       const d = Math.hypot(p.pos.x-c.m.position.x, p.pos.z-c.m.position.z);
       if(d<1.05 && Math.abs(p.pos.y-c.y0)<1.6){
-        p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5;   // ►B5 (Toni): +15→+5, la exp es de matar
+        p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5; xpTag(p, 'item', 5);   // ►B5 (Toni): +15→+5, la exp es de matar
         if(c.ty.sup){ giveSuper(p, c.ty.k); }   // ►OBJETOS2: SÚPER
         else if(c.ty.heal){                      // corazón: cura el daño acumulado
           p.damage = Math.max(0, p.damage - CAP_HEAL);
@@ -11462,7 +11474,7 @@ function killItem(i){
   items.splice(i,1);
 }
 function giveItem(p, it){
-  p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5;   // ►B5 (Toni): +15→+5
+  p.sc.items++; p._xpBuf = (p._xpBuf||0) + 5; xpTag(p, 'item', 5);   // ►B5 (Toni): +15→+5
   p._oneShot = 'pickup'; p._oneShotT = 0.5;                 // humanoide: animación de recoger
   try{ const c0 = p.pos.clone().add(new THREE.Vector3(0,1,0)); burst(c0, p.color, 8, 5, 4, .7); ring(c0, 0xffffff, 10, .3); jiggle(p, 8); hitSpark(c0, new THREE.Vector3(0,1,0), p.color, .8); }catch(e){}   // ►JUICE: recoger se ve
 
@@ -21982,7 +21994,20 @@ function popKill(pos, txt, color){
   d.style.left = x+'px'; d.style.top = y+'px';
   d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
 }
+/* ►HUD3 · los puntos ganados salen DEBAJO de la ficha del jugador con su concepto ("+50 · Minion"). Cada fuente etiqueta lo que
+   suma con xpTag(); al vaciar el buffer se pinta el concepto que más ha sumado. El popup 3D sobre el personaje se retira. */
+const XP_TAG_NAME = { dmg:'Daño', minion:'Minion', item:'Objeto', ko:'KO', spec:'Especial', bonus:'Bonus' };
+function xpTag(p, tag, n){ if(!p || !(n>0)) return; const m = p._xpSrc || (p._xpSrc = {}); m[tag] = (m[tag]||0) + n; }
+function rankPop(p, n, label){
+  const i = players.indexOf(p); const row = _rankRows[i]; if(!row) return;
+  const el = row.querySelector('.rkPop'); if(!el) return;
+  el.innerHTML = '+' + n + (label ? '<small>· ' + label + '</small>' : '');
+  el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
+}
 function popXP(p, n){
+  let best = null, bv = 0; if(p._xpSrc){ for(const k in p._xpSrc){ if(p._xpSrc[k] > bv){ bv = p._xpSrc[k]; best = k; } } p._xpSrc = null; }
+  rankPop(p, n, best ? (XP_TAG_NAME[best]||best) : null);
+  return;
   if(!_xpPool.length) return;
   _xpV.copy(p.pos); _xpV.y += 1.8; _xpV.project(camera);
   if(_xpV.z > 1) return;                              // detrás de la cámara
@@ -24324,7 +24349,7 @@ function ko(p){
      verse, o parece que el luchador se ha evaporado a media altura (el plano de muerte está en la
      superficie, no en el fondo). */
   if(STAGE===12 && typeof pirSplash==='function' && p.pos.y < PIR_WL + 2.5) pirSplash(p.pos);
-  if(p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.out){ p.lastHitBy.sc.kills++; p.lastHitBy._xpBuf=(p.lastHitBy._xpBuf||0)+150; if(typeof popKill==='function') popKill(p.pos, '+150', classColor(p.lastHitBy)); }   // baja causada (puntúa) · ►PTSPOP: el +150 se ve donde cae el rival
+  if(p.lastHitBy && p.lastHitBy!==p && !p.lastHitBy.out){ p.lastHitBy.sc.kills++; p.lastHitBy._xpBuf=(p.lastHitBy._xpBuf||0)+150; xpTag(p.lastHitBy, 'ko', 150); }   /* ►HUD3: el +150 sale bajo la ficha del que saca, no en el mundo */   // baja causada (puntúa) · ►PTSPOP: el +150 se ve donde cae el rival
   if(p.sc) p.sc.deaths = (p.sc.deaths||0) + 1;   // muerte propia
   endBeam(p); endUlt(p); endSpin(p); endShield(p); endCounter(p); endStorm(p); endBastion(p); endZone(p); endFireShield(p); endHealDisc(p);
   p.shieldT = 0; p.parryT = 0; p.rainT = 0;
@@ -26369,7 +26394,7 @@ function updateFighter(p, dt){
   p._xpT = Math.max(0, (p._xpT||0) - dt);
   if(p.sc){ const _sp = p.sc.specials|0;   // ►PTSPOP: los ~25 sitios de sc.specials++ subian +40 al ranking EN SILENCIO (queja 3/3 del playtest); el delta entra al mismo buffer del mini-popup. Si sc se resetea (nueva partida) el contador baja y solo se re-ancla
     if(p._lastSpec===undefined || _sp < p._lastSpec) p._lastSpec = _sp;
-    else if(_sp > p._lastSpec){ p._xpBuf = (p._xpBuf||0) + (_sp - p._lastSpec)*40; p._lastSpec = _sp; } }
+    else if(_sp > p._lastSpec){ p._xpBuf = (p._xpBuf||0) + (_sp - p._lastSpec)*40; xpTag(p, 'spec', (_sp - p._lastSpec)*40); p._lastSpec = _sp; } }
   if((p._xpBuf||0) >= 1 && p._xpT<=0){ popXP(p, Math.round(p._xpBuf)); p._xpBuf = 0; p._xpT = .45; }   // mini-popup de puntos
   if(p.shardReload>0){
     p.shardReload -= dt;
