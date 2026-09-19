@@ -44,3 +44,10 @@ Hay navegador headless disponible (Edge + CDP desde Node): se puede arrancar el 
 capturar el canvas y comparar A/B. Antes de dar por buena una mejora visual o de rendimiento,
 **mídela** — en esta sesión eso ha desmontado tres hipótesis que parecían obvias. La receta está en
 la memoria del proyecto (`headless-validation-edge-cdp`).
+
+## TOKENS (19/09/2026) — ver `POLITICA_TOKENS.md`
+
+- El hook `.claude/hooks/guardia_tokens.js` bloquea leer el HTML grande sin límite, `cat` de
+  ficheros pesados, `grep` sin `-m`/`| head` y `git diff` sin `--stat`. No lo rodees: acota.
+- Estado de cada frente en su `*_ESTADO.md`; `/compact` al pasar del 40 % de contexto en vez
+  de abrir sesión nueva; salidas largas a fichero y `tail`; búsquedas amplias con subagente.
